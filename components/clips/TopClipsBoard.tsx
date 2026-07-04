@@ -118,8 +118,12 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       Your browser does not support the video tag.
                     </video>
 
-                    {durationLabel ? (
-                      <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/80 px-1.5 py-1 text-[10px] font-medium text-white">
+                    {clip.signedUrl ? (
+                      <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/80 px-1.5 py-1 text-[10px] font-medium text-white">
+                        {currentLabel} / {totalLabel}
+                      </div>
+                    ) : durationLabel ? (
+                      <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/80 px-1.5 py-1 text-[10px] font-medium text-white">
                         {durationLabel}
                       </div>
                     ) : null}
@@ -150,10 +154,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   ) : (
                     <div className="h-7 w-7" />
                   )}
-                </div>
-
-                <div className="min-h-[22px] px-1 text-[11px] text-white/45">
-                  {clip.signedUrl ? `${currentLabel} / ${totalLabel}` : null}
                 </div>
 
                 <div className="min-h-[40px] px-1 pt-1">
