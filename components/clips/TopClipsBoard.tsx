@@ -14,15 +14,52 @@ type ClipItem = {
   endSec: number | null;
   rank: number | null;
 };
+
 type Props = {
   projectId: string;
   clips: ClipItem[];
 };
 
+function formatDuration(startSec: number | null, endSec: number | null) {
+  if (startSec == null || endSec == null) return null;
+  const total = Math.max(0, Math.round(endSec - startSec));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [onlyOneMinute, setOnlyOneMinute] = useState(false);
   const [minScore, setMinScore] = useState(0);
   const [sortBy, setSortBy] = useState<'score' | 'duration'>('score');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function handleDownload(clip: ClipItem) {
+    if (!clip.signedUrl) return;
+
+    try {
+      setDownloadingId(clip.exportId);
+      const res = await fetch(clip.signedUrl);
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `${(clip.title || 'clip')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'clip'}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error(error);
+      window.alert('Download failed. Try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   const visible = useMemo(() => {
     const filtered = clips.filter((clip) => {
@@ -43,13 +80,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   }, [clips, minScore, onlyOneMinute, sortBy]);
 
   return (
-    <section className="mt-6 space-y-3">
-      <h2 className="text-lg font-semibold">Top rendered clips (up to 10)</h2>
+    <section className="mt-6 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Top clips</h2>
+        <span className="text-xs text-white/45">{Math.min(visible.length, 10)} shown</span>
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-3 text-xs">
-        <span className="text-white/80">Captions: <span className="font-semibold text-white">Basic hardcoded ON</span></span>
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-[#111318] px-3 py-3 text-xs">
         <button
-          className={`rounded-md border px-3 py-1.5 transition ${onlyOneMinute ? 'border-emerald-300/40 bg-emerald-500/20 text-emerald-100' : 'border-white/15 text-white/75 hover:border-white/30'}`}
+          className={`rounded-full border px-3 py-1.5 transition ${onlyOneMinute ? 'border-emerald-300/40 bg-emerald-500/20 text-emerald-100' : 'border-white/15 text-white/75 hover:border-white/30'}`}
           onClick={() => setOnlyOneMinute((v) => !v)}
           type="button"
         >
@@ -59,7 +98,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
         <label className="flex items-center gap-2 text-white/70">
           Min score
           <select
-            className="rounded-md border border-white/15 bg-black/40 px-2 py-1 text-white"
+            className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white"
             value={minScore}
             onChange={(e) => setMinScore(Number(e.target.value))}
           >
@@ -73,7 +112,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
         <label className="flex items-center gap-2 text-white/70">
           Sort
           <select
-            className="rounded-md border border-white/15 bg-black/40 px-2 py-1 text-white"
+            className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as 'score' | 'duration')}
           >
@@ -85,60 +124,68 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
       {!visible.length && <p className="text-sm text-white/60">No clips match current filters.</p>}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-        {visible.slice(0, 10).map((clip, idx) => {
-          return (
-            <div key={clip.exportId} className="space-y-1 rounded-lg border border-white/10 bg-black/20 p-2 text-xs">
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-wide text-white/45">#{clip.rank ?? idx + 1}</p>
-                <p className="line-clamp-2 text-xs font-semibold text-white/95">{clip.title}</p>
-              </div>
+      <div className="overflow-x-auto pb-2">
+        <div className="flex min-w-max gap-4">
+          {visible.slice(0, 10).map((clip, idx) => {
+            const durationLabel = formatDuration(clip.startSec, clip.endSec);
 
-              {clip.signedUrl ? (
-                <div className="relative">
-                  <video
-                    controls
-                    preload="metadata"
-                    className="aspect-[9/16] w-full overflow-hidden rounded-lg border border-white/10 bg-black"
-                    src={clip.signedUrl}
-                  >
-                    Your browser does not support the video tag.
-                  </video>
+            return (
+              <article key={clip.exportId} className="w-[190px] shrink-0 space-y-2">
+                {clip.signedUrl ? (
+                  <div className="relative overflow-hidden rounded-[22px] bg-[#16181d] ring-1 ring-white/10">
+                    <video
+                      controls
+                      preload="metadata"
+                      className="aspect-[9/16] w-full bg-black object-cover"
+                      src={clip.signedUrl}
+                    >
+                      Your browser does not support the video tag.
+                    </video>
 
-                  <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/70 px-2 py-1 text-xs font-extrabold tracking-tight text-lime-300 shadow-[0_0_12px_rgba(132,255,121,0.25)]">
-                    {clip.score.toFixed(1)}
-                  </div>
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-                  {clip.signedUrl ? (
-                    <a
-                      href={clip.signedUrl}
-                      download
-                      className="group absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-black shadow hover:bg-white/90"
-                      aria-label="Download"
+                    {durationLabel ? (
+                      <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                        {durationLabel}
+                      </div>
+                    ) : null}
+
+                    <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/70 px-2.5 py-1 text-[12px] font-semibold text-white backdrop-blur-sm">
+                      {clip.score.toFixed(1)}/10
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(clip)}
+                      disabled={downloadingId === clip.exportId}
+                      className="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label="Download clip"
+                      title="Download clip"
                     >
                       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M12 3v10" />
                         <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
                         <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
                       </svg>
-                      <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/20 bg-black/90 px-2 py-1 text-[11px] text-white opacity-0 shadow transition-opacity group-hover:opacity-100">
-                        Download
-                      </span>
-                    </a>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="flex aspect-[9/16] w-full items-center justify-center rounded-lg border border-dashed border-white/15 text-white/50">
-                  {clip.status === 'done' ? 'Video unavailable' : `Status: ${clip.status}`}
-                </div>
-              )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex aspect-[9/16] w-full items-center justify-center rounded-[22px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
+                    {clip.status === 'done' ? 'Video unavailable' : `Status: ${clip.status}`}
+                  </div>
+                )}
 
-              {clip.errorMessage ? <p className="text-xs text-red-300/90">Error: {clip.errorMessage}</p> : null}
-            </div>
-          );
-        })}
+                <div className="space-y-1 px-1">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Clip {clip.rank ?? idx + 1}</p>
+                  <p className="line-clamp-2 text-sm font-semibold text-white/95">{clip.title}</p>
+                </div>
+
+                {clip.errorMessage ? <p className="px-1 text-xs text-red-300/90">Error: {clip.errorMessage}</p> : null}
+              </article>
+            );
+          })}
+        </div>
       </div>
-
     </section>
   );
 }
