@@ -75,8 +75,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
             return (
               <article key={clip.exportId} className="flex w-[250px] shrink-0 flex-col">
-                <div className="min-h-[86px] space-y-1 px-1">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-white/30">Clip {clip.rank ?? idx + 1}</p>
+                <div className="min-h-[86px] px-1">
                   <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
                 </div>
 
