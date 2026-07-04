@@ -93,7 +93,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
 
             return (
-              <article key={clip.exportId} className="w-[190px] shrink-0 space-y-2">
+              <article key={clip.exportId} className="w-[220px] shrink-0 space-y-3">
                 {clip.signedUrl ? (
                   <div className="relative overflow-hidden rounded-[22px] bg-[#16181d] ring-1 ring-white/10">
                     <video
@@ -117,20 +117,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       {clip.score.toFixed(1)}/10
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDownload(clip)}
-                      disabled={downloadingId === clip.exportId}
-                      className="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
-                      aria-label="Download clip"
-                      title="Download clip"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 3v10" />
-                        <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
-                        <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
-                      </svg>
-                    </button>
                   </div>
                 ) : (
                   <div className="flex aspect-[9/16] w-full items-center justify-center rounded-[22px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
@@ -138,9 +124,25 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   </div>
                 )}
 
-                <div className="space-y-1 px-1">
+                <div className="space-y-2 px-1">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Clip {clip.rank ?? idx + 1}</p>
                   <p className="line-clamp-2 text-sm font-semibold text-white/95">{clip.title}</p>
+
+                  {clip.signedUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(clip)}
+                      disabled={downloadingId === clip.exportId}
+                      className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white transition hover:border-white/30 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 3v10" />
+                        <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
+                        <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                      </svg>
+                      {downloadingId === clip.exportId ? 'Downloading…' : 'Download'}
+                    </button>
+                  ) : null}
                 </div>
 
                 {clip.errorMessage ? <p className="px-1 text-xs text-red-300/90 line-clamp-3">Error: {clip.errorMessage}</p> : null}
