@@ -23,6 +23,11 @@ type Props = {
 function formatDuration(startSec: number | null, endSec: number | null) {
   if (startSec == null || endSec == null) return null;
   const total = Math.max(0, Math.round(endSec - startSec));
+  return formatClock(total);
+}
+
+function formatClock(totalSeconds: number) {
+  const total = Math.max(0, Math.floor(totalSeconds));
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -30,6 +35,7 @@ function formatDuration(startSec: number | null, endSec: number | null) {
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [playback, setPlayback] = useState<Record<string, { current: number; duration: number }>>({});
 
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
@@ -70,8 +76,13 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
       <div className="overflow-x-auto pb-2">
         <div className="flex min-w-max gap-14 px-3">
-          {visible.slice(0, 10).map((clip, idx) => {
+          {visible.slice(0, 10).map((clip) => {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
+            const playbackState = playback[clip.exportId];
+            const current = playbackState?.current ?? 0;
+            const duration = playbackState?.duration ?? 0;
+            const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
+            const currentLabel = formatClock(current);
 
             return (
               <article key={clip.exportId} className="flex w-[250px] shrink-0 flex-col">
@@ -86,6 +97,23 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       preload="metadata"
                       className="aspect-[9/16] w-full bg-black object-cover"
                       src={clip.signedUrl}
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        setPlayback((prev) => ({
+                          ...prev,
+                          [clip.exportId]: { current: v.currentTime || 0, duration: v.duration || 0 },
+                        }));
+                      }}
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        setPlayback((prev) => ({
+                          ...prev,
+                          [clip.exportId]: {
+                            current: v.currentTime || 0,
+                            duration: v.duration || prev[clip.exportId]?.duration || 0,
+                          },
+                        }));
+                      }}
                     >
                       Your browser does not support the video tag.
                     </video>
@@ -122,6 +150,10 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   ) : (
                     <div className="h-7 w-7" />
                   )}
+                </div>
+
+                <div className="min-h-[22px] px-1 text-[11px] text-white/45">
+                  {clip.signedUrl ? `${currentLabel} / ${totalLabel}` : null}
                 </div>
 
                 <div className="min-h-[40px] px-1 pt-1">
