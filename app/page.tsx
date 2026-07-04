@@ -249,33 +249,6 @@ export default function Home() {
             {msg ? <p className="mt-3 text-left text-sm text-white/70">{msg}</p> : null}
           </div>
 
-          <div className="mx-auto mt-8 max-w-4xl text-left">
-            <article className="relative overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-[#101823] via-[#0d1220] to-[#111a17] p-4 md:p-5">
-              <div className="absolute -left-12 top-1/2 h-44 w-44 -translate-y-1/2 rounded-full bg-[#39FF14]/10 blur-3xl" />
-              <div className="absolute -right-12 -top-10 h-44 w-44 rounded-full bg-cyan-400/10 blur-3xl" />
-
-              <div className="relative mx-auto w-full max-w-3xl rounded-xl border border-white/20 bg-black/45 p-3">
-                <div className="grid gap-3">
-                  <div className="relative overflow-hidden rounded-lg border border-white/10 bg-black">
-                    <video
-                      className="aspect-video w-full object-cover"
-                      src="https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4"
-                      autoPlay
-                      muted
-                      loop
-                      playsInline
-                      controls
-                    />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-black/20" />
-                    <div className="absolute bottom-2 left-2 rounded-md border border-white/20 bg-black/60 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/80">
-                      Podcast episode demo
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            </article>
-          </div>
         </section>
 
         <section id="features" className="mt-14 grid gap-4 md:grid-cols-3">
