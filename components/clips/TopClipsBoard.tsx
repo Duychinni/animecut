@@ -83,46 +83,9 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     <section className="mt-6 space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Top clips</h2>
-        <span className="text-xs text-white/45">{Math.min(visible.length, 10)} shown</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-[#111318] px-3 py-3 text-xs">
-        <button
-          className={`rounded-full border px-3 py-1.5 transition ${onlyOneMinute ? 'border-emerald-300/40 bg-emerald-500/20 text-emerald-100' : 'border-white/15 text-white/75 hover:border-white/30'}`}
-          onClick={() => setOnlyOneMinute((v) => !v)}
-          type="button"
-        >
-          ≥ 60s
-        </button>
-
-        <label className="flex items-center gap-2 text-white/70">
-          Min score
-          <select
-            className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white"
-            value={minScore}
-            onChange={(e) => setMinScore(Number(e.target.value))}
-          >
-            <option value={0}>Any</option>
-            <option value={7}>7+</option>
-            <option value={8}>8+</option>
-            <option value={8.5}>8.5+</option>
-          </select>
-        </label>
-
-        <label className="flex items-center gap-2 text-white/70">
-          Sort
-          <select
-            className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'score' | 'duration')}
-          >
-            <option value="score">Highest score</option>
-            <option value="duration">Longest duration</option>
-          </select>
-        </label>
-      </div>
-
-      {!visible.length && <p className="text-sm text-white/60">No clips match current filters.</p>}
+      {!visible.length && <p className="text-sm text-white/60">No clips yet.</p>}
 
       <div className="overflow-x-auto pb-2">
         <div className="flex min-w-max gap-4">
@@ -180,7 +143,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   <p className="line-clamp-2 text-sm font-semibold text-white/95">{clip.title}</p>
                 </div>
 
-                {clip.errorMessage ? <p className="px-1 text-xs text-red-300/90">Error: {clip.errorMessage}</p> : null}
+                {clip.errorMessage ? <p className="px-1 text-xs text-red-300/90 line-clamp-3">Error: {clip.errorMessage}</p> : null}
               </article>
             );
           })}
