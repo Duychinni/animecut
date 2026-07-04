@@ -111,7 +111,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         type="button"
                         onClick={() => handleDownload(clip)}
                         disabled={downloadingId === clip.exportId}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 text-white/75 transition hover:border-white/35 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                         aria-label="Download clip"
                         title="Download clip"
                       >
