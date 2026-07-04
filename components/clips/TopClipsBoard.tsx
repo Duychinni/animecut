@@ -69,12 +69,12 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       {!visible.length && <p className="text-sm text-white/60">No clips yet.</p>}
 
       <div className="overflow-x-auto pb-2">
-        <div className="flex min-w-max gap-7">
+        <div className="flex min-w-max gap-10 px-2">
           {visible.slice(0, 10).map((clip, idx) => {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
 
             return (
-              <article key={clip.exportId} className="w-[210px] shrink-0">
+              <article key={clip.exportId} className="w-[250px] shrink-0">
                 {clip.signedUrl ? (
                   <div className="relative overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
                     <video

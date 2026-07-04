@@ -81,7 +81,7 @@ export default async function ProjectDetailPage({
   );
 
   return (
-    <main className="mx-auto w-full max-w-[1800px] space-y-6 px-6 py-10">
+    <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <h1 className="text-2xl font-bold">MAIN PROJECTS</h1>
 
