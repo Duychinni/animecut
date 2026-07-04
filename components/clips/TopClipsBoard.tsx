@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 type ClipItem = {
   exportId: string;
@@ -23,6 +23,11 @@ type Props = {
 function formatDuration(startSec: number | null, endSec: number | null) {
   if (startSec == null || endSec == null) return null;
   const total = Math.max(0, Math.round(endSec - startSec));
+  return formatClock(total);
+}
+
+function formatClock(totalSeconds: number) {
+  const total = Math.max(0, Math.floor(totalSeconds));
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -30,6 +35,8 @@ function formatDuration(startSec: number | null, endSec: number | null) {
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [playback, setPlayback] = useState<Record<string, { current: number; duration: number }>>({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
@@ -72,16 +79,37 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
         <div className="flex min-w-max gap-14 px-3">
           {visible.slice(0, 10).map((clip, idx) => {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
+            const playbackState = playback[clip.exportId];
+            const current = playbackState?.current ?? 0;
+            const duration = playbackState?.duration ?? 0;
+            const remaining = Math.max(0, duration - current);
 
             return (
               <article key={clip.exportId} className="w-[250px] shrink-0">
                 {clip.signedUrl ? (
                   <div className="relative overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
                     <video
+                      ref={(el) => {
+                        videoRefs.current[clip.exportId] = el;
+                      }}
                       controls
                       preload="metadata"
                       className="aspect-[9/16] w-full bg-black object-cover"
                       src={clip.signedUrl}
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        setPlayback((prev) => ({
+                          ...prev,
+                          [clip.exportId]: { current: v.currentTime || 0, duration: v.duration || 0 },
+                        }));
+                      }}
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        setPlayback((prev) => ({
+                          ...prev,
+                          [clip.exportId]: { current: v.currentTime || 0, duration: v.duration || prev[clip.exportId]?.duration || 0 },
+                        }));
+                      }}
                     >
                       Your browser does not support the video tag.
                     </video>
@@ -120,6 +148,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     ) : null}
                   </div>
                   <p className="line-clamp-3 text-[13px] font-medium leading-4 text-white/90">{clip.title}</p>
+                  {clip.signedUrl ? (
+                    <p className="text-[11px] text-white/45">
+                      {formatClock(current)} / {duration > 0 ? formatClock(duration) : durationLabel ?? '0:00'} · -{formatClock(remaining)}
+                    </p>
+                  ) : null}
                 </div>
 
                 {clip.errorMessage ? <p className="mt-1 text-xs text-red-300/90 line-clamp-2">Error: {clip.errorMessage}</p> : null}
