@@ -50,7 +50,7 @@ export default function Home() {
     };
   }, []);
 
-  const canAnalyzeLink = useMemo(() => sourceUrl.trim().length > 0 && !loading, [sourceUrl, loading]);
+  const canAnalyzeLink = useMemo(() => !loading, [loading]);
 
   async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string }) {
     const res = await fetch('/api/projects', {
@@ -70,7 +70,10 @@ export default function Home() {
 
   async function onAnalyzeLink(e: React.FormEvent) {
     e.preventDefault();
-    if (!sourceUrl.trim()) return;
+    if (!sourceUrl.trim()) {
+      setMsg('Paste a YouTube link first, or use Upload files.');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -223,7 +226,7 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={!canAnalyzeLink}
-                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Working...' : 'Get Clips'}
                 </button>
@@ -269,25 +272,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                    {[
-                      { score: 97, range: '00:12–00:42', hook: 'Hot take opener' },
-                      { score: 95, range: '02:10–02:46', hook: 'Debate spike' },
-                      { score: 93, range: '05:02–05:39', hook: 'Contrarian clip' },
-                      { score: 91, range: '07:44–08:19', hook: 'Callout moment' },
-                    ].map((item) => (
-                      <div key={item.score} className="rounded-lg border border-white/15 bg-white/5 p-1.5">
-                        <div className="mx-auto aspect-[9/16] w-full max-w-[110px] rounded-md border border-white/15 bg-gradient-to-b from-white/20 to-white/5" />
-                        <div className="mt-1 text-center text-[10px] text-white/70">{item.range}</div>
-                        <div className="truncate text-center text-[10px] text-white/45">{item.hook}</div>
-                        <div className="text-center text-[10px] text-[#39FF14]">{item.score}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-3 flex items-center justify-end rounded-xl border border-white/15 bg-white/5 p-2">
-                  <div className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black">Get clips</div>
                 </div>
               </div>
             </article>
