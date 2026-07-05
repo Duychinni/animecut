@@ -50,36 +50,49 @@ async function parseJsonWithRepair(rawText: string) {
   }
 }
 
-export async function analyzeClipCandidates(
-  transcript: string,
-  segments: Array<{ start?: number; end?: number; text?: string }> = [],
-) {
-  const prompt = `You are a short-form clip selector for podcast/interview/talking-head content.
+function minCandidatePoolForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes < 5) return 20;
+  if (minutes <= 15) return 40;
+  if (minutes <= 30) return 60;
+  if (minutes <= 60) return 80;
+  return 100;
+}
+
+function buildPrompt(targetCandidates: number) {
+  return `You are a short-form clip selector for podcast/interview/talking-head content.
 
 Core objective:
 Select complete, self-contained short clips that start and end naturally.
 Do NOT return random excerpts.
+You must search exhaustively and produce a LARGE candidate set before ranking.
+Do NOT stop after finding only a few good clips.
 
 Process (required):
 1) Candidate discovery:
-   - find moments with strong hook, opinion, conflict, story beat, emotional punch, insight, humor, surprise, or controversial claim.
+   - scan the entire provided transcript window
+   - find moments with strong hook, opinion, conflict, story beat, emotional punch, insight, humor, surprise, controversial claim, educational payoff, or high-energy delivery.
 2) Boundary cleanup:
    - for each raw candidate, inspect nearby transcript lines.
    - move start/end to natural speech boundaries.
    - keep a short lead-in if needed for clarity.
    - preserve payoff even if slightly longer.
+3) Exhaustive coverage:
+   - different start/end timestamps are different candidates.
+   - overlapping moments may still be valid if the hook point differs.
+   - do not reject clips just because they occur in the same conversation.
 
 Quality rules:
 - Must make sense to a new viewer with no prior context.
 - Must begin at a sentence/clause boundary (not mid-thought).
 - Avoid openings like: "and", "but", "so", "because", "then" unless still fully clear.
 - Must end after the point is complete and NOT on filler tails ("you know", "like", "so basically").
-- Reject clips that still feel incomplete after cleanup.
 - Favor complete thoughts over shortness.
 
 Clip targets:
 - Prefer 15-45s (can go longer only if needed to preserve full thought).
-- Return ONLY best 5.
+- Return AT LEAST ${targetCandidates} candidate clips if the transcript window contains them.
+- Do NOT limit yourself to only a few “best” clips.
 
 Return ONLY valid JSON in this exact shape:
 {
@@ -111,62 +124,98 @@ Return ONLY valid JSON in this exact shape:
 Hard grounding rules:
 - Use ONLY transcript-proven content.
 - Never invent people/events/quotes/facts.
-- Timestamps must align to the transcript timeline.
+- Timestamps must align to the transcript timeline.`;
+}
 
-Before finalizing each clip, verify:
-1. Would this make sense to a new viewer with no prior context?
-2. Does the first line sound like a real beginning?
-3. Does the last line sound complete/satisfying?
-4. Would this feel intentional if posted as a short?
-5. Is there a clear hook and payoff?
-If any answer is no, reject that clip.`;
-
-  const timeline = segments
-    .slice(0, 1200)
+function buildTimeline(segments: Array<{ start?: number; end?: number; text?: string }>) {
+  return segments
     .map((s) => {
       const start = Number(s.start ?? 0);
       const end = Number(s.end ?? start);
       return `[${start.toFixed(1)}-${end.toFixed(1)}] ${(s.text ?? '').trim()}`;
     })
     .join('\n');
+}
 
-  const userInput = timeline.trim().length
-    ? `TIMESTAMPED TRANSCRIPT:\n${timeline}`
-    : transcript.slice(0, 100000);
+function chunkSegments(
+  segments: Array<{ start?: number; end?: number; text?: string }>,
+  chunkSize = 220,
+  overlap = 40,
+) {
+  if (segments.length <= chunkSize) return [segments];
+  const chunks: Array<Array<{ start?: number; end?: number; text?: string }>> = [];
+  for (let i = 0; i < segments.length; i += Math.max(1, chunkSize - overlap)) {
+    const chunk = segments.slice(i, i + chunkSize);
+    if (!chunk.length) break;
+    chunks.push(chunk);
+    if (i + chunkSize >= segments.length) break;
+  }
+  return chunks;
+}
 
-  const res = await openai.responses.create({
-    model: 'gpt-4.1-mini',
-    input: [
-      { role: 'system', content: prompt },
-      { role: 'user', content: userInput },
-    ],
-  });
+export async function analyzeClipCandidates(
+  transcript: string,
+  segments: Array<{ start?: number; end?: number; text?: string }> = [],
+) {
+  const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
+  const targetCandidates = minCandidatePoolForDuration(totalSeconds);
+  const prompt = buildPrompt(targetCandidates);
 
-  const firstPassText = res.output_text;
-  const firstPass = await parseJsonWithRepair(firstPassText);
+  const chunked = segments.length ? chunkSegments(segments) : [];
+  const allCandidates: unknown[] = [];
 
-  const refinePrompt = `Review the selected clips again and remove any clip that:
-- starts mid-thought
-- ends before the point is finished
-- depends too much on earlier context
-- has weak opening words
-- has weak payoff
+  if (chunked.length) {
+    for (const chunk of chunked) {
+      const timeline = buildTimeline(chunk);
+      const res = await openai.responses.create({
+        model: 'gpt-4.1-mini',
+        input: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: `TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
+        ],
+      });
 
-Then improve boundaries again.
-Favor complete thoughts over shorter clips.
-It is better for a clip to be slightly longer and feel complete than shorter and feel cut off.
+      const parsed = await parseJsonWithRepair(res.output_text);
+      if (Array.isArray(parsed?.candidates)) {
+        allCandidates.push(...parsed.candidates);
+      }
+    }
+  } else {
+    const userInput = transcript.slice(0, 100000);
+    const res = await openai.responses.create({
+      model: 'gpt-4.1-mini',
+      input: [
+        { role: 'system', content: prompt },
+        { role: 'user', content: userInput },
+      ],
+    });
+
+    const parsed = await parseJsonWithRepair(res.output_text);
+    if (Array.isArray(parsed?.candidates)) {
+      allCandidates.push(...parsed.candidates);
+    }
+  }
+
+  const merged = { candidates: allCandidates };
+
+  const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
+Keep a broad candidate pool.
+Remove only clearly broken candidates.
 Return revised JSON only.`;
 
   const refineRes = await openai.responses.create({
     model: 'gpt-4.1-mini',
     input: [
       { role: 'system', content: prompt },
-      { role: 'user', content: userInput },
-      { role: 'assistant', content: JSON.stringify(firstPass) },
+      { role: 'assistant', content: JSON.stringify(merged) },
       { role: 'user', content: refinePrompt },
     ],
   });
 
-  const refinedText = refineRes.output_text;
-  return await parseJsonWithRepair(refinedText);
+  const refined = await parseJsonWithRepair(refineRes.output_text);
+  if (Array.isArray(refined?.candidates)) {
+    return refined;
+  }
+
+  return merged;
 }

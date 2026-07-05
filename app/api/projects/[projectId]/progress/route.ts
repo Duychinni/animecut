@@ -14,6 +14,16 @@ function parseYouTubeId(url: string): string | null {
   }
 }
 
+function targetClipCountForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes <= 5) return 5;
+  if (minutes <= 15) return 7;
+  if (minutes <= 30) return 10;
+  if (minutes <= 60) return 15;
+  if (minutes <= 120) return 20;
+  return 25;
+}
+
 function computeProgress(status: ProjectStatus, doneExports: number, targetCount: number, elapsedSeconds: number) {
   const safeTarget = Math.max(1, targetCount);
 
@@ -41,7 +51,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const { projectId } = await context.params;
     const supabase = await createClient();
 
-    const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }] = await Promise.all([
+    const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
         .select('id, title, status, source_type, source_url, created_at, updated_at')
@@ -55,6 +65,13 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         .from('clip_candidates')
         .select('*', { count: 'exact', head: true })
         .eq('project_id', projectId),
+      supabase
+        .from('transcripts')
+        .select('segments_json')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single(),
     ]);
 
     if (pErr || !project) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
@@ -67,8 +84,10 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const failedExports = rows.filter((r) => r.status === 'error').length;
 
     const analyzedCandidates = Math.max(0, Number(candidateCount ?? 0));
-    const dynamicTarget = Math.max(1, Math.min(10, analyzedCandidates || 0));
-    const targetCount = dynamicTarget || Math.max(1, Math.min(10, rows.length || 1));
+    const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
+    const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+    const desiredTarget = targetClipCountForDuration(totalSeconds);
+    const targetCount = Math.max(1, desiredTarget);
 
     const now = Date.now();
     const createdAtMs = project.created_at ? new Date(project.created_at).getTime() : now;
@@ -100,6 +119,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
 
     console.log('[projects/progress] counts', {
       project_id: projectId,
+      transcript_seconds: totalSeconds,
       analyzed_candidates: analyzedCandidates,
       done_exports: doneExports,
       active_exports: activeExports,
