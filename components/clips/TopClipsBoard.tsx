@@ -134,7 +134,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
             return (
-              <article key={clip.exportId} className="group flex min-w-0 flex-col rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
+              <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
                 <div className="min-h-[96px] px-1 pb-2">
                   <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
