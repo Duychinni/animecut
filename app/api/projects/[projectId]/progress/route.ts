@@ -102,7 +102,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
-        .select('id, title, status, pipeline_status, pipeline_error, source_type, source_url, created_at, updated_at')
+        .select('id, title, status, pipeline_status, pipeline_error, source_type, source_url, source_duration_seconds, created_at, updated_at')
         .eq('id', projectId)
         .single(),
       supabase
@@ -133,7 +133,9 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
 
     const analyzedCandidates = Math.max(0, Number(candidateCount ?? 0));
     const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
-    const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+    const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+    const sourceDurationSeconds = Number((project as { source_duration_seconds?: number | null }).source_duration_seconds ?? 0);
+    const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
     const desiredTarget = targetClipCountForDuration(totalSeconds);
     const targetCount = Math.max(1, desiredTarget);
 

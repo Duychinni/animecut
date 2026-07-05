@@ -98,7 +98,7 @@ export default async function ProjectDetailPage({
   const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }, { data: transcriptRow }] = await Promise.all([
     supabase
       .from('projects')
-      .select('title, status, source_type, source_url, source_title, source_thumbnail_url, created_at')
+      .select('title, status, source_type, source_url, source_title, source_thumbnail_url, source_duration_seconds, created_at')
       .eq('id', projectId)
       .single(),
     supabase
@@ -158,7 +158,9 @@ export default async function ProjectDetailPage({
         : 'Untitled video';
 
   const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
-  const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+  const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+  const sourceDurationSeconds = Number(projectRow?.source_duration_seconds ?? 0);
+  const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
   const targetCount = Math.max(1, targetClipCountForDuration(totalSeconds));
   const doneExports = exportItems.filter((row) => row.status === 'done').length;
   const activeExports = exportItems.filter((row) => row.status === 'queued' || row.status === 'processing').length;
