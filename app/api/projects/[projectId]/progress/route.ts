@@ -88,6 +88,15 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const youtubeId = sourceUrl ? parseYouTubeId(sourceUrl) : null;
     const thumbnailUrl = youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null;
 
+    console.log('[projects/progress] counts', {
+      project_id: projectId,
+      analyzed_candidates: analyzedCandidates,
+      done_exports: doneExports,
+      active_exports: activeExports,
+      failed_exports: failedExports,
+      target_exports: targetCount,
+    });
+
     return NextResponse.json({
       ok: true,
       project: {

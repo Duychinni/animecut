@@ -281,6 +281,7 @@ export async function POST(req: Request) {
     const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 2);
 
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
+    const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
 
     const scoredCandidates = (parsed.candidates ?? [])
       .slice(0, candidateLimit)
@@ -344,9 +345,11 @@ export async function POST(req: Request) {
       .filter((c) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
       .filter((c) => Number(c.overall_score ?? 0) >= 6.2);
 
-    const deduped = [...scoredCandidates]
+    const filteredCandidates = scoredCandidates;
+
+    const deduped = [...filteredCandidates]
       .sort((a, b) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
-      .reduce<typeof scoredCandidates>((acc, cur) => {
+      .reduce<typeof filteredCandidates>((acc, cur) => {
         const curTitle = normalizeTitle(String(cur.title ?? ''));
         const isDuplicate = acc.some((picked) => {
           const pickedTitle = normalizeTitle(String(picked.title ?? ''));
@@ -366,6 +369,18 @@ export async function POST(req: Request) {
 
     const targetReturnCount = Math.min(deduped.length, Math.max(MIN_RETURN_CLIPS, targetClipCount));
     const ranked = deduped.slice(0, targetReturnCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
+
+    console.log('[analyze] counts', {
+      project_id,
+      transcript_seconds: Number(transcriptMaxEnd.toFixed(2)),
+      target_clip_count: targetClipCount,
+      minimum_candidate_pool: minimumCandidatePool,
+      candidate_limit: candidateLimit,
+      ai_returned: aiReturnedCount,
+      after_filtering: filteredCandidates.length,
+      after_dedupe: deduped.length,
+      final_ranked: ranked.length,
+    });
 
     const dbRows = ranked.map((item) => ({
       project_id: item.project_id,

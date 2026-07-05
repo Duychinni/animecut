@@ -176,7 +176,12 @@ export async function POST() {
     }));
   }
 
-  if (!workItems.length) return NextResponse.json({ ok: true, processed: 0 });
+  console.log('[jobs/process] queue snapshot', {
+    queued_jobs_fetched: (jobs ?? []).length,
+    work_items_selected: workItems.length,
+  });
+
+  if (!workItems.length) return NextResponse.json({ ok: true, processed: 0, counts: { queued_jobs_fetched: 0, work_items_selected: 0 } });
 
   let processed = 0;
   for (const item of workItems) {
@@ -246,5 +251,10 @@ export async function POST() {
     }
   }
 
-  return NextResponse.json({ ok: true, processed });
+  console.log('[jobs/process] results', {
+    work_items_selected: workItems.length,
+    processed,
+  });
+
+  return NextResponse.json({ ok: true, processed, counts: { work_items_selected: workItems.length, processed } });
 }

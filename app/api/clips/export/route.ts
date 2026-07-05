@@ -94,8 +94,15 @@ export async function POST(req: Request) {
         .slice(0, needed);
     }
 
+    console.log('[clips/export] counts', {
+      project_id,
+      requested_target_count: target_count ?? null,
+      resolved_target_count: targetCount,
+      selected_before_queue: selectedIds.length,
+    });
+
     if (!selectedIds.length) {
-      return NextResponse.json({ ok: true, queued: 0 });
+      return NextResponse.json({ ok: true, queued: 0, counts: { selected_before_queue: 0, resolved_target_count: targetCount } });
     }
 
     const rows = selectedIds.map((clip_candidate_id) => ({
@@ -133,7 +140,15 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, queued: rows.length });
+    return NextResponse.json({
+      ok: true,
+      queued: rows.length,
+      counts: {
+        resolved_target_count: targetCount,
+        selected_before_queue: selectedIds.length,
+        queued_exports: rows.length,
+      },
+    });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Export queue failed';
     return NextResponse.json({ error: message }, { status: 400 });
