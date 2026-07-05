@@ -235,7 +235,7 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={!canAnalyzeLink}
-                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-black uppercase tracking-[0.04em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Working...' : 'Get Clips'}
                 </button>
