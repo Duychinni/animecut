@@ -248,18 +248,14 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       type="button"
                       onClick={() => handleDownload(clip)}
                       disabled={downloadingId === clip.exportId}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="text-sm font-bold text-white transition hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-60"
                       aria-label="Download clip"
                       title="Download clip"
                     >
-                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 3v10" />
-                        <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
-                        <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
-                      </svg>
+                      {downloadingId === clip.exportId ? 'DOWNLOADING…' : 'DOWNLOAD'}
                     </button>
                   ) : (
-                    <div className="h-7 w-7" />
+                    <div />
                   )}
                 </div>
 
