@@ -264,6 +264,22 @@ export default function Home() {
                 Paste a link, let AnimaCut find the best moments, then download your top clips.
               </p>
 
+              <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10 bg-black/25 p-4">
+                <div className="relative h-[160px] overflow-hidden rounded-[18px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(255,123,216,0.18),transparent_45%),rgba(255,255,255,0.02)]">
+                  <div className="absolute left-4 top-4 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.2)] animate-[floaty_4.8s_ease-in-out_infinite]">
+                    1. Drop a video link
+                  </div>
+                  <div className="absolute right-6 top-12 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.2)] animate-[floaty_5.4s_ease-in-out_infinite_0.6s]">
+                    2. AI finds the best moments
+                  </div>
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.24)] animate-[floaty_5.1s_ease-in-out_infinite_0.2s]">
+                    3. Review and download your clips
+                  </div>
+                  <div className="absolute inset-y-0 left-[18%] w-px bg-gradient-to-b from-transparent via-white/15 to-transparent" />
+                  <div className="absolute inset-y-0 right-[22%] w-px bg-gradient-to-b from-transparent via-white/15 to-transparent" />
+                </div>
+              </div>
+
               <div className="mt-6 space-y-3">
                 {[
                   ['01', 'Paste a link or upload a file'],
