@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
+import { ProjectQuickStart } from '@/components/project/ProjectQuickStart';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
 
@@ -83,7 +84,7 @@ export default async function ProjectDetailPage({
   return (
     <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-        <h1 className="text-2xl font-bold">MAIN PROJECTS</h1>
+        <ProjectQuickStart />
 
         <div className="mt-5 flex flex-wrap gap-3">
           <PipelineRunner projectId={projectId} autoStart={autoStart} />
