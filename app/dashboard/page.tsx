@@ -168,7 +168,18 @@ export default function DashboardPage() {
 
   async function saveRename(projectId: string) {
     const nextTitle = renameDraft.trim();
-    if (!nextTitle) return;
+    const currentProject = recentProjects.find((p) => p.id === projectId);
+    const currentTitle = currentProject?.title?.trim() ?? '';
+
+    if (!nextTitle) {
+      cancelRename();
+      return;
+    }
+
+    if (nextTitle === currentTitle) {
+      cancelRename();
+      return;
+    }
 
     setMsg('Renaming project...');
 
@@ -187,8 +198,8 @@ export default function DashboardPage() {
       setRecentProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, title: nextTitle } : p)));
       setMsg('Project renamed.');
       cancelRename();
-    } finally {
-      if (renamingId !== projectId) return;
+    } catch {
+      setMsg('Rename failed: unknown');
     }
   }
 
