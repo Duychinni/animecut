@@ -181,8 +181,6 @@ export default function DashboardPage() {
       return;
     }
 
-    setMsg('Renaming project...');
-
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
         method: 'PATCH',
