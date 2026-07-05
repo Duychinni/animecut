@@ -96,7 +96,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     }
 
     await refreshProgress();
-    setLog('Analyzing top clips...');
+    setLog('Analyzing full transcript for exhaustive highlights...');
     const a = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

@@ -9,7 +9,7 @@ const MIN_CLIP_SEC = 15;
 const MAX_CLIP_SEC = 60;
 const IDEAL_MAX_SEC = 45;
 const EXPAND_SEC = 12;
-const SELF_CONTAINED_MIN_CONFIDENCE = 0.68;
+const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
 const MIN_RETURN_CLIPS = 5;
 
 function targetClipCountForDuration(totalSeconds: number) {
@@ -20,6 +20,15 @@ function targetClipCountForDuration(totalSeconds: number) {
   if (minutes <= 60) return 15;
   if (minutes <= 120) return 20;
   return 25;
+}
+
+function minCandidatePoolForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes < 5) return 20;
+  if (minutes <= 15) return 40;
+  if (minutes <= 30) return 60;
+  if (minutes <= 60) return 80;
+  return 100;
 }
 
 type TranscriptSegment = {
@@ -146,7 +155,10 @@ function normalizeTitle(t: string) {
 function isNearDuplicateWindow(aStart: number, aEnd: number, bStart: number, bEnd: number) {
   const overlap = Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
   const minDur = Math.max(1, Math.min(aEnd - aStart, bEnd - bStart));
-  return overlap / minDur >= 0.65;
+  const startDelta = Math.abs(aStart - bStart);
+  const endDelta = Math.abs(aEnd - bEnd);
+  const sameHookWindow = startDelta < 4 && endDelta < 4;
+  return sameHookWindow && overlap / minDur >= 0.82;
 }
 
 function adjustBoundaries(
@@ -265,7 +277,8 @@ export async function POST(req: Request) {
 
     const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
     const targetClipCount = targetClipCountForDuration(transcriptMaxEnd);
-    const candidateLimit = Math.max(MIN_RETURN_CLIPS * 2, targetClipCount * 2);
+    const minimumCandidatePool = minCandidatePoolForDuration(transcriptMaxEnd);
+    const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 2);
 
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
 
@@ -328,8 +341,8 @@ export async function POST(req: Request) {
           passes_quality: passesQuality,
         };
       })
-      .filter((c) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE && c.passes_quality)
-      .filter((c) => Number(c.overall_score ?? 0) >= 7);
+      .filter((c) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
+      .filter((c) => Number(c.overall_score ?? 0) >= 6.2);
 
     const deduped = [...scoredCandidates]
       .sort((a, b) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
