@@ -217,8 +217,8 @@ export default function Home() {
             Paste a link or upload a file to turn videos into shorts and instantly go viral.
           </p>
 
-          <div className="mx-auto mt-8 w-full max-w-3xl rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-sm md:p-5">
-            <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-white/12 bg-black/30 p-2">
+          <div className="mx-auto mt-8 w-full max-w-3xl">
+            <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
               <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
                 <input
                   type="url"
