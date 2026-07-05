@@ -48,7 +48,7 @@ export function ProjectQuickStart({ compact = false }: Props) {
         <input
           type="url"
           name="sourceUrl"
-          placeholder="Paste YouTube link..."
+          placeholder="Drop a video link"
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
           className="h-8 min-w-0 flex-1 bg-transparent px-3 text-sm text-white placeholder:text-white/35 outline-none"
