@@ -145,10 +145,9 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#07070b] text-white">
+    <main className="min-h-screen bg-[#0a0a0f] text-white">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(124,92,255,0.16),transparent_28%),radial-gradient(circle_at_82%_16%,rgba(141,247,232,0.10),transparent_24%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.03),transparent_35%)]" />
-        <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:56px_56px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.05),transparent_26%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.03),transparent_35%)]" />
       </div>
 
       <div className="relative mx-auto max-w-6xl px-6 py-6">
@@ -168,7 +167,7 @@ export default function Home() {
             {userLabel ? (
               <>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
-                  <span aria-hidden className="text-[#8DF7E8] drop-shadow-[0_0_8px_rgba(141,247,232,0.75)]">✦</span>
+                  <span aria-hidden className="text-white/80">✦</span>
                   <span>{tokenBalance.toLocaleString()}</span>
                 </div>
                 <div className="group relative">
@@ -211,10 +210,10 @@ export default function Home() {
         </header>
 
         <section className="mx-auto mt-16 max-w-6xl text-center">
-          <p className="text-sm font-black tracking-[0.24em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">#1 AI CLIP TOOL</p>
+          <p className="text-sm font-black tracking-[0.24em] text-white/75 md:text-base">#1 AI CLIP TOOL</p>
           <h1 className="mt-4 text-5xl font-black uppercase leading-[0.95] tracking-[-0.04em] md:text-7xl">
             Turn one long video into
-            <span className="block bg-[linear-gradient(135deg,#ffffff_0%,#a9e8ff_40%,#9b8cff_100%)] bg-clip-text text-transparent">
+            <span className="block text-white">
               viral-ready clips.
             </span>
           </h1>
