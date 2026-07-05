@@ -31,8 +31,8 @@ export default function DashboardPage() {
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
 
-  async function loadProjects() {
-    setLoadingProjects(true);
+  async function loadProjects(initial = false) {
+    if (initial) setLoadingProjects(true);
     try {
       const res = await fetch('/api/projects');
       const data = await res.json();
@@ -42,32 +42,78 @@ export default function DashboardPage() {
       }
 
       const projects = ((data.projects ?? []) as ProjectListItem[]).slice(0, 24);
-      const enriched = await Promise.all(
-        projects.map(async (p) => {
+
+      if (initial || recentProjects.length === 0) {
+        const enriched = await Promise.all(
+          projects.map(async (p) => {
+            try {
+              const pr = await fetch(`/api/projects/${p.id}/progress`, { cache: 'no-store' });
+              const prData = await pr.json();
+              if (!pr.ok) return p;
+              return {
+                ...p,
+                thumbnail_url: prData?.project?.thumbnail_url ?? null,
+                progress_percent: Number(prData?.progress?.percent ?? 0),
+                eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
+              } as ProjectListItem;
+            } catch {
+              return p;
+            }
+          }),
+        );
+
+        hasProcessingRef.current = enriched.some((p) => {
+          const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
+          return pct < 100;
+        });
+
+        setRecentProjects(enriched);
+        return;
+      }
+
+      const nextMap = new Map(projects.map((p) => [p.id, p]));
+      const processingIds = recentProjects
+        .filter((p) => Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0)) < 100)
+        .map((p) => p.id);
+
+      const progressUpdates = await Promise.all(
+        processingIds.map(async (id) => {
           try {
-            const pr = await fetch(`/api/projects/${p.id}/progress`, { cache: 'no-store' });
+            const pr = await fetch(`/api/projects/${id}/progress`, { cache: 'no-store' });
             const prData = await pr.json();
-            if (!pr.ok) return p;
+            if (!pr.ok) return null;
             return {
-              ...p,
+              id,
               thumbnail_url: prData?.project?.thumbnail_url ?? null,
               progress_percent: Number(prData?.progress?.percent ?? 0),
               eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
-            } as ProjectListItem;
+            };
           } catch {
-            return p;
+            return null;
           }
         }),
       );
 
-      hasProcessingRef.current = enriched.some((p) => {
-        const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
-        return pct < 100;
-      });
+      setRecentProjects((prev) => {
+        const merged = projects.map((project) => {
+          const previous = prev.find((p) => p.id === project.id);
+          const update = progressUpdates.find((u) => u?.id === project.id);
+          return {
+            ...previous,
+            ...project,
+            ...(update ?? {}),
+          } as ProjectListItem;
+        });
 
-      setRecentProjects(enriched);
+        hasProcessingRef.current = merged.some((p) => {
+          const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
+          return pct < 100;
+        });
+
+        return merged;
+      });
     } finally {
-      setLoadingProjects(false);
+      if (initial) setLoadingProjects(false);
     }
   }
 
@@ -78,11 +124,11 @@ export default function DashboardPage() {
       await loadProjects();
     };
 
-    void loadProjects();
+    void loadProjects(true);
 
     const timer = setInterval(() => {
       void tick();
-    }, 5000);
+    }, 12000);
 
     return () => clearInterval(timer);
   }, []);
