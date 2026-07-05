@@ -35,7 +35,12 @@ export default async function ProjectDetailPage({
   const autoStart = autorun === '1' || autorun === 'true';
   const supabase = await createClient();
 
-  const [{ data: exportsRows }, { data: candidateRows }] = await Promise.all([
+  const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('title, source_type, source_url')
+      .eq('id', projectId)
+      .single(),
     supabase
       .from('exports')
       .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at')
@@ -80,9 +85,15 @@ export default async function ProjectDetailPage({
     }),
   );
 
+  const pageTitle = typeof projectRow?.title === 'string' && projectRow.title.trim().length ? projectRow.title.trim() : 'Untitled video';
+
   return (
     <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">
       <section>
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-white">{pageTitle}</h1>
+        </div>
+
         <div className="mt-5 flex flex-wrap gap-3">
           <PipelineRunner projectId={projectId} autoStart={autoStart} />
         </div>
