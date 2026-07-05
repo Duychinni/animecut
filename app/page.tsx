@@ -168,7 +168,7 @@ export default function Home() {
             {userLabel ? (
               <>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
-                  <span aria-hidden className="text-[#ff58c7] drop-shadow-[0_0_10px_rgba(255,88,199,0.8)]">✦</span>
+                  <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                   <span>{tokenBalance.toLocaleString()}</span>
                 </div>
                 <div className="group relative">
