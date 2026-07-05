@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #07070b;
+  --foreground: #ededed;
   --app-shell-bg: #07070b;
   --app-shell-overlay:
     radial-gradient(circle at top left, rgba(124, 92, 255, 0.16), transparent 28%),
@@ -22,7 +22,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #07070b;
     --foreground: #ededed;
   }
 }
