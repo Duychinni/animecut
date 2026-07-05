@@ -200,7 +200,7 @@ export default async function ProjectDetailPage({
                 <div className="relative bg-black">
                   {heroThumbnail ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={heroThumbnail} alt={pageTitle} className="h-full w-full object-cover opacity-80" />
+                    <img src={heroThumbnail} alt={pageTitle} className="h-full w-full object-cover brightness-110" />
                   ) : (
                     <div className="grid h-full min-h-[320px] place-items-center bg-white/5 text-sm text-white/50">Preparing preview...</div>
                   )}

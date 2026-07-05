@@ -135,7 +135,7 @@ export default function ProjectsPage() {
               <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
                 {p.thumbnail_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.thumbnail_url} alt={p.title} className="aspect-video w-full object-cover opacity-90" />
+                  <img src={p.thumbnail_url} alt={p.title} className="aspect-video w-full object-cover brightness-110" />
                 ) : (
                   <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
                 )}
