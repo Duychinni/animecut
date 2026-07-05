@@ -31,6 +31,7 @@ export default function DashboardPage() {
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'recent' | 'older' | 'az' | 'za'>('recent');
@@ -152,6 +153,33 @@ export default function DashboardPage() {
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
+
+  async function onRenameProject(projectId: string, currentTitle: string) {
+    const nextTitle = window.prompt('Rename project', currentTitle)?.trim();
+    if (!nextTitle || nextTitle === currentTitle) return;
+
+    setRenamingId(projectId);
+    setMsg('Renaming project...');
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: nextTitle }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg(`Rename failed: ${data.error || 'unknown'}`);
+        return;
+      }
+
+      setRecentProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, title: nextTitle } : p)));
+      setMsg('Project renamed.');
+    } finally {
+      setRenamingId(null);
+      setOpenMenuId(null);
+    }
+  }
 
   async function onDeleteProject(projectId: string) {
     const confirmed = window.confirm('Delete this project? This will remove its transcript, clips, and exports.');
@@ -307,7 +335,15 @@ export default function DashboardPage() {
                       </button>
 
                       {openMenuId === p.id ? (
-                        <div className="absolute bottom-full right-0 z-20 mb-2 w-32 rounded-lg border border-white/10 bg-[#111218] p-1 shadow-xl">
+                        <div className="absolute bottom-full right-0 z-20 mb-2 w-36 rounded-lg border border-white/10 bg-[#111218] p-1 shadow-xl">
+                          <button
+                            type="button"
+                            onClick={() => void onRenameProject(p.id, p.title)}
+                            disabled={renamingId === p.id}
+                            className="block w-full rounded-md px-3 py-2 text-left text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {renamingId === p.id ? 'Renaming...' : 'Rename'}
+                          </button>
                           <button
                             type="button"
                             onClick={() => void onDeleteProject(p.id)}
