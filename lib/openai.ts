@@ -50,54 +50,76 @@ async function parseJsonWithRepair(rawText: string) {
   }
 }
 
+import { getClipPolicy } from '@/lib/clip-policy';
+
 function minCandidatePoolForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes < 5) return 20;
-  if (minutes <= 15) return 40;
-  if (minutes <= 30) return 60;
-  if (minutes <= 60) return 80;
-  return 100;
+  return getClipPolicy(totalSeconds).candidateCount;
 }
 
-function buildPrompt(targetCandidates: number) {
-  return `You are a short-form clip selector for podcast/interview/talking-head content.
+function buildPrompt(targetCandidates: number, totalSeconds: number) {
+  const policy = getClipPolicy(totalSeconds);
 
-Core objective:
-Select complete, self-contained short clips that start and end naturally.
-Do NOT return random excerpts.
-You must search exhaustively and produce a LARGE candidate set before ranking.
-Do NOT stop after finding only a few good clips.
+  return `You are an expert short-form content editor for TikTok, Instagram Reels, Facebook Reels, and YouTube Shorts.
 
-Process (required):
-1) Candidate discovery:
-   - scan the entire provided transcript window
-   - find moments with strong hook, opinion, conflict, story beat, emotional punch, insight, humor, surprise, controversial claim, educational payoff, or high-energy delivery.
-2) Boundary cleanup:
-   - for each raw candidate, inspect nearby transcript lines.
-   - move start/end to natural speech boundaries.
-   - keep a short lead-in if needed for clarity.
-   - preserve payoff even if slightly longer.
-3) Exhaustive coverage:
-   - different start/end timestamps are different candidates.
-   - overlapping moments may still be valid if the hook point differs.
-   - do not reject clips just because they occur in the same conversation.
+GOAL:
+Do NOT generate random transcript snippets.
+Every final clip must feel like a complete short-form video with:
+Hook → Context → Main Content → Payoff → Natural Ending.
 
-Quality rules:
-- Must make sense to a new viewer with no prior context.
-- Must begin at a sentence/clause boundary (not mid-thought).
-- Avoid openings like: "and", "but", "so", "because", "then" unless still fully clear.
-- Must end after the point is complete and NOT on filler tails ("you know", "like", "so basically").
-- Favor complete thoughts over shortness.
+FULL-TRANSCRIPT REQUIREMENT:
+Analyze the ENTIRE transcript window.
+Do not stop after finding a few good clips.
+Generate MANY candidate clips first, then score/filter/rank them.
 
-Clip targets:
-- Default minimum is 20s.
-- Ideal range is 30-60s.
-- Maximum is 90s.
-- Only allow clips shorter than 20s if the moment is exceptionally strong, complete, and has a clean payoff.
-- Do NOT force every clip to the same duration.
-- Return AT LEAST ${targetCandidates} candidate clips if the transcript window contains them.
-- Do NOT limit yourself to only a few “best” clips.
+DISCOVER THESE MOMENT TYPES:
+- strong hooks
+- story beginnings
+- story endings
+- emotional moments
+- funny moments
+- arguments
+- debates
+- educational moments
+- personal experiences
+- curiosity gaps
+- surprising facts
+- strong opinions
+- controversial statements
+- high-energy conversations
+- statistics
+- quotes
+- advice
+- actionable tips
 
+CANDIDATE GENERATION RULES:
+- Use segment windows, not sentence-level snippets.
+- For each potential hook, start 3-8 seconds before the hook when helpful for context.
+- End 5-15 seconds after payoff when needed for a clean conclusion.
+- Prefer complete thought boundaries.
+- Avoid starting or ending mid-sentence.
+- Avoid openings like "And...", "So...", "But...", "Yeah..." unless absolutely necessary.
+- Reject filler-only dialogue.
+
+VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
+- Generate at least ${targetCandidates} candidate clips.
+- Target final clip range: ${policy.targetMin}-${policy.targetMax}, but never more than 20 final clips.
+- Expected clip length: ${policy.expectedMinSec}-${policy.expectedMaxSec} seconds.
+- Minimum clip length: ${policy.minSec} seconds.
+- Maximum clip length: ${policy.maxSec} seconds.
+- Only allow shorter-than-minimum clips if they are extremely strong and complete.
+
+SCORING SYSTEM:
+Score every candidate from 0-100 using:
+- Hook Strength: 25 points
+- Retention Potential: 20 points
+- Story Completeness: 20 points
+- Entertainment / Emotion: 15 points
+- Educational Value: 10 points
+- Speaker Energy: 10 points
+
+Only strong clips should survive filtering.
+
+REQUIRED OUTPUT:
 Return ONLY valid JSON in this exact shape:
 {
   "candidates": [
@@ -109,14 +131,14 @@ Return ONLY valid JSON in this exact shape:
       "adjusted_end": number,
       "duration_seconds": number,
       "reason_selected": string,
+      "reason_rejected": string | null,
       "boundary_adjustment_reason": string,
       "hook_strength": number,
-      "clarity_without_context": number,
-      "emotional_or_engagement_value": number,
-      "payoff_strength": number,
-      "natural_start": number,
-      "natural_end": number,
-      "rewatch_potential": number,
+      "retention_potential": number,
+      "story_completeness": number,
+      "entertainment_or_emotion": number,
+      "educational_value": number,
+      "speaker_energy": number,
       "overall_score": number,
       "standalone_confidence": number,
       "opening_line": string,
@@ -125,9 +147,9 @@ Return ONLY valid JSON in this exact shape:
   ]
 }
 
-Hard grounding rules:
+HARD GROUNDING RULES:
 - Use ONLY transcript-proven content.
-- Never invent people/events/quotes/facts.
+- Never invent people, events, quotes, or facts.
 - Timestamps must align to the transcript timeline.`;
 }
 
@@ -163,7 +185,7 @@ export async function analyzeClipCandidates(
 ) {
   const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
   const targetCandidates = minCandidatePoolForDuration(totalSeconds);
-  const prompt = buildPrompt(targetCandidates);
+  const prompt = buildPrompt(targetCandidates, totalSeconds);
 
   const chunked = segments.length ? chunkSegments(segments) : [];
   const allCandidates: unknown[] = [];

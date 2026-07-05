@@ -1,35 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { analyzeClipCandidates } from '@/lib/openai';
-import { overallScore } from '@/lib/scoring';
+import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 
 type RawCandidate = Record<string, string | number | null | undefined>;
 
-const MIN_CLIP_SEC = 20;
-const MAX_CLIP_SEC = 90;
-const IDEAL_MIN_SEC = 30;
-const IDEAL_MAX_SEC = 60;
+const GLOBAL_MAX_CLIP_SEC = 90;
 const EXPAND_SEC = 15;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
-const MIN_RETURN_CLIPS = 8;
-
-function targetClipCountForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes <= 5) return 5;
-  if (minutes <= 15) return 8;
-  if (minutes <= 30) return 10;
-  if (minutes <= 60) return 15;
-  return 20;
-}
-
-function minCandidatePoolForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes < 5) return 20;
-  if (minutes <= 15) return 40;
-  if (minutes <= 30) return 60;
-  if (minutes <= 60) return 80;
-  return 100;
-}
 
 type TranscriptSegment = {
   start?: number;
@@ -41,26 +19,26 @@ function num(v: string | number | null | undefined): number {
   return Number(v ?? 0);
 }
 
-function clamp10(value: number) {
+function clamp100(value: number) {
   if (!Number.isFinite(value)) return 0;
-  return Number(Math.max(0, Math.min(10, value)).toFixed(2));
+  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function normalizeWindow(startRaw: number, endRaw: number) {
+function normalizeWindow(startRaw: number, endRaw: number, minClipSec: number, maxClipSec: number) {
   const start = Math.max(0, Number.isFinite(startRaw) ? startRaw : 0);
-  let end = Number.isFinite(endRaw) ? endRaw : start + MIN_CLIP_SEC;
+  let end = Number.isFinite(endRaw) ? endRaw : start + minClipSec;
 
-  if (end <= start) end = start + MIN_CLIP_SEC;
+  if (end <= start) end = start + minClipSec;
 
   let duration = end - start;
-  if (duration < MIN_CLIP_SEC) {
-    end = start + MIN_CLIP_SEC;
-    duration = MIN_CLIP_SEC;
+  if (duration < minClipSec) {
+    end = start + minClipSec;
+    duration = minClipSec;
   }
 
-  if (duration > MAX_CLIP_SEC) {
-    end = start + MAX_CLIP_SEC;
-    duration = MAX_CLIP_SEC;
+  if (duration > maxClipSec) {
+    end = start + maxClipSec;
+    duration = maxClipSec;
   }
 
   return { start_sec: start, end_sec: end, duration_sec: duration };
@@ -117,19 +95,19 @@ function endsWithFiller(text: string): boolean {
   return /(\b(uh|um|like|you know|i mean|kinda|sorta|basically|anyway|so)\b[,.! ]*)$/.test(t);
 }
 
-function clampDurationWithSegments(startSec: number, endSec: number, segments: TranscriptSegment[]) {
+function clampDurationWithSegments(startSec: number, endSec: number, segments: TranscriptSegment[], minClipSec: number, maxClipSec: number) {
   let start = Math.max(0, startSec);
   let end = Math.max(start + 0.2, endSec);
 
   let duration = end - start;
-  if (duration < MIN_CLIP_SEC) {
-    const needed = MIN_CLIP_SEC - duration;
+  if (duration < minClipSec) {
+    const needed = minClipSec - duration;
     end += needed;
   }
 
   duration = end - start;
-  if (duration > MAX_CLIP_SEC) {
-    end = start + MAX_CLIP_SEC;
+  if (duration > maxClipSec) {
+    end = start + maxClipSec;
   }
 
   const maxSegmentEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
@@ -137,8 +115,8 @@ function clampDurationWithSegments(startSec: number, endSec: number, segments: T
     end = Math.min(end, maxSegmentEnd);
   }
 
-  if (end - start < MIN_CLIP_SEC) {
-    start = Math.max(0, end - MIN_CLIP_SEC);
+  if (end - start < minClipSec) {
+    start = Math.max(0, end - minClipSec);
   }
 
   return { start, end };
@@ -165,13 +143,15 @@ function adjustBoundaries(
   startRaw: number,
   endRaw: number,
   segments: TranscriptSegment[],
+  minClipSec: number,
+  maxClipSec: number,
 ): {
   start_sec: number;
   end_sec: number;
   reason: string;
   confidence: number;
 } {
-  const base = normalizeWindow(startRaw, endRaw);
+  const base = normalizeWindow(startRaw, endRaw, minClipSec, maxClipSec);
   if (!segments.length) {
     return {
       start_sec: base.start_sec,
@@ -228,7 +208,7 @@ function adjustBoundaries(
 
   const adjustedStart = segStart(segments[startIdx]);
   const adjustedEnd = segEnd(segments[endIdx]);
-  const clamped = clampDurationWithSegments(adjustedStart, adjustedEnd, segments);
+  const clamped = clampDurationWithSegments(adjustedStart, adjustedEnd, segments, minClipSec, maxClipSec);
 
   const startMoved = Math.abs(clamped.start - base.start_sec) >= 0.3;
   const endMoved = Math.abs(clamped.end - base.end_sec) >= 0.3;
@@ -276,9 +256,10 @@ export async function POST(req: Request) {
       );
 
     const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
-    const targetClipCount = targetClipCountForDuration(transcriptMaxEnd);
-    const minimumCandidatePool = minCandidatePoolForDuration(transcriptMaxEnd);
-    const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 2);
+    const policy = getClipPolicy(transcriptMaxEnd);
+    const targetClipCount = getTargetClipCount(transcriptMaxEnd);
+    const minimumCandidatePool = policy.candidateCount;
+    const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 3);
 
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
@@ -290,41 +271,37 @@ export async function POST(req: Request) {
         const rawEnd = num(c.raw_end ?? c.end_sec ?? c.adjusted_end);
         const modelAdjustedStart = num(c.adjusted_start ?? rawStart);
         const modelAdjustedEnd = num(c.adjusted_end ?? rawEnd);
-        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments);
+        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, policy.minSec, Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
 
         const openingLine = String(c.opening_line ?? openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const passesQuality = passesStandaloneQualityChecks(openingLine, closingLine);
 
-        const naturalStart = clamp10(num(c.natural_start) || (startsLikeNaturalBoundary(openingLine) ? 9 : 5.5));
-        const naturalEnd = clamp10(num(c.natural_end) || (endsSentence(closingLine) && !endsWithFiller(closingLine) ? 9 : 5));
+        const hookStrength = clamp100(num(c.hook_strength) || 0);
+        const retentionPotential = clamp100(num(c.retention_potential ?? c.rewatch_potential) || 0);
+        const storyCompleteness = clamp100(num(c.story_completeness ?? c.payoff_strength) || ((endsSentence(closingLine) && !endsWithFiller(closingLine)) ? 85 : 55));
+        const entertainmentOrEmotion = clamp100(num(c.entertainment_or_emotion ?? c.emotional_or_engagement_value ?? c.emotional_intensity) || 0);
+        const educationalValue = clamp100(num(c.educational_value) || 0);
+        const speakerEnergy = clamp100(num(c.speaker_energy) || 0);
 
-        const scored = {
-          hook_strength: clamp10(num(c.hook_strength)),
-          emotional_intensity: clamp10(num(c.emotional_or_engagement_value ?? c.emotional_intensity)),
-          clarity_without_context: clamp10(num(c.clarity_without_context)),
-          rewatch_potential: clamp10(num(c.rewatch_potential)),
-        };
-
-        const weightedOverall = Number(
-          (
-            scored.hook_strength * 0.22 +
-            scored.clarity_without_context * 0.26 +
-            naturalStart * 0.22 +
-            naturalEnd * 0.22 +
-            scored.rewatch_potential * 0.08
-          ).toFixed(2)
+        const weightedOverall = clamp100(
+          hookStrength * 0.25 +
+          retentionPotential * 0.20 +
+          storyCompleteness * 0.20 +
+          entertainmentOrEmotion * 0.15 +
+          educationalValue * 0.10 +
+          speakerEnergy * 0.10
         );
 
-        const qualityPenalty = passesQuality ? 0 : 1.2;
+        const qualityPenalty = passesQuality ? 0 : 14;
         const duration = cleaned.end_sec - cleaned.start_sec;
         const durationPenalty =
-          duration < 20 ? 1.6 :
-          duration < IDEAL_MIN_SEC ? 0.55 :
-          duration > IDEAL_MAX_SEC && duration <= MAX_CLIP_SEC ? 0.2 :
-          duration > MAX_CLIP_SEC ? 0.45 :
+          duration < policy.minSec ? 18 :
+          duration < policy.expectedMinSec ? 6 :
+          duration > policy.expectedMaxSec && duration <= policy.maxSec ? 3 :
+          duration > policy.maxSec ? 8 :
           0;
-        const confidenceBoost = cleaned.confidence >= 0.85 ? 0.35 : cleaned.confidence >= 0.75 ? 0.15 : 0;
+        const confidenceBoost = cleaned.confidence >= 0.85 ? 4 : cleaned.confidence >= 0.75 ? 2 : 0;
 
         return {
           project_id,
@@ -335,19 +312,22 @@ export async function POST(req: Request) {
           duration_seconds: Number(duration.toFixed(2)),
           title: String(c.title ?? `Clip ${idx + 1}`),
           reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${String(c.boundary_adjustment_reason ?? cleaned.reason)} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
-          self_contained_confidence: clamp10(num(c.standalone_confidence) || Number((cleaned.confidence * 10).toFixed(2))) / 10,
+          self_contained_confidence: Math.max(0, Math.min(1, num(c.standalone_confidence) || cleaned.confidence)),
           boundary_adjustment_reason: String(c.boundary_adjustment_reason ?? cleaned.reason),
           opening_line: openingLine,
           closing_line: closingLine,
-          natural_start: naturalStart,
-          natural_end: naturalEnd,
-          ...scored,
-          overall_score: clamp10((num(c.overall_score) || weightedOverall || overallScore(scored)) + confidenceBoost - qualityPenalty - durationPenalty),
+          hook_strength: hookStrength,
+          retention_potential: retentionPotential,
+          story_completeness: storyCompleteness,
+          entertainment_or_emotion: entertainmentOrEmotion,
+          educational_value: educationalValue,
+          speaker_energy: speakerEnergy,
+          overall_score: clamp100((num(c.overall_score) || weightedOverall) + confidenceBoost - qualityPenalty - durationPenalty),
           reject_reason: !passesQuality
             ? 'failed_quality_checks'
-            : duration < 20
+            : duration < policy.minSec
               ? 'duration_below_minimum'
-              : Number((num(c.overall_score) || weightedOverall || overallScore(scored)) + confidenceBoost - qualityPenalty - durationPenalty) < 6
+              : Number((num(c.overall_score) || weightedOverall) + confidenceBoost - qualityPenalty - durationPenalty) < 60
                 ? 'score_below_minimum'
                 : null,
           rank: idx + 1,
@@ -355,8 +335,8 @@ export async function POST(req: Request) {
         };
       })
       .filter((c) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
-      .filter((c) => (c.duration_seconds >= 20) || Number(c.overall_score ?? 0) >= 9.2)
-      .filter((c) => Number(c.overall_score ?? 0) >= 6);
+      .filter((c) => (c.duration_seconds >= policy.minSec) || Number(c.overall_score ?? 0) >= 92)
+      .filter((c) => Number(c.overall_score ?? 0) >= 60);
 
     const filteredCandidates = scoredCandidates;
 
@@ -395,9 +375,11 @@ export async function POST(req: Request) {
         start: c.start_sec,
         end: c.end_sec,
         duration: c.duration_seconds,
-        score: Math.round(Number(c.overall_score ?? 0) * 10),
+        score: Number(c.overall_score ?? 0),
         title: c.title,
+        reasonSelected: c.reason,
       })),
+      rejectedCandidates: (parsed.candidates ?? []).length - ranked.length,
     });
 
     const dbRows = ranked.map((item) => ({
@@ -406,11 +388,11 @@ export async function POST(req: Request) {
       end_sec: item.end_sec,
       title: item.title,
       reason: item.reason,
-      hook_strength: item.hook_strength,
-      emotional_intensity: item.emotional_intensity,
-      clarity_without_context: item.clarity_without_context,
-      rewatch_potential: item.rewatch_potential,
-      overall_score: item.overall_score,
+      hook_strength: Number((item.hook_strength ?? 0) / 10),
+      emotional_intensity: Number((item.entertainment_or_emotion ?? 0) / 10),
+      clarity_without_context: Number((item.story_completeness ?? 0) / 10),
+      rewatch_potential: Number((item.retention_potential ?? 0) / 10),
+      overall_score: Number((item.overall_score ?? 0) / 10),
       rank: item.rank,
     }));
 

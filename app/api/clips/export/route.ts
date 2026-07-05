@@ -1,14 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-
-function targetClipCountForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes <= 5) return 5;
-  if (minutes <= 15) return 7;
-  if (minutes <= 30) return 10;
-  if (minutes <= 60) return 15;
-  return 20;
-}
+import { getTargetClipCount } from '@/lib/clip-policy';
 
 export async function POST(req: Request) {
   try {
@@ -73,7 +65,7 @@ export async function POST(req: Request) {
 
         const segments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
         const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
-        const desired = targetClipCountForDuration(totalSeconds);
+        const desired = getTargetClipCount(totalSeconds);
         targetCount = Math.max(5, Math.min(desired, (topCandidates ?? []).length || desired));
       }
 
