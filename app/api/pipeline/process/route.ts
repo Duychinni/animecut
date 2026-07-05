@@ -1,22 +1,40 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-async function callInternalJson(path: string, body: Record<string, unknown>) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000';
-  const res = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    cache: 'no-store',
-  });
+function getInternalBaseUrls() {
+  return [
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    'http://127.0.0.1:3000',
+    'http://localhost:3000',
+  ].filter((v, i, arr): v is string => Boolean(v) && arr.indexOf(v) === i);
+}
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const message = typeof data?.error === 'string' ? data.error : `Pipeline step failed: ${path}`;
-    throw new Error(message);
+async function callInternalJson(path: string, body: Record<string, unknown>) {
+  let lastError: string | null = null;
+
+  for (const baseUrl of getInternalBaseUrls()) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        lastError = typeof data?.error === 'string' ? data.error : `Pipeline step failed: ${path}`;
+        continue;
+      }
+
+      return data;
+    } catch (error: unknown) {
+      lastError = error instanceof Error ? error.message : `Request failed for ${path}`;
+    }
   }
 
-  return data;
+  throw new Error(lastError || `Pipeline step failed: ${path}`);
 }
 
 export async function POST() {
@@ -59,16 +77,33 @@ export async function POST() {
 
       let idlePasses = 0;
       for (let i = 0; i < 10; i += 1) {
-        const processRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'}/api/jobs/process`, {
-          method: 'POST',
-          cache: 'no-store',
-        });
-        const processData = await processRes.json().catch(() => ({}));
-        if (!processRes.ok) {
-          throw new Error(typeof processData?.error === 'string' ? processData.error : 'Export processing failed');
+        let processed = 0;
+        let processOk = false;
+        let processError = 'Export processing failed';
+
+        for (const baseUrl of getInternalBaseUrls()) {
+          try {
+            const processRes = await fetch(`${baseUrl}/api/jobs/process`, {
+              method: 'POST',
+              cache: 'no-store',
+            });
+            const processData = await processRes.json().catch(() => ({}));
+            if (!processRes.ok) {
+              processError = typeof processData?.error === 'string' ? processData.error : 'Export processing failed';
+              continue;
+            }
+
+            processed = Number(processData?.processed ?? 0);
+            processOk = true;
+            break;
+          } catch (error: unknown) {
+            processError = error instanceof Error ? error.message : 'Export processing failed';
+          }
         }
 
-        const processed = Number(processData?.processed ?? 0);
+        if (!processOk) {
+          throw new Error(processError);
+        }
         if (processed === 0) {
           idlePasses += 1;
           if (idlePasses >= 3) break;
