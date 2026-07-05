@@ -220,6 +220,10 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
   const thumbnailUrl = progress?.project?.thumbnail_url;
 
+  if (isCompleted) {
+    return null;
+  }
+
   return (
     <div className="w-full">
       <span className="sr-only" aria-live="polite">{log}</span>
