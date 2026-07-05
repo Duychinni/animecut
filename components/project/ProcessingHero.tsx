@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type ProgressPayload = {
   project?: {
@@ -16,14 +17,6 @@ type ProgressPayload = {
   };
 };
 
-function fmtDuration(totalSec: number | null | undefined) {
-  if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
-  const s = Math.max(0, Math.round(totalSec));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}m ${String(r).padStart(2, '0')}s`;
-}
-
 function getProcessingLabel(status: string) {
   if (status === 'created') return 'Fetching video and preparing transcript';
   if (status === 'transcribed') return 'Transcript ready — finding the best moments';
@@ -32,14 +25,14 @@ function getProcessingLabel(status: string) {
   return 'Processing your video';
 }
 
-export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPercent, fallbackEtaSeconds, fallbackTargetCount }: {
+export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPercent, fallbackTargetCount }: {
   projectId: string;
   pageTitle: string;
   heroThumbnail: string | null;
   fallbackPercent: number;
-  fallbackEtaSeconds: number | null;
   fallbackTargetCount: number;
 }) {
+  const router = useRouter();
   const [data, setData] = useState<ProgressPayload | null>(null);
 
   useEffect(() => {
@@ -68,10 +61,15 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   }, [projectId]);
 
   const percent = Math.max(0, Math.min(100, Number(data?.progress?.percent ?? fallbackPercent)));
-  const etaSeconds = typeof data?.progress?.eta_seconds === 'number' ? data.progress.eta_seconds : fallbackEtaSeconds;
   const targetCount = Number(data?.progress?.target_exports ?? fallbackTargetCount);
   const status = String(data?.project?.status ?? 'created');
   const pipelineError = data?.project?.pipeline_error ?? null;
+
+  useEffect(() => {
+    if (status === 'completed' || percent >= 100) {
+      router.refresh();
+    }
+  }, [percent, router, status]);
 
   return (
     <div className="flex min-h-[68vh] w-full items-start justify-center">
@@ -105,7 +103,6 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
               <div>
                 <div className="mb-2 flex items-center justify-between text-sm text-white/70">
                   <span>{percent}% complete</span>
-                  <span>ETA {fmtDuration(etaSeconds)}</span>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, percent))}%` }} />

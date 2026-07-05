@@ -201,7 +201,6 @@ export default async function ProjectDetailPage({
             pageTitle={pageTitle}
             heroThumbnail={heroThumbnail}
             fallbackPercent={progressPercent}
-            fallbackEtaSeconds={etaSeconds}
             fallbackTargetCount={targetCount}
           />
         ) : exportItems.length ? (
