@@ -178,22 +178,18 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       Your browser does not support the video tag.
                     </video>
 
-                    <button
-                      type="button"
-                      onClick={() => togglePlay(clip.exportId)}
-                      className="absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
-                      aria-label={paused ? 'Play clip' : 'Pause clip'}
-                    >
-                      {paused ? (
+                    {paused ? (
+                      <button
+                        type="button"
+                        onClick={() => togglePlay(clip.exportId)}
+                        className="absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
+                        aria-label="Play clip"
+                      >
                         <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
                           <path d="M8 5.5v13l10-6.5-10-6.5Z" />
                         </svg>
-                      ) : (
-                        <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
-                          <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
-                        </svg>
-                      )}
-                    </button>
+                      </button>
+                    ) : null}
 
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8">
                       <div className="relative mb-3 h-[2px] w-full bg-white/25">
