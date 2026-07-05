@@ -1,8 +1,29 @@
 import { spawn } from 'node:child_process';
-import { mkdir, readdir } from 'node:fs/promises';
+import { access, mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
-function run(command: string, args: string[]) {
+async function resolveYtDlpBinary() {
+  const candidates = [
+    process.env.YT_DLP_PATH,
+    path.join(process.env.HOME || '', '.local', 'bin', 'yt-dlp'),
+    '/opt/homebrew/bin/yt-dlp',
+    'yt-dlp',
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    if (candidate === 'yt-dlp') return candidate;
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // keep checking
+    }
+  }
+
+  return 'yt-dlp';
+}
+
+async function run(command: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
     const p = spawn(command, args);
     let stderr = '';
@@ -21,8 +42,9 @@ export async function downloadYouTubeAudio(url: string, projectId: string) {
   const dir = path.join(process.cwd(), 'tmp', 'ingest', projectId);
   await mkdir(dir, { recursive: true });
   const outTemplate = path.join(dir, 'source.%(ext)s');
+  const ytDlp = await resolveYtDlpBinary();
 
-  await run('yt-dlp', ['-x', '--audio-format', 'mp3', '-o', outTemplate, url]);
+  await run(ytDlp, ['-x', '--audio-format', 'mp3', '-o', outTemplate, url]);
 
   const files = await readdir(dir);
   const file = files.find((f) => f.startsWith('source.'));
@@ -34,8 +56,9 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
   const dir = path.join(process.cwd(), 'tmp', 'ingest', projectId);
   await mkdir(dir, { recursive: true });
   const outPath = path.join(dir, 'source.mp4');
+  const ytDlp = await resolveYtDlpBinary();
 
-  await run('yt-dlp', ['-f', 'mp4/bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '-o', outPath, url]);
+  await run(ytDlp, ['-f', 'mp4/bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '-o', outPath, url]);
 
   return outPath;
 }
