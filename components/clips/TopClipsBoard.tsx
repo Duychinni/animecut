@@ -178,10 +178,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       Your browser does not support the video tag.
                     </video>
 
-                    <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-normal tracking-normal text-white shadow-sm">
-                      {currentLabel} / {totalLabel}
-                    </div>
-
                     <button
                       type="button"
                       onClick={() => togglePlay(clip.exportId)}
