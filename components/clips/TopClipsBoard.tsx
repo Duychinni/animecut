@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 type ClipItem = {
   exportId: string;
@@ -20,6 +20,13 @@ type Props = {
   clips: ClipItem[];
 };
 
+type PlaybackState = {
+  current: number;
+  duration: number;
+  paused: boolean;
+  volume: number;
+};
+
 function formatDuration(startSec: number | null, endSec: number | null) {
   if (startSec == null || endSec == null) return null;
   const total = Math.max(0, Math.round(endSec - startSec));
@@ -35,7 +42,46 @@ function formatClock(totalSeconds: number) {
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [playback, setPlayback] = useState<Record<string, { current: number; duration: number }>>({});
+  const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
+  const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+
+  function updatePlayback(id: string, patch: Partial<PlaybackState>) {
+    setPlayback((prev) => ({
+      ...prev,
+      [id]: {
+        current: prev[id]?.current ?? 0,
+        duration: prev[id]?.duration ?? 0,
+        paused: prev[id]?.paused ?? true,
+        volume: prev[id]?.volume ?? 1,
+        ...patch,
+      },
+    }));
+  }
+
+  function togglePlay(id: string) {
+    const video = videoRefs.current[id];
+    if (!video) return;
+    if (video.paused) {
+      void video.play();
+    } else {
+      video.pause();
+    }
+  }
+
+  function handleSeek(id: string, value: number) {
+    const video = videoRefs.current[id];
+    if (!video) return;
+    video.currentTime = value;
+    updatePlayback(id, { current: value });
+  }
+
+  function handleVolume(id: string, value: number) {
+    const video = videoRefs.current[id];
+    if (!video) return;
+    video.volume = value;
+    video.muted = value === 0;
+    updatePlayback(id, { volume: value });
+  }
 
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
@@ -83,6 +129,9 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             const duration = playbackState?.duration ?? 0;
             const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
             const currentLabel = formatClock(current);
+            const paused = playbackState?.paused ?? true;
+            const volume = playbackState?.volume ?? 1;
+            const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
             return (
               <article key={clip.exportId} className="flex w-[285px] shrink-0 flex-col rounded-[22px] border border-white/10 bg-[#14151a] p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
@@ -91,42 +140,107 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 </div>
 
                 {clip.signedUrl ? (
-                  <div className="relative overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
-                    <video
-                      controls
-                      preload="metadata"
-                      className="aspect-[9/16] w-full bg-black object-cover"
-                      src={clip.signedUrl}
-                      onLoadedMetadata={(e) => {
-                        const v = e.currentTarget;
-                        setPlayback((prev) => ({
-                          ...prev,
-                          [clip.exportId]: { current: v.currentTime || 0, duration: v.duration || 0 },
-                        }));
-                      }}
-                      onTimeUpdate={(e) => {
-                        const v = e.currentTarget;
-                        setPlayback((prev) => ({
-                          ...prev,
-                          [clip.exportId]: {
+                  <div className="overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
+                    <div className="relative">
+                      <video
+                        ref={(el) => {
+                          videoRefs.current[clip.exportId] = el;
+                        }}
+                        preload="metadata"
+                        playsInline
+                        controls={false}
+                        disablePictureInPicture
+                        className="aspect-[9/16] w-full bg-black object-cover"
+                        src={clip.signedUrl}
+                        onLoadedMetadata={(e) => {
+                          const v = e.currentTarget;
+                          updatePlayback(clip.exportId, {
                             current: v.currentTime || 0,
-                            duration: v.duration || prev[clip.exportId]?.duration || 0,
-                          },
-                        }));
-                      }}
-                    >
-                      Your browser does not support the video tag.
-                    </video>
+                            duration: v.duration || 0,
+                            paused: v.paused,
+                            volume: v.volume ?? 1,
+                          });
+                        }}
+                        onTimeUpdate={(e) => {
+                          const v = e.currentTarget;
+                          updatePlayback(clip.exportId, {
+                            current: v.currentTime || 0,
+                            duration: v.duration || 0,
+                          });
+                        }}
+                        onPlay={() => updatePlayback(clip.exportId, { paused: false })}
+                        onPause={() => updatePlayback(clip.exportId, { paused: true })}
+                        onVolumeChange={(e) => {
+                          const v = e.currentTarget;
+                          updatePlayback(clip.exportId, { volume: v.muted ? 0 : v.volume });
+                        }}
+                        onClick={() => togglePlay(clip.exportId)}
+                      >
+                        Your browser does not support the video tag.
+                      </video>
 
-                    {clip.signedUrl ? (
                       <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-normal tracking-normal text-white shadow-sm">
                         {currentLabel} / {totalLabel}
                       </div>
-                    ) : durationLabel ? (
-                      <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/80 px-1.5 py-1 text-[10px] font-medium text-white">
-                        {durationLabel}
+                    </div>
+
+                    <div className="border-t border-white/10 bg-[#0f1014] px-3 py-3">
+                      <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+                        <div className="h-full rounded-full bg-red-500 transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
                       </div>
-                    ) : null}
+
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(duration, 0.1)}
+                        step="0.01"
+                        value={Math.min(current, duration || 0)}
+                        onChange={(e) => handleSeek(clip.exportId, Number(e.target.value))}
+                        className="-mt-3 h-3 w-full cursor-pointer appearance-none bg-transparent accent-red-500"
+                        aria-label="Seek clip"
+                      />
+
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => togglePlay(clip.exportId)}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-white transition hover:text-white/85"
+                            aria-label={paused ? 'Play clip' : 'Pause clip'}
+                          >
+                            {paused ? (
+                              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+                                <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+                              </svg>
+                            ) : (
+                              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+                                <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+                              </svg>
+                            )}
+                          </button>
+
+                          <span className="text-[11px] text-white/70">{currentLabel} / {totalLabel}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                          </svg>
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step="0.01"
+                            value={volume}
+                            onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
+                            className="h-1.5 w-16 cursor-pointer accent-white"
+                            aria-label="Clip volume"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex aspect-[9/16] w-full items-center justify-center rounded-[18px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
