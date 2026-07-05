@@ -130,13 +130,39 @@ function normalizeTitle(t: string) {
     .trim();
 }
 
+function normalizeLooseText(t: string) {
+  return t
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(and|but|so|yeah|well|like|you know|i mean)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function isNearDuplicateWindow(aStart: number, aEnd: number, bStart: number, bEnd: number) {
   const overlap = Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
   const minDur = Math.max(1, Math.min(aEnd - aStart, bEnd - bStart));
   const startDelta = Math.abs(aStart - bStart);
   const endDelta = Math.abs(aEnd - bEnd);
-  const sameHookWindow = startDelta < 4 && endDelta < 4;
-  return sameHookWindow && overlap / minDur >= 0.82;
+  const sameHookWindow = startDelta < 6 && endDelta < 6;
+  return sameHookWindow && overlap / minDur >= 0.5;
+}
+
+function hasStrongPayoff(text: string) {
+  const t = text.trim();
+  if (!t) return false;
+  if (!endsSentence(t)) return false;
+  return /(!|\?|\.|\bthat'?s why\b|\bthe point is\b|\bso the answer is\b|\bwhich means\b|\bthat means\b|\bthe result is\b|\bthe lesson is\b)/i.test(t);
+}
+
+function hookContextSignature(opening: string, closing: string) {
+  return `${normalizeLooseText(opening).slice(0, 80)}__${normalizeLooseText(closing).slice(0, 80)}`;
+}
+
+function expandWindowAroundMoment(startSec: number, endSec: number, segments: TranscriptSegment[], contextLeadSec: number, payoffTailSec: number) {
+  const start = Math.max(0, startSec - contextLeadSec);
+  const end = endSec + payoffTailSec;
+  return { start, end };
 }
 
 function adjustBoundaries(
@@ -161,8 +187,9 @@ function adjustBoundaries(
     };
   }
 
-  const expandedStart = Math.max(0, base.start_sec - EXPAND_SEC);
-  const expandedEnd = base.end_sec + EXPAND_SEC;
+  const smartExpansion = expandWindowAroundMoment(base.start_sec, base.end_sec, segments, 8, 15);
+  const expandedStart = Math.max(0, smartExpansion.start - EXPAND_SEC);
+  const expandedEnd = smartExpansion.end + EXPAND_SEC;
 
   const inRange = segments
     .map((seg, idx) => ({ seg, idx, start: segStart(seg), end: segEnd(seg), text: textOf(seg) }))
@@ -199,11 +226,12 @@ function adjustBoundaries(
     const curText = textOf(segments[i]);
     const sentenceDone = endsSentence(curText);
     const fillerTail = endsWithFiller(curText);
-    if (sentenceDone && !fillerTail) {
+    const payoffStrong = hasStrongPayoff(curText);
+    if ((sentenceDone && !fillerTail && payoffStrong) || (sentenceDone && !fillerTail && i >= endIdx + 1)) {
       endIdx = i;
       break;
     }
-    if (i > endIdx + 2) break;
+    if (i > endIdx + 4) break;
   }
 
   const adjustedStart = segStart(segments[startIdx]);
@@ -275,11 +303,12 @@ export async function POST(req: Request) {
 
         const openingLine = String(c.opening_line ?? openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
-        const passesQuality = passesStandaloneQualityChecks(openingLine, closingLine);
+        const payoffStrong = hasStrongPayoff(closingLine);
+        const passesQuality = passesStandaloneQualityChecks(openingLine, closingLine) && payoffStrong;
 
         const hookStrength = clamp100(num(c.hook_strength) || 0);
         const retentionPotential = clamp100(num(c.retention_potential ?? c.rewatch_potential) || 0);
-        const storyCompleteness = clamp100(num(c.story_completeness ?? c.payoff_strength) || ((endsSentence(closingLine) && !endsWithFiller(closingLine)) ? 85 : 55));
+        const storyCompleteness = clamp100(num(c.story_completeness ?? c.payoff_strength) || ((hasStrongPayoff(closingLine) && !endsWithFiller(closingLine)) ? 88 : 50));
         const entertainmentOrEmotion = clamp100(num(c.entertainment_or_emotion ?? c.emotional_or_engagement_value ?? c.emotional_intensity) || 0);
         const educationalValue = clamp100(num(c.educational_value) || 0);
         const speakerEnergy = clamp100(num(c.speaker_energy) || 0);
@@ -344,16 +373,19 @@ export async function POST(req: Request) {
       .sort((a, b) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
       .reduce<typeof filteredCandidates>((acc, cur) => {
         const curTitle = normalizeTitle(String(cur.title ?? ''));
+        const curSignature = hookContextSignature(String(cur.opening_line ?? ''), String(cur.closing_line ?? ''));
         const isDuplicate = acc.some((picked) => {
           const pickedTitle = normalizeTitle(String(picked.title ?? ''));
+          const pickedSignature = hookContextSignature(String(picked.opening_line ?? ''), String(picked.closing_line ?? ''));
           const sameTitle = curTitle.length > 10 && pickedTitle.length > 10 && curTitle === pickedTitle;
+          const sameStory = curSignature.length > 20 && pickedSignature.length > 20 && curSignature === pickedSignature;
           const sameWindow = isNearDuplicateWindow(
             Number(cur.start_sec ?? 0),
             Number(cur.end_sec ?? 0),
             Number(picked.start_sec ?? 0),
             Number(picked.end_sec ?? 0),
           );
-          return sameTitle || sameWindow;
+          return sameTitle || sameStory || sameWindow;
         });
 
         if (!isDuplicate) acc.push(cur);
