@@ -251,8 +251,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   </div>
                 )}
 
-                <div className="mt-3 flex min-h-[36px] items-center justify-between gap-2 px-1">
-                  <span className="text-lg font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
+                <div className="mt-2 flex min-h-[30px] items-center justify-between gap-2 px-1">
+                  <span className="text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
                   {clip.signedUrl ? (
                     <button
                       type="button"
@@ -273,9 +273,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   )}
                 </div>
 
-                <div className="min-h-[40px] px-1 pt-2">
-                  {clip.errorMessage ? <p className="text-xs text-red-300/90 line-clamp-2">Error: {clip.errorMessage}</p> : null}
-                </div>
+                {clip.errorMessage ? (
+                  <div className="px-1 pt-1">
+                    <p className="text-xs text-red-300/90 line-clamp-2">Error: {clip.errorMessage}</p>
+                  </div>
+                ) : null}
               </article>
             );
           })}
