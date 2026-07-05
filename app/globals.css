@@ -3,6 +3,14 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --app-shell-bg: #07070b;
+  --app-shell-overlay:
+    radial-gradient(circle at top left, rgba(124, 92, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 16%, rgba(141, 247, 232, 0.10), transparent 24%),
+    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.03), transparent 35%);
+  --app-grid-opacity: 0.05;
+  --app-accent: #8df7e8;
+  --app-accent-2: #7c5cff;
 }
 
 @theme inline {
@@ -19,8 +27,44 @@
   }
 }
 
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+.app-shell {
+  position: relative;
+  background: var(--app-shell-bg);
+  color: white;
+}
+
+.app-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--app-shell-overlay);
+}
+
+.app-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--app-grid-opacity);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
 }

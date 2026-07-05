@@ -59,7 +59,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const tokenBalance = getTokenBalance(user);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="app-shell min-h-screen text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-start justify-between gap-4 px-6 py-3">
           <div className="flex flex-col items-start gap-2 pt-1.5">
@@ -72,8 +72,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
           <ProjectQuickStart compact />
           <div className="flex items-center gap-3 pt-1.5">
-            <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white/85 md:inline-flex">
-              <span aria-hidden className="text-[#FFD54A] drop-shadow-[0_0_8px_rgba(255,213,74,0.75)]">✦</span>
+            <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 md:inline-flex">
+              <span aria-hidden className="text-[#8DF7E8] drop-shadow-[0_0_8px_rgba(141,247,232,0.75)]">✦</span>
               <span>{tokenBalance.toLocaleString()}</span>
             </div>
             <div className="group relative hidden md:block">
