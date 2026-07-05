@@ -55,7 +55,7 @@ export function ProjectQuickStart({ compact = false }: Props) {
         />
         <button
           type="submit"
-          disabled={loading || !sourceUrl.trim()}
+          disabled={loading}
           className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {loading ? '...' : 'Get Clips'}
