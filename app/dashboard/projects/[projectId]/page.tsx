@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
+import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
 
@@ -195,48 +196,14 @@ export default async function ProjectDetailPage({
         </div>
 
         {showProcessingHero ? (
-          <div className="flex min-h-[68vh] w-full items-start justify-center">
-            <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/10 bg-[#0d0f14] shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
-              <div className="grid min-h-[560px] lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="relative bg-black">
-                  {heroThumbnail ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={heroThumbnail} alt={pageTitle} className="h-full w-full object-cover brightness-110" />
-                  ) : (
-                    <div className="grid h-full min-h-[320px] place-items-center bg-white/5 text-sm text-white/50">Preparing preview...</div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-black/25 to-black/70" />
-                </div>
-
-                <div className="flex flex-col justify-center px-8 py-10 lg:px-10">
-                  <p className="text-sm uppercase tracking-[0.22em] text-white/45">Processing project</p>
-                  <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">{getProcessingLabel(effectiveStatus)}</h2>
-                  <p className="mt-3 max-w-md text-sm leading-6 text-white/60">
-                    We’re generating clips from this video now. Keep this page open if you want to watch progress, or come back when it’s done.
-                  </p>
-
-                  <div className="mt-8 space-y-4">
-                    <div>
-                      <div className="mb-2 flex items-center justify-between text-sm text-white/70">
-                        <span>{progressPercent}% complete</span>
-                        <span>ETA {fmtDuration(etaSeconds)}</span>
-                      </div>
-                      <div className="h-3 overflow-hidden rounded-full bg-white/10">
-                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, progressPercent))}%` }} />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 pt-2">
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Target reels created</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{targetCount}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ProcessingHero
+            projectId={projectId}
+            pageTitle={pageTitle}
+            heroThumbnail={heroThumbnail}
+            fallbackPercent={progressPercent}
+            fallbackEtaSeconds={etaSeconds}
+            fallbackTargetCount={targetCount}
+          />
         ) : exportItems.length ? (
           <TopClipsBoard
             projectId={projectId}
