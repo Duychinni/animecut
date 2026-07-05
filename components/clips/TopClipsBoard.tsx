@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { CAPTION_PRESETS } from '@/lib/caption-presets';
 
 type ClipItem = {
   exportId: string;
@@ -49,6 +50,9 @@ function formatDisplayScore(score: number) {
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
+  const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
+  const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+  const [applyingPreset, setApplyingPreset] = useState(false);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
@@ -116,193 +120,299 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     }
   }
 
+  async function applyPreset() {
+    if (!editingClip) return;
+    try {
+      setApplyingPreset(true);
+      const res = await fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ presetId: selectedPresetId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Could not apply preset');
+      setEditingClip(null);
+      window.location.reload();
+    } catch (error) {
+      console.error(error);
+      window.alert(error instanceof Error ? error.message : 'Could not apply preset');
+    } finally {
+      setApplyingPreset(false);
+    }
+  }
+
   const visible = useMemo(() => {
     return [...clips].sort((a, b) => b.score - a.score);
   }, [clips]);
 
+  const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0];
+
   return (
-    <section className="mt-6 space-y-3">
-      <h2 className="px-4 text-lg font-semibold">Top clips</h2>
+    <>
+      <section className="mt-6 space-y-3">
+        <h2 className="px-4 text-lg font-semibold">Top clips</h2>
 
-      {!visible.length && <p className="px-4 text-sm text-white/60">No clips yet.</p>}
+        {!visible.length && <p className="px-4 text-sm text-white/60">No clips yet.</p>}
 
-      <div className="px-4 pb-2">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3 xl:grid-cols-5">
-          {visible.slice(0, 10).map((clip) => {
-            const durationLabel = formatDuration(clip.startSec, clip.endSec);
-            const playbackState = playback[clip.exportId];
-            const current = playbackState?.current ?? 0;
-            const duration = playbackState?.duration ?? 0;
-            const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
-            const currentLabel = formatClock(current);
-            const paused = playbackState?.paused ?? true;
-            const volume = playbackState?.volume ?? 1;
-            const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
+        <div className="px-4 pb-2">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3 xl:grid-cols-5">
+            {visible.slice(0, 10).map((clip) => {
+              const durationLabel = formatDuration(clip.startSec, clip.endSec);
+              const playbackState = playback[clip.exportId];
+              const current = playbackState?.current ?? 0;
+              const duration = playbackState?.duration ?? 0;
+              const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
+              const currentLabel = formatClock(current);
+              const paused = playbackState?.paused ?? true;
+              const volume = playbackState?.volume ?? 1;
+              const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
-            return (
-              <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
-                <div className="min-h-[112px] px-1 pb-2">
-                  <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+              return (
+                <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
+                  <div className="min-h-[112px] px-1 pb-2">
+                    <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
-                  <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
-                    <span className="text-2xl font-extrabold tracking-tight text-lime-300">{formatDisplayScore(clip.score)}</span>
-                    <div className="flex items-center gap-5">
-                      <div className="group/edit relative">
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center text-white transition hover:text-white/90"
-                          aria-label="Edit clip"
-                        >
-                          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
-                          </svg>
-                        </button>
-                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/edit:opacity-100">
-                          Edit clip
-                        </span>
-                      </div>
-
-                      {clip.signedUrl ? (
-                        <div className="group/download relative">
+                    <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
+                      <span className="text-2xl font-extrabold tracking-tight text-lime-300">{formatDisplayScore(clip.score)}</span>
+                      <div className="flex items-center gap-5">
+                        <div className="group/edit relative">
                           <button
                             type="button"
-                            onClick={() => handleDownload(clip)}
-                            disabled={downloadingId === clip.exportId}
-                            className="inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
-                            aria-label="Download clip"
+                            onClick={() => {
+                              setEditingClip(clip);
+                              setSelectedPresetId(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+                            }}
+                            className="inline-flex items-center justify-center text-white transition hover:text-white/90"
+                            aria-label="Edit clip"
                           >
-                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M12 3v10" />
-                              <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
-                              <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
-                            Download clip
+                          <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/edit:opacity-100">
+                            Edit clip
                           </span>
                         </div>
-                      ) : null}
+
+                        {clip.signedUrl ? (
+                          <div className="group/download relative">
+                            <button
+                              type="button"
+                              onClick={() => handleDownload(clip)}
+                              disabled={downloadingId === clip.exportId}
+                              className="inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-label="Download clip"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M12 3v10" />
+                                <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
+                                <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
+                              Download clip
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
+
+                  {clip.signedUrl ? (
+                    <div className="flex justify-center bg-transparent px-2">
+                      <div className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22">
+                        <video
+                          ref={(el) => {
+                            videoRefs.current[clip.exportId] = el;
+                          }}
+                          preload="metadata"
+                          playsInline
+                          controls={false}
+                          disablePictureInPicture
+                          className="h-full w-full bg-black object-cover"
+                          src={clip.signedUrl}
+                          onLoadedMetadata={(e) => {
+                            const v = e.currentTarget;
+                            updatePlayback(clip.exportId, {
+                              current: v.currentTime || 0,
+                              duration: v.duration || 0,
+                              paused: v.paused,
+                              volume: v.volume ?? 1,
+                            });
+                          }}
+                          onTimeUpdate={(e) => {
+                            const v = e.currentTarget;
+                            updatePlayback(clip.exportId, {
+                              current: v.currentTime || 0,
+                              duration: v.duration || 0,
+                            });
+                          }}
+                          onPlay={() => updatePlayback(clip.exportId, { paused: false })}
+                          onPause={() => updatePlayback(clip.exportId, { paused: true })}
+                          onVolumeChange={(e) => {
+                            const v = e.currentTarget;
+                            updatePlayback(clip.exportId, { volume: v.muted ? 0 : v.volume });
+                          }}
+                          onClick={() => togglePlay(clip.exportId)}
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+
+                        {paused ? (
+                          <button
+                            type="button"
+                            onClick={() => togglePlay(clip.exportId)}
+                            className="absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
+                            aria-label="Play clip"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
+                              <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+                            </svg>
+                          </button>
+                        ) : null}
+
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8">
+                          <div className="relative mb-3 h-[2px] w-full bg-white/25">
+                            <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
+                            <div
+                              className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white"
+                              style={{ left: `calc(${progressPercent}% - 6px)` }}
+                            />
+                            <input
+                              type="range"
+                              min={0}
+                              max={Math.max(duration, 0.1)}
+                              step="0.01"
+                              value={Math.min(current, duration || 0)}
+                              onChange={(e) => handleSeek(clip.exportId, Number(e.target.value))}
+                              className="absolute inset-0 h-4 w-full -translate-y-1/2 cursor-pointer appearance-none bg-transparent opacity-0"
+                              aria-label="Seek clip"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/75" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                              </svg>
+                              <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step="0.01"
+                                value={volume}
+                                onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
+                                className="h-1.5 w-16 cursor-pointer accent-white"
+                                aria-label="Clip volume"
+                              />
+                            </div>
+
+                            <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
+                              {currentLabel} / {totalLabel}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-center px-2">
+                      <div className="flex aspect-[9/16] w-full max-w-[270px] items-center justify-center rounded-[8px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
+                        {clip.status === 'done' ? 'Video unavailable' : `Status: ${clip.status}`}
+                      </div>
+                    </div>
+                  )}
+
+                  {clip.errorMessage ? (
+                    <div className="px-1 pt-1">
+                      <p className="line-clamp-2 text-xs text-red-300/90">Error: {clip.errorMessage}</p>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {editingClip ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/55 backdrop-blur-sm">
+          <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-white/10 bg-[#0d0f14] shadow-[0_0_60px_rgba(0,0,0,0.5)]">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/40">Edit Clip</p>
+                <h3 className="mt-1 text-lg font-semibold text-white">{editingClip.title}</h3>
+              </div>
+              <button type="button" onClick={() => setEditingClip(null)} className="text-sm text-white/65 transition hover:text-white">
+                Close
+              </button>
+            </div>
+
+            <div className="grid flex-1 gap-0 lg:grid-cols-[0.95fr_1.05fr]">
+              <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
+                <div className="overflow-hidden rounded-[18px] border border-white/10 bg-black">
+                  {editingClip.signedUrl ? (
+                    <video src={editingClip.signedUrl} controls className="aspect-[9/16] w-full object-cover bg-black" />
+                  ) : (
+                    <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col p-6">
+                <div className="mb-5 flex gap-2 text-xs font-semibold text-white/60">
+                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-white">Presets</span>
+                  <span className="rounded-full border border-white/10 px-3 py-1.5">Font</span>
+                  <span className="rounded-full border border-white/10 px-3 py-1.5">Effects</span>
                 </div>
 
-                {clip.signedUrl ? (
-                  <div className="flex justify-center bg-transparent px-2">
-                    <div className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22">
-                    <video
-                      ref={(el) => {
-                        videoRefs.current[clip.exportId] = el;
-                      }}
-                      preload="metadata"
-                      playsInline
-                      controls={false}
-                      disablePictureInPicture
-                      className="h-full w-full bg-black object-cover"
-                      src={clip.signedUrl}
-                      onLoadedMetadata={(e) => {
-                        const v = e.currentTarget;
-                        updatePlayback(clip.exportId, {
-                          current: v.currentTime || 0,
-                          duration: v.duration || 0,
-                          paused: v.paused,
-                          volume: v.volume ?? 1,
-                        });
-                      }}
-                      onTimeUpdate={(e) => {
-                        const v = e.currentTarget;
-                        updatePlayback(clip.exportId, {
-                          current: v.currentTime || 0,
-                          duration: v.duration || 0,
-                        });
-                      }}
-                      onPlay={() => updatePlayback(clip.exportId, { paused: false })}
-                      onPause={() => updatePlayback(clip.exportId, { paused: true })}
-                      onVolumeChange={(e) => {
-                        const v = e.currentTarget;
-                        updatePlayback(clip.exportId, { volume: v.muted ? 0 : v.volume });
-                      }}
-                      onClick={() => togglePlay(clip.exportId)}
-                    >
-                      Your browser does not support the video tag.
-                    </video>
-
-                    {paused ? (
+                <div className="grid gap-3">
+                  {CAPTION_PRESETS.map((preset) => {
+                    const active = preset.id === selectedPresetId;
+                    return (
                       <button
+                        key={preset.id}
                         type="button"
-                        onClick={() => togglePlay(clip.exportId)}
-                        className="absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
-                        aria-label="Play clip"
+                        onClick={() => setSelectedPresetId(preset.id)}
+                        className={`rounded-2xl border px-4 py-4 text-left transition ${
+                          active ? 'border-white/25 bg-white/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                        }`}
                       >
-                        <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
-                          <path d="M8 5.5v13l10-6.5-10-6.5Z" />
-                        </svg>
-                      </button>
-                    ) : null}
-
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8">
-                      <div className="relative mb-3 h-[2px] w-full bg-white/25">
-                        <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
-                        <div
-                          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white"
-                          style={{ left: `calc(${progressPercent}% - 6px)` }}
-                        />
-                        <input
-                          type="range"
-                          min={0}
-                          max={Math.max(duration, 0.1)}
-                          step="0.01"
-                          value={Math.min(current, duration || 0)}
-                          onChange={(e) => handleSeek(clip.exportId, Number(e.target.value))}
-                          className="absolute inset-0 h-4 w-full -translate-y-1/2 cursor-pointer appearance-none bg-transparent opacity-0"
-                          aria-label="Seek clip"
-                        />
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/75" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                          </svg>
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step="0.01"
-                            value={volume}
-                            onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
-                            className="h-1.5 w-16 cursor-pointer accent-white"
-                            aria-label="Clip volume"
-                          />
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-white">{preset.name}</p>
+                            <p className="mt-1 text-xs text-white/60">{preset.captionFontFamily}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionTextColor }} />
+                            <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionHighlightColor }} />
+                          </div>
                         </div>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                        <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
-                          {currentLabel} / {totalLabel}
-                        </span>
-                      </div>
-                    </div>
-                    </div>
+                <div className="mt-auto pt-6">
+                  <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
+                    Applying <span className="font-semibold text-white">{activePreset?.name}</span> will re-render this MP4 with burned-in captions and save the preset to this clip.
                   </div>
-                ) : (
-                  <div className="flex justify-center px-2">
-                    <div className="flex aspect-[9/16] w-full max-w-[270px] items-center justify-center rounded-[8px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
-                      {clip.status === 'done' ? 'Video unavailable' : `Status: ${clip.status}`}
-                    </div>
-                  </div>
-                )}
-
-                {clip.errorMessage ? (
-                  <div className="px-1 pt-1">
-                    <p className="text-xs text-red-300/90 line-clamp-2">Error: {clip.errorMessage}</p>
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
+                  <button
+                    type="button"
+                    onClick={() => void applyPreset()}
+                    disabled={applyingPreset}
+                    className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {applyingPreset ? 'Applying...' : 'Apply'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+      ) : null}
+    </>
   );
 }
