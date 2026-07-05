@@ -46,6 +46,44 @@ function computeProgress(status: ProjectStatus, doneExports: number, targetCount
   return 5;
 }
 
+function estimateEtaSeconds(params: {
+  status: ProjectStatus;
+  elapsedSeconds: number;
+  doneExports: number;
+  activeExports: number;
+  targetCount: number;
+  transcriptSeconds: number;
+}) {
+  const { status, elapsedSeconds, doneExports, activeExports, targetCount, transcriptSeconds } = params;
+
+  if (status === 'completed') return 0;
+
+  const safeTarget = Math.max(1, targetCount);
+  const remainingExports = Math.max(0, safeTarget - doneExports);
+
+  if (status === 'created') {
+    const floor = Math.max(20, Math.round(transcriptSeconds * 0.18));
+    return Math.max(15, floor - Math.min(elapsedSeconds, floor - 15));
+  }
+
+  if (status === 'transcribed') {
+    const baseAnalyze = Math.max(18, Math.round(transcriptSeconds * 0.08));
+    const exportTail = remainingExports > 0 ? remainingExports * 28 : 0;
+    return baseAnalyze + exportTail;
+  }
+
+  if (status === 'analyzed') {
+    if (remainingExports <= 0) return activeExports > 0 ? 12 : 0;
+
+    const throughputPerExport = doneExports > 0 ? elapsedSeconds / doneExports : 0;
+    const boundedPerExport = throughputPerExport > 0 ? Math.max(12, Math.min(55, throughputPerExport)) : 28;
+    const parallelism = Math.max(1, activeExports || 1);
+    return Math.max(10, Math.round((remainingExports * boundedPerExport) / parallelism));
+  }
+
+  return null;
+}
+
 export async function GET(_: Request, context: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await context.params;
@@ -100,14 +138,14 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
     const progressPercent = isReallyCompleted ? 100 : computeProgress(effectiveStatus, doneExports, targetCount, elapsedSeconds);
 
-    // Rough ETA for UX only.
-    let etaSeconds: number | null = null;
-    if (effectiveStatus === 'created') etaSeconds = 180;
-    else if (effectiveStatus === 'transcribed') etaSeconds = 100;
-    else if (effectiveStatus === 'analyzed') {
-      const remaining = Math.max(0, targetCount - doneExports);
-      etaSeconds = remaining * 45;
-    } else if (effectiveStatus === 'completed') etaSeconds = 0;
+    const etaSeconds = estimateEtaSeconds({
+      status: effectiveStatus,
+      elapsedSeconds,
+      doneExports,
+      activeExports,
+      targetCount,
+      transcriptSeconds: totalSeconds,
+    });
 
     if (isReallyCompleted && project.status !== 'completed') {
       await supabase.from('projects').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', projectId);
