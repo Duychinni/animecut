@@ -49,8 +49,7 @@ function targetClipCountForDuration(totalSeconds: number) {
   if (minutes <= 15) return 7;
   if (minutes <= 30) return 10;
   if (minutes <= 60) return 15;
-  if (minutes <= 120) return 20;
-  return 25;
+  return 20;
 }
 
 function computeProgress(status: string, doneExports: number, targetCount: number, elapsedSeconds: number) {
