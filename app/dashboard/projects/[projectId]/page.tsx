@@ -183,9 +183,9 @@ export default async function ProjectDetailPage({
   const showProcessingHero = effectiveStatus !== 'completed';
 
   return (
-    <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">
-      <section>
-        <div className="mb-6 text-center">
+    <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
+      <section className="flex flex-col items-center">
+        <div className="mb-8 w-full max-w-5xl text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-white">{pageTitle}</h1>
         </div>
 
@@ -194,7 +194,7 @@ export default async function ProjectDetailPage({
         </div>
 
         {showProcessingHero ? (
-          <div className="mt-10 flex min-h-[68vh] items-center justify-center">
+          <div className="flex min-h-[68vh] w-full items-start justify-center">
             <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/10 bg-[#0d0f14] shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
               <div className="grid min-h-[560px] lg:grid-cols-[1.2fr_0.8fr]">
                 <div className="relative bg-black">
