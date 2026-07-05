@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
+import { ProjectQuickStart } from '@/components/project/ProjectQuickStart';
 
 type ProfileLike = { email?: string | null; user_metadata?: Record<string, unknown> | null };
 
@@ -60,13 +61,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-4">
             <HomeLogoLink />
             <Link href="/dashboard/projects" className="text-sm text-white/70 transition hover:text-white">
               Projects
             </Link>
           </div>
+          <ProjectQuickStart compact />
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white/85 md:inline-flex">
               <span aria-hidden className="text-[#FFD54A] drop-shadow-[0_0_8px_rgba(255,213,74,0.75)]">✦</span>
