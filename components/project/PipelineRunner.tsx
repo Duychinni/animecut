@@ -52,6 +52,15 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     }
   }, [projectId]);
 
+  const kickBackgroundProcessing = useCallback(async () => {
+    try {
+      await fetch('/api/pipeline/process', { method: 'POST' });
+      await fetch('/api/jobs/process', { method: 'POST' });
+    } catch {
+      // best effort only
+    }
+  }, []);
+
   useEffect(() => {
     if (progressPct >= 100) return;
 
@@ -59,6 +68,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
+      await kickBackgroundProcessing();
       await refreshProgress();
     };
 
@@ -70,7 +80,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [refreshProgress, progressPct]);
+  }, [kickBackgroundProcessing, refreshProgress, progressPct]);
 
   useEffect(() => {
     if (!autoStart || autoRanRef.current || loading) return;
@@ -93,6 +103,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
       }
 
       setLog('Pipeline queued. Reattaching to progress...');
+      await kickBackgroundProcessing();
       await refreshProgress();
       router.refresh();
     } finally {
