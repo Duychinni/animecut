@@ -158,7 +158,7 @@ export default function Home() {
         <header className="grid grid-cols-[260px_1fr_260px] items-center border-b border-white/10 pb-4">
           <HomeLogoLink />
 
-          <nav className="hidden items-center justify-center gap-8 text-sm text-white/75 md:flex">
+          <nav className="hidden items-center justify-center gap-8 text-sm text-white/90 md:flex">
             <Link href="#features" className="transition hover:text-white">Features</Link>
             <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
