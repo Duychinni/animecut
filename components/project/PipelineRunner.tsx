@@ -8,6 +8,8 @@ type ProgressPayload = {
     id: string;
     title: string;
     status: string;
+    pipeline_status?: string | null;
+    pipeline_error?: string | null;
     source_type: 'youtube' | 'upload' | string;
     source_url: string | null;
     thumbnail_url: string | null;
@@ -88,6 +90,19 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     void runPipeline();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
+
+  useEffect(() => {
+    if (autoRanRef.current || loading) return;
+    if (!progress?.project) return;
+
+    const isIdle = (progress.project.pipeline_status ?? 'idle') === 'idle';
+    const isNotDone = progress.project.status !== 'completed';
+
+    if (isIdle && isNotDone) {
+      autoRanRef.current = true;
+      void runPipeline();
+    }
+  }, [loading, progress]);
 
   async function runPipeline() {
     setLoading(true);
