@@ -184,65 +184,66 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       </div>
                     </div>
 
-                    <div className="border-t border-white/10 bg-[#0f1014] px-3 py-3">
-                      <div className="relative mb-2 h-1.5 w-full rounded-full bg-white/15">
-                        <div className="h-full rounded-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
+                    <div className="border-t border-white/10 bg-[#0f1014] px-3 pb-3 pt-2.5">
+                      <div className="relative mb-3 h-[2px] w-full bg-white/20">
+                        <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
                         <div
-                          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_2px_rgba(15,16,20,0.9)]"
+                          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white"
                           style={{ left: `calc(${progressPercent}% - 6px)` }}
+                        />
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(duration, 0.1)}
+                          step="0.01"
+                          value={Math.min(current, duration || 0)}
+                          onChange={(e) => handleSeek(clip.exportId, Number(e.target.value))}
+                          className="absolute inset-0 h-4 w-full -translate-y-1/2 cursor-pointer appearance-none bg-transparent opacity-0"
+                          aria-label="Seek clip"
                         />
                       </div>
 
-                      <input
-                        type="range"
-                        min={0}
-                        max={Math.max(duration, 0.1)}
-                        step="0.01"
-                        value={Math.min(current, duration || 0)}
-                        onChange={(e) => handleSeek(clip.exportId, Number(e.target.value))}
-                        className="-mt-3 h-3 w-full cursor-pointer appearance-none bg-transparent accent-white"
-                        aria-label="Seek clip"
-                      />
-
-                      <div className="mt-3 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
                           <button
                             type="button"
                             onClick={() => togglePlay(clip.exportId)}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-white transition hover:text-white/85"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-white/90"
                             aria-label={paused ? 'Play clip' : 'Pause clip'}
                           >
                             {paused ? (
-                              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
                                 <path d="M8 5.5v13l10-6.5-10-6.5Z" />
                               </svg>
                             ) : (
-                              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
                                 <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
                               </svg>
                             )}
                           </button>
 
-                          <span className="text-[11px] text-white/70 tabular-nums">{currentLabel} / {totalLabel}</span>
+                          <div className="flex items-center gap-2">
+                            <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/75" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                            </svg>
+                            <input
+                              type="range"
+                              min={0}
+                              max={1}
+                              step="0.01"
+                              value={volume}
+                              onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
+                              className="h-1.5 w-16 cursor-pointer accent-white"
+                              aria-label="Clip volume"
+                            />
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2.5">
-                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                          </svg>
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step="0.01"
-                            value={volume}
-                            onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
-                            className="h-1.5 w-16 cursor-pointer accent-white"
-                            aria-label="Clip volume"
-                          />
-                        </div>
+                        <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/75 tabular-nums">
+                          {currentLabel} / {totalLabel}
+                        </span>
                       </div>
                     </div>
                   </div>
