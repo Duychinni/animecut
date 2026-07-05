@@ -211,7 +211,7 @@ export default function Home() {
         </header>
 
         <section className="mx-auto mt-16 max-w-6xl text-center">
-          <p className="text-sm font-extrabold tracking-[0.2em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">EDITORIAL AI CLIP TOOL</p>
+          <p className="text-sm font-extrabold tracking-[0.2em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">#1 AI CLIP TOOL</p>
           <h1 className="mt-4 text-4xl font-bold leading-tight md:text-6xl">
             Turn one long video into multiple
             <span className="block bg-[linear-gradient(135deg,#ffffff_0%,#a9e8ff_40%,#9b8cff_100%)] bg-clip-text text-transparent">
