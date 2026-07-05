@@ -228,7 +228,7 @@ export default function Home() {
                 <input
                   type="url"
                   name="sourceUrl"
-                  placeholder="https://youtube.com/watch?v=..."
+                  placeholder="Drop a video link"
                   value={sourceUrl}
                   onChange={(e) => setSourceUrl(e.target.value)}
                   className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/40 outline-none ring-0 focus:border-[#8B7CFF]/60"
