@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'recent' | 'older' | 'az' | 'za'>('recent');
@@ -154,11 +155,21 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  async function onRenameProject(projectId: string, currentTitle: string) {
-    const nextTitle = window.prompt('Rename project', currentTitle)?.trim();
-    if (!nextTitle || nextTitle === currentTitle) return;
-
+  function beginRename(projectId: string, currentTitle: string) {
     setRenamingId(projectId);
+    setRenameDraft(currentTitle);
+    setOpenMenuId(null);
+  }
+
+  function cancelRename() {
+    setRenamingId(null);
+    setRenameDraft('');
+  }
+
+  async function saveRename(projectId: string) {
+    const nextTitle = renameDraft.trim();
+    if (!nextTitle) return;
+
     setMsg('Renaming project...');
 
     try {
@@ -175,9 +186,9 @@ export default function DashboardPage() {
 
       setRecentProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, title: nextTitle } : p)));
       setMsg('Project renamed.');
+      cancelRename();
     } finally {
-      setRenamingId(null);
-      setOpenMenuId(null);
+      if (renamingId !== projectId) return;
     }
   }
 
@@ -318,7 +329,21 @@ export default function DashboardPage() {
                 {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
 
                 <div className="mt-3">
-                  <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
+                  {renamingId === p.id ? (
+                    <input
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void saveRename(p.id);
+                        if (e.key === 'Escape') cancelRename();
+                      }}
+                      onBlur={() => void saveRename(p.id)}
+                      autoFocus
+                      className="w-full rounded-md border border-white/20 bg-white/[0.04] px-2 py-1 text-sm font-medium text-white outline-none"
+                    />
+                  ) : (
+                    <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
+                  )}
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
                       {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
@@ -338,11 +363,11 @@ export default function DashboardPage() {
                         <div className="absolute bottom-full right-0 z-20 mb-2 w-36 rounded-lg border border-white/10 bg-[#111218] p-1 shadow-xl">
                           <button
                             type="button"
-                            onClick={() => void onRenameProject(p.id, p.title)}
+                            onClick={() => beginRename(p.id, p.title)}
                             disabled={renamingId === p.id}
                             className="block w-full rounded-md px-3 py-2 text-left text-sm text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {renamingId === p.id ? 'Renaming...' : 'Rename'}
+                            Rename
                           </button>
                           <button
                             type="button"
