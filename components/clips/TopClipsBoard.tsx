@@ -185,8 +185,12 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     </div>
 
                     <div className="border-t border-white/10 bg-[#0f1014] px-3 py-3">
-                      <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-white/15">
+                      <div className="relative mb-2 h-1.5 w-full rounded-full bg-white/15">
                         <div className="h-full rounded-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
+                        <div
+                          className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_2px_rgba(15,16,20,0.9)]"
+                          style={{ left: `calc(${progressPercent}% - 6px)` }}
+                        />
                       </div>
 
                       <input
