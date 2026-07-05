@@ -62,7 +62,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="app-shell min-h-screen text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 py-6">
-          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4">
+          <div className="grid grid-cols-[260px_1fr_260px] items-center gap-4">
             <HomeLogoLink />
 
             <nav className="hidden items-center justify-center gap-8 text-sm text-white/75 md:flex">

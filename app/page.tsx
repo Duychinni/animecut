@@ -155,7 +155,7 @@ export default function Home() {
       </div>
 
       <div className="relative mx-auto max-w-6xl px-6 py-6">
-        <header className="grid grid-cols-[auto_1fr_auto] items-center border-b border-white/10 pb-4">
+        <header className="grid grid-cols-[260px_1fr_260px] items-center border-b border-white/10 pb-4">
           <HomeLogoLink />
 
           <nav className="hidden items-center justify-center gap-8 text-sm text-white/75 md:flex">
