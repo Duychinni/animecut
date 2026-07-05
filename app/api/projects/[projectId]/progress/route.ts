@@ -14,15 +14,25 @@ function parseYouTubeId(url: string): string | null {
   }
 }
 
-function computeProgress(status: ProjectStatus, doneExports: number, targetCount: number) {
+function computeProgress(status: ProjectStatus, doneExports: number, targetCount: number, elapsedSeconds: number) {
   const safeTarget = Math.max(1, targetCount);
 
   if (status === 'completed') return 100;
+
+  if (status === 'created') {
+    const early = Math.min(42, 10 + Math.floor(elapsedSeconds / 4));
+    return early;
+  }
+
+  if (status === 'transcribed') {
+    const mid = Math.min(62, 45 + Math.floor(elapsedSeconds / 6));
+    return mid;
+  }
+
   if (status === 'analyzed') {
     return Math.min(99, Math.round(65 + (doneExports / safeTarget) * 35));
   }
-  if (status === 'transcribed') return 55;
-  if (status === 'created') return 10;
+
   return 5;
 }
 
@@ -60,16 +70,16 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const dynamicTarget = Math.max(1, Math.min(10, analyzedCandidates || 0));
     const targetCount = dynamicTarget || Math.max(1, Math.min(10, rows.length || 1));
 
+    const now = Date.now();
+    const createdAtMs = project.created_at ? new Date(project.created_at).getTime() : now;
+    const elapsedSeconds = Math.max(0, Math.round((now - createdAtMs) / 1000));
+
     const isReallyCompleted =
       activeExports === 0 &&
       (doneExports >= targetCount || doneExports + failedExports >= targetCount || (rows.length > 0 && doneExports === rows.length));
 
     const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
-    const progressPercent = isReallyCompleted ? 100 : computeProgress(effectiveStatus, doneExports, targetCount);
-
-    const now = Date.now();
-    const createdAtMs = project.created_at ? new Date(project.created_at).getTime() : now;
-    const elapsedSeconds = Math.max(0, Math.round((now - createdAtMs) / 1000));
+    const progressPercent = isReallyCompleted ? 100 : computeProgress(effectiveStatus, doneExports, targetCount, elapsedSeconds);
 
     // Rough ETA for UX only.
     let etaSeconds: number | null = null;
