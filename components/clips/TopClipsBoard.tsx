@@ -182,6 +182,23 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       {currentLabel} / {totalLabel}
                     </div>
 
+                    <button
+                      type="button"
+                      onClick={() => togglePlay(clip.exportId)}
+                      className="absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
+                      aria-label={paused ? 'Play clip' : 'Pause clip'}
+                    >
+                      {paused ? (
+                        <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
+                          <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
+                          <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+                        </svg>
+                      )}
+                    </button>
+
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8">
                       <div className="relative mb-3 h-[2px] w-full bg-white/25">
                         <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
@@ -202,41 +219,22 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       </div>
 
                       <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => togglePlay(clip.exportId)}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-white/90"
-                            aria-label={paused ? 'Play clip' : 'Pause clip'}
-                          >
-                            {paused ? (
-                              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
-                                <path d="M8 5.5v13l10-6.5-10-6.5Z" />
-                              </svg>
-                            ) : (
-                              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
-                                <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
-                              </svg>
-                            )}
-                          </button>
-
-                          <div className="flex items-center gap-2">
-                            <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/75" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-                            </svg>
-                            <input
-                              type="range"
-                              min={0}
-                              max={1}
-                              step="0.01"
-                              value={volume}
-                              onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
-                              className="h-1.5 w-16 cursor-pointer accent-white"
-                              aria-label="Clip volume"
-                            />
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/75" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                          </svg>
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step="0.01"
+                            value={volume}
+                            onChange={(e) => handleVolume(clip.exportId, Number(e.target.value))}
+                            className="h-1.5 w-16 cursor-pointer accent-white"
+                            aria-label="Clip volume"
+                          />
                         </div>
 
                         <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
