@@ -212,7 +212,7 @@ export default function Home() {
 
         <section className="mx-auto mt-16 max-w-6xl text-center">
           <p className="text-sm font-black tracking-[0.24em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">#1 AI CLIP TOOL</p>
-          <h1 className="mt-4 text-[3.25rem] font-bold leading-[1.04] tracking-[-0.04em] md:text-[5.5rem]">
+          <h1 className="mt-4 font-[var(--font-hero-display)] text-[3.4rem] font-semibold leading-[0.98] tracking-[-0.025em] md:text-[5.8rem]">
             Turn one long video into
             <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#a9e8ff_40%,#9b8cff_100%)] bg-clip-text text-transparent">
               viral-ready clips.
