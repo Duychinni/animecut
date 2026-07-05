@@ -155,7 +155,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
                           </svg>
                         </button>
-                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2 py-1 text-[11px] text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
+                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
                           Download clip
                         </span>
                       </div>
