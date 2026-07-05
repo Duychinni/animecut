@@ -225,18 +225,10 @@ export default async function ProjectDetailPage({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3 pt-2">
+                    <div className="grid grid-cols-1 gap-3 pt-2">
                       <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Done</p>
-                        <p className="mt-2 text-2xl font-semibold text-white">{doneExports}</p>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Target</p>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Target reels created</p>
                         <p className="mt-2 text-2xl font-semibold text-white">{targetCount}</p>
-                      </div>
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Status</p>
-                        <p className="mt-2 text-lg font-semibold capitalize text-white">{effectiveStatus}</p>
                       </div>
                     </div>
                   </div>
