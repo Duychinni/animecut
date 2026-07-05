@@ -189,7 +189,7 @@ export default async function ProjectDetailPage({
           <h1 className="text-2xl font-semibold tracking-tight text-white">{pageTitle}</h1>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="sr-only">
           <PipelineRunner projectId={projectId} autoStart={autoStart} />
         </div>
 
