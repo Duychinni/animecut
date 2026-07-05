@@ -221,7 +221,7 @@ export default async function ProjectDetailPage({
                         <span>ETA {fmtDuration(etaSeconds)}</span>
                       </div>
                       <div className="h-3 overflow-hidden rounded-full bg-white/10">
-                        <div className="h-full rounded-full bg-white transition-all" style={{ width: `${Math.max(6, Math.min(100, progressPercent))}%` }} />
+                        <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, progressPercent))}%` }} />
                       </div>
                     </div>
 
