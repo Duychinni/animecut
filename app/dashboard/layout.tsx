@@ -61,44 +61,55 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="app-shell min-h-screen text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-start justify-between gap-4 px-6 py-3">
-          <div className="flex flex-col items-start gap-2 pt-1.5">
-            <div className="flex items-center gap-4">
-              <HomeLogoLink />
-              <Link href="/dashboard" className="text-sm text-white/70 transition hover:text-white">
+        <div className="mx-auto max-w-6xl px-6 py-6">
+          <div className="flex items-center justify-between gap-4">
+            <HomeLogoLink />
+
+            <nav className="hidden items-center gap-6 text-sm text-white/75 md:flex">
+              <Link href="/#how-it-works" className="transition hover:text-white">
+                How it works
+              </Link>
+              <Link href="/#features" className="transition hover:text-white">
+                Features
+              </Link>
+              <Link href="/dashboard" className="transition hover:text-white">
                 Dashboard
               </Link>
+            </nav>
+
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
+                <span aria-hidden className="text-[#8DF7E8] drop-shadow-[0_0_8px_rgba(141,247,232,0.75)]">✦</span>
+                <span>{tokenBalance.toLocaleString()}</span>
+              </div>
+              <div className="group relative">
+                {avatarUrl ? (
+                  <Image
+                    src={avatarUrl}
+                    alt={`${displayName} avatar`}
+                    title={displayName}
+                    width={32}
+                    height={32}
+                    className="h-8 w-8 rounded-full border border-white/20 object-cover"
+                  />
+                ) : (
+                  <div
+                    title={displayName}
+                    className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85"
+                  >
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="pointer-events-none absolute -bottom-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/20 bg-black/90 px-2 py-1 text-xs text-white/85 group-hover:block">
+                  {displayName}
+                </span>
+              </div>
+              <SignOutButton />
             </div>
           </div>
-          <ProjectQuickStart compact />
-          <div className="flex items-center gap-3 pt-1.5">
-            <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 md:inline-flex">
-              <span aria-hidden className="text-[#8DF7E8] drop-shadow-[0_0_8px_rgba(141,247,232,0.75)]">✦</span>
-              <span>{tokenBalance.toLocaleString()}</span>
-            </div>
-            <div className="group relative hidden md:block">
-              {avatarUrl ? (
-                <Image
-                  src={avatarUrl}
-                  alt={`${displayName} avatar`}
-                  title={displayName}
-                  width={32}
-                  height={32}
-                  className="h-8 w-8 rounded-full border border-white/20 object-cover"
-                />
-              ) : (
-                <div
-                  title={displayName}
-                  className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85"
-                >
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <span className="pointer-events-none absolute -bottom-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/20 bg-black/90 px-2 py-1 text-xs text-white/85 group-hover:block">
-                {displayName}
-              </span>
-            </div>
-            <SignOutButton />
+
+          <div className="mt-5 flex justify-center">
+            <ProjectQuickStart compact />
           </div>
         </div>
       </header>
