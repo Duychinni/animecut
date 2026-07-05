@@ -320,6 +320,15 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}
+
+              {showProcessing && percent > 0 ? (
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 pb-3 pt-8">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                    {percent}% processing
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
 
@@ -347,7 +356,6 @@ export default function DashboardPage() {
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
                       {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
-                      {showProcessing ? ` · ${percent}% processing` : ''}
                     </p>
 
                     <div className="relative shrink-0">
