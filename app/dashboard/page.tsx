@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<'recent' | 'older'>('recent');
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
 
@@ -156,11 +157,27 @@ export default function DashboardPage() {
     }
   }
 
+  const orderedProjects = [...recentProjects].sort((a, b) => {
+    const aTime = new Date(a.created_at).getTime();
+    const bTime = new Date(b.created_at).getTime();
+    return sortOrder === 'recent' ? bTime - aTime : aTime - bTime;
+  });
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-10">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="mt-1 text-sm text-white/60">Click a thumbnail to reopen its saved clips.</p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="mt-1 text-sm text-white/60">Click a thumbnail to reopen its saved clips.</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setSortOrder((prev) => (prev === 'recent' ? 'older' : 'recent'))}
+          className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.05]"
+        >
+          {sortOrder === 'recent' ? 'Recent' : 'Older'}
+        </button>
       </div>
 
       {msg ? <p className="mb-4 text-sm text-white/75">{msg}</p> : null}
@@ -169,7 +186,7 @@ export default function DashboardPage() {
       {!loadingProjects && !recentProjects.length && <p className="text-sm text-white/60">No projects yet.</p>}
 
       <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
-        {recentProjects.map((p) => {
+        {orderedProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = percent < 100;
 
