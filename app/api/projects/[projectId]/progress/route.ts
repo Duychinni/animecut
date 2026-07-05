@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
+type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
 
 function parseYouTubeId(url: string): string | null {
   try {
@@ -24,64 +25,73 @@ function targetClipCountForDuration(totalSeconds: number) {
   return 25;
 }
 
-function computeProgress(status: ProjectStatus, doneExports: number, targetCount: number, elapsedSeconds: number) {
+function computeProgress(params: {
+  status: ProjectStatus;
+  pipelineStatus: PipelineStatus;
+  elapsedSeconds: number;
+  hasTranscript: boolean;
+  analyzedCandidates: number;
+  doneExports: number;
+  activeExports: number;
+  targetCount: number;
+}) {
+  const { status, pipelineStatus, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount } = params;
   const safeTarget = Math.max(1, targetCount);
 
-  if (status === 'completed') return 100;
+  if (status === 'completed' || pipelineStatus === 'completed') return 100;
+  if (pipelineStatus === 'error') return Math.max(5, Math.min(95, doneExports > 0 ? 70 : 12));
 
-  if (status === 'created') {
-    const early = Math.min(42, 10 + Math.floor(elapsedSeconds / 4));
-    return early;
+  if (!hasTranscript) {
+    if (pipelineStatus === 'queued') return 8;
+    if (pipelineStatus === 'processing') return Math.min(34, 10 + Math.floor(elapsedSeconds / 3));
+    return Math.min(24, 6 + Math.floor(elapsedSeconds / 4));
   }
 
-  if (status === 'transcribed') {
-    const mid = Math.min(62, 45 + Math.floor(elapsedSeconds / 6));
-    return mid;
+  if (hasTranscript && analyzedCandidates === 0) {
+    return Math.min(64, 38 + Math.floor(elapsedSeconds / 8));
   }
 
-  if (status === 'analyzed') {
-    return Math.min(99, Math.round(65 + (doneExports / safeTarget) * 35));
-  }
-
-  return 5;
+  const exportProgress = doneExports / safeTarget;
+  const activeBoost = activeExports > 0 ? 4 : 0;
+  return Math.min(99, Math.round(68 + exportProgress * 28 + activeBoost));
 }
 
 function estimateEtaSeconds(params: {
   status: ProjectStatus;
+  pipelineStatus: PipelineStatus;
   elapsedSeconds: number;
+  hasTranscript: boolean;
+  analyzedCandidates: number;
   doneExports: number;
   activeExports: number;
   targetCount: number;
   transcriptSeconds: number;
 }) {
-  const { status, elapsedSeconds, doneExports, activeExports, targetCount, transcriptSeconds } = params;
+  const { status, pipelineStatus, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount, transcriptSeconds } = params;
 
-  if (status === 'completed') return 0;
+  if (status === 'completed' || pipelineStatus === 'completed') return 0;
+  if (pipelineStatus === 'queued') return Math.max(20, Math.round(transcriptSeconds * 0.2) || 45);
 
   const safeTarget = Math.max(1, targetCount);
   const remainingExports = Math.max(0, safeTarget - doneExports);
 
-  if (status === 'created') {
-    const floor = Math.max(20, Math.round(transcriptSeconds * 0.18));
-    return Math.max(15, floor - Math.min(elapsedSeconds, floor - 15));
+  if (!hasTranscript) {
+    const expected = Math.max(30, Math.round(transcriptSeconds * 0.18) || 120);
+    return Math.max(15, expected - Math.min(elapsedSeconds, expected - 15));
   }
 
-  if (status === 'transcribed') {
-    const baseAnalyze = Math.max(18, Math.round(transcriptSeconds * 0.08));
+  if (hasTranscript && analyzedCandidates === 0) {
+    const analyzeBudget = Math.max(20, Math.round(transcriptSeconds * 0.08) || 60);
     const exportTail = remainingExports > 0 ? remainingExports * 28 : 0;
-    return baseAnalyze + exportTail;
+    return Math.max(15, analyzeBudget + exportTail);
   }
 
-  if (status === 'analyzed') {
-    if (remainingExports <= 0) return activeExports > 0 ? 12 : 0;
+  if (remainingExports <= 0) return activeExports > 0 ? 10 : 0;
 
-    const throughputPerExport = doneExports > 0 ? elapsedSeconds / doneExports : 0;
-    const boundedPerExport = throughputPerExport > 0 ? Math.max(12, Math.min(55, throughputPerExport)) : 28;
-    const parallelism = Math.max(1, activeExports || 1);
-    return Math.max(10, Math.round((remainingExports * boundedPerExport) / parallelism));
-  }
-
-  return null;
+  const throughputPerExport = doneExports > 0 ? elapsedSeconds / doneExports : 0;
+  const boundedPerExport = throughputPerExport > 0 ? Math.max(12, Math.min(55, throughputPerExport)) : 28;
+  const parallelism = Math.max(1, activeExports || 1);
+  return Math.max(8, Math.round((remainingExports * boundedPerExport) / parallelism));
 }
 
 export async function GET(_: Request, context: { params: Promise<{ projectId: string }> }) {
@@ -136,11 +146,27 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       (doneExports >= targetCount || doneExports + failedExports >= targetCount || (rows.length > 0 && doneExports === rows.length));
 
     const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
-    const progressPercent = isReallyCompleted ? 100 : computeProgress(effectiveStatus, doneExports, targetCount, elapsedSeconds);
+    const pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
+    const hasTranscript = transcriptSegments.length > 0;
+    const progressPercent = isReallyCompleted
+      ? 100
+      : computeProgress({
+          status: effectiveStatus,
+          pipelineStatus,
+          elapsedSeconds,
+          hasTranscript,
+          analyzedCandidates,
+          doneExports,
+          activeExports,
+          targetCount,
+        });
 
     const etaSeconds = estimateEtaSeconds({
       status: effectiveStatus,
+      pipelineStatus,
       elapsedSeconds,
+      hasTranscript,
+      analyzedCandidates,
       doneExports,
       activeExports,
       targetCount,

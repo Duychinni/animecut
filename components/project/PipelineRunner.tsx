@@ -65,7 +65,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     void tick();
     timer = setInterval(() => {
       void tick();
-    }, 3000);
+    }, 1500);
 
     return () => {
       if (timer) clearInterval(timer);
