@@ -5,11 +5,11 @@
   --foreground: #f3f0ff;
   --app-shell-bg: #05050a;
   --app-shell-overlay:
-    radial-gradient(circle at 12% 22%, rgba(175, 78, 255, 0.30), transparent 26%),
-    radial-gradient(circle at 80% 24%, rgba(255, 83, 196, 0.22), transparent 24%),
-    radial-gradient(circle at 92% 38%, rgba(255, 170, 64, 0.18), transparent 18%),
-    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.04), transparent 36%);
-  --app-grid-opacity: 0.04;
+    radial-gradient(circle at 12% 22%, rgba(175, 78, 255, 0.16), transparent 26%),
+    radial-gradient(circle at 80% 24%, rgba(255, 83, 196, 0.12), transparent 24%),
+    radial-gradient(circle at 92% 38%, rgba(255, 170, 64, 0.08), transparent 18%),
+    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.025), transparent 36%);
+  --app-grid-opacity: 0.022;
   --app-accent: #ff58c7;
   --app-accent-2: #a855f7;
   --app-accent-3: #ffb347;
