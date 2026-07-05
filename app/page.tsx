@@ -211,14 +211,14 @@ export default function Home() {
         </header>
 
         <section className="mx-auto mt-16 max-w-6xl text-center">
-          <p className="text-sm font-extrabold tracking-[0.2em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">#1 AI CLIP TOOL</p>
-          <h1 className="mt-4 text-4xl font-bold leading-tight md:text-6xl">
-            Turn one long video into multiple
+          <p className="text-sm font-black tracking-[0.24em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">#1 AI CLIP TOOL</p>
+          <h1 className="mt-4 text-5xl font-black uppercase leading-[0.95] tracking-[-0.04em] md:text-7xl">
+            Turn one long video into
             <span className="block bg-[linear-gradient(135deg,#ffffff_0%,#a9e8ff_40%,#9b8cff_100%)] bg-clip-text text-transparent">
-              sharp, viral-ready clips.
+              viral-ready clips.
             </span>
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-white/70">
+          <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/70 md:text-base">
             Paste a link or upload a file to instantly test transcript scoring, hook-first ranking, and short-form clip ideas.
           </p>
 
@@ -236,7 +236,7 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={!canAnalyzeLink}
-                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-black uppercase tracking-[0.04em] text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Working...' : 'Get Clips'}
                 </button>
