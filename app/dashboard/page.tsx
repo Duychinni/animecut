@@ -195,40 +195,40 @@ export default function DashboardPage() {
 
           return (
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
+              <div className="min-w-0">
+                {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
 
-                  <div className="mt-3">
-                    <p className="line-clamp-2 font-medium text-white">{p.title}</p>
-                    <p className="mt-1 text-xs text-white/50">
+                <div className="mt-3">
+                  <p className="line-clamp-2 font-medium text-white">{p.title}</p>
+                  <div className="mt-1 flex items-end justify-between gap-3">
+                    <p className="text-xs text-white/50">
                       {p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
                     </p>
-                  </div>
-                </div>
 
-                <div className="relative shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setOpenMenuId((prev) => (prev === p.id ? null : p.id))}
-                    className="rounded-md border border-white/12 bg-white/[0.03] px-2 py-1 text-white/75 transition hover:border-white/25 hover:text-white"
-                    aria-label="Project options"
-                  >
-                    ⋯
-                  </button>
-
-                  {openMenuId === p.id ? (
-                    <div className="absolute right-0 top-full z-20 mt-2 w-32 rounded-lg border border-white/10 bg-[#111218] p-1 shadow-xl">
+                    <div className="relative shrink-0">
                       <button
                         type="button"
-                        onClick={() => void onDeleteProject(p.id)}
-                        disabled={deletingId === p.id}
-                        className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-200 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => setOpenMenuId((prev) => (prev === p.id ? null : p.id))}
+                        className="rounded-md border border-white/12 bg-white/[0.03] px-2 py-1 text-white/75 transition hover:border-white/25 hover:text-white"
+                        aria-label="Project options"
                       >
-                        {deletingId === p.id ? 'Deleting...' : 'Delete'}
+                        ⋯
                       </button>
+
+                      {openMenuId === p.id ? (
+                        <div className="absolute bottom-full right-0 z-20 mb-2 w-32 rounded-lg border border-white/10 bg-[#111218] p-1 shadow-xl">
+                          <button
+                            type="button"
+                            onClick={() => void onDeleteProject(p.id)}
+                            disabled={deletingId === p.id}
+                            className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-200 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {deletingId === p.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
+                  </div>
                 </div>
               </div>
             </div>
