@@ -8,6 +8,40 @@ function getErrorMessage(error: unknown): string {
   return 'Unknown error';
 }
 
+const renameProjectSchema = z.object({
+  title: z.string().min(1).max(200),
+});
+
+export async function PATCH(req: Request, context: { params: Promise<{ projectId: string }> }) {
+  try {
+    const { projectId } = await context.params;
+    const supabase = await createClient();
+
+    const { data: userRes } = await supabase.auth.getUser();
+    const user = userRes.user;
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const parsed = renameProjectSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid title' }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ title: parsed.data.title.trim() })
+      .eq('id', projectId)
+      .eq('user_id', user.id)
+      .select('id, title')
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, project: data });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 });
+  }
+}
+
 export async function DELETE(_: Request, context: { params: Promise<{ projectId: string }> }) {
   try {
     const { projectId } = await context.params;
