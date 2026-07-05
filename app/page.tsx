@@ -151,8 +151,8 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#05050a] text-white">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.22),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.16),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.12),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.04),transparent_36%)]" />
-        <div className="absolute inset-0 opacity-[0.035] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:56px_56px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.14),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.10),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.07),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.025),transparent_36%)]" />
+        <div className="absolute inset-0 opacity-[0.022] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:56px_56px]" />
       </div>
 
       <div className="relative mx-auto max-w-6xl px-6 py-6">
