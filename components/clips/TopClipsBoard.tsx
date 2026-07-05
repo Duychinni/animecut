@@ -136,17 +136,16 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             return (
               <article key={clip.exportId} className="group flex min-w-0 flex-col rounded-[18px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
                 <div className="min-h-[96px] px-1 pb-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
-                      <span className="mt-2 block text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
-                    </div>
+                  <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
                     {clip.signedUrl ? (
                       <button
                         type="button"
                         onClick={() => handleDownload(clip)}
                         disabled={downloadingId === clip.exportId}
-                        className="mt-1 -ml-2 inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="-ml-2 inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                         aria-label="Download clip"
                         title="Download clip"
                       >
