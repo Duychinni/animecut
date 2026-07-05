@@ -120,8 +120,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
       {!visible.length && <p className="text-sm text-white/60">No clips yet.</p>}
 
-      <div className="overflow-x-auto pb-2">
-        <div className="flex min-w-max gap-12 px-4">
+      <div className="px-4 pb-2">
+        <div className="flex flex-wrap gap-8">
           {visible.slice(0, 10).map((clip) => {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
             const playbackState = playback[clip.exportId];
