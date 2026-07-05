@@ -196,7 +196,7 @@ export default function DashboardPage() {
       }
 
       setRecentProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, title: nextTitle } : p)));
-      setMsg('Project renamed.');
+      setMsg('');
       cancelRename();
     } catch {
       setMsg('Rename failed: unknown');
