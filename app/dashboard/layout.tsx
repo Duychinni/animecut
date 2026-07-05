@@ -65,7 +65,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="flex flex-col items-start gap-2">
             <div className="flex items-center gap-4">
               <HomeLogoLink />
-              <Link href="/dashboard/projects" className="text-sm text-white/70 transition hover:text-white">
+              <Link href="/dashboard/projects" className="cursor-pointer text-sm text-white/70 transition hover:text-white">
                 Projects
               </Link>
             </div>
@@ -76,7 +76,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <span aria-hidden className="text-[#FFD54A] drop-shadow-[0_0_8px_rgba(255,213,74,0.75)]">✦</span>
               <span>{tokenBalance.toLocaleString()}</span>
             </div>
-            <div className="group relative hidden md:block">
+            <div className="group relative hidden cursor-pointer md:block">
               {avatarUrl ? (
                 <Image
                   src={avatarUrl}
