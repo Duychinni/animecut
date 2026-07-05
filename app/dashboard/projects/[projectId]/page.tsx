@@ -38,7 +38,7 @@ export default async function ProjectDetailPage({
   const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }] = await Promise.all([
     supabase
       .from('projects')
-      .select('title, source_type, source_url')
+      .select('title, source_type, source_url, source_title')
       .eq('id', projectId)
       .single(),
     supabase
@@ -85,7 +85,12 @@ export default async function ProjectDetailPage({
     }),
   );
 
-  const pageTitle = typeof projectRow?.title === 'string' && projectRow.title.trim().length ? projectRow.title.trim() : 'Untitled video';
+  const pageTitle =
+    typeof projectRow?.source_title === 'string' && projectRow.source_title.trim().length
+      ? projectRow.source_title.trim()
+      : typeof projectRow?.title === 'string' && projectRow.title.trim().length
+        ? projectRow.title.trim()
+        : 'Untitled video';
 
   return (
     <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">

@@ -18,6 +18,10 @@ type ProjectListItem = {
   source_type: 'youtube' | 'upload';
   source_url?: string | null;
   created_at: string;
+  source_title?: string | null;
+  source_thumbnail_url?: string | null;
+  source_channel_name?: string | null;
+  source_duration_seconds?: number | null;
   thumbnail_url?: string | null;
   progress_percent?: number;
   eta_seconds?: number | null;
@@ -34,6 +38,7 @@ export default function DashboardPage() {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'youtube' | 'upload'>('all');
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
+  const menuRootRef = useRef<HTMLDivElement | null>(null);
 
   async function loadProjects(initial = false) {
     if (initial) setLoadingProjects(true);
@@ -56,7 +61,7 @@ export default function DashboardPage() {
               if (!pr.ok) return p;
               return {
                 ...p,
-                thumbnail_url: prData?.project?.thumbnail_url ?? null,
+                thumbnail_url: prData?.project?.thumbnail_url ?? p.source_thumbnail_url ?? null,
                 progress_percent: Number(prData?.progress?.percent ?? 0),
                 eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
               } as ProjectListItem;
@@ -75,7 +80,6 @@ export default function DashboardPage() {
         return;
       }
 
-      const nextMap = new Map(projects.map((p) => [p.id, p]));
       const processingIds = recentProjects
         .filter((p) => Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0)) < 100)
         .map((p) => p.id);
@@ -137,6 +141,18 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    function onPointerDown(event: MouseEvent) {
+      if (!menuRootRef.current) return;
+      if (!menuRootRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
   async function onDeleteProject(projectId: string) {
     const confirmed = window.confirm('Delete this project? This will remove its transcript, clips, and exports.');
     if (!confirmed) return;
@@ -162,9 +178,7 @@ export default function DashboardPage() {
 
   const orderedProjects = [...recentProjects]
     .filter((p) => {
-      const matchesSearch = searchQuery.trim()
-        ? p.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
-        : true;
+      const matchesSearch = searchQuery.trim() ? (p.source_title || p.title).toLowerCase().includes(searchQuery.trim().toLowerCase()) : true;
 
       const percent = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
       const matchesStatus =
@@ -185,8 +199,8 @@ export default function DashboardPage() {
       const bTime = new Date(b.created_at).getTime();
       if (sortOrder === 'recent') return bTime - aTime;
       if (sortOrder === 'older') return aTime - bTime;
-      if (sortOrder === 'az') return a.title.localeCompare(b.title);
-      return b.title.localeCompare(a.title);
+      if (sortOrder === 'az') return (a.source_title || a.title).localeCompare(b.source_title || b.title);
+      return (b.source_title || b.title).localeCompare(a.source_title || a.title);
     });
 
   return (
@@ -245,16 +259,16 @@ export default function DashboardPage() {
       {loadingProjects && <p className="text-sm text-white/60">Loading projects...</p>}
       {!loadingProjects && !recentProjects.length && <p className="text-sm text-white/60">No projects yet.</p>}
 
-      <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
+      <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {orderedProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = percent < 100;
 
           const thumb = (
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
-              {p.thumbnail_url ? (
+              {p.thumbnail_url || p.source_thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.thumbnail_url} alt={p.title} className="aspect-video w-full object-cover" />
+                <img src={p.thumbnail_url || p.source_thumbnail_url || ''} alt={p.source_title || p.title} className="aspect-video w-full object-cover" />
               ) : (
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}
@@ -276,10 +290,10 @@ export default function DashboardPage() {
                 {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
 
                 <div className="mt-3">
-                  <p className="line-clamp-2 font-medium text-white">{p.title}</p>
+                  <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
-                      {p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
+                      {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
                     </p>
 
                     <div className="relative shrink-0">
