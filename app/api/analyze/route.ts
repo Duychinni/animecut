@@ -247,7 +247,7 @@ function adjustBoundaries(
   if (startsLikeNaturalBoundary(startText)) confidence += 0.14;
   if (endText && endsSentence(endText)) confidence += 0.14;
   if (!endsWithFiller(endText)) confidence += 0.08;
-  if (clamped.end - clamped.start >= 15 && clamped.end - clamped.start <= IDEAL_MAX_SEC) confidence += 0.08;
+  if (clamped.end - clamped.start >= minClipSec && clamped.end - clamped.start <= Math.min(maxClipSec, 60)) confidence += 0.08;
   confidence = Math.max(0, Math.min(1, Number(confidence.toFixed(2))));
 
   const reasons = [] as string[];
@@ -392,7 +392,7 @@ export async function POST(req: Request) {
         return acc;
       }, []);
 
-    const targetReturnCount = Math.min(deduped.length, Math.max(MIN_RETURN_CLIPS, targetClipCount));
+    const targetReturnCount = Math.min(deduped.length, targetClipCount);
     const ranked = deduped.slice(0, targetReturnCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
     console.log('[analyze] counts', {

@@ -61,7 +61,6 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   }, [projectId]);
 
   const percent = Math.max(0, Math.min(100, Number(data?.progress?.percent ?? fallbackPercent)));
-  const targetCount = Number(data?.progress?.target_exports ?? fallbackTargetCount);
   const status = String(data?.project?.status ?? 'created');
   const pipelineError = data?.project?.pipeline_error ?? null;
 
@@ -106,13 +105,6 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, percent))}%` }} />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 pt-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Target reels created</p>
-                  <p className="mt-2 text-2xl font-semibold text-white">{targetCount}</p>
                 </div>
               </div>
             </div>
