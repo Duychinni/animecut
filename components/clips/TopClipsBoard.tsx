@@ -140,7 +140,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 </div>
 
                 {clip.signedUrl ? (
-                  <div className="relative overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
+                  <div className="relative w-full max-w-[240px] overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
                     <video
                       ref={(el) => {
                         videoRefs.current[clip.exportId] = el;
@@ -149,7 +149,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       playsInline
                       controls={false}
                       disablePictureInPicture
-                      className="aspect-[9/16] w-full bg-black object-cover"
+                      className="aspect-[9/16] w-full max-w-[240px] bg-black object-cover"
                       src={clip.signedUrl}
                       onLoadedMetadata={(e) => {
                         const v = e.currentTarget;
