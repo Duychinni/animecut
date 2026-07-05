@@ -90,8 +90,9 @@ Quality rules:
 - Favor complete thoughts over shortness.
 
 Clip targets:
-- Prefer 8-45s based on the natural length of the complete thought (can go longer only if needed to preserve full thought).
+- Prefer 12-45s when possible, while still respecting the natural length of the complete thought (can go shorter only if the moment is genuinely complete and strong, and can go longer only if needed to preserve full thought).
 - Do NOT force every clip to the same duration.
+- Avoid over-selecting ultra-short 8-10s fragments unless they clearly stand alone and have strong payoff.
 - Return AT LEAST ${targetCandidates} candidate clips if the transcript window contains them.
 - Do NOT limit yourself to only a few “best” clips.
 

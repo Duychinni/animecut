@@ -317,7 +317,12 @@ export async function POST(req: Request) {
 
         const qualityPenalty = passesQuality ? 0 : 1.2;
         const duration = cleaned.end_sec - cleaned.start_sec;
-        const durationPenalty = duration > IDEAL_MAX_SEC ? 0.25 : 0;
+        const durationPenalty =
+          duration < 10 ? 1.15 :
+          duration < 12 ? 0.7 :
+          duration < 15 ? 0.35 :
+          duration > IDEAL_MAX_SEC ? 0.25 :
+          0;
         const confidenceBoost = cleaned.confidence >= 0.85 ? 0.35 : cleaned.confidence >= 0.75 ? 0.15 : 0;
 
         return {
