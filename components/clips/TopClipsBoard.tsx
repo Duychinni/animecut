@@ -40,6 +40,12 @@ function formatClock(totalSeconds: number) {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function formatDisplayScore(score: number) {
+  if (!Number.isFinite(score)) return '0.0';
+  const clamped = Math.max(0, Math.min(10, score));
+  return clamped.toFixed(1);
+}
+
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
@@ -139,7 +145,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
                   <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
-                    <span className="text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
+                    <span className="text-2xl font-extrabold tracking-tight text-lime-300">{formatDisplayScore(clip.score)}</span>
                     <div className="flex items-center gap-5">
                       <div className="group/edit relative">
                         <button
