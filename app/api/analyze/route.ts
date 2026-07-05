@@ -414,16 +414,18 @@ export async function POST(req: Request) {
       rejectedCandidates: (parsed.candidates ?? []).length - ranked.length,
     });
 
+    const toLegacyTenPoint = (value: number) => Math.max(1, Math.min(10, Math.round(value / 10)));
+
     const dbRows = ranked.map((item) => ({
       project_id: item.project_id,
       start_sec: item.start_sec,
       end_sec: item.end_sec,
       title: item.title,
       reason: item.reason,
-      hook_strength: Number((item.hook_strength ?? 0) / 10),
-      emotional_intensity: Number((item.entertainment_or_emotion ?? 0) / 10),
-      clarity_without_context: Number((item.story_completeness ?? 0) / 10),
-      rewatch_potential: Number((item.retention_potential ?? 0) / 10),
+      hook_strength: toLegacyTenPoint(Number(item.hook_strength ?? 0)),
+      emotional_intensity: toLegacyTenPoint(Number(item.entertainment_or_emotion ?? 0)),
+      clarity_without_context: toLegacyTenPoint(Number(item.story_completeness ?? 0)),
+      rewatch_potential: toLegacyTenPoint(Number(item.retention_potential ?? 0)),
       overall_score: Number((item.overall_score ?? 0) / 10),
       rank: item.rank,
     }));
