@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 
 type DemoStep = {
@@ -7,6 +8,9 @@ type DemoStep = {
   label: string;
   title: string;
   description: string;
+  image?: string;
+  imageAlt?: string;
+  images?: { src: string; alt: string }[];
   accent: string;
 };
 
@@ -16,6 +20,10 @@ const steps: DemoStep[] = [
     label: 'Upload',
     title: 'Paste a link or upload a source file',
     description: 'Start a project in seconds with a YouTube link or your own video.',
+    images: [
+      { src: '/demo/upload-demo-a.png', alt: 'Upload demo screen 1' },
+      { src: '/demo/upload-demo-b.png', alt: 'Upload demo screen 2' },
+    ],
     accent: 'from-fuchsia-500/25 via-pink-500/15 to-transparent',
   },
   {
@@ -23,6 +31,8 @@ const steps: DemoStep[] = [
     label: 'Processing',
     title: 'Watch AI find the strongest moments',
     description: 'Track progress while AnimaCut scans the transcript and builds top candidate clips.',
+    image: '/demo/processing-demo.png',
+    imageAlt: 'Processing demo screen',
     accent: 'from-violet-500/25 via-fuchsia-500/15 to-transparent',
   },
   {
@@ -45,7 +55,7 @@ export function DemoShowcase() {
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Product demo</p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">See exactly how AnimaCut works.</h2>
           <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
-            This section is ready for your real screenshots later. For now, it gives you the exact structure for a proper visual walkthrough.
+            Walk through the product flow from upload to processing. When you send the results screenshot, I’ll plug that in too.
           </p>
 
           <div className="mt-6 space-y-3">
@@ -98,22 +108,34 @@ export function DemoShowcase() {
             <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-[#0a0a10]">
               <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-xs text-white/45">
                 <span>{active.title}</span>
-                <span>Replace with your real screenshot</span>
+                <span>{active.id === 'results' ? 'Results screenshot coming next' : 'Live product screenshot'}</span>
               </div>
-              <div className={`relative aspect-[16/10] bg-gradient-to-br ${active.accent}`}>
-                <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04),transparent)]" />
-                <div className="absolute left-6 top-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80 shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
-                  {active.label} demo panel
+
+              {active.images?.length ? (
+                <div className="grid gap-3 bg-black p-3 sm:grid-cols-2">
+                  {active.images.map((image) => (
+                    <div key={image.src} className="relative overflow-hidden rounded-[16px] border border-white/10 bg-black">
+                      <div className="relative aspect-[16/10]">
+                        <Image src={image.src} alt={image.alt} fill className="object-cover" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="absolute left-6 right-6 top-24 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/60">
-                  Real screenshots will go here once you drop them into the component.
+              ) : active.image ? (
+                <div className="relative aspect-[16/10] bg-black">
+                  <Image src={active.image} alt={active.imageAlt || active.title} fill className="object-cover" />
                 </div>
-                <div className="absolute bottom-6 left-6 right-6 grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs text-white/65">Upload</div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs text-white/65">Processing</div>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs text-white/65">Results</div>
+              ) : (
+                <div className={`relative aspect-[16/10] bg-gradient-to-br ${active.accent}`}>
+                  <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04),transparent)]" />
+                  <div className="absolute left-6 top-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/80 shadow-[0_12px_30px_rgba(0,0,0,0.22)]">
+                    Results demo panel
+                  </div>
+                  <div className="absolute left-6 right-6 top-24 rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/60">
+                    Drop your results screenshot here next and I’ll wire it in.
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
