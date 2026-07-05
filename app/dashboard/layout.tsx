@@ -61,12 +61,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-4">
-            <HomeLogoLink />
-            <Link href="/dashboard/projects" className="text-sm text-white/70 transition hover:text-white">
-              Projects
-            </Link>
+        <div className="mx-auto flex max-w-6xl items-start justify-between gap-4 px-6 py-3">
+          <div className="flex flex-col items-start gap-2">
+            <div className="flex items-center gap-4">
+              <HomeLogoLink />
+              <Link href="/dashboard/projects" className="text-sm text-white/70 transition hover:text-white">
+                Projects
+              </Link>
+            </div>
           </div>
           <ProjectQuickStart compact />
           <div className="flex items-center gap-3">
