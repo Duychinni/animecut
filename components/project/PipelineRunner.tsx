@@ -110,10 +110,10 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     }
 
     await refreshProgress();
-    setLog('Queueing top clips (dynamic target 5–10)...');
+    setLog('Queueing Animacut smart clip set...');
     let totalProcessed = 0;
 
-    for (let round = 0; round < 4; round += 1) {
+    for (let round = 0; round < 8; round += 1) {
       const q = await fetch('/api/clips/export', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

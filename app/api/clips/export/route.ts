@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+function targetClipCountForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes <= 5) return 5;
+  if (minutes <= 15) return 7;
+  if (minutes <= 30) return 10;
+  if (minutes <= 60) return 15;
+  if (minutes <= 120) return 20;
+  return 25;
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -54,10 +64,18 @@ export async function POST(req: Request) {
       if (cErr) throw cErr;
 
       if (!(target_count > 0)) {
-        const goodCount = (topCandidates ?? []).filter((row) => Number(row.overall_score ?? 0) >= 8).length;
-        const fallbackCount = (topCandidates ?? []).filter((row) => Number(row.overall_score ?? 0) >= 7).length;
-        const inferred = goodCount >= 5 ? goodCount : fallbackCount;
-        targetCount = Math.max(5, Math.min(10, inferred || Math.min(10, (topCandidates ?? []).length || 5)));
+        const { data: transcriptRow } = await supabase
+          .from('transcripts')
+          .select('segments_json')
+          .eq('project_id', project_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        const segments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
+        const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+        const desired = targetClipCountForDuration(totalSeconds);
+        targetCount = Math.max(5, Math.min(desired, (topCandidates ?? []).length || desired));
       }
 
       const doneCount = (existingExports ?? []).filter((r) => r.status === 'done').length;

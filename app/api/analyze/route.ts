@@ -10,6 +10,17 @@ const MAX_CLIP_SEC = 60;
 const IDEAL_MAX_SEC = 45;
 const EXPAND_SEC = 12;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.68;
+const MIN_RETURN_CLIPS = 5;
+
+function targetClipCountForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes <= 5) return 5;
+  if (minutes <= 15) return 7;
+  if (minutes <= 30) return 10;
+  if (minutes <= 60) return 15;
+  if (minutes <= 120) return 20;
+  return 25;
+}
 
 type TranscriptSegment = {
   start?: number;
@@ -252,10 +263,14 @@ export async function POST(req: Request) {
         (s) => typeof s === 'object' && s !== null,
       );
 
+    const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
+    const targetClipCount = targetClipCountForDuration(transcriptMaxEnd);
+    const candidateLimit = Math.max(MIN_RETURN_CLIPS * 2, targetClipCount * 2);
+
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
 
     const scoredCandidates = (parsed.candidates ?? [])
-      .slice(0, 20)
+      .slice(0, candidateLimit)
       .map((c: RawCandidate, idx: number) => {
         const rawStart = num(c.raw_start ?? c.start_sec ?? c.adjusted_start);
         const rawEnd = num(c.raw_end ?? c.end_sec ?? c.adjusted_end);
@@ -334,10 +349,10 @@ export async function POST(req: Request) {
 
         if (!isDuplicate) acc.push(cur);
         return acc;
-      }, [])
-      .slice(0, 10);
+      }, []);
 
-    const ranked = deduped.map((item, idx) => ({ ...item, rank: idx + 1 }));
+    const targetReturnCount = Math.min(deduped.length, Math.max(MIN_RETURN_CLIPS, targetClipCount));
+    const ranked = deduped.slice(0, targetReturnCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
     const dbRows = ranked.map((item) => ({
       project_id: item.project_id,
