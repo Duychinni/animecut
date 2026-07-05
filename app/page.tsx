@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { DemoShowcase } from '@/components/home/DemoShowcase';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -255,70 +256,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="features" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
-          <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">How it works</p>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Turn long videos into short clips.</h2>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
-                Paste a link, let AnimaCut find the best moments, then download your top clips.
-              </p>
-
-              <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10 bg-black/25 p-4">
-                <div className="relative h-[160px] overflow-hidden rounded-[18px] border border-white/10 bg-[radial-gradient(circle_at_top,rgba(255,123,216,0.18),transparent_45%),rgba(255,255,255,0.02)]">
-                  <div className="absolute left-4 top-4 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.2)] animate-[floaty_4.8s_ease-in-out_infinite]">
-                    1. Drop a video link
-                  </div>
-                  <div className="absolute right-6 top-12 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white/75 shadow-[0_10px_30px_rgba(0,0,0,0.2)] animate-[floaty_5.4s_ease-in-out_infinite_0.6s]">
-                    2. AI finds the best moments
-                  </div>
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.24)] animate-[floaty_5.1s_ease-in-out_infinite_0.2s]">
-                    3. Review and download your clips
-                  </div>
-                  <div className="absolute inset-y-0 left-[18%] w-px bg-gradient-to-b from-transparent via-white/15 to-transparent" />
-                  <div className="absolute inset-y-0 right-[22%] w-px bg-gradient-to-b from-transparent via-white/15 to-transparent" />
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-3">
-                {[
-                  ['01', 'Paste a link or upload a file'],
-                  ['02', 'AI finds the best moments'],
-                  ['03', 'Review and download your clips'],
-                ].map(([num, text]) => (
-                  <div key={num} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                    <span className="text-sm font-black tracking-[0.18em] text-white/35">{num}</span>
-                    <p className="text-sm text-white/80">{text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffd84d]">What you get</p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                {[
-                  ['AI Clip Detection', ['Best moments', 'Viral hooks', 'Smart ranking']],
-                  ['Short-Form Ready', ['Natural boundaries', 'Reels-ready clips', 'Vertical-friendly outputs']],
-                  ['Project Workflow', ['Saved projects', 'Processing progress', 'Clip library']],
-                  ['Built for Speed', ['Less manual editing', 'Multiple clips fast', 'Quick downloads']],
-                ].map(([title, bullets]) => (
-                  <article key={title} className="rounded-2xl border border-white/10 bg-black/20 p-5">
-                    <h3 className="text-base font-semibold text-white">{title}</h3>
-                    <ul className="mt-3 space-y-2 text-sm text-white/70">
-                      {(bullets as string[]).map((item) => (
-                        <li key={item} className="flex gap-2">
-                          <span className="text-[#ffd84d]">•</span>
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
+        <DemoShowcase />
       </div>
     </main>
   );
