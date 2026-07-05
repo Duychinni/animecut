@@ -92,15 +92,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
         return;
       }
 
-      const process = await fetch('/api/pipeline/process', { method: 'POST' });
-      const processData = await process.json().catch(() => ({}));
-      if (!process.ok) {
-        setLog(`Pipeline failed: ${processData.error || 'unknown'}`);
-        setLoading(false);
-        return;
-      }
-
-      setLog('Pipeline running...');
+      setLog('Pipeline queued. Reattaching to progress...');
       await refreshProgress();
       router.refresh();
     } finally {

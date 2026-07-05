@@ -171,6 +171,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         id: project.id,
         title: project.title,
         status: effectiveStatus,
+        pipeline_status: (project as { pipeline_status?: string | null }).pipeline_status ?? null,
+        pipeline_error: (project as { pipeline_error?: string | null }).pipeline_error ?? null,
         source_type: project.source_type,
         source_url: sourceUrl,
         thumbnail_url: thumbnailUrl,

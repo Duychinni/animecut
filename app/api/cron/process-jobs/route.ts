@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { processJobs } from '@/workers/processJobs';
 
 export async function GET(req: Request) {
   const auth = req.headers.get('authorization') || '';
@@ -8,8 +9,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const base = process.env.APP_URL || new URL(req.url).origin;
-  const res = await fetch(`${base}/api/jobs/process`, { method: 'POST' });
-  const data = await res.json();
+  const data = await processJobs();
   return NextResponse.json({ ok: true, data });
 }
