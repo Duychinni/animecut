@@ -92,7 +92,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
-        .select('id, title, status, source_type, source_url, created_at, updated_at')
+        .select('id, title, status, pipeline_status, pipeline_error, source_type, source_url, created_at, updated_at')
         .eq('id', projectId)
         .single(),
       supabase

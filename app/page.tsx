@@ -84,6 +84,7 @@ export default function Home() {
         source_url: sourceUrl.trim(),
       });
 
+      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
       window.location.href = `/dashboard/projects/${projectId}?autorun=1`;
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
@@ -120,6 +121,7 @@ export default function Home() {
         throw new Error(upData?.error || 'Upload failed');
       }
 
+      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
       window.location.href = `/dashboard/projects/${projectId}?autorun=1`;
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not upload file';

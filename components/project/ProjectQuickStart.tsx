@@ -34,6 +34,7 @@ export function ProjectQuickStart({ compact = false }: Props) {
         source_url: sourceUrl.trim(),
       });
 
+      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
       window.location.href = `/dashboard/projects/${projectId}?autorun=1`;
     } catch (error) {
       console.error(error);

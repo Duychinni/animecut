@@ -81,141 +81,31 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
   async function runPipeline() {
     setLoading(true);
-    setLog('Transcribing...');
+    setLog('Starting pipeline...');
 
-    const t = await fetch('/api/transcribe', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ project_id: projectId }),
-    });
-    const tData = await t.json();
-    if (!t.ok) {
-      setLog(`Transcribe failed: ${tData.error || 'unknown'}`);
-      setLoading(false);
-      return;
-    }
-
-    await refreshProgress();
-    setLog('Analyzing full transcript for exhaustive highlights...');
-    const a = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ project_id: projectId }),
-    });
-    const aData = await a.json();
-    if (!a.ok) {
-      setLog(`Analyze failed: ${aData.error || 'unknown'}`);
-      setLoading(false);
-      return;
-    }
-
-    await refreshProgress();
-    setLog('Queueing Animacut smart clip set...');
-    let totalProcessed = 0;
-
-    for (let round = 0; round < 8; round += 1) {
-      const q = await fetch('/api/clips/export', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          project_id: projectId,
-        }),
-      });
-      const qData = await q.json();
-      if (!q.ok) {
-        setLog(`Queue failed: ${qData.error || 'unknown'}`);
+    try {
+      const start = await fetch(`/api/projects/${projectId}/start`, { method: 'POST' });
+      const startData = await start.json();
+      if (!start.ok) {
+        setLog(`Start failed: ${startData.error || 'unknown'}`);
         setLoading(false);
         return;
       }
 
-      setLog(`Rendering clips... (pass ${round + 1})`);
-      let idlePasses = 0;
-
-      for (let i = 0; i < 10; i += 1) {
-        const p = await fetch('/api/jobs/process', { method: 'POST' });
-        const pData = await p.json();
-        if (!p.ok) {
-          setLog(`Render failed: ${pData.error || 'unknown'}`);
-          setLoading(false);
-          return;
-        }
-
-        const processed = Number(pData.processed ?? 0);
-        totalProcessed += processed;
-        await refreshProgress();
-
-        if (processed === 0) {
-          idlePasses += 1;
-          if (idlePasses >= 3) break;
-          await new Promise((r) => setTimeout(r, 800));
-        } else {
-          idlePasses = 0;
-        }
+      const process = await fetch('/api/pipeline/process', { method: 'POST' });
+      const processData = await process.json().catch(() => ({}));
+      if (!process.ok) {
+        setLog(`Pipeline failed: ${processData.error || 'unknown'}`);
+        setLoading(false);
+        return;
       }
 
-      if (Number(qData.queued ?? 0) === 0) {
-        break;
-      }
-    }
-
-    // Final drain: keep draining while there are still active/incomplete exports.
-    // This avoids the common "stuck at ~93%" case where one last job is still pending.
-    const drainDeadline = Date.now() + 4 * 60 * 1000; // max 4 min safety cap
-    let idleRounds = 0;
-
-    while (Date.now() < drainDeadline) {
-      let done = 0;
-      let target = 5;
-      let active = 0;
-
-      try {
-        const pr = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
-        const prData = (await pr.json()) as ProgressPayload;
-        done = Number(prData?.progress?.done_exports ?? 0);
-        target = Number(prData?.progress?.target_exports ?? 5);
-        active = Number(prData?.progress?.active_exports ?? 0);
-      } catch {
-        // continue drain attempts
-      }
-
-      if (done >= target && active <= 0) {
-        break;
-      }
-
-      setLog(`Rendering clips... (${done}/${target}${active > 0 ? `, active ${active}` : ''})`);
-
-      const p = await fetch('/api/jobs/process', { method: 'POST' });
-      if (!p.ok) break;
-
-      const pData = await p.json();
-      const processed = Number(pData.processed ?? 0);
-      totalProcessed += processed;
-
+      setLog('Pipeline running...');
       await refreshProgress();
-
-      if (processed === 0) {
-        idleRounds += 1;
-        if (idleRounds >= 12 && active <= 0) break;
-        await new Promise((r) => setTimeout(r, 1000));
-      } else {
-        idleRounds = 0;
-      }
+      router.refresh();
+    } finally {
+      setLoading(false);
     }
-
-    await refreshProgress();
-    const finalRes = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' }).catch(() => null);
-    const finalData = finalRes ? ((await finalRes.json()) as ProgressPayload) : null;
-    const finalDone = Number(finalData?.progress?.done_exports ?? 0);
-    const finalTarget = Number(finalData?.progress?.target_exports ?? 5);
-
-    if (finalDone < finalTarget) {
-      setLog(`Almost done: ${finalDone}/${finalTarget} rendered. Last clip is still finalizing in queue.`);
-    } else {
-      setLog(`Done. Generated ${aData.count ?? 0} candidates and rendered ${totalProcessed} clip(s).`);
-    }
-
-    router.refresh();
-    setLoading(false);
   }
 
   const thumbnailUrl = progress?.project?.thumbnail_url;
