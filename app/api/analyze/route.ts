@@ -5,17 +5,18 @@ import { overallScore } from '@/lib/scoring';
 
 type RawCandidate = Record<string, string | number | null | undefined>;
 
-const MIN_CLIP_SEC = 8;
-const MAX_CLIP_SEC = 60;
-const IDEAL_MAX_SEC = 45;
-const EXPAND_SEC = 12;
+const MIN_CLIP_SEC = 20;
+const MAX_CLIP_SEC = 90;
+const IDEAL_MIN_SEC = 30;
+const IDEAL_MAX_SEC = 60;
+const EXPAND_SEC = 15;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
-const MIN_RETURN_CLIPS = 5;
+const MIN_RETURN_CLIPS = 8;
 
 function targetClipCountForDuration(totalSeconds: number) {
   const minutes = totalSeconds / 60;
   if (minutes <= 5) return 5;
-  if (minutes <= 15) return 7;
+  if (minutes <= 15) return 8;
   if (minutes <= 30) return 10;
   if (minutes <= 60) return 15;
   return 20;
@@ -318,10 +319,10 @@ export async function POST(req: Request) {
         const qualityPenalty = passesQuality ? 0 : 1.2;
         const duration = cleaned.end_sec - cleaned.start_sec;
         const durationPenalty =
-          duration < 10 ? 1.15 :
-          duration < 12 ? 0.7 :
-          duration < 15 ? 0.35 :
-          duration > IDEAL_MAX_SEC ? 0.25 :
+          duration < 20 ? 1.6 :
+          duration < IDEAL_MIN_SEC ? 0.55 :
+          duration > IDEAL_MAX_SEC && duration <= MAX_CLIP_SEC ? 0.2 :
+          duration > MAX_CLIP_SEC ? 0.45 :
           0;
         const confidenceBoost = cleaned.confidence >= 0.85 ? 0.35 : cleaned.confidence >= 0.75 ? 0.15 : 0;
 
@@ -342,12 +343,20 @@ export async function POST(req: Request) {
           natural_end: naturalEnd,
           ...scored,
           overall_score: clamp10((num(c.overall_score) || weightedOverall || overallScore(scored)) + confidenceBoost - qualityPenalty - durationPenalty),
+          reject_reason: !passesQuality
+            ? 'failed_quality_checks'
+            : duration < 20
+              ? 'duration_below_minimum'
+              : Number((num(c.overall_score) || weightedOverall || overallScore(scored)) + confidenceBoost - qualityPenalty - durationPenalty) < 6
+                ? 'score_below_minimum'
+                : null,
           rank: idx + 1,
           passes_quality: passesQuality,
         };
       })
       .filter((c) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
-      .filter((c) => Number(c.overall_score ?? 0) >= 6.2);
+      .filter((c) => (c.duration_seconds >= 20) || Number(c.overall_score ?? 0) >= 9.2)
+      .filter((c) => Number(c.overall_score ?? 0) >= 6);
 
     const filteredCandidates = scoredCandidates;
 
@@ -376,14 +385,19 @@ export async function POST(req: Request) {
 
     console.log('[analyze] counts', {
       project_id,
-      transcript_seconds: Number(transcriptMaxEnd.toFixed(2)),
-      target_clip_count: targetClipCount,
-      minimum_candidate_pool: minimumCandidatePool,
-      candidate_limit: candidateLimit,
-      ai_returned: aiReturnedCount,
-      after_filtering: filteredCandidates.length,
-      after_dedupe: deduped.length,
-      final_ranked: ranked.length,
+      videoDurationSeconds: Number(transcriptMaxEnd.toFixed(2)),
+      targetClipCount: targetClipCount,
+      candidateCountGenerated: aiReturnedCount,
+      candidateCountAfterLengthFilter: filteredCandidates.length,
+      candidateCountAfterOverlapRemoval: deduped.length,
+      finalClipCount: ranked.length,
+      finalClips: ranked.map((c) => ({
+        start: c.start_sec,
+        end: c.end_sec,
+        duration: c.duration_seconds,
+        score: Math.round(Number(c.overall_score ?? 0) * 10),
+        title: c.title,
+      })),
     });
 
     const dbRows = ranked.map((item) => ({

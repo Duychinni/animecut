@@ -41,9 +41,9 @@ function formatClock(totalSeconds: number) {
 }
 
 function formatDisplayScore(score: number) {
-  if (!Number.isFinite(score)) return '0.0';
-  const clamped = Math.max(0, Math.min(10, score));
-  return clamped.toFixed(1);
+  if (!Number.isFinite(score)) return '0';
+  const clamped = Math.max(0, Math.min(100, Math.round(score * 10)));
+  return String(clamped);
 }
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
