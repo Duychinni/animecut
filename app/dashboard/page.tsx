@@ -122,7 +122,7 @@ export default function DashboardPage() {
       {loadingProjects && <p className="text-sm text-white/60">Loading projects...</p>}
       {!loadingProjects && !recentProjects.length && <p className="text-sm text-white/60">No projects yet.</p>}
 
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {recentProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = percent < 100;
@@ -148,7 +148,7 @@ export default function DashboardPage() {
           );
 
           return (
-            <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/25 hover:bg-white/[0.05]">
+            <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/25 hover:bg-white/[0.05]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
