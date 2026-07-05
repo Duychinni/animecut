@@ -255,21 +255,53 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="features" className="mt-14 grid gap-4 md:grid-cols-3">
-          {[
-            ['Hook Score', 'Find strongest openers in the first 5–10 seconds.'],
-            ['Auto Clip Ideas', 'Generate structured clips with title + premise + proof points.'],
-            ['Export Ready', 'Prep captions and vertical framing for Shorts/TikTok/Reels.'],
-          ].map(([title, desc]) => (
-            <article key={title} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left backdrop-blur-sm">
-              <h3 className="font-semibold">{title}</h3>
-              <p className="mt-1 text-sm text-white/65">{desc}</p>
-            </article>
-          ))}
-        </section>
+        <section id="features" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">How it works</p>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Turn long videos into post-ready short-form clips.</h2>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
+                Drop in a link or upload a file, let AnimaCut scan the full transcript for high-retention moments, and reopen the strongest clips inside your dashboard when processing is done.
+              </p>
 
-        <section id="how-it-works" className="mb-8 mt-10 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70 backdrop-blur-sm">
-          <span className="font-semibold text-white">How it works:</span> 1) Add link or upload file → 2) Run transcript + scoring → 3) Review clips in dashboard.
+              <div className="mt-6 space-y-3">
+                {[
+                  ['01', 'Add a video link or upload a source file.'],
+                  ['02', 'Run transcript analysis, clip scoring, and smart ranking.'],
+                  ['03', 'Review, replay, and download the best reels in your project workspace.'],
+                ].map(([num, text]) => (
+                  <div key={num} className="flex items-start gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                    <span className="text-sm font-black tracking-[0.18em] text-white/35">{num}</span>
+                    <p className="text-sm leading-6 text-white/78">{text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffd84d]">What’s available</p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {[
+                  ['AI Clip Detection', ['AI highlight detection', 'Viral hook detection', 'Story completion', 'Smart clip ranking', '100-point quality score']],
+                  ['Short-Form Ready', ['Natural clip boundaries', 'Reels / Shorts / TikTok workflow', 'Vertical-friendly outputs', 'Complete short-form moments']],
+                  ['Project Workflow', ['Saved project dashboard', 'Source title + thumbnail detection', 'Processing progress view', 'Clip library access']],
+                  ['Built for Speed', ['Skip manual scrubbing', 'Generate multiple reels quickly', 'Reopen unfinished projects', 'Download final clips fast']],
+                ].map(([title, bullets]) => (
+                  <article key={title} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                    <h3 className="text-base font-semibold text-white">{title}</h3>
+                    <ul className="mt-3 space-y-2 text-sm text-white/70">
+                      {(bullets as string[]).map((item) => (
+                        <li key={item} className="flex gap-2">
+                          <span className="text-[#ffd84d]">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </main>
