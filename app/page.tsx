@@ -218,7 +218,7 @@ export default function Home() {
               viral-ready clips.
             </span>
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/70 md:text-base">
+          <p className="mx-auto mt-5 max-w-4xl text-[15px] leading-7 text-white/70 md:text-base">
             Paste a link or upload a file to instantly test transcript scoring, hook-first ranking, and short-form clip ideas.
           </p>
 
