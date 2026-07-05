@@ -1,16 +1,10 @@
 import type { Metadata } from 'next';
-import { Cormorant_Garamond, Geist_Mono, Space_Grotesk } from 'next/font/google';
+import { Geist_Mono, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 
 const appSans = Space_Grotesk({
   variable: '--font-app-sans',
   subsets: ['latin'],
-});
-
-const heroDisplay = Cormorant_Garamond({
-  variable: '--font-hero-display',
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
 });
 
 const geistMono = Geist_Mono({
@@ -29,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${appSans.variable} ${heroDisplay.variable} ${geistMono.variable} h-full antialiased dark`}>
+    <html lang="en" className={`${appSans.variable} ${geistMono.variable} h-full antialiased dark`}>
       <body className="min-h-full flex flex-col bg-[#07070b] text-white">{children}</body>
     </html>
   );
