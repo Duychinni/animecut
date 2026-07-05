@@ -219,7 +219,7 @@ export default function Home() {
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-4xl text-[15px] leading-7 text-white/70 md:text-base">
-            Paste a link or upload a file to generate videos into shorts and go viral instantly.
+            Paste a link or upload a file to turn videos into shorts and instantly go viral.
           </p>
 
           <div className="mx-auto mt-8 w-full max-w-3xl rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-sm md:p-5">
