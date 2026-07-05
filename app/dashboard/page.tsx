@@ -28,7 +28,10 @@ export default function DashboardPage() {
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [sortOrder, setSortOrder] = useState<'recent' | 'older'>('recent');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState<'recent' | 'older' | 'az' | 'za'>('recent');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'processing' | 'completed' | 'failed'>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'youtube' | 'upload'>('all');
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
 
@@ -157,11 +160,34 @@ export default function DashboardPage() {
     }
   }
 
-  const orderedProjects = [...recentProjects].sort((a, b) => {
-    const aTime = new Date(a.created_at).getTime();
-    const bTime = new Date(b.created_at).getTime();
-    return sortOrder === 'recent' ? bTime - aTime : aTime - bTime;
-  });
+  const orderedProjects = [...recentProjects]
+    .filter((p) => {
+      const matchesSearch = searchQuery.trim()
+        ? p.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
+        : true;
+
+      const percent = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
+      const matchesStatus =
+        statusFilter === 'all'
+          ? true
+          : statusFilter === 'processing'
+            ? percent < 100 && p.status !== 'failed'
+            : statusFilter === 'completed'
+              ? percent >= 100 || p.status === 'completed'
+              : p.status === 'failed';
+
+      const matchesSource = sourceFilter === 'all' ? true : p.source_type === sourceFilter;
+
+      return matchesSearch && matchesStatus && matchesSource;
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.created_at).getTime();
+      const bTime = new Date(b.created_at).getTime();
+      if (sortOrder === 'recent') return bTime - aTime;
+      if (sortOrder === 'older') return aTime - bTime;
+      if (sortOrder === 'az') return a.title.localeCompare(b.title);
+      return b.title.localeCompare(a.title);
+    });
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10">
@@ -170,14 +196,48 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="mt-1 text-sm text-white/60">Click a thumbnail to reopen its saved clips.</p>
         </div>
+      </div>
 
-        <button
-          type="button"
-          onClick={() => setSortOrder((prev) => (prev === 'recent' ? 'older' : 'recent'))}
-          className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.05]"
+      <div className="mb-6 grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto_auto_auto]">
+        <input
+          type="text"
+          placeholder="Search videos..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="rounded-lg border border-white/15 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder:text-white/35 outline-none transition focus:border-white/30"
+        />
+
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value as 'recent' | 'older' | 'az' | 'za')}
+          className="rounded-lg border border-white/15 bg-[#111218] px-3 py-2.5 text-sm text-white outline-none transition focus:border-white/30"
         >
-          {sortOrder === 'recent' ? 'Recent' : 'Older'}
-        </button>
+          <option value="recent">Recent</option>
+          <option value="older">Older</option>
+          <option value="az">A–Z</option>
+          <option value="za">Z–A</option>
+        </select>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as 'all' | 'processing' | 'completed' | 'failed')}
+          className="rounded-lg border border-white/15 bg-[#111218] px-3 py-2.5 text-sm text-white outline-none transition focus:border-white/30"
+        >
+          <option value="all">All Status</option>
+          <option value="processing">Processing</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value as 'all' | 'youtube' | 'upload')}
+          className="rounded-lg border border-white/15 bg-[#111218] px-3 py-2.5 text-sm text-white outline-none transition focus:border-white/30"
+        >
+          <option value="all">All Sources</option>
+          <option value="youtube">YouTube</option>
+          <option value="upload">Upload</option>
+        </select>
       </div>
 
       {msg ? <p className="mb-4 text-sm text-white/75">{msg}</p> : null}
