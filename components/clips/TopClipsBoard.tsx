@@ -140,52 +140,50 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 </div>
 
                 {clip.signedUrl ? (
-                  <div className="overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
-                    <div className="relative">
-                      <video
-                        ref={(el) => {
-                          videoRefs.current[clip.exportId] = el;
-                        }}
-                        preload="metadata"
-                        playsInline
-                        controls={false}
-                        disablePictureInPicture
-                        className="aspect-[9/16] w-full bg-black object-cover"
-                        src={clip.signedUrl}
-                        onLoadedMetadata={(e) => {
-                          const v = e.currentTarget;
-                          updatePlayback(clip.exportId, {
-                            current: v.currentTime || 0,
-                            duration: v.duration || 0,
-                            paused: v.paused,
-                            volume: v.volume ?? 1,
-                          });
-                        }}
-                        onTimeUpdate={(e) => {
-                          const v = e.currentTarget;
-                          updatePlayback(clip.exportId, {
-                            current: v.currentTime || 0,
-                            duration: v.duration || 0,
-                          });
-                        }}
-                        onPlay={() => updatePlayback(clip.exportId, { paused: false })}
-                        onPause={() => updatePlayback(clip.exportId, { paused: true })}
-                        onVolumeChange={(e) => {
-                          const v = e.currentTarget;
-                          updatePlayback(clip.exportId, { volume: v.muted ? 0 : v.volume });
-                        }}
-                        onClick={() => togglePlay(clip.exportId)}
-                      >
-                        Your browser does not support the video tag.
-                      </video>
+                  <div className="relative overflow-hidden rounded-[18px] bg-[#15171c] ring-1 ring-white/10">
+                    <video
+                      ref={(el) => {
+                        videoRefs.current[clip.exportId] = el;
+                      }}
+                      preload="metadata"
+                      playsInline
+                      controls={false}
+                      disablePictureInPicture
+                      className="aspect-[9/16] w-full bg-black object-cover"
+                      src={clip.signedUrl}
+                      onLoadedMetadata={(e) => {
+                        const v = e.currentTarget;
+                        updatePlayback(clip.exportId, {
+                          current: v.currentTime || 0,
+                          duration: v.duration || 0,
+                          paused: v.paused,
+                          volume: v.volume ?? 1,
+                        });
+                      }}
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        updatePlayback(clip.exportId, {
+                          current: v.currentTime || 0,
+                          duration: v.duration || 0,
+                        });
+                      }}
+                      onPlay={() => updatePlayback(clip.exportId, { paused: false })}
+                      onPause={() => updatePlayback(clip.exportId, { paused: true })}
+                      onVolumeChange={(e) => {
+                        const v = e.currentTarget;
+                        updatePlayback(clip.exportId, { volume: v.muted ? 0 : v.volume });
+                      }}
+                      onClick={() => togglePlay(clip.exportId)}
+                    >
+                      Your browser does not support the video tag.
+                    </video>
 
-                      <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-normal tracking-normal text-white shadow-sm">
-                        {currentLabel} / {totalLabel}
-                      </div>
+                    <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-normal tracking-normal text-white shadow-sm">
+                      {currentLabel} / {totalLabel}
                     </div>
 
-                    <div className="border-t border-white/10 bg-[#0f1014] px-3 pb-3 pt-2.5">
-                      <div className="relative mb-3 h-[2px] w-full bg-white/20">
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8">
+                      <div className="relative mb-3 h-[2px] w-full bg-white/25">
                         <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
                         <div
                           className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white"
@@ -241,7 +239,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           </div>
                         </div>
 
-                        <span className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/75 tabular-nums">
+                        <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
                           {currentLabel} / {totalLabel}
                         </span>
                       </div>
