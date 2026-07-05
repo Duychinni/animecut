@@ -148,7 +148,7 @@ export default function DashboardPage() {
           );
 
           return (
-            <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover:border-white/25 hover:bg-white/[0.05]">
+            <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
