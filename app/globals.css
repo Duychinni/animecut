@@ -1,16 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #07070b;
-  --foreground: #ededed;
-  --app-shell-bg: #07070b;
+  --background: #05050a;
+  --foreground: #f3f0ff;
+  --app-shell-bg: #05050a;
   --app-shell-overlay:
-    radial-gradient(circle at 6% 18%, rgba(124, 92, 255, 0.24), transparent 26%),
-    radial-gradient(circle at 94% 22%, rgba(141, 247, 232, 0.16), transparent 24%),
+    radial-gradient(circle at 12% 22%, rgba(175, 78, 255, 0.30), transparent 26%),
+    radial-gradient(circle at 80% 24%, rgba(255, 83, 196, 0.22), transparent 24%),
+    radial-gradient(circle at 92% 38%, rgba(255, 170, 64, 0.18), transparent 18%),
     radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.04), transparent 36%);
-  --app-grid-opacity: 0.06;
-  --app-accent: #8df7e8;
-  --app-accent-2: #7c5cff;
+  --app-grid-opacity: 0.04;
+  --app-accent: #ff58c7;
+  --app-accent-2: #a855f7;
+  --app-accent-3: #ffb347;
 }
 
 @theme inline {

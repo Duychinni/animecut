@@ -1,15 +1,16 @@
 'use client';
 
+import Image from 'next/image';
+
 export function HomeLogoLink() {
   return (
     <button
       type="button"
       onClick={() => window.location.assign('/')}
-      className="cursor-pointer flex items-center gap-2 font-semibold tracking-tight text-white"
-      aria-label="Go to ClipSpark home"
+      className="cursor-pointer flex items-center gap-3 font-semibold tracking-tight text-white"
+      aria-label="Go to AnimaCut home"
     >
-      <span className="grid h-7 w-7 place-items-center rounded-full border border-white/15 bg-white/[0.08] text-xs font-bold text-white">C</span>
-      ClipSpark
+      <Image src="/brand/animacut-logo.png" alt="AnimaCut" width={132} height={34} className="h-8 w-auto" priority />
     </button>
   );
 }

@@ -155,9 +155,8 @@ export default function Home() {
 
       <div className="relative mx-auto max-w-6xl px-6 py-6">
         <header className="flex items-center justify-between border-b border-white/10 pb-4">
-          <Link href="/" className="flex items-center gap-2" aria-label="Go to ClipSpark home" prefetch={false}>
-            <div className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-white/[0.08] font-bold text-white">C</div>
-            <span className="text-lg font-semibold tracking-tight text-white">ClipSpark</span>
+          <Link href="/" className="flex items-center gap-3" aria-label="Go to AnimaCut home" prefetch={false}>
+            <Image src="/brand/animacut-logo.png" alt="AnimaCut" width={132} height={34} className="h-8 w-auto" priority />
           </Link>
 
           <nav className="hidden items-center gap-6 text-sm text-white/75 md:flex">
@@ -170,7 +169,7 @@ export default function Home() {
             {userLabel ? (
               <>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
-                  <span aria-hidden className="text-[#8DF7E8] drop-shadow-[0_0_8px_rgba(141,247,232,0.75)]">✦</span>
+                  <span aria-hidden className="text-[#ff58c7] drop-shadow-[0_0_10px_rgba(255,88,199,0.8)]">✦</span>
                   <span>{tokenBalance.toLocaleString()}</span>
                 </div>
                 <div className="group relative">
@@ -213,10 +212,10 @@ export default function Home() {
         </header>
 
         <section className="mx-auto mt-16 max-w-6xl text-center">
-          <p className="text-sm font-black tracking-[0.24em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">#1 AI CLIP TOOL</p>
+          <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI CLIP TOOL</p>
           <h1 className="mt-4 text-[3.25rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
             Turn one long video into
-            <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#a9e8ff_40%,#9b8cff_100%)] bg-clip-text text-transparent">
+            <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
               viral-ready clips.
             </span>
           </h1>
