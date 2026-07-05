@@ -121,7 +121,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       {!visible.length && <p className="text-sm text-white/60">No clips yet.</p>}
 
       <div className="px-4 pb-2">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
           {visible.slice(0, 10).map((clip) => {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
             const playbackState = playback[clip.exportId];
@@ -134,7 +134,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
             return (
-              <article key={clip.exportId} className="flex min-w-0 flex-col rounded-[22px] border border-white/10 bg-[#14151a] p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+              <article key={clip.exportId} className="flex min-w-0 flex-col rounded-[22px] border border-white/10 bg-[#14151a] p-2.5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
                 <div className="min-h-[86px] px-1 pb-2">
                   <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
                 </div>
