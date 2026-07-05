@@ -58,7 +58,15 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
   const outPath = path.join(dir, 'source.mp4');
   const ytDlp = await resolveYtDlpBinary();
 
-  await run(ytDlp, ['-f', 'mp4/bestvideo+bestaudio/best', '--merge-output-format', 'mp4', '-o', outPath, url]);
+  await run(ytDlp, [
+    '--retries', '5',
+    '--fragment-retries', '5',
+    '--concurrent-fragments', '4',
+    '-f', 'bv*+ba/best',
+    '--merge-output-format', 'mp4',
+    '-o', outPath,
+    url,
+  ]);
 
   return outPath;
 }
