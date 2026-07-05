@@ -135,10 +135,10 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
             return (
               <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
-                <div className="min-h-[112px] px-1 pb-2">
-                  <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+                <div className="min-h-[96px] px-1 pb-2">
+                  <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
-                  <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
+                  <div className="mt-2 flex items-center justify-between gap-3">
                     <span className="text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
                     <div className="flex items-center gap-3">
                       <div className="group/edit relative">
