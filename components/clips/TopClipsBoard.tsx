@@ -75,7 +75,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       {!visible.length && <p className="text-sm text-white/60">No clips yet.</p>}
 
       <div className="overflow-x-auto pb-2">
-        <div className="flex min-w-max gap-8 px-3">
+        <div className="flex min-w-max gap-12 px-4">
           {visible.slice(0, 10).map((clip) => {
             const durationLabel = formatDuration(clip.startSec, clip.endSec);
             const playbackState = playback[clip.exportId];
@@ -85,7 +85,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             const currentLabel = formatClock(current);
 
             return (
-              <article key={clip.exportId} className="flex w-[250px] shrink-0 flex-col rounded-[22px] border border-white/10 bg-[#14151a] p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+              <article key={clip.exportId} className="flex w-[285px] shrink-0 flex-col rounded-[22px] border border-white/10 bg-[#14151a] p-3 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
                 <div className="min-h-[86px] px-1 pb-2">
                   <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
                 </div>
