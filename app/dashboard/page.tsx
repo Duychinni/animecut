@@ -82,8 +82,8 @@ export default function DashboardPage() {
         return;
       }
 
-      const processingIds = recentProjects
-        .filter((p) => Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0)) < 100)
+      const processingIds = projects
+        .filter((p) => p.status !== 'completed')
         .map((p) => p.id);
 
       const progressUpdates = await Promise.all(
@@ -138,7 +138,7 @@ export default function DashboardPage() {
 
     const timer = setInterval(() => {
       void tick();
-    }, 12000);
+    }, 4000);
 
     return () => clearInterval(timer);
   }, []);
