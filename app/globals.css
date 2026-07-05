@@ -5,10 +5,10 @@
   --foreground: #ededed;
   --app-shell-bg: #07070b;
   --app-shell-overlay:
-    radial-gradient(circle at top left, rgba(124, 92, 255, 0.16), transparent 28%),
-    radial-gradient(circle at 82% 16%, rgba(141, 247, 232, 0.10), transparent 24%),
-    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.03), transparent 35%);
-  --app-grid-opacity: 0.05;
+    radial-gradient(circle at 6% 18%, rgba(124, 92, 255, 0.24), transparent 26%),
+    radial-gradient(circle at 94% 22%, rgba(141, 247, 232, 0.16), transparent 24%),
+    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.04), transparent 36%);
+  --app-grid-opacity: 0.06;
   --app-accent: #8df7e8;
   --app-accent-2: #7c5cff;
 }
@@ -47,9 +47,10 @@ body {
 .app-shell::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -6% -4%;
   pointer-events: none;
   background: var(--app-shell-overlay);
+  filter: saturate(1.05);
 }
 
 .app-shell::after {
