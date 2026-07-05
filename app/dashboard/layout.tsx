@@ -62,22 +62,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="app-shell min-h-screen text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
         <div className="mx-auto max-w-6xl px-6 py-6">
-          <div className="flex items-center justify-between gap-4">
+          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-4">
             <HomeLogoLink />
 
-            <nav className="hidden items-center gap-6 text-sm text-white/75 md:flex">
-              <Link href="/#how-it-works" className="transition hover:text-white">
-                How it works
-              </Link>
+            <nav className="hidden items-center justify-center gap-8 text-sm text-white/75 md:flex">
               <Link href="/#features" className="transition hover:text-white">
                 Features
+              </Link>
+              <Link href="/pricing" className="transition hover:text-white">
+                Pricing
               </Link>
               <Link href="/dashboard" className="transition hover:text-white">
                 Dashboard
               </Link>
             </nav>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
                 <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                 <span>{tokenBalance.toLocaleString()}</span>

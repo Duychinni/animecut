@@ -155,16 +155,16 @@ export default function Home() {
       </div>
 
       <div className="relative mx-auto max-w-6xl px-6 py-6">
-        <header className="flex items-center justify-between border-b border-white/10 pb-4">
+        <header className="grid grid-cols-[auto_1fr_auto] items-center border-b border-white/10 pb-4">
           <HomeLogoLink />
 
-          <nav className="hidden items-center gap-6 text-sm text-white/75 md:flex">
-            <Link href="#how-it-works" className="transition hover:text-white">How it works</Link>
+          <nav className="hidden items-center justify-center gap-8 text-sm text-white/75 md:flex">
             <Link href="#features" className="transition hover:text-white">Features</Link>
+            <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             {userLabel ? (
               <>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
@@ -198,14 +198,9 @@ export default function Home() {
                 </a>
               </>
             ) : (
-              <>
-                <Link href="/auth/login" className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40">
-                  Login
-                </Link>
-                <Link href="/auth/signup" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-black transition hover:bg-white/90">
-                  Create account
-                </Link>
-              </>
+              <Link href="/auth/login" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
+                Login
+              </Link>
             )}
           </div>
         </header>
