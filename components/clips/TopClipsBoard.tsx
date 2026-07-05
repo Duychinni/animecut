@@ -135,8 +135,29 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
             return (
               <article key={clip.exportId} className="group flex min-w-0 flex-col rounded-[18px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
-                <div className="min-h-[86px] px-1 pb-2">
-                  <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+                <div className="min-h-[96px] px-1 pb-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+                      <span className="mt-2 block text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
+                    </div>
+                    {clip.signedUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(clip)}
+                        disabled={downloadingId === clip.exportId}
+                        className="mt-1 -ml-2 inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Download clip"
+                        title="Download clip"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M12 3v10" />
+                          <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
+                          <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                        </svg>
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
                 {clip.signedUrl ? (
@@ -244,28 +265,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     </div>
                   </div>
                 )}
-
-                <div className="mt-2 flex min-h-[30px] items-center justify-between gap-2 px-1">
-                  <span className="text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
-                  {clip.signedUrl ? (
-                    <button
-                      type="button"
-                      onClick={() => handleDownload(clip)}
-                      disabled={downloadingId === clip.exportId}
-                      className="-ml-2 inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
-                      aria-label="Download clip"
-                      title="Download clip"
-                    >
-                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 3v10" />
-                        <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
-                        <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
-                      </svg>
-                    </button>
-                  ) : (
-                    <div />
-                  )}
-                </div>
 
                 {clip.errorMessage ? (
                   <div className="px-1 pt-1">
