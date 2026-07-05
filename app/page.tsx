@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { useEffect, useMemo, useState } from 'react';
 
 type MeResponse = {
@@ -155,9 +156,7 @@ export default function Home() {
 
       <div className="relative mx-auto max-w-6xl px-6 py-6">
         <header className="flex items-center justify-between border-b border-white/10 pb-4">
-          <Link href="/" className="flex items-center gap-3" aria-label="Go to AnimaCut home" prefetch={false}>
-            <Image src="/brand/animacut-logo.png" alt="AnimaCut" width={132} height={34} className="h-8 w-auto" priority />
-          </Link>
+          <HomeLogoLink />
 
           <nav className="hidden items-center gap-6 text-sm text-white/75 md:flex">
             <Link href="#how-it-works" className="transition hover:text-white">How it works</Link>
