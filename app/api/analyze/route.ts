@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { analyzeClipCandidates } from '@/lib/openai';
 import { overallScore } from '@/lib/scoring';
 
@@ -258,7 +258,7 @@ function adjustBoundaries(
 export async function POST(req: Request) {
   try {
     const { project_id } = await req.json();
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { data: transcriptRow, error: tErr } = await supabase
       .from('transcripts')

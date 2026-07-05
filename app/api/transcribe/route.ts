@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { downloadYouTubeAudio } from '@/lib/youtube';
 import { transcribeAudioFile } from '@/lib/transcription';
 import { resolveProjectVideoSource } from '@/lib/source';
@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     const { project_id } = await req.json();
     if (!project_id) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const { data: project, error: pErr } = await supabase
       .from('projects')
