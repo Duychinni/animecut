@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server';
-import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
 
@@ -31,8 +30,7 @@ export default async function ProjectDetailPage({
   searchParams: Promise<{ autorun?: string }>;
 }) {
   const { projectId } = await params;
-  const { autorun } = await searchParams;
-  const autoStart = autorun === '1' || autorun === 'true';
+  await searchParams;
   const supabase = await createClient();
 
   const [{ data: exportsRows }, { data: candidateRows }] = await Promise.all([
@@ -84,10 +82,6 @@ export default async function ProjectDetailPage({
     <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">
       <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
         <h1 className="text-2xl font-bold">MAIN PROJECTS</h1>
-
-        <div className="mt-5 flex flex-wrap gap-3">
-          <PipelineRunner projectId={projectId} autoStart={autoStart} />
-        </div>
 
         {exportItems.length ? (
           <TopClipsBoard
