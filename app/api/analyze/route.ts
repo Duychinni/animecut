@@ -5,7 +5,7 @@ import { overallScore } from '@/lib/scoring';
 
 type RawCandidate = Record<string, string | number | null | undefined>;
 
-const MIN_CLIP_SEC = 15;
+const MIN_CLIP_SEC = 8;
 const MAX_CLIP_SEC = 60;
 const IDEAL_MAX_SEC = 45;
 const EXPAND_SEC = 12;
