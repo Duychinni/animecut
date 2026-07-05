@@ -65,8 +65,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="flex flex-col items-start gap-2 pt-1.5">
             <div className="flex items-center gap-4">
               <HomeLogoLink />
-              <Link href="/dashboard/projects" className="text-sm text-white/70 transition hover:text-white">
-                Projects
+              <Link href="/dashboard" className="text-sm text-white/70 transition hover:text-white">
+                Dashboard
               </Link>
             </div>
           </div>
