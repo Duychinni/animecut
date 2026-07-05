@@ -110,12 +110,12 @@ export default function ProjectsPage() {
 
   return (
     <main className="mx-auto max-w-7xl px-6 py-10">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Projects</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-white">Projects</h1>
           <p className="mt-1 text-sm text-white/60">Click a thumbnail to reopen its saved clips.</p>
         </div>
-        <Link href="/dashboard" className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/45">
+        <Link href="/dashboard" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
           Back to Dashboard
         </Link>
       </div>
@@ -160,7 +160,7 @@ export default function ProjectsPage() {
           );
 
           return (
-            <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/25 hover:bg-white/[0.05]">
+            <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/25 hover:bg-white/[0.05] backdrop-blur-sm">
               <div className="flex items-start justify-between gap-3">
                 {showProcessing ? (
                   <div className="min-w-0 flex-1 opacity-95">{cardBody}</div>
