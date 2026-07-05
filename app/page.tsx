@@ -256,36 +256,36 @@ export default function Home() {
         </section>
 
         <section id="features" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
-          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">How it works</p>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Turn long videos into post-ready short-form clips.</h2>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Turn long videos into short clips.</h2>
               <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
-                Drop in a link or upload a file, let AnimaCut scan the full transcript for high-retention moments, and reopen the strongest clips inside your dashboard when processing is done.
+                Paste a link, let AnimaCut find the best moments, then download your top clips.
               </p>
 
               <div className="mt-6 space-y-3">
                 {[
-                  ['01', 'Add a video link or upload a source file.'],
-                  ['02', 'Run transcript analysis, clip scoring, and smart ranking.'],
-                  ['03', 'Review, replay, and download the best reels in your project workspace.'],
+                  ['01', 'Paste a link or upload a file'],
+                  ['02', 'AI finds the best moments'],
+                  ['03', 'Review and download your clips'],
                 ].map(([num, text]) => (
-                  <div key={num} className="flex items-start gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                  <div key={num} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
                     <span className="text-sm font-black tracking-[0.18em] text-white/35">{num}</span>
-                    <p className="text-sm leading-6 text-white/78">{text}</p>
+                    <p className="text-sm text-white/80">{text}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffd84d]">What’s available</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffd84d]">What you get</p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 {[
-                  ['AI Clip Detection', ['AI highlight detection', 'Viral hook detection', 'Story completion', 'Smart clip ranking', '100-point quality score']],
-                  ['Short-Form Ready', ['Natural clip boundaries', 'Reels / Shorts / TikTok workflow', 'Vertical-friendly outputs', 'Complete short-form moments']],
-                  ['Project Workflow', ['Saved project dashboard', 'Source title + thumbnail detection', 'Processing progress view', 'Clip library access']],
-                  ['Built for Speed', ['Skip manual scrubbing', 'Generate multiple reels quickly', 'Reopen unfinished projects', 'Download final clips fast']],
+                  ['AI Clip Detection', ['Best moments', 'Viral hooks', 'Smart ranking']],
+                  ['Short-Form Ready', ['Natural boundaries', 'Reels-ready clips', 'Vertical-friendly outputs']],
+                  ['Project Workflow', ['Saved projects', 'Processing progress', 'Clip library']],
+                  ['Built for Speed', ['Less manual editing', 'Multiple clips fast', 'Quick downloads']],
                 ].map(([title, bullets]) => (
                   <article key={title} className="rounded-2xl border border-white/10 bg-black/20 p-5">
                     <h3 className="text-base font-semibold text-white">{title}</h3>
