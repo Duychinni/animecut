@@ -23,6 +23,66 @@ type CandidateRow = {
   rank: number | null;
 };
 
+function fmtDuration(totalSec: number | null | undefined) {
+  if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
+  const s = Math.max(0, Math.round(totalSec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}m ${String(r).padStart(2, '0')}s`;
+}
+
+function parseYouTubeId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('youtu.be')) return u.pathname.replace('/', '') || null;
+    if (u.hostname.includes('youtube.com')) return u.searchParams.get('v');
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function targetClipCountForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes <= 5) return 5;
+  if (minutes <= 15) return 7;
+  if (minutes <= 30) return 10;
+  if (minutes <= 60) return 15;
+  if (minutes <= 120) return 20;
+  return 25;
+}
+
+function computeProgress(status: string, doneExports: number, targetCount: number, elapsedSeconds: number) {
+  const safeTarget = Math.max(1, targetCount);
+
+  if (status === 'completed') return 100;
+
+  if (status === 'created') {
+    const early = Math.min(42, 10 + Math.floor(elapsedSeconds / 4));
+    return early;
+  }
+
+  if (status === 'transcribed') {
+    const mid = Math.min(62, 45 + Math.floor(elapsedSeconds / 6));
+    return mid;
+  }
+
+  if (status === 'analyzed') {
+    return Math.min(99, Math.round(65 + (doneExports / safeTarget) * 35));
+  }
+
+  return 5;
+}
+
+function getProcessingLabel(status: string) {
+  if (status === 'created') return 'Fetching video and preparing transcript';
+  if (status === 'transcribed') return 'Transcript ready — finding the best moments';
+  if (status === 'analyzed') return 'Rendering clips and packaging exports';
+  if (status === 'completed') return 'Completed';
+  return 'Processing your video';
+}
+
 export default async function ProjectDetailPage({
   params,
   searchParams,
@@ -35,10 +95,10 @@ export default async function ProjectDetailPage({
   const autoStart = autorun === '1' || autorun === 'true';
   const supabase = await createClient();
 
-  const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }] = await Promise.all([
+  const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }, { data: transcriptRow }] = await Promise.all([
     supabase
       .from('projects')
-      .select('title, source_type, source_url, source_title')
+      .select('title, status, source_type, source_url, source_title, source_thumbnail_url, created_at')
       .eq('id', projectId)
       .single(),
     supabase
@@ -52,11 +112,16 @@ export default async function ProjectDetailPage({
       .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')
       .eq('project_id', projectId)
       .limit(50),
+    supabase
+      .from('transcripts')
+      .select('segments_json')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single(),
   ]);
 
-  const candidatesById = new Map<string, CandidateRow>(
-    ((candidateRows ?? []) as CandidateRow[]).map((c) => [String(c.id), c]),
-  );
+  const candidatesById = new Map<string, CandidateRow>(((candidateRows ?? []) as CandidateRow[]).map((c) => [String(c.id), c]));
 
   const exportItems = await Promise.all(
     ((exportsRows ?? []) as ExportRow[]).map(async (row) => {
@@ -92,6 +157,31 @@ export default async function ProjectDetailPage({
         ? projectRow.title.trim()
         : 'Untitled video';
 
+  const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
+  const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+  const targetCount = Math.max(1, targetClipCountForDuration(totalSeconds));
+  const doneExports = exportItems.filter((row) => row.status === 'done').length;
+  const activeExports = exportItems.filter((row) => row.status === 'queued' || row.status === 'processing').length;
+  const failedExports = exportItems.filter((row) => row.status === 'error').length;
+  const createdAtMs = projectRow?.created_at ? new Date(projectRow.created_at).getTime() : Date.now();
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - createdAtMs) / 1000));
+  const isReallyCompleted =
+    activeExports === 0 &&
+    (doneExports >= targetCount || doneExports + failedExports >= targetCount || (exportItems.length > 0 && doneExports === exportItems.length));
+  const effectiveStatus = isReallyCompleted ? 'completed' : String(projectRow?.status ?? 'created');
+  const progressPercent = isReallyCompleted ? 100 : computeProgress(effectiveStatus, doneExports, targetCount, elapsedSeconds);
+
+  let etaSeconds: number | null = null;
+  if (effectiveStatus === 'created') etaSeconds = 180;
+  else if (effectiveStatus === 'transcribed') etaSeconds = 100;
+  else if (effectiveStatus === 'analyzed') etaSeconds = Math.max(0, targetCount - doneExports) * 45;
+  else if (effectiveStatus === 'completed') etaSeconds = 0;
+
+  const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
+  const fallbackThumbnail = youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null;
+  const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
+  const showProcessingHero = effectiveStatus !== 'completed';
+
   return (
     <main className="mx-auto w-full max-w-[2400px] space-y-6 px-8 py-10">
       <section>
@@ -103,7 +193,58 @@ export default async function ProjectDetailPage({
           <PipelineRunner projectId={projectId} autoStart={autoStart} />
         </div>
 
-        {exportItems.length ? (
+        {showProcessingHero ? (
+          <div className="mt-10 flex min-h-[68vh] items-center justify-center">
+            <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/10 bg-[#0d0f14] shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
+              <div className="grid min-h-[560px] lg:grid-cols-[1.2fr_0.8fr]">
+                <div className="relative bg-black">
+                  {heroThumbnail ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={heroThumbnail} alt={pageTitle} className="h-full w-full object-cover opacity-80" />
+                  ) : (
+                    <div className="grid h-full min-h-[320px] place-items-center bg-white/5 text-sm text-white/50">Preparing preview...</div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-black/25 to-black/70" />
+                </div>
+
+                <div className="flex flex-col justify-center px-8 py-10 lg:px-10">
+                  <p className="text-sm uppercase tracking-[0.22em] text-white/45">Processing project</p>
+                  <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">{getProcessingLabel(effectiveStatus)}</h2>
+                  <p className="mt-3 max-w-md text-sm leading-6 text-white/60">
+                    We’re generating clips from this video now. Keep this page open if you want to watch progress, or come back when it’s done.
+                  </p>
+
+                  <div className="mt-8 space-y-4">
+                    <div>
+                      <div className="mb-2 flex items-center justify-between text-sm text-white/70">
+                        <span>{progressPercent}% complete</span>
+                        <span>ETA {fmtDuration(etaSeconds)}</span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-white/10">
+                        <div className="h-full rounded-full bg-white transition-all" style={{ width: `${Math.max(6, Math.min(100, progressPercent))}%` }} />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3 pt-2">
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Done</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{doneExports}</p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Target</p>
+                        <p className="mt-2 text-2xl font-semibold text-white">{targetCount}</p>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">Status</p>
+                        <p className="mt-2 text-lg font-semibold capitalize text-white">{effectiveStatus}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : exportItems.length ? (
           <TopClipsBoard
             projectId={projectId}
             clips={exportItems.map((row) => ({
@@ -121,7 +262,6 @@ export default async function ProjectDetailPage({
           />
         ) : null}
       </section>
-
     </main>
   );
 }
