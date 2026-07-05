@@ -186,7 +186,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                     <div className="border-t border-white/10 bg-[#0f1014] px-3 py-3">
                       <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-white/15">
-                        <div className="h-full rounded-full bg-red-500 transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
+                        <div className="h-full rounded-full bg-white transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
                       </div>
 
                       <input
@@ -196,12 +196,12 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         step="0.01"
                         value={Math.min(current, duration || 0)}
                         onChange={(e) => handleSeek(clip.exportId, Number(e.target.value))}
-                        className="-mt-3 h-3 w-full cursor-pointer appearance-none bg-transparent accent-red-500"
+                        className="-mt-3 h-3 w-full cursor-pointer appearance-none bg-transparent accent-white"
                         aria-label="Seek clip"
                       />
 
-                      <div className="mt-2 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
+                      <div className="mt-3 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-2.5">
                           <button
                             type="button"
                             onClick={() => togglePlay(clip.exportId)}
@@ -219,10 +219,10 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             )}
                           </button>
 
-                          <span className="text-[11px] text-white/70">{currentLabel} / {totalLabel}</span>
+                          <span className="text-[11px] text-white/70 tabular-nums">{currentLabel} / {totalLabel}</span>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2.5">
                           <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
                             <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
