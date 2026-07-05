@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
 
@@ -105,6 +106,7 @@ export default function DashboardPage() {
       setMsg('Project deleted.');
     } finally {
       setDeletingId(null);
+      setOpenMenuId(null);
     }
   }
 
@@ -125,54 +127,63 @@ export default function DashboardPage() {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = percent < 100;
 
-          const cardBody = (
-            <>
-              <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
-                {p.thumbnail_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.thumbnail_url} alt={p.title} className="aspect-video w-full object-cover opacity-90" />
-                ) : (
-                  <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
-                )}
+          const thumb = (
+            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+              {p.thumbnail_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.thumbnail_url} alt={p.title} className="aspect-video w-full object-cover" />
+              ) : (
+                <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
+              )}
 
-                {showProcessing ? (
-                  <div className="absolute inset-0 grid place-items-center bg-black/45">
-                    <div className="rounded-md border border-white/25 bg-black/60 px-3 py-2 text-center">
-                      <p className="text-sm font-bold text-white">{percent}%</p>
-                      <p className="text-[10px] text-white/75">ETA {fmtDuration(p.eta_seconds ?? null)}</p>
-                    </div>
+              {showProcessing ? (
+                <div className="absolute inset-0 grid place-items-center bg-black/45">
+                  <div className="rounded-md border border-white/25 bg-black/60 px-3 py-2 text-center">
+                    <p className="text-sm font-bold text-white">{percent}%</p>
+                    <p className="text-[10px] text-white/75">ETA {fmtDuration(p.eta_seconds ?? null)}</p>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="mt-3">
-                <p className="line-clamp-2 font-medium text-white">{p.title}</p>
-                <p className="mt-1 text-xs text-white/50">
-                  {p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
-                </p>
-              </div>
-            </>
+                </div>
+              ) : null}
+            </div>
           );
 
           return (
             <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/25 hover:bg-white/[0.05]">
               <div className="flex items-start justify-between gap-3">
-                {showProcessing ? (
-                  <div className="min-w-0 flex-1 opacity-95">{cardBody}</div>
-                ) : (
-                  <Link href={`/dashboard/projects/${p.id}`} className="min-w-0 flex-1">
-                    {cardBody}
-                  </Link>
-                )}
+                <div className="min-w-0 flex-1">
+                  {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
 
-                <button
-                  type="button"
-                  onClick={() => onDeleteProject(p.id)}
-                  disabled={deletingId === p.id}
-                  className="shrink-0 rounded-md border border-red-400/40 px-2.5 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {deletingId === p.id ? 'Deleting...' : 'Delete'}
-                </button>
+                  <div className="mt-3">
+                    <p className="line-clamp-2 font-medium text-white">{p.title}</p>
+                    <p className="mt-1 text-xs text-white/50">
+                      {p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setOpenMenuId((prev) => (prev === p.id ? null : p.id))}
+                    className="rounded-md border border-white/12 bg-white/[0.03] px-2 py-1 text-white/75 transition hover:border-white/25 hover:text-white"
+                    aria-label="Project options"
+                  >
+                    ⋯
+                  </button>
+
+                  {openMenuId === p.id ? (
+                    <div className="absolute right-0 top-full z-20 mt-2 w-32 rounded-lg border border-white/10 bg-[#111218] p-1 shadow-xl">
+                      <button
+                        type="button"
+                        onClick={() => void onDeleteProject(p.id)}
+                        disabled={deletingId === p.id}
+                        className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-200 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deletingId === p.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           );
