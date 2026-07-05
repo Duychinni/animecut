@@ -320,22 +320,13 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}
-
-              {showProcessing ? (
-                <div className="absolute inset-0 grid place-items-center bg-black/45">
-                  <div className="rounded-md border border-white/25 bg-black/60 px-3 py-2 text-center">
-                    <p className="text-sm font-bold text-white">{percent}%</p>
-                    <p className="text-[10px] text-white/75">ETA {fmtDuration(p.eta_seconds ?? null)}</p>
-                  </div>
-                </div>
-              ) : null}
             </div>
           );
 
           return (
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="min-w-0">
-                {showProcessing ? <div className="opacity-95">{thumb}</div> : <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>}
+                <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>
 
                 <div className="mt-3">
                   {renamingId === p.id ? (
@@ -356,6 +347,7 @@ export default function DashboardPage() {
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
                       {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
+                      {showProcessing ? ` · ${percent}% processing` : ''}
                     </p>
 
                     <div className="relative shrink-0">
