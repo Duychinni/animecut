@@ -140,26 +140,46 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <span className="text-2xl font-extrabold tracking-tight text-lime-300">{Math.round(clip.score * 10)}</span>
-                    {clip.signedUrl ? (
-                      <div className="group/download relative">
+                    <div className="flex items-center gap-3">
+                      <div className="group/edit relative">
                         <button
                           type="button"
-                          onClick={() => handleDownload(clip)}
-                          disabled={downloadingId === clip.exportId}
-                          className="-ml-2 inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
-                          aria-label="Download clip"
+                          className="inline-flex items-center justify-center text-white transition hover:text-white/90"
+                          aria-label="Edit clip"
                         >
-                          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M12 3v10" />
-                            <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
-                            <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="6" cy="6" r="3" />
+                            <circle cx="18" cy="18" r="3" />
+                            <path d="M8.12 8.12 15.88 15.88" />
+                            <path d="M14 5l5 5" />
                           </svg>
                         </button>
-                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
-                          Download clip
+                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/edit:opacity-100">
+                          Edit clip
                         </span>
                       </div>
-                    ) : null}
+
+                      {clip.signedUrl ? (
+                        <div className="group/download relative">
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(clip)}
+                            disabled={downloadingId === clip.exportId}
+                            className="-ml-2 inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label="Download clip"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 3v10" />
+                              <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
+                              <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                            </svg>
+                          </button>
+                          <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
+                            Download clip
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 
