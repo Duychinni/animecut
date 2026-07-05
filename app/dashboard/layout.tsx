@@ -65,7 +65,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="grid grid-cols-[260px_1fr_260px] items-center gap-4">
             <HomeLogoLink />
 
-            <nav className="hidden items-center justify-center gap-8 text-sm text-white/90 md:flex">
+            <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
               <Link href="/#features" className="transition hover:text-white">
                 Features
               </Link>
