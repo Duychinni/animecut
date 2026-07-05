@@ -134,7 +134,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
             const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
             return (
-              <article key={clip.exportId} className="group flex min-w-0 flex-col px-3 py-3">
+              <article key={clip.exportId} className="group flex min-w-0 flex-col rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
                 <div className="min-h-[96px] px-1 pb-2">
                   <p className="line-clamp-3 text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
@@ -161,7 +161,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                 {clip.signedUrl ? (
                   <div className="flex justify-center bg-transparent px-2">
-                    <div className="relative w-full max-w-[250px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22">
+                    <div className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22">
                     <video
                       ref={(el) => {
                         videoRefs.current[clip.exportId] = el;
@@ -170,7 +170,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       playsInline
                       controls={false}
                       disablePictureInPicture
-                      className="aspect-[9/16] w-full bg-black object-cover"
+                      className="h-full w-full bg-black object-cover"
                       src={clip.signedUrl}
                       onLoadedMetadata={(e) => {
                         const v = e.currentTarget;
@@ -259,7 +259,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   </div>
                 ) : (
                   <div className="flex justify-center px-2">
-                    <div className="flex aspect-[9/16] w-full max-w-[250px] items-center justify-center rounded-[8px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
+                    <div className="flex aspect-[9/16] w-full max-w-[270px] items-center justify-center rounded-[8px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
                       {clip.status === 'done' ? 'Video unavailable' : `Status: ${clip.status}`}
                     </div>
                   </div>
