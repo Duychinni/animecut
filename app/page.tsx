@@ -145,26 +145,20 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#07070b] text-white">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(120,119,255,0.16),transparent_28%),radial-gradient(circle_at_78%_18%,rgba(46,196,182,0.12),transparent_24%),radial-gradient(circle_at_50%_120%,rgba(255,92,92,0.08),transparent_35%)]" />
-        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:54px_54px]" />
-        <div className="absolute left-1/2 top-[-10rem] h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-[#7C5CFF]/18 blur-[120px]" />
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(124,92,255,0.16),transparent_28%),radial-gradient(circle_at_82%_16%,rgba(141,247,232,0.10),transparent_24%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.03),transparent_35%)]" />
+        <div className="absolute inset-0 opacity-[0.05] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:56px_56px]" />
       </div>
 
-      <div className="relative mx-auto max-w-7xl px-6 pb-12 pt-6">
+      <div className="relative mx-auto max-w-6xl px-6 py-6">
         <header className="flex items-center justify-between border-b border-white/10 pb-4">
-          <Link href="/" className="flex items-center gap-3" aria-label="Go to ClipSpark home" prefetch={false}>
-            <div className="grid h-9 w-9 place-items-center rounded-2xl border border-white/15 bg-white/[0.07] text-sm font-bold text-white shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
-              C
-            </div>
-            <div>
-              <span className="block text-lg font-semibold tracking-tight text-white">ClipSpark</span>
-              <span className="block text-[10px] uppercase tracking-[0.28em] text-white/35">Cinematic clip intelligence</span>
-            </div>
+          <Link href="/" className="flex items-center gap-2" aria-label="Go to ClipSpark home" prefetch={false}>
+            <div className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-white/[0.08] font-bold text-white">C</div>
+            <span className="text-lg font-semibold tracking-tight text-white">ClipSpark</span>
           </Link>
 
-          <nav className="hidden items-center gap-6 text-sm text-white/70 md:flex">
+          <nav className="hidden items-center gap-6 text-sm text-white/75 md:flex">
             <Link href="#how-it-works" className="transition hover:text-white">How it works</Link>
             <Link href="#features" className="transition hover:text-white">Features</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
@@ -173,8 +167,8 @@ export default function Home() {
           <div className="flex items-center gap-2">
             {userLabel ? (
               <>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-white/85 backdrop-blur">
-                  <span aria-hidden className="text-[#8DF7E8]">✦</span>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
+                  <span aria-hidden className="text-[#8DF7E8] drop-shadow-[0_0_8px_rgba(141,247,232,0.75)]">✦</span>
                   <span>{tokenBalance.toLocaleString()}</span>
                 </div>
                 <div className="group relative">
@@ -183,14 +177,14 @@ export default function Home() {
                       src={avatarUrl}
                       alt={`${userLabel} avatar`}
                       title={userLabel}
-                      width={34}
-                      height={34}
-                      className="h-[34px] w-[34px] rounded-full border border-white/20 object-cover"
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 rounded-full border border-white/20 object-cover"
                     />
                   ) : (
                     <div
                       title={userLabel}
-                      className="grid h-[34px] w-[34px] place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85"
+                      className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85"
                     >
                       {userLabel.charAt(0).toUpperCase()}
                     </div>
@@ -199,16 +193,16 @@ export default function Home() {
                     {userLabel}
                   </span>
                 </div>
-                <a href="/auth/logout" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm transition hover:border-white/35 hover:bg-white/[0.06]">
+                <a href="/auth/logout" className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40">
                   Logout
                 </a>
               </>
             ) : (
               <>
-                <Link href="/auth/login" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm transition hover:border-white/35 hover:bg-white/[0.06]">
+                <Link href="/auth/login" className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40">
                   Login
                 </Link>
-                <Link href="/auth/signup" className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-black transition hover:bg-white/90">
+                <Link href="/auth/signup" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-black transition hover:bg-white/90">
                   Create account
                 </Link>
               </>
@@ -216,125 +210,71 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="relative mx-auto mt-14 max-w-7xl">
-          <div className="grid items-center gap-12 lg:grid-cols-[1.08fr_0.92fr]">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-white/55 backdrop-blur">
-                <span className="inline-block h-2 w-2 rounded-full bg-[#8DF7E8] shadow-[0_0_14px_rgba(141,247,232,0.85)]" />
-                Built for cinematic short-form editing
-              </div>
+        <section className="mx-auto mt-16 max-w-6xl text-center">
+          <p className="text-sm font-extrabold tracking-[0.2em] text-[#8DF7E8] drop-shadow-[0_0_12px_rgba(141,247,232,0.6)] md:text-base">EDITORIAL AI CLIP TOOL</p>
+          <h1 className="mt-4 text-4xl font-bold leading-tight md:text-6xl">
+            Turn one long video into multiple
+            <span className="block bg-[linear-gradient(135deg,#ffffff_0%,#a9e8ff_40%,#9b8cff_100%)] bg-clip-text text-transparent">
+              sharp, viral-ready clips.
+            </span>
+          </h1>
+          <p className="mx-auto mt-4 max-w-2xl text-white/70">
+            Paste a link or upload a file to instantly test transcript scoring, hook-first ranking, and short-form clip ideas.
+          </p>
 
-              <h1 className="mt-6 text-5xl font-semibold leading-[0.98] tracking-tight text-white md:text-7xl">
-                Turn long-form footage into
-                <span className="block bg-[linear-gradient(135deg,#ffffff_0%,#9FE8FF_35%,#8B7CFF_70%,#D6D1FF_100%)] bg-clip-text text-transparent">
-                  sharp, editorial short clips.
-                </span>
-              </h1>
+          <div className="mx-auto mt-8 w-full max-w-3xl rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-sm md:p-5">
+            <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-white/12 bg-black/30 p-2">
+              <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
+                <input
+                  type="url"
+                  name="sourceUrl"
+                  placeholder="https://youtube.com/watch?v=..."
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                  className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/40 outline-none ring-0 focus:border-[#8B7CFF]/60"
+                />
+                <button
+                  type="submit"
+                  disabled={!canAnalyzeLink}
+                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loading ? 'Working...' : 'Get Clips'}
+                </button>
+              </form>
 
-              <p className="mt-6 max-w-2xl text-base leading-7 text-white/68 md:text-lg">
-                ClipSpark is designed like a dark creative tool, not a generic AI dashboard. Drop in a YouTube link or upload a file,
-                and it pulls out the moments that actually feel worth posting.
-              </p>
+              <span className="shrink-0 text-xs uppercase tracking-[0.16em] text-white/45">or</span>
 
-              <div className="mt-8 flex flex-wrap gap-3 text-sm text-white/55">
-                <div className="rounded-full border border-white/12 bg-white/[0.03] px-4 py-2">Hook-first scoring</div>
-                <div className="rounded-full border border-white/12 bg-white/[0.03] px-4 py-2">Source-aware projects</div>
-                <div className="rounded-full border border-white/12 bg-white/[0.03] px-4 py-2">Vertical export ready</div>
-              </div>
+              <label className="grid h-11 shrink-0 cursor-pointer place-items-center rounded-xl border border-white/25 px-5 text-sm font-semibold hover:bg-white/10">
+                Upload files
+                <input
+                  type="file"
+                  accept="video/*,audio/*"
+                  onChange={onUploadFileSelect}
+                  className="hidden"
+                  disabled={loading}
+                />
+              </label>
             </div>
-
-            <div className="relative">
-              <div className="absolute -inset-6 rounded-[36px] bg-[radial-gradient(circle_at_top,rgba(124,92,255,0.24),transparent_50%),radial-gradient(circle_at_bottom_right,rgba(141,247,232,0.12),transparent_42%)] blur-2xl" />
-              <div className="relative overflow-hidden rounded-[32px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-4 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl md:p-5">
-                <div className="mb-4 flex items-center justify-between rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/40">Start a new project</p>
-                    <p className="mt-1 text-sm text-white/75">Paste a link or upload a source file</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#8DF7E8]" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-white/30" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-white/18" />
-                  </div>
-                </div>
-
-                <div className="rounded-[28px] border border-white/12 bg-[#090a10]/90 p-4 md:p-5">
-                  <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] p-3">
-                    <div className="flex flex-col gap-3 rounded-[20px] border border-white/10 bg-black/25 p-3 md:flex-row md:items-center">
-                      <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 flex-col gap-3 md:flex-row md:items-center">
-                        <input
-                          type="url"
-                          name="sourceUrl"
-                          placeholder="https://youtube.com/watch?v=..."
-                          value={sourceUrl}
-                          onChange={(e) => setSourceUrl(e.target.value)}
-                          className="h-12 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/35 outline-none transition focus:border-[#8B7CFF]/70"
-                        />
-                        <button
-                          type="submit"
-                          disabled={!canAnalyzeLink}
-                          className="h-12 shrink-0 rounded-2xl bg-[linear-gradient(135deg,#ffffff_0%,#d9e7ff_100%)] px-5 text-sm font-semibold text-black transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {loading ? 'Working...' : 'Get Clips'}
-                        </button>
-                      </form>
-
-                      <div className="flex items-center gap-3 md:pl-1">
-                        <span className="shrink-0 text-[11px] uppercase tracking-[0.18em] text-white/35">or</span>
-                        <label className="grid h-12 shrink-0 cursor-pointer place-items-center rounded-2xl border border-white/16 bg-white/[0.03] px-5 text-sm font-semibold text-white transition hover:border-white/28 hover:bg-white/[0.06]">
-                          Upload files
-                          <input
-                            type="file"
-                            accept="video/*,audio/*"
-                            onChange={onUploadFileSelect}
-                            className="hidden"
-                            disabled={loading}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {file ? <p className="mt-3 text-left text-xs text-white/45">Selected: {file.name}</p> : null}
-                    {msg ? <p className="mt-3 text-left text-sm text-white/68">{msg}</p> : null}
-                  </div>
-
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                    {[
-                      ['01', 'Paste any long-form source'],
-                      ['02', 'Score scenes for hooks and retention'],
-                      ['03', 'Open the best clips in your project board'],
-                    ].map(([num, text]) => (
-                      <div key={num} className="rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-4">
-                        <p className="text-[11px] font-semibold tracking-[0.2em] text-white/35">{num}</p>
-                        <p className="mt-2 text-sm leading-6 text-white/72">{text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {file ? <p className="mt-2 text-left text-xs text-white/50">Selected: {file.name}</p> : null}
+            {msg ? <p className="mt-3 text-left text-sm text-white/70">{msg}</p> : null}
           </div>
         </section>
 
-        <section id="features" className="mt-20 grid gap-4 md:grid-cols-3">
+        <section id="features" className="mt-14 grid gap-4 md:grid-cols-3">
           {[
-            ['Editorial scoring', 'Designed to surface moments with tension, payoff, and clean hooks — not just arbitrary timestamps.'],
-            ['Project-native workflow', 'Every source becomes a reusable project with its own title, thumbnail, progress state, and export history.'],
-            ['Dark creative surface', 'The interface is shaped more like a premium media tool than a bright, generic AI marketing app.'],
+            ['Hook Score', 'Find strongest openers in the first 5–10 seconds.'],
+            ['Auto Clip Ideas', 'Generate structured clips with title + premise + proof points.'],
+            ['Export Ready', 'Prep captions and vertical framing for Shorts/TikTok/Reels.'],
           ].map(([title, desc]) => (
-            <article key={title} className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left backdrop-blur-sm">
-              <h3 className="text-base font-semibold text-white">{title}</h3>
-              <p className="mt-2 text-sm leading-6 text-white/62">{desc}</p>
+            <article key={title} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left backdrop-blur-sm">
+              <h3 className="font-semibold">{title}</h3>
+              <p className="mt-1 text-sm text-white/65">{desc}</p>
             </article>
           ))}
         </section>
 
-        <section id="how-it-works" className="mt-10 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 text-sm text-white/68 backdrop-blur-sm">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-white/35">How it works</p>
-          <p className="mt-3 max-w-3xl leading-7">
-            Add a link or upload a source file, let the system analyze transcript structure and clip potential, then review the strongest results
-            inside a dedicated project workspace.
-          </p>
+        <section id="how-it-works" className="mb-8 mt-10 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70 backdrop-blur-sm">
+          <span className="font-semibold text-white">How it works:</span> 1) Add link or upload file → 2) Run transcript + scoring → 3) Review clips in dashboard.
         </section>
       </div>
     </main>
