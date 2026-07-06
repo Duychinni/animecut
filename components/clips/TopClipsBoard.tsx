@@ -403,15 +403,17 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       {expandedClipId ? (() => {
         const expandedClip = clips.find((clip) => clip.exportId === expandedClipId) ?? null;
         return expandedClip ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6 backdrop-blur-sm" onClick={() => setExpandedClipId(null)}>
-            <div className="relative flex h-full max-h-[96vh] w-full max-w-[420px] items-center justify-center" onClick={(e) => e.stopPropagation()}>
-              <div className="relative aspect-[9/16] h-full max-h-[96vh] w-auto overflow-hidden rounded-[18px] bg-black shadow-[0_0_60px_rgba(0,0,0,0.45)]">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/92 px-4 py-6" onClick={() => setExpandedClipId(null)}>
+            <div className="relative flex h-full w-full items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              <div className="relative aspect-[9/16] h-auto max-h-[94vh] w-full max-w-[420px] overflow-hidden rounded-[18px] bg-black shadow-[0_20px_80px_rgba(0,0,0,0.55)]">
                 {expandedClip.signedUrl ? (
                   <video
                     src={expandedClip.signedUrl}
                     controls
                     autoPlay
-                    className="h-full w-full bg-black object-contain"
+                    playsInline
+                    preload="auto"
+                    className="aspect-[9/16] h-full w-full bg-black object-cover"
                   />
                 ) : (
                   <div className="grid h-full w-full place-items-center text-sm text-white/50">Preview unavailable</div>
@@ -420,7 +422,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 <button
                   type="button"
                   onClick={() => setExpandedClipId(null)}
-                  className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/85 backdrop-blur-sm transition hover:bg-black/60 hover:text-white"
+                  className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white/90 transition hover:bg-black/75 hover:text-white"
                   aria-label="Close expanded reel"
                 >
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
