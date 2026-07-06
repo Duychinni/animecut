@@ -35,8 +35,7 @@ export async function GET() {
       .from('projects')
       .select('id, title, status, source_type, source_url, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(8);
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return NextResponse.json({ projects: data ?? [] });
