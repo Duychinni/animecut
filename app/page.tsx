@@ -2,9 +2,8 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { DemoShowcase } from '@/components/home/DemoShowcase';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type MeResponse = {
   authenticated: boolean;
@@ -26,8 +25,102 @@ const templatePresets = [
   '💰 Finance',
 ];
 
+const clipCarousel = [
+  { title: 'Cold open that hooks in 2.1s', score: 94, caption: 'The mistake almost every creator makes in the first 3 seconds...', platform: 'TikTok', length: '00:27' },
+  { title: 'Guest reaction moment', score: 91, caption: 'This is the part people rewind and repost.', platform: 'Instagram', length: '00:34' },
+  { title: 'Contrarian insight clip', score: 88, caption: 'Most people are optimizing the wrong thing.', platform: 'YouTube', length: '00:41' },
+  { title: 'Story payoff segment', score: 83, caption: 'Wait for the last line — that is the clip.', platform: 'Facebook', length: '00:23' },
+  { title: 'Podcast teaser cut', score: 89, caption: 'A perfect teaser for tomorrow’s full episode.', platform: 'Podcast', length: '00:30' },
+];
+
+const workflowSteps = ['Upload', 'Transcribing', 'Finding Hooks', 'Scoring', 'Rendering', 'Finished'];
+
+const platformLogos = [
+  {
+    name: 'YouTube',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+        <rect x="2.5" y="6" width="19" height="12" rx="4" fill="#FF0033" />
+        <path d="M10 9.3 15.3 12 10 14.7V9.3Z" fill="white" />
+      </svg>
+    ),
+  },
+  {
+    name: 'TikTok',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+        <path d="M14.6 3c.5 2 1.7 3.3 3.6 4V9a7.4 7.4 0 0 1-3.6-1v5.9a5.2 5.2 0 1 1-5.2-5.1c.4 0 .8 0 1.1.1v2.2a3.1 3.1 0 1 0 1.9 2.8V3h2.2Z" />
+      </svg>
+    ),
+  },
+  {
+    name: 'Instagram',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="5" stroke="url(#ig-gradient-main)" strokeWidth="1.8" />
+        <circle cx="12" cy="12" r="3.6" stroke="url(#ig-gradient-main)" strokeWidth="1.8" />
+        <circle cx="16.9" cy="7.3" r="1.1" fill="url(#ig-gradient-main)" />
+        <defs>
+          <linearGradient id="ig-gradient-main" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#F9CE34" />
+            <stop offset="0.55" stopColor="#EE2A7B" />
+            <stop offset="1" stopColor="#6228D7" />
+          </linearGradient>
+        </defs>
+      </svg>
+    ),
+  },
+  {
+    name: 'Facebook',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+        <path d="M13.4 21v-7.4h2.5l.4-2.9h-2.9V8.9c0-.8.2-1.4 1.4-1.4h1.6V4.9c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.9v2h-2.4v2.9h2.4V21h2.9Z" />
+      </svg>
+    ),
+  },
+  {
+    name: 'Podcast',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path d="M12 18v3" />
+        <path d="M8.5 21h7" />
+        <path d="M12 6.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z" />
+        <path d="M7.8 15.7a5.8 5.8 0 1 1 8.4 0" />
+        <path d="M5 13a8.7 8.7 0 0 1 14 0" />
+      </svg>
+    ),
+  },
+  {
+    name: 'MP4',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10Z" />
+        <path d="M12 10v6" />
+        <path d="m9.5 12.5 2.5-2.5 2.5 2.5" />
+      </svg>
+    ),
+  },
+];
+
 function makeProjectTitle() {
   return 'MAIN PROJECTS';
+}
+
+function getPlatformTone(platform: string) {
+  switch (platform) {
+    case 'TikTok':
+      return 'text-white';
+    case 'Instagram':
+      return 'text-[#ff95dc]';
+    case 'YouTube':
+      return 'text-[#ff5f7f]';
+    case 'Facebook':
+      return 'text-[#87a8ff]';
+    case 'Podcast':
+      return 'text-[#f3c57a]';
+    default:
+      return 'text-white/80';
+  }
 }
 
 export default function Home() {
@@ -38,6 +131,9 @@ export default function Home() {
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
+
+  const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel], []);
+  const infinitePlatforms = useMemo(() => [...platformLogos, ...platformLogos, ...platformLogos], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -157,19 +253,55 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#05050a] text-white">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.14),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.10),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.07),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.025),transparent_36%)]" />
-        <div className="absolute inset-0 opacity-[0.022] [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:56px_56px]" />
+    <main className="min-h-screen overflow-x-hidden bg-[#05050a] text-white">
+      <style jsx global>{`
+        @keyframes floatSlow {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          50% { transform: translate3d(0, -14px, 0); }
+        }
+        @keyframes driftOrb {
+          0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+          50% { transform: translate3d(22px, -18px, 0) scale(1.08); }
+        }
+        @keyframes gridMove {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(56px, 56px, 0); }
+        }
+        @keyframes marqueeLeft {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(-50%, 0, 0); }
+        }
+        @keyframes marqueeLogos {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(-33.333%, 0, 0); }
+        }
+        @keyframes pulseLine {
+          0%, 100% { opacity: .38; }
+          50% { opacity: 1; }
+        }
+        @keyframes glowSweep {
+          0% { transform: translateX(-10%); opacity: .45; }
+          50% { opacity: .85; }
+          100% { transform: translateX(10%); opacity: .45; }
+        }
+      `}</style>
+
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-24 top-14 h-[22rem] w-[22rem] rounded-full bg-[#8a4dff]/18 blur-[120px]" style={{ animation: 'driftOrb 18s ease-in-out infinite' }} />
+        <div className="absolute right-[-6rem] top-[18rem] h-[26rem] w-[26rem] rounded-full bg-[#ff52c4]/14 blur-[140px]" style={{ animation: 'driftOrb 22s ease-in-out infinite reverse' }} />
+        <div className="absolute bottom-[-8rem] left-[20%] h-[24rem] w-[24rem] rounded-full bg-[#ffb347]/10 blur-[140px]" style={{ animation: 'driftOrb 26s ease-in-out infinite' }} />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.16),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.12),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.08),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.025),transparent_36%)]" />
+        <div className="absolute inset-[-56px] opacity-[0.03] [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:56px_56px]" style={{ animation: 'gridMove 24s linear infinite' }} />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-6 py-6">
+      <div className="relative mx-auto max-w-7xl px-6 py-6">
         <header className="grid grid-cols-[260px_1fr_260px] items-center border-b border-white/10 pb-4">
           <HomeLogoLink />
 
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
-            <Link href="#features" className="transition hover:text-white">Features</Link>
-            <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
+            <Link href="#demo" className="transition hover:text-white">Demo</Link>
+            <Link href="#workflow" className="transition hover:text-white">How It Works</Link>
+            <Link href="#feature-showcase" className="transition hover:text-white">Features</Link>
             <Link href="#faq" className="transition hover:text-white">FAQ</Link>
             <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
@@ -216,217 +348,424 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="mx-auto mt-16 max-w-6xl text-center">
-          <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI CLIP TOOL</p>
-          <h1 className="mt-4 text-[3.25rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
-            Upload once.
-            <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
-              Get weeks of content.
-            </span>
-          </h1>
-          <p className="mx-auto mt-5 max-w-4xl text-[15px] leading-7 text-white/70 md:text-base">
-            Ready in minutes. Paste a link or upload a file and turn one long video into polished shorts for TikTok, Reels, and YouTube Shorts.
-          </p>
+        <section className="relative grid items-center gap-14 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
+          <div>
+            <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI CLIP TOOL</p>
+            <h1 className="mt-4 text-[3.25rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
+              Upload once.
+              <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
+                Get weeks of content.
+              </span>
+            </h1>
+            <p className="mt-5 max-w-2xl text-[15px] leading-7 text-white/70 md:text-base">
+              Ready in minutes. Paste a link or upload a file and turn one long video into polished shorts for TikTok, Reels, and YouTube Shorts.
+            </p>
 
-          <div className="mx-auto mt-8 w-full max-w-3xl">
-            <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+            <div className="mt-8 flex flex-wrap items-center gap-2">
               {templatePresets.map((preset) => (
-                <span key={preset} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80 whitespace-nowrap">
+                <span key={preset} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80 whitespace-nowrap transition hover:border-[#8B7CFF]/30 hover:bg-white/[0.06] hover:text-white">
                   {preset}
                 </span>
               ))}
             </div>
 
-            <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-              <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
-                <input
-                  type="url"
-                  name="sourceUrl"
-                  placeholder="Drop a video link"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                  className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/40 outline-none ring-0 focus:border-[#8B7CFF]/60"
-                />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loading ? 'Working...' : 'Get Clips'}
-                </button>
-              </form>
+            <div className="mt-8 w-full max-w-3xl rounded-[28px] border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
+                  <input
+                    type="url"
+                    name="sourceUrl"
+                    placeholder="Drop a video link"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                    className="h-12 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/40 outline-none ring-0 transition focus:border-[#8B7CFF]/60 focus:shadow-[0_0_0_1px_rgba(139,124,255,0.25),0_0_30px_rgba(139,124,255,0.16)]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="h-12 shrink-0 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {loading ? 'Working...' : 'Get Clips'}
+                  </button>
+                </form>
 
-              <span className="shrink-0 text-xs uppercase tracking-[0.16em] text-white/45">or</span>
-
-              <label className="grid h-11 shrink-0 cursor-pointer place-items-center rounded-xl border border-white/25 px-5 text-sm font-semibold hover:bg-white/10">
-                Upload files
-                <input
-                  type="file"
-                  accept="video/*,audio/*"
-                  onChange={onUploadFileSelect}
-                  className="hidden"
-                  disabled={loading}
-                />
-              </label>
+                <div className="flex items-center gap-2 lg:shrink-0">
+                  <span className="shrink-0 px-1 text-xs uppercase tracking-[0.16em] text-white/45">or</span>
+                  <label className="grid h-12 flex-1 cursor-pointer place-items-center rounded-2xl border border-white/25 px-5 text-sm font-semibold transition duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/10 hover:shadow-[0_12px_30px_rgba(139,124,255,0.12)] lg:flex-none">
+                    Upload files
+                    <input
+                      type="file"
+                      accept="video/*,audio/*"
+                      onChange={onUploadFileSelect}
+                      className="hidden"
+                      disabled={loading}
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/90">
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/90">
               <span>⭐⭐⭐⭐⭐ Trusted by 2,000+ creators</span>
               <span className="hidden h-1 w-1 rounded-full bg-white/25 md:inline-block" />
               <span>Over 1,000 hours of video clipped</span>
             </div>
 
-            {file ? <p className="mt-2 text-left text-xs text-white/50">Selected: {file.name}</p> : null}
-            {msg ? <p className="mt-3 text-left text-sm text-white/70">{msg}</p> : null}
-          </div>
-        </section>
-
-        <section id="features" className="mt-16 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Before vs After</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">One podcast episode becomes weeks of posts.</h2>
-            <div className="mt-8 grid gap-4 md:grid-cols-3">
-              {[
-                { title: '45 minute podcast', desc: 'One long-form source video.' },
-                { title: '12 AI-picked shorts', desc: 'Best hooks, reactions, and standout moments.' },
-                { title: 'Ready to post', desc: 'Vertical exports with captions and polished framing.' },
-              ].map((item, index) => (
-                <div key={item.title} className="rounded-[24px] border border-white/10 bg-black/20 p-5">
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/35">0{index + 1}</p>
-                  <h3 className="mt-3 text-lg font-semibold text-white">{item.title}</h3>
-                  <p className="mt-3 text-sm leading-6 text-white/60">{item.desc}</p>
-                </div>
-              ))}
-            </div>
+            {file ? <p className="mt-2 text-xs text-white/50">Selected: {file.name}</p> : null}
+            {msg ? <p className="mt-3 text-sm text-white/70">{msg}</p> : null}
           </div>
 
-          <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Supported platforms</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Works with the content you already make.</h2>
-            <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {[
-                {
-                  name: 'YouTube',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-                      <rect x="2.5" y="6" width="19" height="12" rx="4" fill="#FF0033" />
-                      <path d="M10 9.3 15.3 12 10 14.7V9.3Z" fill="white" />
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'TikTok',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-                      <path d="M14.6 3c.5 2 1.7 3.3 3.6 4V9a7.4 7.4 0 0 1-3.6-1v5.9a5.2 5.2 0 1 1-5.2-5.1c.4 0 .8 0 1.1.1v2.2a3.1 3.1 0 1 0 1.9 2.8V3h2.2Z" />
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'Instagram',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-                      <rect x="4" y="4" width="16" height="16" rx="5" stroke="url(#ig-gradient)" strokeWidth="1.8" />
-                      <circle cx="12" cy="12" r="3.6" stroke="url(#ig-gradient)" strokeWidth="1.8" />
-                      <circle cx="16.9" cy="7.3" r="1.1" fill="url(#ig-gradient)" />
-                      <defs>
-                        <linearGradient id="ig-gradient" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-                          <stop stopColor="#F9CE34" />
-                          <stop offset="0.55" stopColor="#EE2A7B" />
-                          <stop offset="1" stopColor="#6228D7" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'Facebook',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-                      <path d="M13.4 21v-7.4h2.5l.4-2.9h-2.9V8.9c0-.8.2-1.4 1.4-1.4h1.6V4.9c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.9v2h-2.4v2.9h2.4V21h2.9Z" />
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'Podcast',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                      <path d="M12 18v3" />
-                      <path d="M8.5 21h7" />
-                      <path d="M12 6.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z" />
-                      <path d="M7.8 15.7a5.8 5.8 0 1 1 8.4 0" />
-                      <path d="M5 13a8.7 8.7 0 0 1 14 0" />
-                    </svg>
-                  ),
-                },
-                {
-                  name: 'MP4 Upload',
-                  icon: (
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-                      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10Z" />
-                      <path d="M12 10v6" />
-                      <path d="m9.5 12.5 2.5-2.5 2.5 2.5" />
-                    </svg>
-                  ),
-                },
-              ].map((platform) => (
-                <div key={platform.name} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-5 text-center text-sm font-semibold text-white/80">
-                  <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
-                    {platform.icon}
+          <div className="relative">
+            <div className="absolute -left-10 top-12 h-28 w-28 rounded-full bg-[#8b7cff]/18 blur-3xl" />
+            <div className="absolute -right-6 top-2 h-36 w-36 rounded-full bg-[#ff7bd8]/14 blur-3xl" />
+            <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl" style={{ animation: 'floatSlow 6s ease-in-out infinite' }}>
+              <div className="rounded-[26px] border border-white/10 bg-[#080811]/90 p-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.24em] text-white/35">Live demo</p>
+                    <p className="mt-1 text-base font-semibold text-white">AI Clip Pipeline</p>
                   </div>
-                  <div>{platform.name}</div>
+                  <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                    12 viral clips found
+                  </div>
                 </div>
-              ))}
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between text-sm text-white/70">
+                      <span>Upload</span>
+                      <span className="text-white">podcast-episode.mp4</span>
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full w-[82%] rounded-full bg-[linear-gradient(90deg,#8B7CFF,#FF7BD8,#FFB347)]" style={{ animation: 'glowSweep 5s ease-in-out infinite' }} />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      ['Analyzing', 'Transcript + scenes'],
+                      ['Hook Score', '94 / 100'],
+                      ['Output', '9:16 captions'],
+                    ].map(([label, value], idx) => (
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-white/10 bg-black/30 p-4 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/30 hover:shadow-[0_12px_30px_rgba(139,124,255,0.14)]"
+                        style={{ animation: `floatSlow ${5 + idx}s ease-in-out infinite` }}
+                      >
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">{label}</p>
+                        <p className="mt-2 text-sm font-semibold text-white">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(139,124,255,0.12),rgba(255,255,255,0.03))] p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-white/35">Top clip</p>
+                        <p className="mt-1 text-lg font-semibold text-white">Most creators are doing this backwards.</p>
+                      </div>
+                      <div className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-xs font-semibold text-[#ffb1ea]">94 Viral Score</div>
+                    </div>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-[0.95fr_1.05fr]">
+                      <div className="aspect-[9/16] rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3">
+                        <div className="flex h-full items-end rounded-[18px] bg-[radial-gradient(circle_at_50%_20%,rgba(255,123,216,0.35),transparent_32%),linear-gradient(180deg,#1a1322_0%,#09090f_100%)] p-3">
+                          <div className="w-full rounded-2xl border border-white/10 bg-black/30 p-3 text-xs text-white/80 backdrop-blur">
+                            “You do not need more content. You need better moments.”
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        {['Auto captions synced', 'Speaker reframed', 'Hook confidence detected', 'Exports queued for TikTok + Reels'].map((item) => (
+                          <div key={item} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/75">
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="mt-16">
-          <DemoShowcase />
-        </section>
-
-        <section id="how-it-works" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
-          <div className="max-w-3xl">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">How it works</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">From long video to ready-to-post clips.</h2>
-            <p className="mt-4 text-sm leading-7 text-white/65 md:text-base">
-              AnimaCut handles the full short-form workflow for you — from ingesting the source to finding the strongest moments and exporting polished clips.
+        <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden border-y border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] py-16">
+          <div className="mx-auto mb-10 max-w-7xl px-6 text-center">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Scrolling clip feed</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">See the product before you read the pitch.</h2>
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/65 md:text-base">
+              A moving reel of what the engine actually produces — scored moments, caption-ready cuts, and exports that are ready to publish.
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {[
-              {
-                step: '01',
-                title: 'Add your source',
-                desc: 'Paste a YouTube link or upload a file to create a project instantly.',
-              },
-              {
-                step: '02',
-                title: 'AI analyzes the content',
-                desc: 'The app transcribes the video, scores moments, and ranks the best potential clips.',
-              },
-              {
-                step: '03',
-                title: 'Smart framing + captions',
-                desc: 'Exports are rendered vertically with captions, high-quality thumbnails, and smart reframing.',
-              },
-              {
-                step: '04',
-                title: 'Review and download',
-                desc: 'Open your finished project, compare top clips, and download the ones worth posting.',
-              },
-            ].map((item) => (
-              <div key={item.step} className="rounded-[24px] border border-white/10 bg-black/20 p-5">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/35">{item.step}</p>
-                <h3 className="mt-3 text-lg font-semibold text-white">{item.title}</h3>
-                <p className="mt-3 text-sm leading-6 text-white/60">{item.desc}</p>
-              </div>
-            ))}
+          <div className="group relative overflow-hidden">
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-[#05050a] to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-[#05050a] to-transparent" />
+            <div className="flex w-max gap-5 px-6 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 28s linear infinite' }}>
+              {carouselItems.map((clip, index) => (
+                <article
+                  key={`${clip.title}-${index}`}
+                  className="w-[320px] shrink-0 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-4 shadow-[0_20px_60px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-1.5 hover:border-[#8b7cff]/35 hover:shadow-[0_28px_70px_rgba(139,124,255,0.16)]"
+                >
+                  <div className="aspect-[9/16] rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_12%,rgba(255,123,216,0.25),transparent_28%),linear-gradient(180deg,#1b1522_0%,#09090f_100%)] p-3">
+                    <div className="flex h-full flex-col justify-between rounded-[18px] border border-white/8 bg-black/20 p-3 backdrop-blur">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2.5 py-1 text-xs font-semibold text-[#ffb1ea]">🔥 {clip.score}</span>
+                        <span className={`text-xs font-semibold ${getPlatformTone(clip.platform)}`}>{clip.platform}</span>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm text-white/80">
+                        {clip.caption}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">{clip.title}</h3>
+                      <p className="mt-1 text-sm text-white/55">Caption preview + high-confidence hook.</p>
+                    </div>
+                    <span className="text-xs font-medium text-white/45">{clip.length}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
-        <section id="faq" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+        <section id="workflow" className="grid items-center gap-12 py-20 lg:grid-cols-[0.92fr_1.08fr]">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Interactive AI workflow</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">A pipeline that feels instant, even when the work is complex.</h2>
+            <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
+              Instead of hiding everything behind a single loading state, the product should show momentum — upload, transcription, hook detection, scoring, rendering, and finished exports.
+            </p>
+            <div className="mt-8 space-y-3 text-sm text-white/65">
+              <p>• Each step can pulse or light up as the job progresses.</p>
+              <p>• The middle states should feel alive, not frozen.</p>
+              <p>• This gives the whole product a smarter, premium feel.</p>
+            </div>
+          </div>
+
+          <div className="relative rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.32)]">
+            <div className="absolute left-10 top-0 h-full w-px bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(139,124,255,0.45),rgba(255,255,255,0.08))]" />
+            <div className="space-y-5">
+              {workflowSteps.map((step, index) => (
+                <div key={step} className="group relative flex items-center gap-5">
+                  <div
+                    className="relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/14 bg-[#0d0d16] text-sm font-semibold text-white shadow-[0_0_0_6px_rgba(5,5,10,0.9)]"
+                    style={{ animation: `pulseLine ${2.2 + index * 0.12}s ease-in-out infinite` }}
+                  >
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 rounded-[22px] border border-white/10 bg-black/20 px-4 py-4 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{step}</p>
+                        <p className="mt-1 text-sm text-white/55">
+                          {index === 0 && 'Source is added and a new project spins up instantly.'}
+                          {index === 1 && 'Speech, scenes, and pacing are extracted for downstream ranking.'}
+                          {index === 2 && 'Strong openings, tension points, and payoff moments are detected.'}
+                          {index === 3 && 'Moments are ranked by retention potential and clarity.'}
+                          {index === 4 && 'Captions, framing, and exports are generated.'}
+                          {index === 5 && 'Everything lands in your dashboard ready for review.'}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-white/45">
+                        live
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="feature-showcase" className="relative left-1/2 w-screen -translate-x-1/2 py-6">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-14 lg:grid-cols-[1.08fr_0.92fr]">
+            <div className="relative order-2 lg:order-1">
+              <div className="absolute -left-8 top-10 h-36 w-36 rounded-full bg-[#8b7cff]/16 blur-3xl" />
+              <div className="relative rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-4 shadow-[0_32px_90px_rgba(0,0,0,0.34)]">
+                <div className="rounded-[28px] border border-white/10 bg-[#090912] p-4">
+                  <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff6b7a]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#ffd15e]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#4ade80]" />
+                    <span className="ml-3 text-xs uppercase tracking-[0.18em] text-white/35">dashboard preview</span>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+                    <div className="space-y-4">
+                      <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4" style={{ animation: 'floatSlow 7s ease-in-out infinite' }}>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">AI scoring</p>
+                        <p className="mt-2 text-3xl font-semibold text-white">94</p>
+                        <p className="mt-2 text-sm text-white/55">High hook retention + clarity.</p>
+                      </div>
+                      <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4" style={{ animation: 'floatSlow 8s ease-in-out infinite' }}>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Caption presets</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {['Bold Glow', 'Subtle Clean', 'Punchy Creator'].map((preset) => (
+                            <span key={preset} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white/75">{preset}</span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[26px] border border-white/10 bg-[linear-gradient(180deg,rgba(139,124,255,0.08),rgba(255,255,255,0.03))] p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Clip library</p>
+                          <p className="mt-1 text-lg font-semibold text-white">Your top candidates</p>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-white/55">12 items</span>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {[
+                          ['Opener with strongest hold', '94', 'Ready'],
+                          ['Counterintuitive hot take', '91', 'Queued'],
+                          ['Story payoff moment', '88', 'Exported'],
+                        ].map(([title, score, state]) => (
+                          <div key={title} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/75">
+                            <span>{title}</span>
+                            <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-xs font-semibold text-[#ffb1ea]">{score}</span>
+                            <span className="text-xs text-white/45">{state}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="order-1 lg:order-2">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Feature showcase</p>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">One product surface, multiple value moments.</h2>
+              <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
+                Instead of four more generic feature cards, this section should feel like a product reveal. Big surface area, layered UI, and strong hierarchy.
+              </p>
+
+              <div className="mt-8 space-y-4">
+                {[
+                  ['AI scoring', 'Show confidence, hook quality, and clip ranking as part of the interface.'],
+                  ['Caption presets', 'Preview different caption treatments without leaving the workflow.'],
+                  ['Clip library', 'Compare winners fast with scores, lengths, and export status.'],
+                  ['Dashboard', 'Make the dashboard itself look like the hero product asset.'],
+                ].map(([title, desc]) => (
+                  <div key={title} className="rounded-[24px] border border-white/10 bg-white/[0.03] px-5 py-4 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
+                    <h3 className="text-lg font-semibold text-white">{title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-white/58">{desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid items-center gap-12 py-20 lg:grid-cols-[0.92fr_1.08fr]">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Before vs after</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">One long episode in. A full short-form system out.</h2>
+            <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
+              The transformation should be obvious at a glance: one original source on the left, a spread of ready-to-publish clips on the right.
+            </p>
+          </div>
+
+          <div className="grid gap-4 rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5 shadow-[0_28px_80px_rgba(0,0,0,0.3)] lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-[26px] border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Original podcast</p>
+              <div className="mt-4 aspect-[4/5] rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.08),transparent_26%),linear-gradient(180deg,#14141d_0%,#0a0a10_100%)] p-4">
+                <div className="flex h-full items-end rounded-[18px] border border-white/8 bg-black/20 p-4 text-sm text-white/70">
+                  45 minute interview, one camera angle, one upload.
+                </div>
+              </div>
+            </div>
+            <div className="rounded-[26px] border border-white/10 bg-black/25 p-4">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Generated clips</p>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {[94, 91, 88, 83].map((score, index) => (
+                  <div
+                    key={score}
+                    className="aspect-[9/14] rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,123,216,0.12),rgba(255,255,255,0.03))] p-3 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35"
+                    style={{ animation: `floatSlow ${6 + index * 0.8}s ease-in-out infinite` }}
+                  >
+                    <div className="flex h-full flex-col justify-between rounded-[16px] border border-white/10 bg-black/25 p-3">
+                      <span className="w-fit rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-xs font-semibold text-[#ffb1ea]">🔥 {score}</span>
+                      <p className="text-xs leading-5 text-white/70">Clip candidate ready for captions, export, and posting.</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="relative left-1/2 w-screen -translate-x-1/2 overflow-hidden border-y border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] py-16">
+          <div className="mx-auto max-w-7xl px-6 text-center">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Supported platforms</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">Publish everywhere your audience already lives.</h2>
+          </div>
+
+          <div className="group mt-10 overflow-hidden">
+            <div className="flex w-max items-center gap-6 px-6 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLogos 24s linear infinite' }}>
+              {infinitePlatforms.map((platform, index) => (
+                <div key={`${platform.name}-${index}`} className="flex min-w-[180px] items-center gap-3 rounded-full border border-white/10 bg-black/25 px-5 py-3 text-sm font-semibold text-white/80 shadow-[0_12px_30px_rgba(0,0,0,0.2)] backdrop-blur">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white">
+                    {platform.icon}
+                  </div>
+                  <span>{platform.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="py-20">
+          <div className="text-center">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Testimonials</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">Social proof can move here later without changing the rhythm.</h2>
+          </div>
+
+          <div className="group mt-10 overflow-hidden">
+            <div className="flex w-max gap-5 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 34s linear infinite' }}>
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <div key={n} className="w-[340px] rounded-[28px] border border-white/10 bg-white/[0.03] p-5 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
+                  <p className="text-sm leading-7 text-white/68">
+                    “This is where creator testimonials can live later — moving slowly across the page so the section keeps the same premium motion language.”
+                  </p>
+                  <div className="mt-5 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05]" />
+                    <div>
+                      <p className="text-sm font-semibold text-white">Future Creator {n}</p>
+                      <p className="text-xs text-white/45">YouTube / Podcast Creator</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025))] px-6 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl md:px-10 md:py-12">
+          <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Pricing</p>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">Start with one upload. Scale when the clips start working.</h2>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/65 md:text-base">
+                Keep this section clear and conversion-focused. By the time people reach pricing, the product should already feel obvious, credible, and desirable.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/pricing" className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)]">
+                See Pricing
+              </Link>
+              <Link href="/dashboard" className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.05] hover:shadow-[0_12px_30px_rgba(139,124,255,0.12)]">
+                Open Dashboard
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section id="faq" className="mt-16 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
           <div className="max-w-3xl">
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Questions creators ask before they upload.</h2>
@@ -443,7 +782,7 @@ export default function Home() {
               ['Can I cancel anytime?', 'Yes. Plans are simple and can be changed as your usage grows.'],
               ['Does it support multiple platforms?', 'Yes. The output is built for TikTok, Reels, Shorts, and other vertical video channels.'],
             ].map(([question, answer]) => (
-              <div key={question} className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+              <div key={question} className="rounded-[24px] border border-white/10 bg-black/20 p-5 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
                 <h3 className="text-lg font-semibold text-white">{question}</h3>
                 <p className="mt-3 text-sm leading-6 text-white/60">{answer}</p>
               </div>
@@ -455,8 +794,9 @@ export default function Home() {
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <p className="text-white/75">AnimaCut — upload once, get weeks of content.</p>
             <div className="flex flex-wrap items-center gap-4">
-              <Link href="#features" className="transition hover:text-white">Features</Link>
-              <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
+              <Link href="#demo" className="transition hover:text-white">Demo</Link>
+              <Link href="#workflow" className="transition hover:text-white">How It Works</Link>
+              <Link href="#feature-showcase" className="transition hover:text-white">Features</Link>
               <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
               <Link href="/support" className="transition hover:text-white">Support</Link>
               <Link href="/terms" className="transition hover:text-white">Terms</Link>
