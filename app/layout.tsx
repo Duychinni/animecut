@@ -13,8 +13,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'ClipSpark',
-  description: 'AI clipping workflow for podcasts and talking-head content.',
+  title: 'AnimaCut',
+  description: 'AI video clipping workflow for podcasts and talking-head content.',
+  icons: {
+    icon: '/brand/animacut-logo.png',
+    shortcut: '/brand/animacut-logo.png',
+    apple: '/brand/animacut-logo.png',
+  },
 };
 
 export default function RootLayout({
