@@ -340,6 +340,12 @@ def main():
                     "motion": len(motion_boxes),
                 },
                 "subject_center": {"x": nx, "y": ny},
+                "selected_box": {
+                    "x": selected[0],
+                    "y": selected[1],
+                    "w": selected[2],
+                    "h": selected[3],
+                },
             }
         )
 

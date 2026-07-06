@@ -350,9 +350,10 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       (p) => {
         const faceWidthNorm = p.w && Number.isFinite(p.w) ? p.w / 1920 : 0;
         const pairBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
-        const stableBias = p.framing === 'single_stable' ? 0.12 : 0.06;
-        const edgeGuard = faceWidthNorm > 0.22 ? 0.11 : faceWidthNorm > 0.18 ? 0.08 : 0.04;
-        const target = clamp01(edgeGuard + pairBias * (1 - edgeGuard * 2) + (pairBias - 0.5) * stableBias);
+        const stableBias = p.framing === 'single_stable' ? 0.18 : 0.1;
+        const edgeGuard = faceWidthNorm > 0.22 ? 0.09 : faceWidthNorm > 0.18 ? 0.06 : 0.02;
+        const centeredBias = 0.5 + (pairBias - 0.5) * 1.12;
+        const target = clamp01(edgeGuard + centeredBias * (1 - edgeGuard * 2) + (centeredBias - 0.5) * stableBias);
         return `min(max((iw-1080)*${target.toFixed(4)},0),iw-1080)`;
       },
       '(iw-1080)/2',
@@ -364,7 +365,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       (p) => {
         const isPair = p.framing === 'wide_pair';
         const isStableSingle = p.framing === 'single_stable';
-        const headroomBias = isPair ? 0.08 : isStableSingle ? 0.24 : 0.21;
+        const headroomBias = isPair ? 0.07 : isStableSingle ? 0.26 : 0.23;
         const target = clamp01((p.ny ?? 0.42) - headroomBias);
         return `min(max((ih-1920)*${target.toFixed(4)},0),ih-1920)`;
       },
