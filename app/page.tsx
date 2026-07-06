@@ -279,8 +279,9 @@ export default function Home() {
       setLoading(true);
       setUploadProgress(0);
       setMsg('Creating upload project...');
+      const cleanedTitle = selectedFile.name.replace(/\.[^/.]+$/, '');
       const projectId = await createProject({
-        title: makeProjectTitle(),
+        title: cleanedTitle || makeProjectTitle(),
         source_type: 'upload',
       });
 

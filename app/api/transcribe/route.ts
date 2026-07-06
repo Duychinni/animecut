@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { downloadYouTubeAudio } from '@/lib/youtube';
 import { transcribeAudioFile } from '@/lib/transcription';
 import { resolveProjectVideoSource } from '@/lib/source';
+import { extractAudioForTranscription } from '@/lib/ffmpeg';
 
 export async function POST(req: Request) {
   try {
@@ -20,21 +21,25 @@ export async function POST(req: Request) {
     if (pErr || !project) throw new Error('Project not found');
 
     let mediaPath: string | null = null;
+    let transcriptionPath: string | null = null;
 
     if (project.source_type === 'youtube') {
       if (!project.source_url) throw new Error('Missing source_url for youtube project');
       mediaPath = await downloadYouTubeAudio(project.source_url as string, project_id as string);
+      transcriptionPath = mediaPath;
     } else if (project.source_type === 'upload') {
       mediaPath = await resolveProjectVideoSource({
         id: String(project.id),
         source_type: 'upload',
         source_storage_path: String(project.source_storage_path || ''),
       });
+      transcriptionPath = `${mediaPath}.transcribe.mp3`;
+      await extractAudioForTranscription(mediaPath, transcriptionPath);
     }
 
-    if (!mediaPath) throw new Error('Unable to resolve media source');
+    if (!transcriptionPath) throw new Error('Unable to resolve media source');
 
-    const transcript = await transcribeAudioFile(mediaPath);
+    const transcript = await transcribeAudioFile(transcriptionPath);
 
     await supabase.from('transcripts').delete().eq('project_id', project_id);
 

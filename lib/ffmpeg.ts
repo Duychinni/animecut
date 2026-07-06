@@ -32,6 +32,19 @@ export async function extractVideoThumbnail(inputPath: string, outputPath: strin
   ]);
 }
 
+export async function extractAudioForTranscription(inputPath: string, outputPath: string) {
+  await runFfmpeg([
+    '-y',
+    '-i', inputPath,
+    '-vn',
+    '-ac', '1',
+    '-ar', '16000',
+    '-c:a', 'mp3',
+    '-b:a', '64k',
+    outputPath,
+  ]);
+}
+
 export async function validateRenderedVideo(outputPath: string) {
   const result = await runJsonCommand('ffprobe', [
     '-v', 'error',
