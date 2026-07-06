@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
+import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { useEffect, useMemo, useState } from 'react';
 
 type MeResponse = {
@@ -193,6 +194,7 @@ export default function Home() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips, ...showcaseClips, ...showcaseClips], []);
 
@@ -271,23 +273,45 @@ export default function Home() {
   async function uploadFile(selectedFile: File) {
     try {
       setLoading(true);
+      setUploadProgress(0);
       setMsg('Creating upload project...');
       const projectId = await createProject({
         title: makeProjectTitle(),
         source_type: 'upload',
       });
 
-      setMsg('Uploading file...');
-      const form = new FormData();
-      form.append('project_id', projectId);
-      form.append('file', selectedFile);
-
-      const up = await fetch('/api/ingest/upload', { method: 'POST', body: form });
-      const upData = await up.json();
-      if (!up.ok) {
-        throw new Error(upData?.error || 'Upload failed');
+      setMsg('Preparing direct upload...');
+      const prep = await fetch('/api/ingest/upload', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          filename: selectedFile.name,
+          contentType: selectedFile.type || 'application/octet-stream',
+          size: selectedFile.size,
+        }),
+      });
+      const prepData = await prep.json();
+      if (!prep.ok) {
+        throw new Error(prepData?.error || 'Could not prepare upload');
       }
 
+      setMsg('Uploading file directly to storage...');
+      const supabase = createBrowserSupabaseClient();
+
+      const { error: uploadError } = await supabase.storage
+        .from('raw-media')
+        .uploadToSignedUrl(prepData.objectPath, prepData.token, selectedFile, {
+          upsert: true,
+          contentType: selectedFile.type || 'application/octet-stream',
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      setUploadProgress(100);
+      setMsg('Upload complete. Starting processing...');
       await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
       window.location.href = `/dashboard`;
     } catch (error: unknown) {
@@ -464,6 +488,13 @@ export default function Home() {
 
             <p className="mt-2 text-xs text-white/45">Current direct upload limit: 500MB per file.</p>
             {file ? <p className="mt-2 text-xs text-white/50">Selected: {file.name}</p> : null}
+            {loading ? (
+              <div className="mx-auto mt-3 w-full max-w-xl">
+                <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#8B7CFF,#FF7BD8,#FFB347)] transition-all duration-300" style={{ width: `${Math.max(uploadProgress, msg.includes('Uploading') ? 65 : msg.includes('Preparing') ? 20 : msg.includes('Starting') ? 90 : 8)}%` }} />
+                </div>
+              </div>
+            ) : null}
             {msg ? <p className="mt-3 text-sm text-white/70">{msg}</p> : null}
           </div>
         </section>
