@@ -434,9 +434,9 @@ function buildFilter(
 
   if (opts.debugReframeOverlay) {
     filterParts.push(
-      "drawbox=x=w*0.5-6:y=0:w=12:h=h:color=yellow@0.65:t=fill",
-      "drawbox=x=0:y=h*0.35:w=w:h=6:color=cyan@0.55:t=fill",
-      "drawbox=x=0:y=h*0.45:w=w:h=6:color=cyan@0.55:t=fill"
+      "drawbox=x=iw/2-6:y=0:w=12:h=ih:color=yellow@0.65:t=fill",
+      "drawbox=x=0:y=ih*0.35:w=iw:h=6:color=cyan@0.55:t=fill",
+      "drawbox=x=0:y=ih*0.45:w=iw:h=6:color=cyan@0.55:t=fill"
     );
   }
 
