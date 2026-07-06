@@ -3,15 +3,23 @@
 import { useState } from 'react';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 
+type ProjectCreatedPayload = {
+  id: string;
+  title: string;
+  source_type: 'youtube' | 'upload';
+  source_url?: string;
+};
+
 type Props = {
   compact?: boolean;
+  onProjectCreated?: (project: ProjectCreatedPayload) => void;
 };
 
 function makeProjectTitle() {
   return 'MAIN PROJECTS';
 }
 
-export function ProjectQuickStart({ compact = false }: Props) {
+export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
@@ -31,7 +39,7 @@ export function ProjectQuickStart({ compact = false }: Props) {
       setMsg('Development billing bypass is active — this local test will not use your real upload/minute allowance.');
     }
 
-    return data.project.id as string;
+    return data.project as ProjectCreatedPayload;
   }
 
   async function onAnalyzeLink(e: React.FormEvent) {
@@ -41,14 +49,19 @@ export function ProjectQuickStart({ compact = false }: Props) {
     try {
       setLoading(true);
       setMsg('Creating project from link...');
-      const projectId = await createProject({
+      const project = await createProject({
         title: makeProjectTitle(),
         source_type: 'youtube',
         source_url: sourceUrl.trim(),
       });
 
-      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
-      window.location.href = `/dashboard`;
+      await fetch(`/api/projects/${project.id}/start`, { method: 'POST' }).catch(() => null);
+
+      if (onProjectCreated) {
+        onProjectCreated(project);
+      } else {
+        window.location.href = `/dashboard`;
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
       setMsg(text);
@@ -64,7 +77,7 @@ export function ProjectQuickStart({ compact = false }: Props) {
       setMsg('Creating upload project...');
 
       const cleanedTitle = selectedFile.name.replace(/\.[^/.]+$/, '');
-      const projectId = await createProject({
+      const project = await createProject({
         title: cleanedTitle || makeProjectTitle(),
         source_type: 'upload',
       });
@@ -74,7 +87,7 @@ export function ProjectQuickStart({ compact = false }: Props) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          project_id: projectId,
+          project_id: project.id,
           filename: selectedFile.name,
           contentType: selectedFile.type || 'application/octet-stream',
           size: selectedFile.size,
@@ -100,8 +113,13 @@ export function ProjectQuickStart({ compact = false }: Props) {
 
       setUploadProgress(100);
       setMsg('Upload complete. Starting processing...');
-      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
-      window.location.href = `/dashboard`;
+      await fetch(`/api/projects/${project.id}/start`, { method: 'POST' }).catch(() => null);
+
+      if (onProjectCreated) {
+        onProjectCreated(project);
+      } else {
+        window.location.href = `/dashboard`;
+      }
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Could not upload file';
       setMsg(text);

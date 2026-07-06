@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { ProjectQuickStart } from '@/components/project/ProjectQuickStart';
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
@@ -285,6 +286,28 @@ export default function DashboardPage() {
     }
   }
 
+  function onProjectCreated(project: { id: string; title: string; source_type: 'youtube' | 'upload'; source_url?: string }) {
+    const newItem: ProjectListItem = {
+      id: project.id,
+      title: project.title,
+      status: 'created',
+      source_type: project.source_type,
+      source_url: project.source_url ?? null,
+      created_at: new Date().toISOString(),
+      source_title: project.title,
+      source_thumbnail_url: null,
+      source_channel_name: null,
+      source_duration_seconds: null,
+      thumbnail_url: null,
+      progress_percent: 0,
+      eta_seconds: null,
+      pipeline_status: 'queued',
+    };
+
+    setRecentProjects((prev) => [newItem, ...prev.filter((p) => p.id !== project.id)]);
+    setMsg('Project added. Processing has started.');
+  }
+
   async function onDeleteProject(projectId: string) {
     const confirmed = window.confirm('Delete this project? This will remove its transcript, clips, and exports.');
     if (!confirmed) return;
@@ -342,6 +365,10 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="mt-1 text-sm text-white/60">Click a thumbnail to reopen its saved clips.</p>
         </div>
+      </div>
+
+      <div className="mb-6">
+        <ProjectQuickStart onProjectCreated={onProjectCreated} />
       </div>
 
       <div className="mb-6 grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto_auto_auto]">
