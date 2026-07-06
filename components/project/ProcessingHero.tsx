@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type ProgressPayload = {
@@ -34,6 +34,7 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
 }) {
   const router = useRouter();
   const [data, setData] = useState<ProgressPayload | null>(null);
+  const completedNavRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -65,10 +66,12 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   const pipelineError = data?.project?.pipeline_error ?? null;
 
   useEffect(() => {
+    if (completedNavRef.current) return;
     if (status === 'completed' || percent >= 100) {
-      router.refresh();
+      completedNavRef.current = true;
+      router.replace(`/dashboard/projects/${projectId}?done=${Date.now()}`);
     }
-  }, [percent, router, status]);
+  }, [percent, projectId, router, status]);
 
   return (
     <div className="flex min-h-[68vh] w-full items-start justify-center">
