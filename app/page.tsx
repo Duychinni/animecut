@@ -15,6 +15,16 @@ type MeResponse = {
   };
 };
 
+type ShowcaseClip = {
+  title: string;
+  score: number;
+  caption: string;
+  platform: 'YouTube' | 'TikTok' | 'Instagram' | 'Podcast' | 'Facebook';
+  length: string;
+  source: string;
+  gradient: string;
+};
+
 const templatePresets = [
   '🔥 Viral Clips',
   '🎙 Podcast',
@@ -25,20 +35,122 @@ const templatePresets = [
   '💰 Finance',
 ];
 
-const clipCarousel = [
-  { title: 'Cold open that hooks in 2.1s', score: 94, caption: 'The mistake almost every creator makes in the first 3 seconds...', platform: 'TikTok', length: '00:27' },
-  { title: 'Guest reaction moment', score: 91, caption: 'This is the part people rewind and repost.', platform: 'Instagram', length: '00:34' },
-  { title: 'Contrarian insight clip', score: 88, caption: 'Most people are optimizing the wrong thing.', platform: 'YouTube', length: '00:41' },
-  { title: 'Story payoff segment', score: 83, caption: 'Wait for the last line — that is the clip.', platform: 'Facebook', length: '00:23' },
-  { title: 'Podcast teaser cut', score: 89, caption: 'A perfect teaser for tomorrow’s full episode.', platform: 'Podcast', length: '00:30' },
+const showcaseClips: ShowcaseClip[] = [
+  {
+    title: 'He explains why most creators quit too early',
+    score: 96,
+    caption: 'The real edge is consistency after the first boring stretch.',
+    platform: 'TikTok',
+    length: '00:31',
+    source: 'Joe Rogan Experience',
+    gradient: 'from-[#3a1838] via-[#1b1522] to-[#0a0a10]',
+  },
+  {
+    title: 'Theo turns one story into a perfect hook clip',
+    score: 92,
+    caption: 'That one line is exactly the kind of opening that stops the scroll.',
+    platform: 'Instagram',
+    length: '00:28',
+    source: 'This Past Weekend with Theo Von',
+    gradient: 'from-[#40203b] via-[#1c1424] to-[#09090f]',
+  },
+  {
+    title: 'Lex asks the question that changes the whole conversation',
+    score: 94,
+    caption: 'Strong clips often come from one clean question followed by a pause.',
+    platform: 'YouTube',
+    length: '00:43',
+    source: 'Lex Fridman Podcast',
+    gradient: 'from-[#241d42] via-[#141528] to-[#09090f]',
+  },
+  {
+    title: 'Diary of a CEO moment with instant repost potential',
+    score: 89,
+    caption: 'People share clips that make them feel understood in one sentence.',
+    platform: 'Facebook',
+    length: '00:36',
+    source: 'Diary of a CEO',
+    gradient: 'from-[#3c2030] via-[#1b1622] to-[#09090f]',
+  },
+  {
+    title: 'Huberman segment that lands as a clean educational short',
+    score: 91,
+    caption: 'Specific insight + simple framing = very strong educational clip.',
+    platform: 'Podcast',
+    length: '00:45',
+    source: 'Huberman Lab',
+    gradient: 'from-[#252d46] via-[#151928] to-[#09090f]',
+  },
+  {
+    title: 'All-In hot take trimmed into a strong vertical cut',
+    score: 87,
+    caption: 'The disagreement is the hook — the edit just brings it forward.',
+    platform: 'TikTok',
+    length: '00:24',
+    source: 'All-In Podcast',
+    gradient: 'from-[#43211b] via-[#20141a] to-[#09090f]',
+  },
+  {
+    title: 'Shawn Ryan story beat with high retention energy',
+    score: 95,
+    caption: 'Narrative tension makes for great clips when the punchline is preserved.',
+    platform: 'YouTube',
+    length: '00:39',
+    source: 'Shawn Ryan Show',
+    gradient: 'from-[#2b283f] via-[#161726] to-[#09090f]',
+  },
+  {
+    title: 'Nate Diaz reaction clip that feels instantly native',
+    score: 90,
+    caption: 'The cadence and facial beat make this feel made for short-form.',
+    platform: 'Instagram',
+    length: '00:22',
+    source: 'Nate Diaz Podcast',
+    gradient: 'from-[#3a1b24] via-[#1d131c] to-[#09090f]',
+  },
+  {
+    title: 'Joe Rogan back-and-forth edited into a perfect opener',
+    score: 93,
+    caption: 'Two lines, one reaction, instant curiosity gap.',
+    platform: 'TikTok',
+    length: '00:26',
+    source: 'Joe Rogan Experience',
+    gradient: 'from-[#421f39] via-[#1f1524] to-[#09090f]',
+  },
+  {
+    title: 'Theo Von punchline isolated into a short viral beat',
+    score: 88,
+    caption: 'Comedy clips work when the setup is tight and the payoff lands fast.',
+    platform: 'Facebook',
+    length: '00:19',
+    source: 'This Past Weekend with Theo Von',
+    gradient: 'from-[#312144] via-[#191628] to-[#09090f]',
+  },
+  {
+    title: 'Lex Fridman insight repackaged for thoughtful viewers',
+    score: 90,
+    caption: 'The strongest intellectual clips still need a plain-language opener.',
+    platform: 'Podcast',
+    length: '00:47',
+    source: 'Lex Fridman Podcast',
+    gradient: 'from-[#243149] via-[#16192a] to-[#09090f]',
+  },
+  {
+    title: 'Huberman takeaway trimmed into a clean branded export',
+    score: 86,
+    caption: 'This one feels polished because the frame and captions do less.',
+    platform: 'Instagram',
+    length: '00:33',
+    source: 'Huberman Lab',
+    gradient: 'from-[#432a2a] via-[#1c1520] to-[#09090f]',
+  },
 ];
-
 
 function makeProjectTitle() {
   return 'MAIN PROJECTS';
 }
 
-function getPlatformTone(platform: string) {
+function getPlatformTone(platform: ShowcaseClip['platform']) {
   switch (platform) {
     case 'TikTok':
       return 'text-white';
@@ -55,6 +167,23 @@ function getPlatformTone(platform: string) {
   }
 }
 
+function getPlatformBadge(platform: ShowcaseClip['platform']) {
+  switch (platform) {
+    case 'TikTok':
+      return 'bg-white/[0.08] text-white border-white/10';
+    case 'Instagram':
+      return 'bg-[#ff7bd8]/10 text-[#ffb1ea] border-[#ff7bd8]/25';
+    case 'YouTube':
+      return 'bg-[#ff5f7f]/10 text-[#ff9cae] border-[#ff5f7f]/25';
+    case 'Facebook':
+      return 'bg-[#87a8ff]/10 text-[#b6c8ff] border-[#87a8ff]/25';
+    case 'Podcast':
+      return 'bg-[#f3c57a]/10 text-[#ffdca9] border-[#f3c57a]/25';
+    default:
+      return 'bg-white/[0.08] text-white border-white/10';
+  }
+}
+
 export default function Home() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -63,8 +192,9 @@ export default function Home() {
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
+  const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
 
-  const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel, ...clipCarousel, ...clipCarousel], []);
+  const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -200,15 +330,7 @@ export default function Home() {
         }
         @keyframes marqueeLeft {
           0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-25%, 0, 0); }
-        }
-        @keyframes marqueeLogos {
-          0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-33.333%, 0, 0); }
-        }
-        @keyframes pulseLine {
-          0%, 100% { opacity: .38; }
-          50% { opacity: 1; }
+          100% { transform: translate3d(-50%, 0, 0); }
         }
         @keyframes glowSweep {
           0% { transform: translateX(-10%); opacity: .45; }
@@ -346,34 +468,55 @@ export default function Home() {
         </section>
 
         <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden border-y border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] py-10">
+          <div className="mx-auto mb-6 flex max-w-7xl items-center justify-between px-6">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Generated showcase</p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
+            </div>
+            <span className="hidden rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/55 md:inline-flex">
+              Public podcast + interview demos
+            </span>
+          </div>
+
           <div className="group relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-[#05050a] to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-[#05050a] to-transparent" />
-            <div className="flex w-max gap-3 px-4 [will-change:transform] group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 42s linear infinite' }}>
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#05050a] to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#05050a] to-transparent" />
+            <div className="flex w-max gap-4 px-4 [will-change:transform] group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 52s linear infinite' }}>
               {carouselItems.map((clip, index) => (
-                <article
+                <button
                   key={`${clip.title}-${index}`}
-                  className="w-[220px] shrink-0 rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-2.5 shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_24px_60px_rgba(139,124,255,0.14)]"
+                  type="button"
+                  onClick={() => setSelectedClip(clip)}
+                  className="w-[248px] shrink-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-300 hover:-translate-y-1.5 hover:border-[#8b7cff]/35 hover:shadow-[0_24px_60px_rgba(139,124,255,0.16)]"
                 >
-                  <div className="aspect-[9/16] rounded-[18px] border border-white/10 bg-[radial-gradient(circle_at_50%_12%,rgba(255,123,216,0.22),transparent_26%),linear-gradient(180deg,#1b1522_0%,#09090f_100%)] p-2">
-                    <div className="flex h-full flex-col justify-between rounded-[14px] border border-white/8 bg-black/20 p-2 backdrop-blur">
-                      <div className="flex items-center justify-between">
+                  <div className={`aspect-[9/16] rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
+                    <div className="flex h-full flex-col justify-between rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea]">🔥 {clip.score}</span>
-                        <span className={`text-[11px] font-semibold ${getPlatformTone(clip.platform)}`}>{clip.platform}</span>
+                        <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getPlatformBadge(clip.platform)} ${getPlatformTone(clip.platform)}`}>
+                          {clip.platform}
+                        </span>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-black/30 p-2 text-[11px] leading-4.5 text-white/78">
-                        {clip.caption}
+
+                      <div className="space-y-2">
+                        <div className="rounded-xl border border-white/10 bg-black/25 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/58">
+                          Generated with Animacut
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-black/35 p-2.5 text-[11px] leading-4.5 text-white/78">
+                          {clip.caption}
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div className="mt-3 flex items-start justify-between gap-3">
-                    <div>
+
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
                       <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
-                      <p className="mt-1 text-[11px] leading-4 text-white/52">Caption preview + high-confidence hook.</p>
+                      <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
                     </div>
-                    <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
+                    <p className="text-[11px] leading-4 text-white/50">Source: {clip.source}</p>
                   </div>
-                </article>
+                </button>
               ))}
             </div>
           </div>
@@ -503,7 +646,6 @@ export default function Home() {
             <p className="text-white/75">AnimaCut — upload once, get weeks of content.</p>
             <div className="flex flex-wrap items-center gap-4">
               <Link href="#demo" className="transition hover:text-white">Demo</Link>
-              <Link href="#workflow" className="transition hover:text-white">How It Works</Link>
               <Link href="#feature-showcase" className="transition hover:text-white">Features</Link>
               <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
               <Link href="/support" className="transition hover:text-white">Support</Link>
@@ -514,6 +656,64 @@ export default function Home() {
           </div>
         </footer>
       </div>
+
+      {selectedClip ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm" onClick={() => setSelectedClip(null)}>
+          <div
+            className="w-full max-w-3xl rounded-[30px] border border-white/10 bg-[#0b0b12] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#ff7bd8]">Generated Showcase Clip</p>
+                <h3 className="mt-2 text-2xl font-semibold text-white">{selectedClip.title}</h3>
+                <p className="mt-2 text-sm text-white/60">Source: {selectedClip.source}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedClip(null)}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-sm text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-5 md:grid-cols-[0.72fr_1fr]">
+              <div className={`aspect-[9/16] rounded-[24px] border border-white/10 bg-gradient-to-b ${selectedClip.gradient} p-3`}>
+                <div className="flex h-full items-end rounded-[18px] border border-white/10 bg-black/20 p-3">
+                  <div className="w-full rounded-2xl border border-white/10 bg-black/35 p-3 text-sm text-white/80 backdrop-blur">
+                    {selectedClip.caption}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-xs font-semibold text-[#ffb1ea]">🔥 {selectedClip.score} AI Score</span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getPlatformBadge(selectedClip.platform)} ${getPlatformTone(selectedClip.platform)}`}>
+                    {selectedClip.platform}
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/60">{selectedClip.length}</span>
+                </div>
+                <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Generated with Animacut</p>
+                  <p className="mt-3 text-sm leading-7 text-white/68">
+                    This demo card represents a public long-form source transformed into a short-form candidate with AI scoring, title generation, caption-ready structure, and platform packaging.
+                  </p>
+                </div>
+                <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Why it works</p>
+                  <ul className="mt-3 space-y-2 text-sm text-white/68">
+                    <li>• Strong hook detected in the opening seconds</li>
+                    <li>• Clear source attribution for public demo content</li>
+                    <li>• Platform-aware packaging for short-form distribution</li>
+                    <li>• Fast preview of what a finished export can look like</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
