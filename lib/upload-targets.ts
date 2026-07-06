@@ -1,6 +1,12 @@
 import { createClient as createServerSupabaseClient } from '@/lib/supabase/server';
 import { makeRawObjectPath } from '@/lib/storage';
-import { createMultipartSessionId, getUploadProvider, isR2Configured, storeMultipartSession } from '@/lib/r2';
+import {
+  createMultipartSessionId,
+  createR2MultipartUpload,
+  getUploadProvider,
+  isR2Configured,
+  storeMultipartSession,
+} from '@/lib/r2';
 
 export type UploadPreparationInput = {
   userId: string;
@@ -26,6 +32,7 @@ export type R2MultipartUploadPreparationResult = {
   sessionId: string;
   partSize: number;
   completeUrl: string;
+  partUrl: string;
 };
 
 export type UploadPreparationResult = SignedUrlUploadPreparationResult | R2MultipartUploadPreparationResult;
@@ -35,10 +42,11 @@ export async function prepareUploadTarget(input: UploadPreparationInput): Promis
   const objectPath = makeRawObjectPath(input.userId, input.projectId, ext);
 
   if (getUploadProvider() === 'r2' && isR2Configured()) {
+    const uploadId = await createR2MultipartUpload(objectPath, input.contentType || 'application/octet-stream');
     const sessionId = createMultipartSessionId();
     storeMultipartSession(sessionId, {
       key: objectPath,
-      uploadId: sessionId,
+      uploadId,
     });
 
     return {
@@ -48,6 +56,7 @@ export async function prepareUploadTarget(input: UploadPreparationInput): Promis
       sessionId,
       partSize: 25 * 1024 * 1024,
       completeUrl: `/api/ingest/upload/complete`,
+      partUrl: `/api/ingest/upload/part`,
     };
   }
 

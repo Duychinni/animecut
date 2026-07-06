@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
 
 type ProjectCreatedPayload = {
   id: string;
@@ -98,24 +99,25 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       }
 
       if (prepData.provider === 'r2-multipart') {
-        throw new Error('R2 multipart upload scaffolding is in place, but final multipart signing/completion is not enabled yet. Keep using the current provider until R2 env/setup is finished.');
+        setMsg('Uploading file in parts to R2 storage...');
+        await uploadFileMultipartToR2(selectedFile, prepData, setUploadProgress);
+      } else {
+        setMsg('Uploading file directly to storage...');
+        const uploadRes = await fetch(prepData.uploadUrl, {
+          method: prepData.method || 'PUT',
+          headers: prepData.headers || {
+            'content-type': selectedFile.type || 'application/octet-stream',
+          },
+          body: selectedFile,
+        });
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text().catch(() => 'Upload failed');
+          throw new Error(errText || 'Upload failed');
+        }
+
+        setUploadProgress(100);
       }
-
-      setMsg('Uploading file directly to storage...');
-      const uploadRes = await fetch(prepData.uploadUrl, {
-        method: prepData.method || 'PUT',
-        headers: prepData.headers || {
-          'content-type': selectedFile.type || 'application/octet-stream',
-        },
-        body: selectedFile,
-      });
-
-      if (!uploadRes.ok) {
-        const errText = await uploadRes.text().catch(() => 'Upload failed');
-        throw new Error(errText || 'Upload failed');
-      }
-
-      setUploadProgress(100);
       setMsg('Upload complete. Starting processing...');
       await fetch(`/api/projects/${project.id}/start`, { method: 'POST' }).catch(() => null);
 

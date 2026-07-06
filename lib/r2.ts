@@ -1,3 +1,12 @@
+import {
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'node:crypto';
 
 type R2Config = {
@@ -8,6 +17,14 @@ type R2Config = {
   endpoint: string;
   publicBaseUrl: string | null;
 };
+
+export type R2MultipartSession = {
+  key: string;
+  uploadId: string;
+};
+
+const multipartSessions = new Map<string, R2MultipartSession>();
+let cachedClient: S3Client | null = null;
 
 export function getR2Config(): R2Config | null {
   const accountId = process.env.R2_ACCOUNT_ID;
@@ -49,13 +66,6 @@ export function makeR2ObjectUrl(objectPath: string) {
   return `${cfg.endpoint}/${cfg.bucket}/${objectPath}`;
 }
 
-export type R2MultipartSession = {
-  key: string;
-  uploadId: string;
-};
-
-const multipartSessions = new Map<string, R2MultipartSession>();
-
 export function createMultipartSessionId() {
   return crypto.randomUUID();
 }
@@ -70,4 +80,93 @@ export function readMultipartSession(sessionId: string) {
 
 export function deleteMultipartSession(sessionId: string) {
   multipartSessions.delete(sessionId);
+}
+
+export function getR2Client() {
+  if (cachedClient) return cachedClient;
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured. Add R2 env vars before enabling multipart uploads.');
+
+  cachedClient = new S3Client({
+    region: 'auto',
+    endpoint: cfg.endpoint,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+    },
+  });
+
+  return cachedClient;
+}
+
+export async function createR2MultipartUpload(key: string, contentType: string) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const client = getR2Client();
+  const result = await client.send(
+    new CreateMultipartUploadCommand({
+      Bucket: cfg.bucket,
+      Key: key,
+      ContentType: contentType || 'application/octet-stream',
+    }),
+  );
+
+  if (!result.UploadId) throw new Error('Could not create multipart upload');
+  return result.UploadId;
+}
+
+export async function createSignedMultipartPartUrl(key: string, uploadId: string, partNumber: number) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const client = getR2Client();
+
+  return getSignedUrl(
+    client,
+    new PutObjectCommand({
+      Bucket: cfg.bucket,
+      Key: key,
+      Metadata: {
+        multipart: 'true',
+        uploadid: uploadId,
+        partnumber: String(partNumber),
+      },
+    }),
+    { expiresIn: 60 * 60 },
+  );
+}
+
+export async function completeR2MultipartUpload(params: {
+  key: string;
+  uploadId: string;
+  parts: Array<{ partNumber: number; etag: string }>;
+}) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const client = getR2Client();
+
+  await client.send(
+    new CompleteMultipartUploadCommand({
+      Bucket: cfg.bucket,
+      Key: params.key,
+      UploadId: params.uploadId,
+      MultipartUpload: {
+        Parts: params.parts.map((part) => ({ ETag: part.etag, PartNumber: part.partNumber })),
+      },
+    }),
+  );
+}
+
+export async function createSignedR2GetUrl(key: string, expiresIn = 60 * 60 * 24 * 7) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const client = getR2Client();
+  return getSignedUrl(client, new GetObjectCommand({ Bucket: cfg.bucket, Key: key }), { expiresIn });
+}
+
+export async function deleteR2Object(key: string) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const client = getR2Client();
+  await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }));
 }

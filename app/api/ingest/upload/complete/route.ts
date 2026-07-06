@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { deleteMultipartSession, getR2Config, readMultipartSession } from '@/lib/r2';
+import { completeR2MultipartUpload, deleteMultipartSession, getR2Config, readMultipartSession } from '@/lib/r2';
 
 export async function POST(req: Request) {
   try {
@@ -8,9 +8,13 @@ export async function POST(req: Request) {
       parts?: Array<{ partNumber: number; etag: string }>;
     };
     const sessionId = String(body.sessionId || '');
+    const parts = Array.isArray(body.parts) ? body.parts : [];
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
+    }
+    if (!parts.length) {
+      return NextResponse.json({ error: 'At least one uploaded part is required' }, { status: 400 });
     }
 
     const cfg = getR2Config();
@@ -23,13 +27,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Upload session not found or expired' }, { status: 404 });
     }
 
+    await completeR2MultipartUpload({
+      key: session.key,
+      uploadId: session.uploadId,
+      parts,
+    });
+
     deleteMultipartSession(sessionId);
 
     return NextResponse.json({
       ok: true,
       provider: 'r2-multipart',
       objectPath: session.key,
-      note: 'Multipart completion route is scaffolded. Final R2 S3-signing and completion logic should be wired once credentials and bucket behavior are confirmed.',
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not complete multipart upload';

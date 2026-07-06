@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readMultipartSession, getR2Config } from '@/lib/r2';
+import { createSignedMultipartPartUrl, getR2Config, readMultipartSession } from '@/lib/r2';
 
 export async function POST(req: Request) {
   try {
@@ -21,9 +21,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Upload session not found or expired' }, { status: 404 });
     }
 
+    const uploadUrl = await createSignedMultipartPartUrl(session.key, session.uploadId, partNumber);
+
     return NextResponse.json({
       provider: 'r2-multipart',
-      uploadUrl: `${cfg.endpoint}/${cfg.bucket}/${session.key}?partNumber=${partNumber}&uploadId=${session.uploadId}`,
+      uploadUrl,
       method: 'PUT',
       headers: {
         'content-type': 'application/octet-stream',
