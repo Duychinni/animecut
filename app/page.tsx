@@ -351,7 +351,7 @@ export default function Home() {
         <header className="grid grid-cols-[260px_1fr_260px] items-center border-b border-white/10 pb-4">
           <HomeLogoLink />
 
-          <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
+          <nav className="hidden items-center justify-center gap-8 text-[16px] font-medium text-white/90 md:flex">
             <Link href="#feature-showcase" className="transition hover:text-white">Features</Link>
             <Link href="#faq" className="transition hover:text-white">FAQ</Link>
             <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
@@ -402,9 +402,9 @@ export default function Home() {
         <section className="relative py-16 lg:py-24">
           <div className="mx-auto max-w-4xl text-center">
             <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI CLIP TOOL</p>
-            <h1 className="mt-4 text-[3.25rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
+            <h1 className="mt-4 text-[3.25rem] font-extrabold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
               Upload once.
-              <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
+              <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(214,107,255,0.16)]">
                 Get weeks of content.
               </span>
             </h1>
