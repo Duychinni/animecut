@@ -28,8 +28,9 @@ const plans: Plan[] = [
     yearlyBadge: 'Save 20%',
     features: [
       '1 free upload to test the product first',
-      '15 videos per month after upgrade',
-      'Up to 15 AI clips per video',
+      '180 AI Processing Minutes / Month',
+      'Maximum upload length: 30 minutes',
+      'Maximum generated clips: 15 per upload',
       'HD exports',
       'Premium captions',
       'Speaker detection',
@@ -47,13 +48,13 @@ const plans: Plan[] = [
     highlighted: true,
     features: [
       '1 free upload before committing',
-      '40 videos per month',
-      'Everything in Starter',
-      'Priority processing queue',
-      'Longer source video support',
-      'Advanced clip scoring and ranking',
-      'Faster export turnaround',
-      'Premium support access',
+      '600 AI Processing Minutes / Month',
+      'Maximum upload length: 2 hours',
+      'Maximum generated clips: 25 per upload',
+      'Priority processing',
+      'Advanced AI scoring',
+      'Caption presets',
+      'Priority queue',
     ],
     cta: 'Get Started',
     secondaryCta: 'Best for consistent weekly clip output',
@@ -63,13 +64,13 @@ const plans: Plan[] = [
     subtitle: 'For teams, agencies, and high-volume workflows',
     monthlyPrice: 'Custom',
     features: [
-      'Higher custom limits',
-      'Everything in Pro',
-      'Team workflows',
-      'Priority infrastructure allocation',
-      'API / custom integrations',
-      'Dedicated support',
-      'Enterprise onboarding',
+      'Custom processing minutes',
+      'Custom upload limits',
+      'Dedicated infrastructure',
+      'API access',
+      'Team members',
+      'Priority support',
+      'Need higher limits? Let’s talk.',
     ],
     cta: 'Contact Sales',
     secondaryCta: 'Need higher limits? Let’s talk.',
@@ -90,7 +91,7 @@ function PlanCard({
 
   return (
     <article
-      className={`rounded-[28px] border p-6 backdrop-blur-sm ${
+      className={`flex h-full flex-col rounded-[28px] border p-6 backdrop-blur-sm ${
         plan.highlighted
           ? 'border-white/30 bg-white/[0.07] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_30px_80px_rgba(0,0,0,0.35)]'
           : 'border-white/10 bg-white/[0.03]'
@@ -113,11 +114,13 @@ function PlanCard({
         {suffix ? <span className="pb-1 text-sm text-white/60">{suffix}</span> : null}
       </div>
 
-      {plan.secondaryCta ? <p className="mt-3 text-sm text-white/58">{plan.secondaryCta}</p> : null}
+      <div className="mt-3 min-h-[44px]">
+        {plan.secondaryCta ? <p className="text-sm text-white/58">{plan.secondaryCta}</p> : null}
+      </div>
 
       <button
         type="button"
-        className={`mt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+        className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
           plan.highlighted ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
         }`}
       >
@@ -177,7 +180,7 @@ export default function PricingPage() {
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-3xl text-[15px] leading-7 text-white/70 md:text-base">
-            Animacut is visual. People should experience the AI first. Start with one free upload, then choose the plan that matches your monthly content volume.
+            Animacut charges based on uploaded source duration processed — not number of clips. One uploaded minute equals one AI processing minute.
           </p>
 
           <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm text-white/75 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
@@ -205,9 +208,30 @@ export default function PricingPage() {
           </div>
 
           <p className="mt-3 text-sm text-white/55">{toggleLabel}</p>
+
+          <div className="mx-auto mt-8 max-w-3xl rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left backdrop-blur-sm">
+            <p className="text-sm font-semibold text-white">How AI Processing Minutes work</p>
+            <p className="mt-2 text-sm leading-6 text-white/65">1 uploaded minute = 1 processing minute. The number of generated clips does not affect usage — only uploaded source duration counts.</p>
+            <div className="mt-4 grid gap-3 text-sm text-white/72 md:grid-cols-2">
+              <div>• 5-minute video = 5 processing minutes</div>
+              <div>• 12-minute video = 12 processing minutes</div>
+              <div>• 45-minute podcast = 45 processing minutes</div>
+              <div>• 120-minute podcast = 120 processing minutes</div>
+            </div>
+          </div>
+
+          <div className="mx-auto mt-4 max-w-3xl rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left backdrop-blur-sm">
+            <p className="text-sm font-semibold text-white">What 180 minutes looks like</p>
+            <div className="mt-3 grid gap-3 text-sm text-white/72 md:grid-cols-2">
+              <div>• 36 five-minute videos</div>
+              <div>• 18 ten-minute videos</div>
+              <div>• 6 thirty-minute podcasts</div>
+              <div>• 3 one-hour podcasts</div>
+            </div>
+          </div>
         </section>
 
-        <section className="mt-14 grid gap-6 lg:grid-cols-3">
+        <section className="mt-14 grid gap-6 lg:grid-cols-3 items-stretch">
           {plans.map((plan) => (
             <PlanCard key={plan.name} plan={plan} interval={interval} />
           ))}
