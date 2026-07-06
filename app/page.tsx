@@ -467,14 +467,12 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden py-10">
+        <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 py-10">
           <div className="mx-auto mb-6 max-w-7xl px-6 text-center">
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
-          <div className="group relative overflow-hidden">
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#05050a] to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#05050a] to-transparent" />
+          <div>
             <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 68s linear infinite' }}>
               {carouselItems.map((clip, index) => (
                 <button
