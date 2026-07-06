@@ -230,9 +230,9 @@ export default function Home() {
           </p>
 
           <div className="mx-auto mt-8 w-full max-w-3xl">
-            <div className="mb-4 grid max-w-2xl grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 mx-auto">
+            <div className="mb-4 flex flex-nowrap items-center justify-center gap-2 overflow-x-auto pb-1">
               {templatePresets.map((preset) => (
-                <span key={preset} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80">
+                <span key={preset} className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80 whitespace-nowrap">
                   {preset}
                 </span>
               ))}
