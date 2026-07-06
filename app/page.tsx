@@ -390,13 +390,10 @@ export default function Home() {
               <Link href="#features" className="transition hover:text-white">Features</Link>
               <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
               <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
-              <a href="#faq" className="transition hover:text-white">Support</a>
-              <a href="#" className="transition hover:text-white">Terms</a>
-              <a href="#" className="transition hover:text-white">Privacy</a>
-              <a href="#" className="transition hover:text-white">Contact</a>
-              <a href="#" className="transition hover:text-white">Discord</a>
-              <a href="#" className="transition hover:text-white">Twitter</a>
-              <a href="#" className="transition hover:text-white">LinkedIn</a>
+              <Link href="#faq" className="transition hover:text-white">Support</Link>
+              <Link href="#" className="transition hover:text-white">Terms</Link>
+              <Link href="#" className="transition hover:text-white">Privacy</Link>
+              <Link href="#" className="transition hover:text-white">Contact</Link>
             </div>
           </div>
         </footer>
