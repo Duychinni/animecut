@@ -3,91 +3,24 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-
-type BillingInterval = 'monthly' | 'yearly';
-
-type Plan = {
-  name: string;
-  subtitle: string;
-  monthlyPrice: string;
-  yearlyPrice?: string;
-  yearlyBadge?: string;
-  highlighted?: boolean;
-  features: string[];
-  cta: string;
-  secondaryCta?: string;
-  isSalesOnly?: boolean;
-};
-
-const plans: Plan[] = [
-  {
-    name: 'Starter',
-    subtitle: 'For creators testing short-form repurposing',
-    monthlyPrice: '$14.99',
-    yearlyPrice: '$144',
-    yearlyBadge: 'Save 20%',
-    features: [
-      '1 free upload to test the product first',
-      '180 AI Processing Minutes / Month',
-      'Maximum upload length: 30 minutes',
-      'Maximum generated clips: 15 per upload',
-      'HD exports',
-      'Premium captions',
-      'Speaker detection',
-      'No watermark',
-    ],
-    cta: 'Start Free Trial',
-    secondaryCta: 'Then upgrade when you like the results',
-  },
-  {
-    name: 'Pro',
-    subtitle: 'For serious creators, marketers, and power users',
-    monthlyPrice: '$29.99',
-    yearlyPrice: '$288',
-    yearlyBadge: 'Save 20%',
-    highlighted: true,
-    features: [
-      '1 free upload before committing',
-      '600 AI Processing Minutes / Month',
-      'Maximum upload length: 2 hours',
-      'Maximum generated clips: 25 per upload',
-      'Priority processing',
-      'Advanced AI scoring',
-      'Caption presets',
-      'Priority queue',
-    ],
-    cta: 'Get Started',
-    secondaryCta: 'Best for consistent weekly clip output',
-  },
-  {
-    name: 'Business',
-    subtitle: 'For teams, agencies, and high-volume workflows',
-    monthlyPrice: 'Custom',
-    features: [
-      'Custom processing minutes',
-      'Custom upload limits',
-      'Dedicated infrastructure',
-      'API access',
-      'Team members',
-      'Priority support',
-      'Need higher limits? Let’s talk.',
-    ],
-    cta: 'Contact Sales',
-    secondaryCta: 'Need higher limits? Let’s talk.',
-    isSalesOnly: true,
-  },
-];
+import {
+  PLAN_CONFIG,
+  type BillingInterval,
+  type PlanConfig,
+  buildPlanFeatures,
+} from '@/lib/plans';
 
 function PlanCard({
   plan,
   interval,
 }: {
-  plan: Plan;
+  plan: PlanConfig;
   interval: BillingInterval;
 }) {
   const showingYearly = interval === 'yearly' && plan.yearlyPrice;
   const price = showingYearly ? plan.yearlyPrice : plan.monthlyPrice;
   const suffix = plan.isSalesOnly ? '' : showingYearly ? '/yr' : '/mo';
+  const features = buildPlanFeatures(plan);
 
   return (
     <article
@@ -128,7 +61,7 @@ function PlanCard({
       </button>
 
       <ul className="mt-6 space-y-3 text-sm text-white/80">
-        {plan.features.map((feature) => (
+        {features.map((feature) => (
           <li key={feature} className="flex gap-3">
             <span className="mt-[2px] text-[#ffd84d]">✓</span>
             <span>{feature}</span>
@@ -149,6 +82,13 @@ export default function PricingPage() {
         : 'Yearly billing selected — save 20%',
     [interval],
   );
+
+  const starterPlan = PLAN_CONFIG.find((plan) => plan.id === 'starter')!;
+  const starterMinutes = starterPlan.processingMinutes ?? 0;
+  const fiveMinuteVideos = Math.floor(starterMinutes / 5);
+  const tenMinuteVideos = Math.floor(starterMinutes / 10);
+  const thirtyMinutePodcasts = Math.floor(starterMinutes / 30);
+  const sixtyMinutePodcasts = Math.floor(starterMinutes / 60);
 
   return (
     <main className="app-shell min-h-screen text-white">
@@ -221,19 +161,19 @@ export default function PricingPage() {
           </div>
 
           <div className="mx-auto mt-4 max-w-3xl rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left backdrop-blur-sm">
-            <p className="text-sm font-semibold text-white">What 180 minutes looks like</p>
+            <p className="text-sm font-semibold text-white">What {starterMinutes} minutes looks like</p>
             <div className="mt-3 grid gap-3 text-sm text-white/72 md:grid-cols-2">
-              <div>• 36 five-minute videos</div>
-              <div>• 18 ten-minute videos</div>
-              <div>• 6 thirty-minute podcasts</div>
-              <div>• 3 one-hour podcasts</div>
+              <div>• {fiveMinuteVideos} five-minute videos</div>
+              <div>• {tenMinuteVideos} ten-minute videos</div>
+              <div>• {thirtyMinutePodcasts} thirty-minute podcasts</div>
+              <div>• {sixtyMinutePodcasts} one-hour podcasts</div>
             </div>
           </div>
         </section>
 
-        <section className="mt-14 grid gap-6 lg:grid-cols-3 items-stretch">
-          {plans.map((plan) => (
-            <PlanCard key={plan.name} plan={plan} interval={interval} />
+        <section className="mt-14 grid items-stretch gap-6 lg:grid-cols-3">
+          {PLAN_CONFIG.map((plan) => (
+            <PlanCard key={plan.id} plan={plan} interval={interval} />
           ))}
         </section>
       </div>
