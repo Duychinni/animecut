@@ -25,6 +25,7 @@ type ProjectListItem = {
   thumbnail_url?: string | null;
   progress_percent?: number;
   eta_seconds?: number | null;
+  pipeline_status?: string | null;
 };
 
 export default function DashboardPage() {
@@ -40,6 +41,7 @@ export default function DashboardPage() {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'youtube' | 'upload'>('all');
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
+  const autoStartedRef = useRef<Set<string>>(new Set());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
 
   async function loadProjects(initial = false) {
@@ -81,6 +83,7 @@ export default function DashboardPage() {
                 thumbnail_url: p.source_thumbnail_url ?? prData?.project?.thumbnail_url ?? null,
                 progress_percent: Number(prData?.progress?.percent ?? 0),
                 eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
+                pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
               } as ProjectListItem;
             } catch {
               return p;
@@ -114,6 +117,7 @@ export default function DashboardPage() {
               thumbnail_url: prData?.project?.thumbnail_url ?? null,
               progress_percent: Number(prData?.progress?.percent ?? 0),
               eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
+              pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
             };
           } catch {
             return null;
@@ -161,6 +165,32 @@ export default function DashboardPage() {
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const pendingProjects = recentProjects.filter((project) => {
+      const percent = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
+      const pipelineStatus = (project.pipeline_status ?? '').toLowerCase();
+      const isPending = project.status !== 'completed' && percent < 100;
+      const shouldKick = !pipelineStatus || pipelineStatus === 'idle' || pipelineStatus === 'queued';
+      return isPending && shouldKick && !autoStartedRef.current.has(project.id);
+    });
+
+    if (!pendingProjects.length) return;
+
+    pendingProjects.forEach((project) => {
+      autoStartedRef.current.add(project.id);
+
+      void (async () => {
+        try {
+          await fetch(`/api/projects/${project.id}/start`, { method: 'POST' });
+          await fetch('/api/pipeline/process', { method: 'POST' });
+          await fetch('/api/jobs/process', { method: 'POST' });
+        } catch {
+          autoStartedRef.current.delete(project.id);
+        }
+      })();
+    });
+  }, [recentProjects]);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
