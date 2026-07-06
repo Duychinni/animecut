@@ -24,7 +24,6 @@ const templatePresets = [
   '🎮 Gaming',
   '💼 Business',
   '💰 Finance',
-  '🥊 MMA',
 ];
 
 function makeProjectTitle() {
@@ -230,9 +229,9 @@ export default function Home() {
           </p>
 
           <div className="mx-auto mt-8 w-full max-w-3xl">
-            <div className="mb-4 flex flex-nowrap items-center justify-center gap-2 overflow-x-auto pb-1">
+            <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
               {templatePresets.map((preset) => (
-                <span key={preset} className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80 whitespace-nowrap">
+                <span key={preset} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80 whitespace-nowrap">
                   {preset}
                 </span>
               ))}
