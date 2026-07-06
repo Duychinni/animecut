@@ -454,27 +454,6 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="py-20">
-          <div className="group overflow-hidden">
-            <div className="flex w-max gap-5 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 34s linear infinite' }}>
-              {[1, 2, 3, 4, 5, 6].map((n) => (
-                <div key={n} className="w-[340px] rounded-[28px] border border-white/10 bg-white/[0.03] p-5 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
-                  <p className="text-sm leading-7 text-white/68">
-                    “This is where creator testimonials can live later — moving slowly across the page so the section keeps the same premium motion language.”
-                  </p>
-                  <div className="mt-5 flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full border border-white/10 bg-white/[0.05]" />
-                    <div>
-                      <p className="text-sm font-semibold text-white">Future Creator {n}</p>
-                      <p className="text-xs text-white/45">YouTube / Podcast Creator</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
         <section id="faq" className="mt-16 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
           <div className="max-w-3xl">
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
