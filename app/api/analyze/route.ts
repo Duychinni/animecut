@@ -15,6 +15,31 @@ type TranscriptSegment = {
   text?: string;
 };
 
+type RankedCandidate = {
+  project_id: string;
+  raw_start: number;
+  raw_end: number;
+  start_sec: number;
+  end_sec: number;
+  duration_seconds: number;
+  title: string;
+  reason: string;
+  self_contained_confidence: number;
+  boundary_adjustment_reason: string;
+  opening_line: string;
+  closing_line: string;
+  hook_strength: number;
+  retention_potential: number;
+  story_completeness: number;
+  entertainment_or_emotion: number;
+  educational_value: number;
+  speaker_energy: number;
+  overall_score: number;
+  reject_reason: string | null;
+  rank: number;
+  passes_quality: boolean;
+};
+
 function num(v: string | number | null | undefined): number {
   return Number(v ?? 0);
 }
@@ -292,7 +317,7 @@ export async function POST(req: Request) {
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
 
-    const scoredCandidates = (parsed.candidates ?? [])
+    const scoredCandidates: RankedCandidate[] = (parsed.candidates ?? [])
       .slice(0, candidateLimit)
       .map((c: RawCandidate, idx: number) => {
         const rawStart = num(c.raw_start ?? c.start_sec ?? c.adjusted_start);
@@ -322,15 +347,17 @@ export async function POST(req: Request) {
           speakerEnergy * 0.10
         );
 
-        const qualityPenalty = passesQuality ? 0 : 14;
+        const qualityPenalty = passesQuality ? 0 : 22;
         const duration = cleaned.end_sec - cleaned.start_sec;
         const durationPenalty =
-          duration < policy.minSec ? 18 :
-          duration < policy.expectedMinSec ? 6 :
-          duration > policy.expectedMaxSec && duration <= policy.maxSec ? 3 :
-          duration > policy.maxSec ? 8 :
+          duration < policy.minSec ? 24 :
+          duration < policy.expectedMinSec ? 10 :
+          duration > policy.expectedMaxSec && duration <= policy.maxSec ? 6 :
+          duration > policy.maxSec ? 12 :
           0;
-        const confidenceBoost = cleaned.confidence >= 0.85 ? 4 : cleaned.confidence >= 0.75 ? 2 : 0;
+        const confidenceBoost = cleaned.confidence >= 0.9 ? 2 : cleaned.confidence >= 0.8 ? 1 : 0;
+        const baseOverall = num(c.overall_score) || weightedOverall;
+        const calibratedOverall = Math.round((baseOverall * 0.94) - 4 + confidenceBoost - qualityPenalty - durationPenalty);
 
         return {
           project_id,
@@ -351,30 +378,30 @@ export async function POST(req: Request) {
           entertainment_or_emotion: entertainmentOrEmotion,
           educational_value: educationalValue,
           speaker_energy: speakerEnergy,
-          overall_score: clamp100((num(c.overall_score) || weightedOverall) + confidenceBoost - qualityPenalty - durationPenalty),
+          overall_score: clamp100(calibratedOverall),
           reject_reason: !passesQuality
             ? 'failed_quality_checks'
             : duration < policy.minSec
               ? 'duration_below_minimum'
-              : Number((num(c.overall_score) || weightedOverall) + confidenceBoost - qualityPenalty - durationPenalty) < 60
+              : calibratedOverall < 60
                 ? 'score_below_minimum'
                 : null,
           rank: idx + 1,
           passes_quality: passesQuality,
         };
       })
-      .filter((c) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
-      .filter((c) => (c.duration_seconds >= policy.minSec) || Number(c.overall_score ?? 0) >= 92)
-      .filter((c) => Number(c.overall_score ?? 0) >= 60);
+      .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
+      .filter((c: RankedCandidate) => (c.duration_seconds >= policy.minSec) || Number(c.overall_score ?? 0) >= 92)
+      .filter((c: RankedCandidate) => Number(c.overall_score ?? 0) >= 60);
 
     const filteredCandidates = scoredCandidates;
 
     const deduped = [...filteredCandidates]
-      .sort((a, b) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
-      .reduce<typeof filteredCandidates>((acc, cur) => {
+      .sort((a: RankedCandidate, b: RankedCandidate) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
+      .reduce<typeof filteredCandidates>((acc, cur: RankedCandidate) => {
         const curTitle = normalizeTitle(String(cur.title ?? ''));
         const curSignature = hookContextSignature(String(cur.opening_line ?? ''), String(cur.closing_line ?? ''));
-        const isDuplicate = acc.some((picked) => {
+        const isDuplicate = acc.some((picked: RankedCandidate) => {
           const pickedTitle = normalizeTitle(String(picked.title ?? ''));
           const pickedSignature = hookContextSignature(String(picked.opening_line ?? ''), String(picked.closing_line ?? ''));
           const sameTitle = curTitle.length > 10 && pickedTitle.length > 10 && curTitle === pickedTitle;

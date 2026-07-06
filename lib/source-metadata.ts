@@ -8,6 +8,17 @@ type SourceMetadata = {
   sourceDurationSeconds: number | null;
 };
 
+function upgradeYouTubeThumbnail(url: string | null | undefined, videoId: string | null) {
+  if (typeof url === 'string' && url.trim()) {
+    return url.trim()
+      .replace(/\/hqdefault\.jpg(?:\?.*)?$/i, '/maxresdefault.jpg')
+      .replace(/\/hqdefault(?:\?.*)?$/i, '/maxresdefault');
+  }
+
+  if (!videoId) return null;
+  return `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+}
+
 function extractYouTubeVideoId(url: string): string | null {
   try {
     const u = new URL(url);
@@ -54,7 +65,7 @@ export async function fetchYouTubeSourceMetadata(url: string): Promise<SourceMet
     if (res.ok) {
       const data = (await res.json()) as { title?: string; thumbnail_url?: string; author_name?: string };
       base.sourceTitle = data.title ?? null;
-      base.sourceThumbnailUrl = data.thumbnail_url ?? null;
+      base.sourceThumbnailUrl = upgradeYouTubeThumbnail(data.thumbnail_url ?? null, videoId);
       base.sourceChannelName = data.author_name ?? null;
     }
   } catch {}
@@ -77,7 +88,10 @@ export async function fetchYouTubeSourceMetadata(url: string): Promise<SourceMet
         const item = data.items?.[0];
         if (item?.snippet?.title) base.sourceTitle = item.snippet.title;
         if (item?.snippet?.channelTitle) base.sourceChannelName = item.snippet.channelTitle;
-        base.sourceThumbnailUrl = item?.snippet?.thumbnails?.maxres?.url ?? item?.snippet?.thumbnails?.high?.url ?? base.sourceThumbnailUrl;
+        base.sourceThumbnailUrl =
+          item?.snippet?.thumbnails?.maxres?.url ??
+          item?.snippet?.thumbnails?.high?.url ??
+          upgradeYouTubeThumbnail(base.sourceThumbnailUrl, videoId);
         if (item?.contentDetails?.duration) {
           base.sourceDurationSeconds = parseIso8601Duration(item.contentDetails.duration);
         }

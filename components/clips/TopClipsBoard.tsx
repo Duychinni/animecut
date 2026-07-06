@@ -43,8 +43,7 @@ function formatClock(totalSeconds: number) {
 
 function toDisplayScore(score: number) {
   const raw = Number.isFinite(score) ? score * 10 : 0;
-  const boosted = raw >= 60 ? raw + 8 : raw + 4;
-  return Math.max(0, Math.min(100, Math.round(boosted)));
+  return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
 function formatDisplayScore(score: number) {
@@ -186,7 +185,12 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
                     <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
-                      <span className="text-2xl font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
+                        {toDisplayScore(clip.score) >= 85 ? (
+                          <span title="Viral clip" aria-label="Viral clip" className="cursor-help text-xl leading-none">🔥</span>
+                        ) : null}
+                      </div>
                       <div className="flex items-center gap-5">
                         <div className="group/edit relative">
                           <button

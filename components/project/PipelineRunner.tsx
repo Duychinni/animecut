@@ -139,7 +139,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
         <div className="relative overflow-hidden rounded-xl border border-white/15 bg-black/40 p-2">
           {thumbnailUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumbnailUrl} alt="Source thumbnail" className="h-32 w-full rounded-md object-cover opacity-80" />
+            <img src={thumbnailUrl} alt="Source thumbnail" className="h-32 w-full rounded-md object-cover opacity-90" loading="eager" referrerPolicy="no-referrer" />
           ) : (
             <div className="grid h-32 place-items-center rounded-md bg-white/5 text-xs text-white/50">Source media</div>
           )}

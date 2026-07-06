@@ -316,7 +316,7 @@ export default function DashboardPage() {
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
               {p.thumbnail_url || p.source_thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.thumbnail_url || p.source_thumbnail_url || ''} alt={p.source_title || p.title} className="aspect-video w-full object-cover brightness-110" />
+                <img src={p.thumbnail_url || p.source_thumbnail_url || ''} alt={p.source_title || p.title} className="aspect-video w-full object-cover brightness-110" loading="lazy" referrerPolicy="no-referrer" />
               ) : (
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}

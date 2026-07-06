@@ -265,6 +265,16 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   return `crop=1080:1920:${xExpr}:${yExpr}`;
 }
 
+function resolveOutputHeight() {
+  const raw = Number(process.env.EXPORT_MAX_HEIGHT ?? 1920);
+  if (!Number.isFinite(raw) || raw < 1280) return 1920;
+  return Math.round(raw);
+}
+
+function resolveOutputWidth(outputHeight: number) {
+  return Math.round((outputHeight * 9) / 16);
+}
+
 function buildFilter(
   opts: RenderOpts,
   includeCaptions: boolean,
@@ -273,7 +283,9 @@ function buildFilter(
   captionPath?: string,
   smartCropExpr?: string,
 ) {
-  const filterParts = ['scale=1080:1920:force_original_aspect_ratio=increase'];
+  const outputHeight = resolveOutputHeight();
+  const outputWidth = resolveOutputWidth(outputHeight);
+  const filterParts = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase`];
 
   if (escapedMotionTransformPath) {
     filterParts.push(
@@ -409,6 +421,8 @@ function buildFilter(
 }
 
 export async function renderVerticalClip(opts: RenderOpts) {
+  const outputHeight = resolveOutputHeight();
+  const outputWidth = resolveOutputWidth(outputHeight);
   const envMode = ((process.env.AUTO_REFRAME_MODE || 'basic').trim().toLowerCase() as ReframeMode);
   const effectiveMode: ReframeMode = opts.reframeMode ?? (envMode === 'off' || envMode === 'smart' ? envMode : 'basic');
   const effectiveOpts: RenderOpts = {
@@ -446,7 +460,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
         '-i',
         opts.inputPath,
         '-vf',
-        `scale=1080:1920:force_original_aspect_ratio=increase,vidstabdetect=shakiness=7:accuracy=15:result='${escapedMotionTransformPath}'`,
+        `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase,vidstabdetect=shakiness=7:accuracy=15:result='${escapedMotionTransformPath}'`,
         '-f',
         'null',
         '-',
@@ -523,7 +537,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
     if (canUseCaptions && subtitlesUnavailable && effectiveOpts.srtPath) {
       // Fallback for ffmpeg builds without libass/subtitles filter: hard-burn with drawtext.
       const drawtextFilters = await buildDrawtextFiltersFromSrt(effectiveOpts.srtPath);
-      const baseFilter = ['scale=1080:1920:force_original_aspect_ratio=increase'];
+      const baseFilter = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase`];
       if (escapedMotionTransformPath) {
         baseFilter.push(
           `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,

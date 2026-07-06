@@ -180,7 +180,7 @@ export default async function ProjectDetailPage({
   else if (effectiveStatus === 'completed') etaSeconds = 0;
 
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
-  const fallbackThumbnail = youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null;
+  const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
   const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
   const showProcessingHero = effectiveStatus !== 'completed';
 

@@ -101,7 +101,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
-        .select('id, title, status, pipeline_status, pipeline_error, source_type, source_url, source_duration_seconds, created_at, updated_at')
+        .select('id, title, status, pipeline_status, pipeline_error, source_type, source_url, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
         .eq('id', projectId)
         .single(),
       supabase
@@ -179,8 +179,11 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     }
 
     const sourceUrl = typeof project.source_url === 'string' ? project.source_url : null;
+    const storedThumbnailUrl = typeof (project as { source_thumbnail_url?: string | null }).source_thumbnail_url === 'string'
+      ? (project as { source_thumbnail_url?: string | null }).source_thumbnail_url
+      : null;
     const youtubeId = sourceUrl ? parseYouTubeId(sourceUrl) : null;
-    const thumbnailUrl = youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : null;
+    const thumbnailUrl = storedThumbnailUrl || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null);
 
     console.log('[projects/progress] counts', {
       project_id: projectId,
