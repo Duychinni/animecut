@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
-import { makeExportObjectPath, uploadExportObject } from '@/lib/storage';
+import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
 
 type JobRow = { id: string; payload: { export_id?: string } };
 
@@ -37,6 +37,91 @@ type ExportRenderOptions = {
   auto_reframe?: boolean;
   reframe_mode?: 'off' | 'basic' | 'smart';
 };
+
+const EXPORT_MAX_RENDER_ATTEMPTS = 3;
+const REPAIR_SCAN_LIMIT = 6;
+
+async function validateRemoteExport(objectPath: string) {
+  const signedUrl = await createExportSignedUrl(objectPath, 60 * 10);
+  const res = await fetch(signedUrl);
+  if (!res.ok) throw new Error(`Could not fetch existing export: ${res.status}`);
+
+  const tmpDir = path.join(process.cwd(), 'tmp', 'repair-checks');
+  await mkdir(tmpDir, { recursive: true });
+  const localPath = path.join(tmpDir, `${objectPath.replace(/[^a-zA-Z0-9._-]+/g, '_')}.mp4`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  await writeFile(localPath, bytes);
+
+  try {
+    await validateRenderedVideo(localPath);
+  } finally {
+    await unlink(localPath).catch(() => null);
+  }
+}
+
+async function enqueueRepairJob(exportId: string, projectId: string) {
+  const supabase = createAdminClient();
+  const { data: existingJob } = await supabase
+    .from('jobs')
+    .select('id')
+    .eq('type', 'export')
+    .in('status', ['queued', 'processing'])
+    .contains('payload', { export_id: exportId })
+    .maybeSingle();
+
+  if (existingJob?.id) return false;
+
+  const { error } = await supabase.from('jobs').insert({
+    project_id: projectId,
+    type: 'export',
+    payload: { export_id: exportId, repair: true },
+    status: 'queued',
+  });
+
+  if (error) throw error;
+  return true;
+}
+
+async function repairBrokenCompletedExports() {
+  const supabase = createAdminClient();
+  const { data: rows, error } = await supabase
+    .from('exports')
+    .select('id, project_id, output_storage_path, error_message, updated_at')
+    .eq('status', 'done')
+    .not('output_storage_path', 'is', null)
+    .order('updated_at', { ascending: false })
+    .limit(REPAIR_SCAN_LIMIT);
+
+  if (error) throw error;
+
+  let repaired = 0;
+
+  for (const row of rows ?? []) {
+    const objectPath = typeof row.output_storage_path === 'string' ? row.output_storage_path : null;
+    if (!objectPath) continue;
+
+    try {
+      await validateRemoteExport(objectPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Existing export validation failed';
+
+      await supabase
+        .from('exports')
+        .update({
+          status: 'queued',
+          error_message: `Auto-requeued after corruption check: ${message}`,
+          output_storage_path: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', row.id);
+
+      await enqueueRepairJob(String(row.id), String(row.project_id));
+      repaired += 1;
+    }
+  }
+
+  return repaired;
+}
 
 async function processExportJob(exportId: string, options?: ExportRenderOptions) {
   const supabase = createAdminClient();
@@ -142,6 +227,10 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
 export async function POST() {
   const supabase = createAdminClient();
+  const repaired = await repairBrokenCompletedExports().catch((error) => {
+    console.warn('[jobs/process] repair scan failed', error);
+    return 0;
+  });
 
   const { data: jobs, error } = await supabase
     .from('jobs')
@@ -181,6 +270,7 @@ export async function POST() {
   console.log('[jobs/process] queue snapshot', {
     queued_jobs_fetched: (jobs ?? []).length,
     work_items_selected: workItems.length,
+    repaired_done_exports: repaired,
   });
 
   if (!workItems.length) return NextResponse.json({ ok: true, processed: 0, counts: { queued_jobs_fetched: 0, work_items_selected: 0 } });
@@ -188,10 +278,21 @@ export async function POST() {
   let processed = 0;
   for (const item of workItems) {
     try {
+      let attemptNumber = 1;
+
       if (item.jobId) {
+        const { data: jobRow } = await supabase
+          .from('jobs')
+          .select('attempts')
+          .eq('id', item.jobId)
+          .maybeSingle();
+
+        const previousAttempts = Number(jobRow?.attempts ?? 0);
+        attemptNumber = previousAttempts + 1;
+
         await supabase
           .from('jobs')
-          .update({ status: 'processing', attempts: 1, updated_at: new Date().toISOString() })
+          .update({ status: 'processing', attempts: attemptNumber, updated_at: new Date().toISOString() })
           .eq('id', item.jobId);
       }
 
@@ -237,6 +338,43 @@ export async function POST() {
       const message = e instanceof Error ? e.message : 'Job failed';
       const exportId = item.exportId;
 
+      let currentAttempts = 1;
+      if (item.jobId) {
+        const { data: jobRow } = await supabase
+          .from('jobs')
+          .select('attempts')
+          .eq('id', item.jobId)
+          .maybeSingle();
+        currentAttempts = Number(jobRow?.attempts ?? 1);
+      }
+
+      const shouldRetry = Boolean(item.jobId && exportId && currentAttempts < EXPORT_MAX_RENDER_ATTEMPTS);
+
+      if (shouldRetry && item.jobId) {
+        await supabase
+          .from('jobs')
+          .update({
+            status: 'queued',
+            updated_at: new Date().toISOString(),
+            payload: { ...item.payload, retry_of_error: message, repair: item.payload?.repair === true },
+          })
+          .eq('id', item.jobId);
+
+        if (exportId) {
+          await supabase
+            .from('exports')
+            .update({
+              status: 'queued',
+              error_message: `Retrying render (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
+              output_storage_path: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', exportId);
+        }
+
+        continue;
+      }
+
       if (item.jobId) {
         await supabase
           .from('jobs')
@@ -258,5 +396,5 @@ export async function POST() {
     processed,
   });
 
-  return NextResponse.json({ ok: true, processed, counts: { work_items_selected: workItems.length, processed } });
+  return NextResponse.json({ ok: true, processed, repaired, counts: { work_items_selected: workItems.length, processed, repaired } });
 }
