@@ -293,11 +293,15 @@ function resolveSmartReframePython() {
   return process.env.SMART_REFRAME_PYTHON || 'python3';
 }
 
+function resolveSmartReframeScript() {
+  return process.env.SMART_REFRAME_SCRIPT || `${process.cwd()}/scripts/reframe_cv.py`;
+}
+
 async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string | undefined> {
   if (opts.reframeMode !== 'smart' || opts.autoReframe === false) return undefined;
 
   try {
-    const script = `${process.cwd()}/scripts/reframe_cv.py`;
+    const script = resolveSmartReframeScript();
     const probe = await runJsonCommand(resolveSmartReframePython(), [
       script,
       opts.inputPath,
