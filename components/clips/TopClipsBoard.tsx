@@ -16,6 +16,14 @@ type ClipItem = {
   rank: number | null;
 };
 
+function getFriendlyStatus(status: string) {
+  if (status === 'queued') return 'Queued';
+  if (status === 'processing') return 'Rendering';
+  if (status === 'error') return 'Render failed';
+  if (status === 'done') return 'Video unavailable';
+  return 'Unavailable';
+}
+
 type Props = {
   projectId: string;
   clips: ClipItem[];
@@ -361,17 +369,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     </div>
                   ) : (
                     <div className="flex justify-center px-2">
-                      <div className="flex aspect-[9/16] w-full max-w-[270px] items-center justify-center rounded-[8px] border border-dashed border-white/15 bg-[#121419] px-4 text-center text-white/50">
-                        {clip.status === 'done' ? 'Video unavailable' : `Status: ${clip.status}`}
+                      <div className={`flex aspect-[9/16] w-full max-w-[270px] items-center justify-center rounded-[8px] border px-4 text-center text-sm ${clip.status === 'error' ? 'border-red-400/20 bg-red-500/[0.06] text-red-200/85' : 'border-dashed border-white/15 bg-[#121419] text-white/50'}`}>
+                        {getFriendlyStatus(clip.status)}
                       </div>
                     </div>
                   )}
-
-                  {clip.errorMessage ? (
-                    <div className="px-1 pt-1">
-                      <p className="line-clamp-2 text-xs text-red-300/90">Error: {clip.errorMessage}</p>
-                    </div>
-                  ) : null}
                 </article>
               );
             })}

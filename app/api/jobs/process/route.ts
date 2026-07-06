@@ -41,6 +41,22 @@ type ExportRenderOptions = {
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
 const REPAIR_SCAN_LIMIT = 6;
 
+function normalizeRenderErrorMessage(message: string) {
+  if (/Invalid NAL unit|missing picture|Error splitting the input into NAL units|Missing reference picture|mmco:|Rendered export is corrupted/i.test(message)) {
+    return 'Render failed because the source video stream was corrupted or unreadable in this segment. Please retry the export.';
+  }
+
+  if (/No such filter: 'subtitles'|No such filter: 'drawtext'|Filter not found/i.test(message)) {
+    return 'Render failed because this server is missing a required video filter. Please contact support.';
+  }
+
+  if (/Unknown encoder|Error while opening encoder|Encoder .* not found/i.test(message)) {
+    return 'Render failed because the video encoder was unavailable on the server. Please retry.';
+  }
+
+  return 'Render failed. Please retry the export.';
+}
+
 async function validateRemoteExport(objectPath: string) {
   const signedUrl = await createExportSignedUrl(objectPath, 60 * 10);
   const res = await fetch(signedUrl);
@@ -335,7 +351,8 @@ export async function POST() {
       }
       processed += 1;
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Job failed';
+      const rawMessage = e instanceof Error ? e.message : 'Job failed';
+      const message = normalizeRenderErrorMessage(rawMessage);
       const exportId = item.exportId;
 
       let currentAttempts = 1;
