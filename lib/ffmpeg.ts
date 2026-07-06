@@ -304,9 +304,28 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       String(opts.endSec),
       '2.0',
     ]);
-    const raw = probe.json as { ok?: boolean; points?: Array<{ t?: number; nx?: number; ny?: number }>; error?: string };
+    const raw = probe.json as {
+      ok?: boolean;
+      points?: Array<{ t?: number; nx?: number; ny?: number; w?: number; h?: number; framing?: string; mode?: string }>;
+      meta?: {
+        points?: number;
+        frames_with_detection_pct?: number;
+        average_face_center?: { x?: number; y?: number };
+        fallback_used?: boolean;
+      };
+      error?: string;
+    };
 
     if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
+
+    console.log('[smart-reframe]', {
+      clipId: opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '') || null,
+      detectionsFound: raw?.meta?.points ?? raw.points.length,
+      averageFaceCenterX: raw?.meta?.average_face_center?.x ?? null,
+      averageFaceCenterY: raw?.meta?.average_face_center?.y ?? null,
+      framesWithDetectionPct: raw?.meta?.frames_with_detection_pct ?? null,
+      fallbackUsed: raw?.meta?.fallback_used ?? null,
+    });
 
     const points = raw.points
       .map((p) => ({

@@ -4,6 +4,8 @@ import math
 import sys
 from typing import List, Optional, Tuple
 
+TARGET_FACE_TOP = 0.40
+
 
 def fail(code: int, error: str):
     print(json.dumps({"ok": False, "error": error}))
@@ -60,6 +62,16 @@ def track_score(candidate: Tuple[float, float, float, float], active_bbox: Optio
     return base + overlap * 2.2 + continuity * 1.4
 
 
+def body_score(box: Tuple[float, float, float, float], width: float, height: float) -> float:
+    x, y, w, h = box
+    cx, cy = center(box)
+    area_ratio = (w * h) / max(width * height, 1.0)
+    center_bias = 1.0 - min(1.0, abs((cx / max(width, 1.0)) - 0.5) * 1.25)
+    upper_bias = 1.0 - min(1.0, abs((cy / max(height, 1.0)) - 0.50) * 1.15)
+    tall_bias = min(1.0, (h / max(w, 1.0)) / 2.2)
+    return area_ratio * 3.5 + center_bias * 0.7 + upper_bias * 0.6 + tall_bias * 0.8
+
+
 def motion_regions(prev_gray, gray, width: float, height: float):
     diff = cv2.absdiff(prev_gray, gray)
     diff = cv2.GaussianBlur(diff, (7, 7), 0)
@@ -106,12 +118,16 @@ def main():
 
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml")
+    body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_fullbody.xml")
+    upper_body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_upperbody.xml")
     if face_cascade.empty():
         fail(1, "haar_cascade_unavailable")
 
     points = []
     detected_faces = []
     chosen_subject = []
+    debug_frames = []
+    frames_with_detection = 0
 
     frame_idx = 0
     active_bbox: Optional[Tuple[float, float, float, float]] = None
@@ -141,8 +157,13 @@ def main():
 
         faces_raw = list(face_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(52, 52)))
         profiles_raw = [] if profile_cascade.empty() else list(profile_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(52, 52)))
+        bodies_raw = [] if body_cascade.empty() else list(body_cascade.detectMultiScale(gray, scaleFactor=1.04, minNeighbors=3, minSize=(80, 160)))
+        upper_bodies_raw = [] if upper_body_cascade.empty() else list(upper_body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(80, 80)))
+
         faces = [(float(x), float(y), float(w), float(h)) for (x, y, w, h) in faces_raw + profiles_raw]
+        bodies = [(float(x), float(y), float(w), float(h)) for (x, y, w, h) in bodies_raw + upper_bodies_raw]
         faces.sort(key=lambda f: face_score(f, width, height), reverse=True)
+        bodies.sort(key=lambda b: body_score(b, width, height), reverse=True)
 
         rel_t = round(float(t_abs - start_sec), 3)
         detected_faces.append(
@@ -159,6 +180,18 @@ def main():
                         "area": f[2] * f[3],
                     }
                     for f in faces[:4]
+                ],
+                "bodies": [
+                    {
+                        "x": b[0],
+                        "y": b[1],
+                        "w": b[2],
+                        "h": b[3],
+                        "cx": center(b)[0],
+                        "cy": center(b)[1],
+                        "area": b[2] * b[3],
+                    }
+                    for b in bodies[:3]
                 ],
             }
         )
@@ -226,6 +259,15 @@ def main():
                     frame_idx += 1
                     continue
 
+        elif bodies:
+            if active_bbox is not None and active_mode == "body":
+                selected = max(bodies, key=lambda b: iou(active_bbox, b) * 1.8 + body_score(b, width, height))
+            else:
+                selected = bodies[0]
+            selected_mode = "body"
+            pending_switch_count = 0
+            active_track_age = 0
+
         elif motion_boxes:
             best_motion = motion_boxes[0]
             if active_bbox is not None and active_mode == "motion":
@@ -236,18 +278,34 @@ def main():
             active_track_age = 0
 
         if selected is None:
-            frame_idx += 1
-            continue
+            if active_bbox is not None:
+                selected = active_bbox
+                selected_mode = "previous"
+            else:
+                frame_idx += 1
+                continue
 
         cx, cy = center(selected)
+        nx = clamp01(cx / width)
+        ny_raw = clamp01(cy / height)
+
+        if selected_mode == "face":
+            face_top = clamp01((selected[1]) / max(height, 1.0))
+            ny = clamp01(face_top + TARGET_FACE_TOP * 0.18)
+        elif selected_mode == "body":
+            body_top = clamp01((selected[1]) / max(height, 1.0))
+            ny = clamp01(body_top + 0.32)
+        else:
+            ny = ny_raw
+
         framing = "single_stable" if selected_mode == "face" and active_track_age >= 2 else "single"
         points.append(
             {
                 "t": rel_t,
                 "cx": cx,
                 "cy": cy,
-                "nx": clamp01(cx / width),
-                "ny": clamp01(cy / height),
+                "nx": nx,
+                "ny": ny,
                 "w": selected[2],
                 "h": selected[3],
                 "framing": framing,
@@ -257,6 +315,7 @@ def main():
 
         active_bbox = selected
         active_mode = selected_mode
+        frames_with_detection += 1 if selected_mode != "previous" else 0
         chosen_subject.append(
             {
                 "t": rel_t,
@@ -269,10 +328,26 @@ def main():
                 },
             }
         )
+        debug_frames.append(
+            {
+                "t": rel_t,
+                "mode": selected_mode,
+                "detections_found": {
+                    "faces": len(faces),
+                    "bodies": len(bodies),
+                    "motion": len(motion_boxes),
+                },
+                "subject_center": {"x": nx, "y": ny},
+            }
+        )
 
         frame_idx += 1
 
     cap.release()
+
+    avg_nx = sum(p["nx"] for p in points) / len(points) if points else 0.5
+    avg_ny = sum(p["ny"] for p in points) / len(points) if points else 0.42
+    detection_pct = (frames_with_detection / len(points)) if points else 0.0
 
     print(
         json.dumps(
@@ -284,9 +359,13 @@ def main():
                     "height": height,
                     "sample_fps": sample_fps,
                     "points": len(points),
+                    "frames_with_detection_pct": detection_pct,
+                    "average_face_center": {"x": avg_nx, "y": avg_ny},
+                    "fallback_used": detection_pct < 0.99,
                 },
                 "detected_faces": detected_faces,
                 "chosen_subject": chosen_subject,
+                "debug_frames": debug_frames,
                 "points": points,
             }
         )
