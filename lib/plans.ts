@@ -30,7 +30,7 @@ export const PLAN_CONFIG: PlanConfig[] = [
     maxUploadLengthMinutes: 30,
     maxGeneratedClips: 15,
     featureLabels: ['HD exports', 'Premium captions', 'Speaker detection', 'No watermark'],
-    cta: 'Start Free Trial',
+    cta: 'Choose Starter',
     secondaryCta: 'Then upgrade when you like the results',
   },
   {
