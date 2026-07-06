@@ -1,5 +1,6 @@
 import { createClient as createServerSupabaseClient } from '@/lib/supabase/server';
 import { makeRawObjectPath } from '@/lib/storage';
+import { createMultipartSessionId, getUploadProvider, isR2Configured, storeMultipartSession } from '@/lib/r2';
 
 export type UploadPreparationInput = {
   userId: string;
@@ -9,7 +10,7 @@ export type UploadPreparationInput = {
   size?: number;
 };
 
-export type UploadPreparationResult = {
+export type SignedUrlUploadPreparationResult = {
   provider: 'supabase-signed-url';
   bucket: string;
   objectPath: string;
@@ -18,9 +19,37 @@ export type UploadPreparationResult = {
   headers: Record<string, string>;
 };
 
+export type R2MultipartUploadPreparationResult = {
+  provider: 'r2-multipart';
+  bucket: string;
+  objectPath: string;
+  sessionId: string;
+  partSize: number;
+  completeUrl: string;
+};
+
+export type UploadPreparationResult = SignedUrlUploadPreparationResult | R2MultipartUploadPreparationResult;
+
 export async function prepareUploadTarget(input: UploadPreparationInput): Promise<UploadPreparationResult> {
   const ext = (input.filename.split('.').pop() || 'mp4').toLowerCase();
   const objectPath = makeRawObjectPath(input.userId, input.projectId, ext);
+
+  if (getUploadProvider() === 'r2' && isR2Configured()) {
+    const sessionId = createMultipartSessionId();
+    storeMultipartSession(sessionId, {
+      key: objectPath,
+      uploadId: sessionId,
+    });
+
+    return {
+      provider: 'r2-multipart',
+      bucket: process.env.R2_BUCKET || 'raw-media',
+      objectPath,
+      sessionId,
+      partSize: 25 * 1024 * 1024,
+      completeUrl: `/api/ingest/upload/complete`,
+    };
+  }
 
   const supabase = await createServerSupabaseClient();
   const { data: signed, error: signedError } = await supabase.storage

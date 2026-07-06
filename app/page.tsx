@@ -300,6 +300,10 @@ export default function Home() {
         throw new Error(prepData?.error || 'Could not prepare upload');
       }
 
+      if (prepData.provider === 'r2-multipart') {
+        throw new Error('R2 multipart upload scaffolding is in place, but final multipart signing/completion is not enabled yet. Keep using the current provider until R2 env/setup is finished.');
+      }
+
       setMsg('Uploading file directly to storage...');
       const uploadRes = await fetch(prepData.uploadUrl, {
         method: prepData.method || 'PUT',
