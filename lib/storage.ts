@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createSignedR2GetUrl, getUploadProvider, isR2Configured } from '@/lib/r2';
 
 const RAW_BUCKET = 'raw-media';
 const EXPORT_BUCKET = 'exports';
@@ -46,17 +47,28 @@ export async function uploadProjectThumbnailObject(objectPath: string, bytes: Bu
 }
 
 export async function downloadRawMediaToLocal(objectPath: string, projectId: string) {
-  const admin = createAdminClient();
-  const { data, error } = await admin.storage.from(RAW_BUCKET).download(objectPath);
-  if (error || !data) throw error || new Error('Failed to download raw media');
-
-  const bytes = Buffer.from(await data.arrayBuffer());
   const ext = path.extname(objectPath) || '.mp4';
   const dir = path.join(process.cwd(), 'tmp', 'ingest', projectId);
   await mkdir(dir, { recursive: true });
   const localPath = path.join(dir, `source${ext}`);
-  await writeFile(localPath, bytes);
 
+  let bytes: Buffer;
+
+  if (getUploadProvider() === 'r2' && isR2Configured()) {
+    const signedUrl = await createSignedR2GetUrl(objectPath, 60 * 60);
+    const res = await fetch(signedUrl);
+    if (!res.ok) {
+      throw new Error(`Failed to download raw media from R2: ${res.status}`);
+    }
+    bytes = Buffer.from(await res.arrayBuffer());
+  } else {
+    const admin = createAdminClient();
+    const { data, error } = await admin.storage.from(RAW_BUCKET).download(objectPath);
+    if (error || !data) throw error || new Error('Failed to download raw media');
+    bytes = Buffer.from(await data.arrayBuffer());
+  }
+
+  await writeFile(localPath, bytes);
   return localPath;
 }
 
