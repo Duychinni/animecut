@@ -194,7 +194,7 @@ export default function Home() {
   const [tokenBalance, setTokenBalance] = useState<number>(0);
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
 
-  const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips], []);
+  const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips, ...showcaseClips, ...showcaseClips], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -330,7 +330,7 @@ export default function Home() {
         }
         @keyframes marqueeLeft {
           0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-50%, 0, 0); }
+          100% { transform: translate3d(-25%, 0, 0); }
         }
         @keyframes glowSweep {
           0% { transform: translateX(-10%); opacity: .45; }
@@ -473,15 +473,12 @@ export default function Home() {
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Generated showcase</p>
               <h2 className="mt-2 text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
             </div>
-            <span className="hidden rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/55 md:inline-flex">
-              Public podcast + interview demos
-            </span>
           </div>
 
           <div className="group relative overflow-hidden">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#05050a] to-transparent" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#05050a] to-transparent" />
-            <div className="flex w-max gap-4 px-4 [will-change:transform] group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 52s linear infinite' }}>
+            <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 68s linear infinite' }}>
               {carouselItems.map((clip, index) => (
                 <button
                   key={`${clip.title}-${index}`}
@@ -498,13 +495,8 @@ export default function Home() {
                         </span>
                       </div>
 
-                      <div className="space-y-2">
-                        <div className="rounded-xl border border-white/10 bg-black/25 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/58">
-                          Generated with Animacut
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-black/35 p-2.5 text-[11px] leading-4.5 text-white/78">
-                          {clip.caption}
-                        </div>
+                      <div className="rounded-xl border border-white/10 bg-black/35 p-2.5 text-[11px] leading-4.5 text-white/78">
+                        {clip.caption}
                       </div>
                     </div>
                   </div>
