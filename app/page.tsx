@@ -304,9 +304,19 @@ export default function Home() {
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Supported platforms</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Works with the content you already make.</h2>
             <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {['▶️ YouTube', '🎵 TikTok', '📸 Instagram', '📘 Facebook', '🎙 Podcast', '📁 MP4 Upload'].map((platform) => (
-                <div key={platform} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-5 text-center text-sm font-semibold text-white/80">
-                  {platform}
+              {[
+                { name: 'YouTube', icon: '▶', bg: 'bg-[#ff0033]', fg: 'text-white' },
+                { name: 'TikTok', icon: '♪', bg: 'bg-white', fg: 'text-black' },
+                { name: 'Instagram', icon: '◎', bg: 'bg-[linear-gradient(135deg,#f9ce34,#ee2a7b,#6228d7)]', fg: 'text-white' },
+                { name: 'Facebook', icon: 'f', bg: 'bg-[#1877f2]', fg: 'text-white' },
+                { name: 'Podcast', icon: '🎙', bg: 'bg-white/[0.08]', fg: 'text-white' },
+                { name: 'MP4 Upload', icon: '📁', bg: 'bg-white/[0.08]', fg: 'text-white' },
+              ].map((platform) => (
+                <div key={platform.name} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-5 text-center text-sm font-semibold text-white/80">
+                  <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl ${platform.bg} ${platform.fg} text-xl font-black shadow-[0_10px_24px_rgba(0,0,0,0.2)]`}>
+                    {platform.icon}
+                  </div>
+                  <div>{platform.name}</div>
                 </div>
               ))}
             </div>
