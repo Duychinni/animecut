@@ -134,15 +134,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     const video = videoRefs.current[id];
     if (!video) return;
 
-    const container = video.parentElement;
-    if (!container) return;
+    const frame = video.closest('[data-clip-frame="true"]') as HTMLElement | null;
+    if (!frame) return;
 
     try {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
         return;
       }
-      await container.requestFullscreen();
+      await frame.requestFullscreen();
     } catch (error) {
       console.error(error);
     }
@@ -289,7 +289,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                   {clip.signedUrl ? (
                     <div className="flex justify-center bg-transparent px-2">
-                      <div className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0">
+                      <div data-clip-frame="true" className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0">
                         <video
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
@@ -298,7 +298,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           playsInline
                           controls={false}
                           disablePictureInPicture
-                          className="h-full w-full bg-black object-cover"
+                          className="h-full w-full bg-black object-cover [&:fullscreen]:object-contain"
                           src={clip.signedUrl}
                           onLoadedMetadata={(e) => {
                             const v = e.currentTarget;
