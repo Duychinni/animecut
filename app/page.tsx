@@ -33,74 +33,6 @@ const clipCarousel = [
   { title: 'Podcast teaser cut', score: 89, caption: 'A perfect teaser for tomorrow’s full episode.', platform: 'Podcast', length: '00:30' },
 ];
 
-const workflowSteps = ['Upload', 'Transcribing', 'Finding Hooks', 'Scoring', 'Rendering', 'Finished'];
-
-const platformLogos = [
-  {
-    name: 'YouTube',
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-        <rect x="2.5" y="6" width="19" height="12" rx="4" fill="#FF0033" />
-        <path d="M10 9.3 15.3 12 10 14.7V9.3Z" fill="white" />
-      </svg>
-    ),
-  },
-  {
-    name: 'TikTok',
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-        <path d="M14.6 3c.5 2 1.7 3.3 3.6 4V9a7.4 7.4 0 0 1-3.6-1v5.9a5.2 5.2 0 1 1-5.2-5.1c.4 0 .8 0 1.1.1v2.2a3.1 3.1 0 1 0 1.9 2.8V3h2.2Z" />
-      </svg>
-    ),
-  },
-  {
-    name: 'Instagram',
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-        <rect x="4" y="4" width="16" height="16" rx="5" stroke="url(#ig-gradient-main)" strokeWidth="1.8" />
-        <circle cx="12" cy="12" r="3.6" stroke="url(#ig-gradient-main)" strokeWidth="1.8" />
-        <circle cx="16.9" cy="7.3" r="1.1" fill="url(#ig-gradient-main)" />
-        <defs>
-          <linearGradient id="ig-gradient-main" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#F9CE34" />
-            <stop offset="0.55" stopColor="#EE2A7B" />
-            <stop offset="1" stopColor="#6228D7" />
-          </linearGradient>
-        </defs>
-      </svg>
-    ),
-  },
-  {
-    name: 'Facebook',
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-        <path d="M13.4 21v-7.4h2.5l.4-2.9h-2.9V8.9c0-.8.2-1.4 1.4-1.4h1.6V4.9c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.9v2h-2.4v2.9h2.4V21h2.9Z" />
-      </svg>
-    ),
-  },
-  {
-    name: 'Podcast',
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-        <path d="M12 18v3" />
-        <path d="M8.5 21h7" />
-        <path d="M12 6.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z" />
-        <path d="M7.8 15.7a5.8 5.8 0 1 1 8.4 0" />
-        <path d="M5 13a8.7 8.7 0 0 1 14 0" />
-      </svg>
-    ),
-  },
-  {
-    name: 'MP4',
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-        <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10Z" />
-        <path d="M12 10v6" />
-        <path d="m9.5 12.5 2.5-2.5 2.5 2.5" />
-      </svg>
-    ),
-  },
-];
 
 function makeProjectTitle() {
   return 'MAIN PROJECTS';
@@ -133,7 +65,6 @@ export default function Home() {
   const [tokenBalance, setTokenBalance] = useState<number>(0);
 
   const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel], []);
-  const infinitePlatforms = useMemo(() => [...platformLogos, ...platformLogos, ...platformLogos], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -531,55 +462,6 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="workflow" className="grid items-center gap-12 py-20 lg:grid-cols-[0.92fr_1.08fr]">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Interactive AI workflow</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">A pipeline that feels instant, even when the work is complex.</h2>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
-              Instead of hiding everything behind a single loading state, the product should show momentum — upload, transcription, hook detection, scoring, rendering, and finished exports.
-            </p>
-            <div className="mt-8 space-y-3 text-sm text-white/65">
-              <p>• Each step can pulse or light up as the job progresses.</p>
-              <p>• The middle states should feel alive, not frozen.</p>
-              <p>• This gives the whole product a smarter, premium feel.</p>
-            </div>
-          </div>
-
-          <div className="relative rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.32)]">
-            <div className="absolute left-10 top-0 h-full w-px bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(139,124,255,0.45),rgba(255,255,255,0.08))]" />
-            <div className="space-y-5">
-              {workflowSteps.map((step, index) => (
-                <div key={step} className="group relative flex items-center gap-5">
-                  <div
-                    className="relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/14 bg-[#0d0d16] text-sm font-semibold text-white shadow-[0_0_0_6px_rgba(5,5,10,0.9)]"
-                    style={{ animation: `pulseLine ${2.2 + index * 0.12}s ease-in-out infinite` }}
-                  >
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 rounded-[22px] border border-white/10 bg-black/20 px-4 py-4 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{step}</p>
-                        <p className="mt-1 text-sm text-white/55">
-                          {index === 0 && 'Source is added and a new project spins up instantly.'}
-                          {index === 1 && 'Speech, scenes, and pacing are extracted for downstream ranking.'}
-                          {index === 2 && 'Strong openings, tension points, and payoff moments are detected.'}
-                          {index === 3 && 'Moments are ranked by retention potential and clarity.'}
-                          {index === 4 && 'Captions, framing, and exports are generated.'}
-                          {index === 5 && 'Everything lands in your dashboard ready for review.'}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-white/45">
-                        live
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
         <section id="feature-showcase" className="relative left-1/2 w-screen -translate-x-1/2 py-6">
           <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-14 lg:grid-cols-[1.08fr_0.92fr]">
             <div className="relative order-2 lg:order-1">
@@ -657,64 +539,6 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid items-center gap-12 py-20 lg:grid-cols-[0.92fr_1.08fr]">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Before vs after</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">One long episode in. A full short-form system out.</h2>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
-              The transformation should be obvious at a glance: one original source on the left, a spread of ready-to-publish clips on the right.
-            </p>
-          </div>
-
-          <div className="grid gap-4 rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5 shadow-[0_28px_80px_rgba(0,0,0,0.3)] lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-[26px] border border-white/10 bg-black/25 p-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Original podcast</p>
-              <div className="mt-4 aspect-[4/5] rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_50%_20%,rgba(255,255,255,0.08),transparent_26%),linear-gradient(180deg,#14141d_0%,#0a0a10_100%)] p-4">
-                <div className="flex h-full items-end rounded-[18px] border border-white/8 bg-black/20 p-4 text-sm text-white/70">
-                  45 minute interview, one camera angle, one upload.
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[26px] border border-white/10 bg-black/25 p-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Generated clips</p>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                {[94, 91, 88, 83].map((score, index) => (
-                  <div
-                    key={score}
-                    className="aspect-[9/14] rounded-[20px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,123,216,0.12),rgba(255,255,255,0.03))] p-3 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35"
-                    style={{ animation: `floatSlow ${6 + index * 0.8}s ease-in-out infinite` }}
-                  >
-                    <div className="flex h-full flex-col justify-between rounded-[16px] border border-white/10 bg-black/25 p-3">
-                      <span className="w-fit rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-xs font-semibold text-[#ffb1ea]">🔥 {score}</span>
-                      <p className="text-xs leading-5 text-white/70">Clip candidate ready for captions, export, and posting.</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="relative left-1/2 w-screen -translate-x-1/2 overflow-hidden border-y border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] py-16">
-          <div className="mx-auto max-w-7xl px-6 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Supported platforms</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">Publish everywhere your audience already lives.</h2>
-          </div>
-
-          <div className="group mt-10 overflow-hidden">
-            <div className="flex w-max items-center gap-6 px-6 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLogos 24s linear infinite' }}>
-              {infinitePlatforms.map((platform, index) => (
-                <div key={`${platform.name}-${index}`} className="flex min-w-[180px] items-center gap-3 rounded-full border border-white/10 bg-black/25 px-5 py-3 text-sm font-semibold text-white/80 shadow-[0_12px_30px_rgba(0,0,0,0.2)] backdrop-blur">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white">
-                    {platform.icon}
-                  </div>
-                  <span>{platform.name}</span>
-                </div>
-              ))}
             </div>
           </div>
         </section>
