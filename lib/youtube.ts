@@ -62,7 +62,7 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
     '--retries', '5',
     '--fragment-retries', '5',
     '--concurrent-fragments', '4',
-    '-f', 'bv*+ba/best',
+    '-f', 'bestvideo[height<=2160]+bestaudio/bestvideo+bestaudio/best',
     '--merge-output-format', 'mp4',
     '-o', outPath,
     url,

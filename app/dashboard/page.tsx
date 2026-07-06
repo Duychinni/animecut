@@ -63,7 +63,7 @@ export default function DashboardPage() {
               if (!pr.ok) return p;
               return {
                 ...p,
-                thumbnail_url: prData?.project?.thumbnail_url ?? p.source_thumbnail_url ?? null,
+                thumbnail_url: p.source_thumbnail_url ?? prData?.project?.thumbnail_url ?? null,
                 progress_percent: Number(prData?.progress?.percent ?? 0),
                 eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
               } as ProjectListItem;
