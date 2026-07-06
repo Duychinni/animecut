@@ -47,6 +47,15 @@ function formatDisplayScore(score: number) {
   return String(clamped);
 }
 
+function getScoreColor(score: number) {
+  const value = Math.max(0, Math.min(100, Math.round(score * 10)));
+  if (value >= 90) return '#22c55e';
+  if (value >= 80) return '#84cc16';
+  if (value >= 70) return '#eab308';
+  if (value >= 60) return '#f97316';
+  return '#ef4444';
+}
+
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
@@ -173,7 +182,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
 
                     <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
-                      <span className="text-2xl font-extrabold tracking-tight text-lime-300">{formatDisplayScore(clip.score)}</span>
+                      <span className="text-2xl font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
                       <div className="flex items-center gap-5">
                         <div className="group/edit relative">
                           <button
