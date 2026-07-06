@@ -40,58 +40,11 @@ const steps: DemoStep[] = [
     label: 'Results',
     title: 'Review reels that are ready to post',
     description: 'Open the best clips, compare scores, and download the strongest short-form cuts.',
+    image: '/demo/results-demo.png',
+    imageAlt: 'Results demo screen',
     accent: 'from-amber-400/25 via-orange-400/15 to-transparent',
   },
 ];
-
-function DemoResultsSlide() {
-  return (
-    <div className="relative aspect-[16/10] overflow-hidden bg-[#07070d]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(255,133,214,0.18),transparent_24%),radial-gradient(circle_at_78%_22%,rgba(147,51,234,0.16),transparent_24%),radial-gradient(circle_at_56%_78%,rgba(255,176,76,0.12),transparent_22%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.03),transparent)]" />
-
-      <div className="absolute left-6 top-6 right-6 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-sm">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ffb347]">Top clips ready</p>
-          <p className="mt-1 text-sm font-semibold text-white">Your highest scoring reels are ready to review</p>
-        </div>
-        <div className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
-          Exported
-        </div>
-      </div>
-
-      <div className="absolute left-6 right-6 top-28 grid gap-3 sm:grid-cols-3">
-        {[
-          { title: 'Big reveal moment', score: 92, color: 'text-emerald-300' },
-          { title: 'Unexpected reaction', score: 88, color: 'text-[#ffb347]' },
-          { title: 'Strong opening hook', score: 84, color: 'text-fuchsia-300' },
-        ].map((clip, index) => (
-          <div
-            key={clip.title}
-            className="rounded-[22px] border border-white/10 bg-black/35 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.22)] backdrop-blur-sm"
-            style={{ transform: `translateY(${index * 8}px)` }}
-          >
-            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#11121a]">
-              <div className="aspect-[9/16] bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.01))]" />
-              <div className="absolute inset-x-0 bottom-0 p-3">
-                <div className="rounded-xl border border-white/10 bg-black/55 px-3 py-2 backdrop-blur-sm">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Clip preview</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{clip.title}</p>
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <span className={`text-lg font-black ${clip.color}`}>{clip.score}</span>
-              <button className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/75">
-                Download
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function DemoUploadSlide({ images }: { images: { src: string; alt: string }[] }) {
   const primary = images[0];
@@ -224,12 +177,10 @@ export function DemoShowcase() {
                 <div className="relative aspect-[16/10] bg-black">
                   <Image src={active.image} alt={active.imageAlt || active.title} fill className="object-cover" />
                   <div className="absolute bottom-4 left-4 rounded-xl border border-white/10 bg-black/55 px-3 py-2 text-xs text-white/70 backdrop-blur-sm">
-                    Live processing preview
+                    {active.id === 'results' ? 'Live results preview' : 'Live processing preview'}
                   </div>
                 </div>
-              ) : (
-                <DemoResultsSlide />
-              )}
+              ) : null}
             </div>
 
             <div className="mt-4 flex items-center justify-between gap-4">
