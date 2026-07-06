@@ -305,15 +305,73 @@ export default function Home() {
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Works with the content you already make.</h2>
             <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
               {[
-                { name: 'YouTube', icon: '▶', bg: 'bg-[#ff0033]', fg: 'text-white' },
-                { name: 'TikTok', icon: '♪', bg: 'bg-white', fg: 'text-black' },
-                { name: 'Instagram', icon: '◎', bg: 'bg-[linear-gradient(135deg,#f9ce34,#ee2a7b,#6228d7)]', fg: 'text-white' },
-                { name: 'Facebook', icon: 'f', bg: 'bg-[#1877f2]', fg: 'text-white' },
-                { name: 'Podcast', icon: '🎙', bg: 'bg-white/[0.08]', fg: 'text-white' },
-                { name: 'MP4 Upload', icon: '📁', bg: 'bg-white/[0.08]', fg: 'text-white' },
+                {
+                  name: 'YouTube',
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+                      <rect x="2.5" y="6" width="19" height="12" rx="4" fill="#FF0033" />
+                      <path d="M10 9.3 15.3 12 10 14.7V9.3Z" fill="white" />
+                    </svg>
+                  ),
+                },
+                {
+                  name: 'TikTok',
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+                      <path d="M14.6 3c.5 2 1.7 3.3 3.6 4V9a7.4 7.4 0 0 1-3.6-1v5.9a5.2 5.2 0 1 1-5.2-5.1c.4 0 .8 0 1.1.1v2.2a3.1 3.1 0 1 0 1.9 2.8V3h2.2Z" />
+                    </svg>
+                  ),
+                },
+                {
+                  name: 'Instagram',
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+                      <rect x="4" y="4" width="16" height="16" rx="5" stroke="url(#ig-gradient)" strokeWidth="1.8" />
+                      <circle cx="12" cy="12" r="3.6" stroke="url(#ig-gradient)" strokeWidth="1.8" />
+                      <circle cx="16.9" cy="7.3" r="1.1" fill="url(#ig-gradient)" />
+                      <defs>
+                        <linearGradient id="ig-gradient" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+                          <stop stopColor="#F9CE34" />
+                          <stop offset="0.55" stopColor="#EE2A7B" />
+                          <stop offset="1" stopColor="#6228D7" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  ),
+                },
+                {
+                  name: 'Facebook',
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+                      <path d="M13.4 21v-7.4h2.5l.4-2.9h-2.9V8.9c0-.8.2-1.4 1.4-1.4h1.6V4.9c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.9v2h-2.4v2.9h2.4V21h2.9Z" />
+                    </svg>
+                  ),
+                },
+                {
+                  name: 'Podcast',
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                      <path d="M12 18v3" />
+                      <path d="M8.5 21h7" />
+                      <path d="M12 6.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z" />
+                      <path d="M7.8 15.7a5.8 5.8 0 1 1 8.4 0" />
+                      <path d="M5 13a8.7 8.7 0 0 1 14 0" />
+                    </svg>
+                  ),
+                },
+                {
+                  name: 'MP4 Upload',
+                  icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v8A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5v-10Z" />
+                      <path d="M12 10v6" />
+                      <path d="m9.5 12.5 2.5-2.5 2.5 2.5" />
+                    </svg>
+                  ),
+                },
               ].map((platform) => (
                 <div key={platform.name} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-5 text-center text-sm font-semibold text-white/80">
-                  <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl ${platform.bg} ${platform.fg} text-xl font-black shadow-[0_10px_24px_rgba(0,0,0,0.2)]`}>
+                  <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white shadow-[0_8px_20px_rgba(0,0,0,0.18)]">
                     {platform.icon}
                   </div>
                   <div>{platform.name}</div>
