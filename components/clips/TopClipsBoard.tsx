@@ -41,19 +41,23 @@ function formatClock(totalSeconds: number) {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function toDisplayScore(score: number) {
+  const raw = Number.isFinite(score) ? score * 10 : 0;
+  const boosted = raw >= 60 ? raw + 8 : raw + 4;
+  return Math.max(0, Math.min(100, Math.round(boosted)));
+}
+
 function formatDisplayScore(score: number) {
-  if (!Number.isFinite(score)) return '0';
-  const clamped = Math.max(0, Math.min(100, Math.round(score * 10)));
-  return String(clamped);
+  return String(toDisplayScore(score));
 }
 
 function getScoreColor(score: number) {
-  const value = Math.max(0, Math.min(100, Math.round(score * 10)));
-  if (value >= 90) return '#22c55e';
-  if (value >= 80) return '#84cc16';
-  if (value >= 70) return '#eab308';
-  if (value >= 60) return '#f97316';
-  return '#ef4444';
+  const value = toDisplayScore(score);
+  if (value >= 92) return '#22c55e';
+  if (value >= 82) return '#4ade80';
+  if (value >= 72) return '#84cc16';
+  if (value >= 60) return '#facc15';
+  return '#fb7185';
 }
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
