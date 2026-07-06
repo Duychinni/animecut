@@ -4,7 +4,7 @@ import math
 import sys
 from typing import List, Optional, Tuple
 
-TARGET_FACE_TOP = 0.40
+TARGET_FACE_TOP = 0.38
 
 
 def fail(code: int, error: str):
@@ -290,8 +290,10 @@ def main():
         ny_raw = clamp01(cy / height)
 
         if selected_mode == "face":
+            face_cx = clamp01(cx / width)
+            nx = clamp01(0.72 * face_cx + 0.28 * 0.5)
             face_top = clamp01((selected[1]) / max(height, 1.0))
-            ny = clamp01(face_top + TARGET_FACE_TOP * 0.18)
+            ny = clamp01(face_top + TARGET_FACE_TOP * 0.20)
         elif selected_mode == "body":
             body_top = clamp01((selected[1]) / max(height, 1.0))
             ny = clamp01(body_top + 0.32)
