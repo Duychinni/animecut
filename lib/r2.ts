@@ -3,8 +3,8 @@ import {
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
-  PutObjectCommand,
   S3Client,
+  UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'node:crypto';
@@ -129,14 +129,11 @@ export async function createSignedMultipartPartUrl(key: string, uploadId: string
 
   return getSignedUrl(
     client,
-    new PutObjectCommand({
+    new UploadPartCommand({
       Bucket: cfg.bucket,
       Key: key,
-      Metadata: {
-        multipart: 'true',
-        uploadid: uploadId,
-        partnumber: String(partNumber),
-      },
+      UploadId: uploadId,
+      PartNumber: partNumber,
     }),
     { expiresIn: 60 * 60 },
   );
