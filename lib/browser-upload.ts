@@ -34,7 +34,7 @@ export async function uploadFileMultipartToR2(file: File, prep: MultipartPrepara
 
     if (!uploadRes.ok) {
       const errText = await uploadRes.text().catch(() => 'Multipart upload failed');
-      throw new Error(errText || 'Multipart upload failed');
+      throw new Error(`Multipart upload part ${partNumber} failed: ${errText || 'Upload failed'}`);
     }
 
     const etag = uploadRes.headers.get('etag');

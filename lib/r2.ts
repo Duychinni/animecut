@@ -104,16 +104,22 @@ export async function createR2MultipartUpload(key: string, contentType: string) 
   const cfg = getR2Config();
   if (!cfg) throw new Error('R2 is not configured');
   const client = getR2Client();
-  const result = await client.send(
-    new CreateMultipartUploadCommand({
-      Bucket: cfg.bucket,
-      Key: key,
-      ContentType: contentType || 'application/octet-stream',
-    }),
-  );
 
-  if (!result.UploadId) throw new Error('Could not create multipart upload');
-  return result.UploadId;
+  try {
+    const result = await client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: cfg.bucket,
+        Key: key,
+        ContentType: contentType || 'application/octet-stream',
+      }),
+    );
+
+    if (!result.UploadId) throw new Error('Could not create multipart upload');
+    return result.UploadId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`R2 multipart init failed for bucket "${cfg.bucket}" at "${cfg.endpoint}". ${message}`);
+  }
 }
 
 export async function createSignedMultipartPartUrl(key: string, uploadId: string, partNumber: number) {
@@ -145,16 +151,21 @@ export async function completeR2MultipartUpload(params: {
   if (!cfg) throw new Error('R2 is not configured');
   const client = getR2Client();
 
-  await client.send(
-    new CompleteMultipartUploadCommand({
-      Bucket: cfg.bucket,
-      Key: params.key,
-      UploadId: params.uploadId,
-      MultipartUpload: {
-        Parts: params.parts.map((part) => ({ ETag: part.etag, PartNumber: part.partNumber })),
-      },
-    }),
-  );
+  try {
+    await client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: cfg.bucket,
+        Key: params.key,
+        UploadId: params.uploadId,
+        MultipartUpload: {
+          Parts: params.parts.map((part) => ({ ETag: part.etag, PartNumber: part.partNumber })),
+        },
+      }),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`R2 multipart completion failed for key "${params.key}". ${message}`);
+  }
 }
 
 export async function createSignedR2GetUrl(key: string, expiresIn = 60 * 60 * 24 * 7) {
