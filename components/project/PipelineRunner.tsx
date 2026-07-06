@@ -42,7 +42,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const autoRanRef = useRef(false);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
-  const isCompleted = progress?.project?.status === 'completed' || progressPct >= 100;
+  const isCompleted = progress?.project?.status === 'completed';
 
   const refreshProgress = useCallback(async () => {
     try {

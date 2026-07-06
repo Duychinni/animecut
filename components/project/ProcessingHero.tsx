@@ -67,11 +67,11 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
 
   useEffect(() => {
     if (completedNavRef.current) return;
-    if (status === 'completed' || percent >= 100) {
+    if (status === 'completed') {
       completedNavRef.current = true;
       router.replace(`/dashboard/projects/${projectId}?done=${Date.now()}`);
     }
-  }, [percent, projectId, router, status]);
+  }, [projectId, router, status]);
 
   return (
     <div className="flex min-h-[68vh] w-full items-start justify-center">
