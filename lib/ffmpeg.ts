@@ -235,7 +235,7 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
   return filters;
 }
 
-type ReframePoint = { t: number; nx: number; ny: number };
+type ReframePoint = { t: number; nx: number; ny: number; w?: number; h?: number; framing?: string; mode?: string };
 
 function clamp01(v: number) {
   return Math.max(0, Math.min(1, v));
@@ -305,25 +305,44 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
     if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
 
     const points = raw.points
-      .map((p) => ({ t: Number(p.t ?? 0), nx: clamp01(Number(p.nx ?? 0.5)), ny: clamp01(Number(p.ny ?? 0.5)) }))
+      .map((p) => ({
+        t: Number(p.t ?? 0),
+        nx: clamp01(Number(p.nx ?? 0.5)),
+        ny: clamp01(Number(p.ny ?? 0.42)),
+        w: Number(p.w ?? 0),
+        h: Number(p.h ?? 0),
+        framing: typeof p.framing === 'string' ? p.framing : undefined,
+        mode: typeof p.mode === 'string' ? p.mode : undefined,
+      }))
       .filter((p) => Number.isFinite(p.t))
       .sort((a, b) => a.t - b.t);
 
     if (points.length < 2) return undefined;
 
-    const stabilized = downsamplePoints(smoothPoints(points, 0.32), 10);
+    const stabilized = downsamplePoints(smoothPoints(points, 0.42), 14);
 
     const xExprRaw = buildTimelineExpr(
       stabilized,
-      (p) => `min(max((iw-1080)*${clamp01(p.nx).toFixed(4)},0),iw-1080)`,
+      (p) => {
+        const faceWidthNorm = p.w && Number.isFinite(p.w) ? p.w / 1920 : 0;
+        const pairBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
+        const edgeGuard = faceWidthNorm > 0.18 ? 0.12 : 0.08;
+        const target = clamp01(edgeGuard + pairBias * (1 - edgeGuard * 2));
+        return `min(max((iw-1080)*${target.toFixed(4)},0),iw-1080)`;
+      },
       '(iw-1080)/2',
     );
 
-    // Headroom bias: lift crop a bit above exact face center for interview framing.
+    // Better podcast/interview framing: keep eyes in the upper-middle instead of centering the whole body.
     const yExprRaw = buildTimelineExpr(
       stabilized,
-      (p) => `min(max((ih-1920)*${clamp01(p.ny - 0.18).toFixed(4)},0),ih-1920)`,
-      'min(max((ih-1920)*0.42,0),ih-1920)',
+      (p) => {
+        const isPair = p.framing === 'wide_pair';
+        const headroomBias = isPair ? 0.12 : 0.18;
+        const target = clamp01((p.ny ?? 0.42) - headroomBias);
+        return `min(max((ih-1920)*${target.toFixed(4)},0),ih-1920)`;
+      },
+      'min(max((ih-1920)*0.30,0),ih-1920)',
     );
 
     const xExpr = escapeFfmpegExpr(xExprRaw);
@@ -342,9 +361,9 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   if (!enabled) return 'crop=1080:1920';
   if (mode === 'smart' && smartCropExpr) return smartCropExpr;
 
-  // Baseline stable framing
+  // Baseline stable framing with better portrait headroom for talking-head clips.
   const xExpr = '(iw-1080)/2';
-  const yExpr = escapeFfmpegExpr('min(max((ih-1920)*0.42,0),ih-1920)');
+  const yExpr = escapeFfmpegExpr('min(max((ih-1920)*0.30,0),ih-1920)');
   return `crop=1080:1920:${xExpr}:${yExpr}`;
 }
 
