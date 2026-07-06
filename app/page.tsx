@@ -390,10 +390,10 @@ export default function Home() {
               <Link href="#features" className="transition hover:text-white">Features</Link>
               <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
               <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
-              <Link href="#faq" className="transition hover:text-white">Support</Link>
-              <Link href="#" className="transition hover:text-white">Terms</Link>
-              <Link href="#" className="transition hover:text-white">Privacy</Link>
-              <Link href="#" className="transition hover:text-white">Contact</Link>
+              <Link href="/support" className="transition hover:text-white">Support</Link>
+              <Link href="/terms" className="transition hover:text-white">Terms</Link>
+              <Link href="/privacy" className="transition hover:text-white">Privacy</Link>
+              <Link href="/contact" className="transition hover:text-white">Contact</Link>
             </div>
           </div>
         </footer>
