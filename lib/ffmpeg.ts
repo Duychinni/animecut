@@ -20,6 +20,18 @@ type RenderOpts = {
   reframeMode?: ReframeMode;
 };
 
+export async function extractVideoThumbnail(inputPath: string, outputPath: string, atSeconds = 5) {
+  await runFfmpeg([
+    '-y',
+    '-ss', String(atSeconds),
+    '-i', inputPath,
+    '-frames:v', '1',
+    '-q:v', '2',
+    '-vf', 'scale=1280:-2',
+    outputPath,
+  ]);
+}
+
 export async function validateRenderedVideo(outputPath: string) {
   const result = await runJsonCommand('ffprobe', [
     '-v', 'error',
