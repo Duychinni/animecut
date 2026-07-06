@@ -369,6 +369,14 @@ def main():
                 "chosen_subject": chosen_subject,
                 "debug_frames": debug_frames,
                 "points": points,
+                "debug_overlay": {
+                    "target_face_top": TARGET_FACE_TOP,
+                    "safe_zone": {
+                        "center_x": 0.5,
+                        "face_top_min": 0.35,
+                        "face_top_max": 0.45,
+                    },
+                },
             }
         )
     )

@@ -18,6 +18,7 @@ type RenderOpts = {
   motionTracking?: boolean;
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
+  debugReframeOverlay?: boolean;
 };
 
 export async function extractVideoThumbnail(inputPath: string, outputPath: string, atSeconds = 5) {
@@ -422,6 +423,14 @@ function buildFilter(
 
   filterParts.push(buildCropFilter(opts, smartCropExpr));
 
+  if (opts.debugReframeOverlay) {
+    filterParts.push(
+      "drawbox=x=w*0.5-6:y=0:w=12:h=h:color=yellow@0.65:t=fill",
+      "drawbox=x=0:y=h*0.35:w=w:h=6:color=cyan@0.55:t=fill",
+      "drawbox=x=0:y=h*0.45:w=w:h=6:color=cyan@0.55:t=fill"
+    );
+  }
+
   if (includeCaptions && escapedPath) {
     const template = opts.captionTemplate ?? 'capcut';
     const captionFont = opts.captionFont ?? 'arial';
@@ -556,6 +565,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
     ...opts,
     autoReframe: opts.autoReframe ?? process.env.AUTO_REFRAME_ENABLED !== 'false',
     reframeMode: effectiveMode,
+    debugReframeOverlay: opts.debugReframeOverlay ?? process.env.DEBUG_REFRAME_OVERLAY === 'true',
   };
 
   let escapedPath: string | undefined;
