@@ -21,8 +21,8 @@ const steps: DemoStep[] = [
     title: 'Paste a link or upload a source file',
     description: 'Start a project in seconds with a YouTube link or your own video.',
     images: [
-      { src: '/demo/upload-demo-a.png', alt: 'Upload demo screen 1' },
-      { src: '/demo/upload-demo-b.png', alt: 'Upload demo screen 2' },
+      { src: '/demo/upload-demo-b.png', alt: 'Upload demo hero screen' },
+      { src: '/demo/upload-demo-a.png', alt: 'Upload demo secondary screen' },
     ],
     accent: 'from-fuchsia-500/25 via-pink-500/15 to-transparent',
   },
@@ -89,6 +89,37 @@ function DemoResultsSlide() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function DemoUploadSlide({ images }: { images: { src: string; alt: string }[] }) {
+  const primary = images[0];
+  const secondary = images[1];
+
+  return (
+    <div className="grid gap-3 bg-black p-3 lg:grid-cols-[1.35fr_0.65fr]">
+      <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black shadow-[0_18px_40px_rgba(0,0,0,0.28)]">
+        <div className="relative aspect-[16/10]">
+          <Image src={primary.src} alt={primary.alt} fill className="object-cover object-center" />
+        </div>
+      </div>
+
+      {secondary ? (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ff7bd8]">Step 1</p>
+            <p className="mt-2 text-sm font-semibold text-white">Drop a link and hit Get Clips</p>
+            <p className="mt-2 text-sm leading-6 text-white/60">The first screen should do most of the selling, so it now gets the bigger visual weight.</p>
+          </div>
+
+          <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
+            <div className="relative aspect-[10/10]">
+              <Image src={secondary.src} alt={secondary.alt} fill className="object-cover object-center" />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -198,20 +229,8 @@ export function DemoShowcase() {
                 <div className="h-full bg-[linear-gradient(90deg,#ff7bd8,#c084fc,#ffb347)] transition-all duration-500" style={{ width: progressWidth }} />
               </div>
 
-              {active.images?.length ? (
-                <div className="grid gap-3 bg-black p-3 sm:grid-cols-2">
-                  {active.images.map((image, index) => (
-                    <div
-                      key={image.src}
-                      className="relative overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_16px_36px_rgba(0,0,0,0.24)]"
-                      style={{ transform: `translateY(${index * 10}px)` }}
-                    >
-                      <div className="relative aspect-[16/10]">
-                        <Image src={image.src} alt={image.alt} fill className="object-cover" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {active.id === 'upload' && active.images?.length ? (
+                <DemoUploadSlide images={active.images} />
               ) : active.image ? (
                 <div className="relative aspect-[16/10] bg-black">
                   <Image src={active.image} alt={active.imageAlt || active.title} fill className="object-cover" />
