@@ -230,7 +230,10 @@ export default function Home() {
           <HomeLogoLink />
 
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
+            <Link href="#demo" className="transition hover:text-white">Demo</Link>
             <Link href="#feature-showcase" className="transition hover:text-white">Features</Link>
+            <Link href="#faq" className="transition hover:text-white">FAQ</Link>
+            <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
