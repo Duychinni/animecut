@@ -472,7 +472,7 @@ export default function Home() {
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
-          <div>
+          <div className="overflow-hidden">
             <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 68s linear infinite' }}>
               {carouselItems.map((clip, index) => (
                 <button
@@ -496,12 +496,9 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="mt-3 space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
-                      <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
-                    </div>
-                    <p className="text-[11px] leading-4 text-white/50">Source: {clip.source}</p>
+                  <div className="mt-3 flex items-start justify-between gap-3">
+                    <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
+                    <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
                   </div>
                 </button>
               ))}
