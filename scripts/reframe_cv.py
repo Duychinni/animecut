@@ -2,7 +2,7 @@
 import json
 import math
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 def fail(code: int, error: str):
@@ -31,6 +31,40 @@ def center(b: Tuple[float, float, float, float]) -> Tuple[float, float]:
     return x + w / 2.0, y + h / 2.0
 
 
+def clamp01(v: float) -> float:
+    return max(0.0, min(1.0, v))
+
+
+def face_score(face: Tuple[float, float, float, float], width: float, height: float) -> float:
+    x, y, w, h = face
+    cx, cy = center(face)
+    area = w * h
+    frame_area = max(width * height, 1.0)
+    area_ratio = area / frame_area
+    center_bias = 1.0 - min(1.0, abs((cx / max(width, 1.0)) - 0.5) * 1.5)
+    upper_bias = 1.0 - min(1.0, abs((cy / max(height, 1.0)) - 0.42) * 1.35)
+    return area_ratio * 4.5 + center_bias * 0.9 + upper_bias * 0.8
+
+
+def motion_regions(prev_gray, gray, width: float, height: float):
+    diff = cv2.absdiff(prev_gray, gray)
+    diff = cv2.GaussianBlur(diff, (7, 7), 0)
+    _, thresh = cv2.threshold(diff, 18, 255, cv2.THRESH_BINARY)
+    thresh = cv2.dilate(thresh, None, iterations=2)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = float(w * h)
+        if area < max(1200.0, width * height * 0.0035):
+            continue
+        boxes.append((float(x), float(y), float(w), float(h)))
+
+    boxes.sort(key=lambda b: b[2] * b[3], reverse=True)
+    return boxes[:5]
+
+
 def main():
     if len(sys.argv) < 4:
         fail(2, "usage: reframe_cv.py <input_path> <start_sec> <end_sec> [sample_fps]")
@@ -41,6 +75,7 @@ def main():
     sample_fps = float(sys.argv[4]) if len(sys.argv) > 4 else 2.0
 
     try:
+        global cv2
         import cv2  # type: ignore
     except Exception:
         fail(0, "opencv_unavailable")
@@ -55,8 +90,9 @@ def main():
 
     step = max(1, int(round(fps / max(sample_fps, 0.25))))
 
-    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    if cascade.empty():
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_profileface.xml")
+    if face_cascade.empty():
         fail(1, "haar_cascade_unavailable")
 
     points = []
@@ -65,10 +101,9 @@ def main():
 
     frame_idx = 0
     active_bbox: Optional[Tuple[float, float, float, float]] = None
-    active_id: Optional[int] = None
-    next_track_id = 1
-    pending_switch_id: Optional[int] = None
+    active_mode = "face"
     pending_switch_count = 0
+    prev_gray = None
 
     while True:
         ok, frame = cap.read()
@@ -87,12 +122,14 @@ def main():
             break
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces_raw = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(40, 40))
-        faces = [(float(x), float(y), float(w), float(h)) for (x, y, w, h) in faces_raw]
-        faces.sort(key=lambda f: f[2] * f[3], reverse=True)
+        gray = cv2.equalizeHist(gray)
+
+        faces_raw = list(face_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=5, minSize=(52, 52)))
+        profiles_raw = [] if profile_cascade.empty() else list(profile_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(52, 52)))
+        faces = [(float(x), float(y), float(w), float(h)) for (x, y, w, h) in faces_raw + profiles_raw]
+        faces.sort(key=lambda f: face_score(f, width, height), reverse=True)
 
         rel_t = round(float(t_abs - start_sec), 3)
-
         detected_faces.append(
             {
                 "t": rel_t,
@@ -111,77 +148,73 @@ def main():
             }
         )
 
-        if not faces:
-            frame_idx += 1
-            continue
+        motion_boxes = motion_regions(prev_gray, gray, width, height) if prev_gray is not None else []
+        prev_gray = gray
 
-        # Best detection by size.
-        best = faces[0]
-        selected = best
-        selected_id = active_id if active_id is not None else next_track_id
+        selected = None
+        selected_mode = "motion"
 
-        if active_bbox is not None:
-            # Keep current subject unless switch is consistently better for ~2 samples.
-            best_iou = max(iou(active_bbox, f) for f in faces)
-            active_present = best_iou >= 0.12
-
-            if active_present:
-                # stick to nearest active face candidate
-                selected = max(faces, key=lambda f: iou(active_bbox, f))
-            else:
-                selected = best
-
-            if best != selected:
-                # switching candidate appeared; require persistence (hysteresis)
-                switch_id = id(best)
-                if pending_switch_id == switch_id:
-                    pending_switch_count += 1
-                else:
-                    pending_switch_id = switch_id
-                    pending_switch_count = 1
-
-                if pending_switch_count >= 2:
-                    selected = best
-                    pending_switch_id = None
+        if faces:
+            best_face = faces[0]
+            if active_bbox is not None and active_mode == "face":
+                best_iou = max(iou(active_bbox, f) for f in faces)
+                if best_iou >= 0.10:
+                    selected = max(faces, key=lambda f: iou(active_bbox, f) * 1.6 + face_score(f, width, height))
                     pending_switch_count = 0
                 else:
-                    # hold current subject this frame
-                    selected = selected
+                    pending_switch_count += 1
+                    if pending_switch_count >= 2:
+                        selected = best_face
+                        pending_switch_count = 0
+                    else:
+                        selected = active_bbox
             else:
-                pending_switch_id = None
+                selected = best_face
                 pending_switch_count = 0
-        else:
-            selected = best
 
-        # Two-speaker handling: if two similar faces, center between them briefly (wider-feel framing).
-        framing = "single"
-        if len(faces) >= 2:
-            f1, f2 = faces[0], faces[1]
-            a1, a2 = f1[2] * f1[3], f2[2] * f2[3]
-            ratio = (a1 / a2) if a2 > 0 else 999.0
-            c1x, c1y = center(f1)
-            c2x, c2y = center(f2)
-            dx = abs(c1x - c2x) / max(width, 1.0)
-            dy = abs(c1y - c2y) / max(height, 1.0)
+            selected_mode = "face"
 
-            if ratio < 1.65 and dx > 0.12 and dx < 0.65 and dy < 0.22:
-                mx = (c1x + c2x) / 2.0
-                my = (c1y + c2y) / 2.0
-                points.append(
-                    {
-                        "t": rel_t,
-                        "cx": mx,
-                        "cy": my,
-                        "nx": max(0.0, min(1.0, mx / width)),
-                        "ny": max(0.0, min(1.0, my / height)),
-                        "w": max(f1[2], f2[2]),
-                        "h": max(f1[3], f2[3]),
-                        "framing": "wide_pair",
-                    }
-                )
-                chosen_subject.append({"t": rel_t, "mode": "pair", "primary": None})
-                frame_idx += 1
-                continue
+            if len(faces) >= 2:
+                f1, f2 = faces[0], faces[1]
+                a1, a2 = f1[2] * f1[3], f2[2] * f2[3]
+                ratio = (a1 / a2) if a2 > 0 else 999.0
+                c1x, c1y = center(f1)
+                c2x, c2y = center(f2)
+                dx = abs(c1x - c2x) / max(width, 1.0)
+                dy = abs(c1y - c2y) / max(height, 1.0)
+                if ratio < 1.6 and 0.10 < dx < 0.62 and dy < 0.24:
+                    mx = (c1x + c2x) / 2.0
+                    my = (c1y + c2y) / 2.0
+                    points.append(
+                        {
+                            "t": rel_t,
+                            "cx": mx,
+                            "cy": my,
+                            "nx": clamp01(mx / width),
+                            "ny": clamp01(my / height),
+                            "w": max(f1[2], f2[2]),
+                            "h": max(f1[3], f2[3]),
+                            "framing": "wide_pair",
+                            "mode": "face_pair",
+                        }
+                    )
+                    chosen_subject.append({"t": rel_t, "mode": "face_pair"})
+                    active_bbox = None
+                    active_mode = "face"
+                    frame_idx += 1
+                    continue
+
+        elif motion_boxes:
+            best_motion = motion_boxes[0]
+            if active_bbox is not None and active_mode == "motion":
+                best_motion = max(motion_boxes, key=lambda b: iou(active_bbox, b) * 1.5 + (b[2] * b[3]))
+            selected = best_motion
+            selected_mode = "motion"
+            pending_switch_count = 0
+
+        if selected is None:
+            frame_idx += 1
+            continue
 
         cx, cy = center(selected)
         points.append(
@@ -189,27 +222,22 @@ def main():
                 "t": rel_t,
                 "cx": cx,
                 "cy": cy,
-                "nx": max(0.0, min(1.0, cx / width)),
-                "ny": max(0.0, min(1.0, cy / height)),
+                "nx": clamp01(cx / width),
+                "ny": clamp01(cy / height),
                 "w": selected[2],
                 "h": selected[3],
-                "framing": framing,
+                "framing": "single",
+                "mode": selected_mode,
             }
         )
 
-        # update active subject for next step
         active_bbox = selected
-        if active_id is None:
-            active_id = next_track_id
-            next_track_id += 1
-        selected_id = active_id
-
+        active_mode = selected_mode
         chosen_subject.append(
             {
                 "t": rel_t,
-                "mode": "single",
+                "mode": selected_mode,
                 "primary": {
-                    "subject_id": selected_id,
                     "cx": cx,
                     "cy": cy,
                     "w": selected[2],

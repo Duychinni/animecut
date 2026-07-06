@@ -259,12 +259,16 @@ function escapeFfmpegExpr(expr: string) {
   return expr.replace(/,/g, '\\,');
 }
 
+function resolveSmartReframePython() {
+  return process.env.SMART_REFRAME_PYTHON || 'python3';
+}
+
 async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string | undefined> {
   if (opts.reframeMode !== 'smart' || opts.autoReframe === false) return undefined;
 
   try {
     const script = `${process.cwd()}/scripts/reframe_cv.py`;
-    const probe = await runJsonCommand('python3', [
+    const probe = await runJsonCommand(resolveSmartReframePython(), [
       script,
       opts.inputPath,
       String(opts.startSec),
