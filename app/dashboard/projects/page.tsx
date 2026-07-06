@@ -49,6 +49,7 @@ export default function ProjectsPage() {
             if (!pr.ok) return p;
             return {
               ...p,
+              status: String(prData?.project?.status ?? p.status),
               thumbnail_url: prData?.project?.thumbnail_url ?? null,
               progress_percent: Number(prData?.progress?.percent ?? 0),
               eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
@@ -128,7 +129,7 @@ export default function ProjectsPage() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {recentProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
-          const showProcessing = percent < 100;
+          const showProcessing = p.status !== 'completed';
 
           const cardBody = (
             <>
