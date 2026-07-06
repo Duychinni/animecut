@@ -16,9 +16,9 @@ export const metadata: Metadata = {
   title: 'AnimaCut',
   description: 'AI video clipping workflow for podcasts and talking-head content.',
   icons: {
-    icon: '/brand/animacut-logo.png',
-    shortcut: '/brand/animacut-logo.png',
-    apple: '/brand/animacut-logo.png',
+    icon: '/brand/animacut-play-icon.png',
+    shortcut: '/brand/animacut-play-icon.png',
+    apple: '/brand/animacut-play-icon.png',
   },
 };
 
