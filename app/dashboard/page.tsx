@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 function fmtDuration(totalSec: number | null | undefined) {
@@ -29,6 +30,7 @@ type ProjectListItem = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export default function DashboardPage() {
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
   const autoStartedRef = useRef<Set<string>>(new Set());
+  const completedRedirectRef = useRef<Set<string>>(new Set());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
 
   async function loadProjects(initial = false) {
@@ -191,6 +194,18 @@ export default function DashboardPage() {
       })();
     });
   }, [recentProjects]);
+
+  useEffect(() => {
+    const completedProject = recentProjects.find((project) => {
+      const percent = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
+      return percent >= 100 && project.status === 'completed' && !completedRedirectRef.current.has(project.id);
+    });
+
+    if (!completedProject) return;
+
+    completedRedirectRef.current.add(completedProject.id);
+    router.push(`/dashboard/projects/${completedProject.id}`);
+  }, [recentProjects, router]);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
@@ -385,7 +400,7 @@ export default function DashboardPage() {
           return (
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="min-w-0">
-                <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>
+                <Link href={`/dashboard/projects/${p.id}`} prefetch>{thumb}</Link>
 
                 <div className="mt-3">
                   {renamingId === p.id ? (
