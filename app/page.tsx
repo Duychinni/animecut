@@ -379,8 +379,8 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="feature-showcase" className="relative left-1/2 w-screen -translate-x-1/2 py-6">
-          <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-14 lg:grid-cols-[1.08fr_0.92fr]">
+        <section id="feature-showcase" className="relative left-1/2 w-screen -translate-x-1/2 pt-6 pb-2">
+          <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-10 lg:grid-cols-[1.08fr_0.92fr]">
             <div className="relative order-2 lg:order-1">
               <div className="absolute -left-8 top-10 h-36 w-36 rounded-full bg-[#8b7cff]/16 blur-3xl" />
               <div className="relative rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-4 shadow-[0_32px_90px_rgba(0,0,0,0.34)]">
@@ -454,7 +454,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="faq" className="mt-16 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+        <section id="faq" className="mt-8 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
           <div className="max-w-3xl">
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Questions creators ask before they upload.</h2>
