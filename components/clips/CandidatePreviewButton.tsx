@@ -3,6 +3,20 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+async function readJsonSafe(res: Response) {
+  const text = await res.text();
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return {
+      error: text.trim().startsWith('<')
+        ? `Server returned HTML instead of JSON (status ${res.status})`
+        : text || `Request failed with status ${res.status}`,
+    };
+  }
+}
+
 export function CandidatePreviewButton({ projectId, candidateId }: { projectId: string; candidateId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -32,20 +46,20 @@ export function CandidatePreviewButton({ projectId, candidateId }: { projectId: 
         reframe_mode: reframeMode,
       }),
     });
-    const qData = await q.json();
+    const qData = await readJsonSafe(q);
 
     if (!q.ok) {
-      setMsg(`Queue failed: ${qData.error || 'unknown'}`);
+      setMsg(`Queue failed: ${String(qData.error || 'unknown')}`);
       setLoading(false);
       return;
     }
 
     setMsg('Rendering...');
     const p = await fetch('/api/jobs/process', { method: 'POST' });
-    const pData = await p.json();
+    const pData = await readJsonSafe(p);
 
     if (!p.ok) {
-      setMsg(`Render failed: ${pData.error || 'unknown'}`);
+      setMsg(`Render failed: ${String(pData.error || 'unknown')}`);
       setLoading(false);
       return;
     }
