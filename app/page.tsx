@@ -230,11 +230,7 @@ export default function Home() {
           <HomeLogoLink />
 
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
-            <Link href="#demo" className="transition hover:text-white">Demo</Link>
-            <Link href="#workflow" className="transition hover:text-white">How It Works</Link>
             <Link href="#feature-showcase" className="transition hover:text-white">Features</Link>
-            <Link href="#faq" className="transition hover:text-white">FAQ</Link>
-            <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
@@ -474,6 +470,31 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section id="faq" className="mt-16 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Questions creators ask before they upload.</h2>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {[
+              ['How long can videos be?', 'Longer uploads work best on higher plans, and the app is built for podcasts, interviews, and long-form content.'],
+              ['How many clips are generated?', 'Clip count depends on source length, but AnimaCut targets multiple strong shorts from every video.'],
+              ['Do I keep ownership?', 'Yes. Your source content stays yours, and the exported clips are yours to publish.'],
+              ['Can I upload YouTube links?', 'Yes — you can paste YouTube links directly or upload your own MP4 files.'],
+              ['Can I upload podcasts?', 'Yes. Podcast episodes are one of the best use cases for generating multiple shorts.'],
+              ['Can I edit captions?', 'Yes. You can re-render clips with different caption presets and styles.'],
+              ['Can I cancel anytime?', 'Yes. Plans are simple and can be changed as your usage grows.'],
+              ['Does it support multiple platforms?', 'Yes. The output is built for TikTok, Reels, Shorts, and other vertical video channels.'],
+            ].map(([question, answer]) => (
+              <div key={question} className="rounded-[24px] border border-white/10 bg-black/20 p-5 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
+                <h3 className="text-lg font-semibold text-white">{question}</h3>
+                <p className="mt-3 text-sm leading-6 text-white/60">{answer}</p>
+              </div>
+            ))}
           </div>
         </section>
 
