@@ -468,11 +468,8 @@ export default function Home() {
         </section>
 
         <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden py-10">
-          <div className="mx-auto mb-6 flex max-w-7xl items-center justify-between px-6">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Generated showcase</p>
-              <h2 className="mt-2 text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
-            </div>
+          <div className="mx-auto mb-6 max-w-7xl px-6 text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
           <div className="group relative overflow-hidden">
