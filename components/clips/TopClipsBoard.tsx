@@ -142,6 +142,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
   function handleFullscreen(id: string) {
     pauseOtherVideos(id);
+    const currentVideo = videoRefs.current[id];
+    if (currentVideo) {
+      currentVideo.pause();
+      updatePlayback(id, { paused: true });
+    }
     setExpandedClipId(id);
   }
 
