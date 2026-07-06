@@ -47,7 +47,7 @@ function PlanCard({
         {suffix ? <span className="pb-1 text-sm text-white/60">{suffix}</span> : null}
       </div>
 
-      <div className="mt-3 min-h-[44px]">
+      <div className="mt-3 min-h-[64px]">
         {plan.secondaryCta ? <p className="text-sm text-white/58">{plan.secondaryCta}</p> : null}
       </div>
 
