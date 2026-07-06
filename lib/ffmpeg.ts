@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
@@ -319,14 +319,22 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
     if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
 
+    const clipId = opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '') || 'unknown';
+
     console.log('[smart-reframe]', {
-      clipId: opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '') || null,
+      clipId,
       detectionsFound: raw?.meta?.points ?? raw.points.length,
       averageFaceCenterX: raw?.meta?.average_face_center?.x ?? null,
       averageFaceCenterY: raw?.meta?.average_face_center?.y ?? null,
       framesWithDetectionPct: raw?.meta?.frames_with_detection_pct ?? null,
       fallbackUsed: raw?.meta?.fallback_used ?? null,
     });
+
+    if (process.env.DEBUG_REFRAME_SAVE_JSON === 'true') {
+      const debugDir = `${process.cwd()}/tmp/reframe-debug`;
+      await mkdir(debugDir, { recursive: true });
+      await writeFile(`${debugDir}/${clipId}.json`, JSON.stringify(raw, null, 2), 'utf8');
+    }
 
     const points = raw.points
       .map((p) => ({
