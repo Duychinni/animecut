@@ -3,7 +3,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { useEffect, useMemo, useState } from 'react';
 
 type MeResponse = {
@@ -302,17 +301,18 @@ export default function Home() {
       }
 
       setMsg('Uploading file directly to storage...');
-      const supabase = createBrowserSupabaseClient();
+      const uploadRes = await fetch(prepData.signedUrl, {
+        method: 'PUT',
+        headers: {
+          'content-type': selectedFile.type || 'application/octet-stream',
+          'x-upsert': 'true',
+        },
+        body: selectedFile,
+      });
 
-      const { error: uploadError } = await supabase.storage
-        .from('raw-media')
-        .uploadToSignedUrl(prepData.objectPath, prepData.token, selectedFile, {
-          upsert: true,
-          contentType: selectedFile.type || 'application/octet-stream',
-        });
-
-      if (uploadError) {
-        throw uploadError;
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => 'Upload failed');
+        throw new Error(errText || 'Upload failed');
       }
 
       setUploadProgress(100);
