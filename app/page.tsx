@@ -467,7 +467,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden border-y border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] py-10">
+        <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden py-10">
           <div className="mx-auto mb-6 flex max-w-7xl items-center justify-between px-6">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Generated showcase</p>
