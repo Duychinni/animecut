@@ -2,7 +2,8 @@ import { readJsonSafe } from '@/lib/safe-json';
 
 type MultipartPreparation = {
   provider: 'r2-multipart';
-  sessionId: string;
+  uploadId: string;
+  objectPath: string;
   partSize: number;
   partUrl: string;
   completeUrl: string;
@@ -21,7 +22,7 @@ export async function uploadFileMultipartToR2(file: File, prep: MultipartPrepara
     const partRes = await fetch(prep.partUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionId: prep.sessionId, partNumber }),
+      body: JSON.stringify({ uploadId: prep.uploadId, objectPath: prep.objectPath, partNumber }),
     });
     const partData = await readJsonSafe(partRes);
     if (!partRes.ok) {
@@ -53,7 +54,7 @@ export async function uploadFileMultipartToR2(file: File, prep: MultipartPrepara
   const completeRes = await fetch(prep.completeUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sessionId: prep.sessionId, parts: completedParts }),
+    body: JSON.stringify({ uploadId: prep.uploadId, objectPath: prep.objectPath, parts: completedParts }),
   });
   const completeData = await readJsonSafe(completeRes);
   if (!completeRes.ok) {

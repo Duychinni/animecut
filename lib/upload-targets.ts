@@ -1,11 +1,9 @@
 import { createClient as createServerSupabaseClient } from '@/lib/supabase/server';
 import { makeRawObjectPath } from '@/lib/storage';
 import {
-  createMultipartSessionId,
   createR2MultipartUpload,
   getUploadProvider,
   isR2Configured,
-  storeMultipartSession,
 } from '@/lib/r2';
 
 export type UploadPreparationInput = {
@@ -29,7 +27,7 @@ export type R2MultipartUploadPreparationResult = {
   provider: 'r2-multipart';
   bucket: string;
   objectPath: string;
-  sessionId: string;
+  uploadId: string;
   partSize: number;
   completeUrl: string;
   partUrl: string;
@@ -43,17 +41,12 @@ export async function prepareUploadTarget(input: UploadPreparationInput): Promis
 
   if (getUploadProvider() === 'r2' && isR2Configured()) {
     const uploadId = await createR2MultipartUpload(objectPath, input.contentType || 'application/octet-stream');
-    const sessionId = createMultipartSessionId();
-    storeMultipartSession(sessionId, {
-      key: objectPath,
-      uploadId,
-    });
 
     return {
       provider: 'r2-multipart',
       bucket: process.env.R2_BUCKET || 'raw-media',
       objectPath,
-      sessionId,
+      uploadId,
       partSize: 25 * 1024 * 1024,
       completeUrl: `/api/ingest/upload/complete`,
       partUrl: `/api/ingest/upload/part`,

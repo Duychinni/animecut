@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
-import { createSignedMultipartPartUrl, getR2Config, readMultipartSession } from '@/lib/r2';
+import { createSignedMultipartPartUrl, getR2Config } from '@/lib/r2';
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { sessionId?: string; partNumber?: number };
-    const sessionId = String(body.sessionId || '');
+    const body = (await req.json()) as { uploadId?: string; objectPath?: string; partNumber?: number };
+    const uploadId = String(body.uploadId || '');
+    const objectPath = String(body.objectPath || '');
     const partNumber = Number(body.partNumber || 0);
 
-    if (!sessionId || !partNumber) {
-      return NextResponse.json({ error: 'sessionId and partNumber are required' }, { status: 400 });
+    if (!uploadId || !objectPath || !partNumber) {
+      return NextResponse.json({ error: 'uploadId, objectPath, and partNumber are required' }, { status: 400 });
     }
 
     const cfg = getR2Config();
@@ -16,12 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'R2 is not configured yet. Add R2 env vars before enabling multipart uploads.' }, { status: 400 });
     }
 
-    const session = readMultipartSession(sessionId);
-    if (!session) {
-      return NextResponse.json({ error: 'Upload session not found or expired' }, { status: 404 });
-    }
-
-    const uploadUrl = await createSignedMultipartPartUrl(session.key, session.uploadId, partNumber);
+    const uploadUrl = await createSignedMultipartPartUrl(objectPath, uploadId, partNumber);
 
     return NextResponse.json({
       provider: 'r2-multipart',
