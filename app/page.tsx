@@ -17,7 +17,7 @@ type MeResponse = {
 };
 
 const templatePresets = [
-  '🔥 Joe Rogan Style',
+  '🔥 Viral Clips',
   '🎙 Podcast',
   '📈 Educational',
   '😂 Comedy',
