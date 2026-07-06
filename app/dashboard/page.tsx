@@ -45,7 +45,17 @@ export default function DashboardPage() {
   const hasProcessingRef = useRef(true);
   const autoStartedRef = useRef<Set<string>>(new Set());
   const completedRedirectRef = useRef<Set<string>>(new Set());
+  const progressFloorRef = useRef<Map<string, number>>(new Map());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
+
+  function applyProgressFloor(projectId: string, nextPercent: number, status?: string | null) {
+    const normalized = Math.max(0, Math.min(100, Number.isFinite(nextPercent) ? nextPercent : 0));
+    const previous = progressFloorRef.current.get(projectId) ?? 0;
+    const floored = Math.max(previous, normalized);
+    const isCompleted = status === 'completed' || floored >= 100;
+    progressFloorRef.current.set(projectId, isCompleted ? 100 : floored);
+    return isCompleted ? 100 : floored;
+  }
 
   async function loadProjects(initial = false) {
     if (initial) setLoadingProjects(true);
@@ -81,10 +91,16 @@ export default function DashboardPage() {
               const pr = await fetch(`/api/projects/${p.id}/progress`, { cache: 'no-store' });
               const prData = await pr.json();
               if (!pr.ok) return p;
+              const nextProgress = applyProgressFloor(
+                p.id,
+                Number(prData?.progress?.percent ?? 0),
+                typeof prData?.project?.status === 'string' ? prData.project.status : p.status,
+              );
+
               return {
                 ...p,
                 thumbnail_url: p.source_thumbnail_url ?? prData?.project?.thumbnail_url ?? null,
-                progress_percent: Number(prData?.progress?.percent ?? 0),
+                progress_percent: nextProgress,
                 eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
                 pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
               } as ProjectListItem;
@@ -118,7 +134,11 @@ export default function DashboardPage() {
             return {
               id,
               thumbnail_url: prData?.project?.thumbnail_url ?? null,
-              progress_percent: Number(prData?.progress?.percent ?? 0),
+              progress_percent: applyProgressFloor(
+                id,
+                Number(prData?.progress?.percent ?? 0),
+                typeof prData?.project?.status === 'string' ? prData.project.status : null,
+              ),
               eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
               pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
             };
