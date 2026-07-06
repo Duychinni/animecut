@@ -83,13 +83,6 @@ export default function PricingPage() {
     [interval],
   );
 
-  const starterPlan = PLAN_CONFIG.find((plan) => plan.id === 'starter')!;
-  const starterMinutes = starterPlan.processingMinutes ?? 0;
-  const fiveMinuteVideos = Math.floor(starterMinutes / 5);
-  const tenMinuteVideos = Math.floor(starterMinutes / 10);
-  const thirtyMinutePodcasts = Math.floor(starterMinutes / 30);
-  const sixtyMinutePodcasts = Math.floor(starterMinutes / 60);
-
   return (
     <main className="app-shell min-h-screen text-white">
       <div className="relative mx-auto max-w-6xl px-6 py-6">
@@ -149,26 +142,6 @@ export default function PricingPage() {
 
           <p className="mt-3 text-sm text-white/55">{toggleLabel}</p>
 
-          <div className="mx-auto mt-8 max-w-3xl rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left backdrop-blur-sm">
-            <p className="text-sm font-semibold text-white">How AI Processing Minutes work</p>
-            <p className="mt-2 text-sm leading-6 text-white/65">1 uploaded minute = 1 processing minute. The number of generated clips does not affect usage — only uploaded source duration counts.</p>
-            <div className="mt-4 grid gap-3 text-sm text-white/72 md:grid-cols-2">
-              <div>• 5-minute video = 5 processing minutes</div>
-              <div>• 12-minute video = 12 processing minutes</div>
-              <div>• 45-minute podcast = 45 processing minutes</div>
-              <div>• 120-minute podcast = 120 processing minutes</div>
-            </div>
-          </div>
-
-          <div className="mx-auto mt-4 max-w-3xl rounded-[24px] border border-white/10 bg-white/[0.03] p-5 text-left backdrop-blur-sm">
-            <p className="text-sm font-semibold text-white">What {starterMinutes} minutes looks like</p>
-            <div className="mt-3 grid gap-3 text-sm text-white/72 md:grid-cols-2">
-              <div>• {fiveMinuteVideos} five-minute videos</div>
-              <div>• {tenMinuteVideos} ten-minute videos</div>
-              <div>• {thirtyMinutePodcasts} thirty-minute podcasts</div>
-              <div>• {sixtyMinutePodcasts} one-hour podcasts</div>
-            </div>
-          </div>
         </section>
 
         <section className="mt-14 grid items-stretch gap-6 lg:grid-cols-3">
