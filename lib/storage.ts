@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createSignedR2GetUrl, getUploadProvider, isR2Configured } from '@/lib/r2';
+import { createSignedR2GetUrl, getUploadProvider, isR2Configured, r2ObjectExists } from '@/lib/r2';
 
 const RAW_BUCKET = 'raw-media';
 const EXPORT_BUCKET = 'exports';
@@ -73,6 +73,20 @@ export async function downloadRawMediaToLocal(objectPath: string, projectId: str
 
   await writeFile(localPath, bytes);
   return localPath;
+}
+
+export async function rawMediaObjectExists(objectPath: string) {
+  if (getUploadProvider() === 'r2' && isR2Configured()) {
+    return await r2ObjectExists(objectPath);
+  }
+
+  const admin = createAdminClient();
+  const { data } = await admin.storage.from(RAW_BUCKET).list(objectPath.split('/').slice(0, -1).join('/'), {
+    search: objectPath.split('/').pop(),
+    limit: 1,
+  });
+
+  return Boolean(data?.some((item) => item.name === objectPath.split('/').pop()));
 }
 
 export async function createExportSignedUrl(objectPath: string, expiresIn = 60 * 60) {

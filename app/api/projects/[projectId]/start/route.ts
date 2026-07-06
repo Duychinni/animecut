@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ensurePipelineJob } from '@/lib/pipeline';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { extractVideoThumbnail } from '@/lib/ffmpeg';
-import { createProjectThumbnailSignedUrl, makeProjectThumbnailObjectPath, uploadProjectThumbnailObject } from '@/lib/storage';
+import { createProjectThumbnailSignedUrl, makeProjectThumbnailObjectPath, rawMediaObjectExists, uploadProjectThumbnailObject } from '@/lib/storage';
 
 export async function POST(_: Request, context: { params: Promise<{ projectId: string }> }) {
   try {
@@ -34,6 +34,13 @@ export async function POST(_: Request, context: { params: Promise<{ projectId: s
 
     if (project.source_type === 'upload' && !project.source_storage_path) {
       return NextResponse.json({ error: 'Upload source is not ready yet' }, { status: 400 });
+    }
+
+    if (project.source_type === 'upload' && project.source_storage_path) {
+      const exists = await rawMediaObjectExists(project.source_storage_path);
+      if (!exists) {
+        return NextResponse.json({ error: 'Upload is still finalizing. Please wait a moment and try again.' }, { status: 409 });
+      }
     }
 
     if (project.source_type === 'upload') {

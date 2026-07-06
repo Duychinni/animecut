@@ -3,6 +3,7 @@ import {
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
@@ -177,4 +178,17 @@ export async function deleteR2Object(key: string) {
   if (!cfg) throw new Error('R2 is not configured');
   const client = getR2Client();
   await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }));
+}
+
+export async function r2ObjectExists(key: string) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const client = getR2Client();
+
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
 }
