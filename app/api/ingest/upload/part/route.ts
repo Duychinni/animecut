@@ -19,6 +19,12 @@ export async function POST(req: Request) {
 
     const uploadUrl = await createSignedMultipartPartUrl(objectPath, uploadId, partNumber);
 
+    console.log('[ingest/upload/part] signed part url', {
+      objectPath,
+      uploadId,
+      partNumber,
+    });
+
     return NextResponse.json({
       provider: 'r2-multipart',
       uploadUrl,

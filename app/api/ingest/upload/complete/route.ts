@@ -24,10 +24,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'R2 is not configured yet. Add R2 env vars before enabling multipart uploads.' }, { status: 400 });
     }
 
+    console.log('[ingest/upload/complete] completing multipart upload', {
+      objectPath,
+      uploadId,
+      partCount: parts.length,
+    });
+
     await completeR2MultipartUpload({
       key: objectPath,
       uploadId,
       parts,
+    });
+
+    console.log('[ingest/upload/complete] completed multipart upload', {
+      objectPath,
+      uploadId,
+      partCount: parts.length,
     });
 
     return NextResponse.json({

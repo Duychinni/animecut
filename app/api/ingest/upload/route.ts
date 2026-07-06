@@ -31,6 +31,16 @@ export async function POST(req: Request) {
       size: typeof body.size === 'number' ? body.size : undefined,
     });
 
+    console.log('[ingest/upload] prepared target', {
+      projectId,
+      userId: user.id,
+      provider: target.provider,
+      objectPath: target.objectPath,
+      bucket: target.bucket,
+      hasUploadUrl: 'uploadUrl' in target,
+      hasUploadId: 'uploadId' in target,
+    });
+
     const { error: updateError } = await supabase
       .from('projects')
       .update({

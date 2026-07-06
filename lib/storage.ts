@@ -58,7 +58,10 @@ export async function downloadRawMediaToLocal(objectPath: string, projectId: str
     const signedUrl = await createSignedR2GetUrl(objectPath, 60 * 60);
     const res = await fetch(signedUrl);
     if (!res.ok) {
-      throw new Error(`Failed to download raw media from R2: ${res.status}`);
+      const bodyPreview = await res.text().catch(() => '');
+      throw new Error(
+        `Failed to download raw media from R2: status=${res.status} key=${objectPath} url=${signedUrl.split('?')[0]} body=${bodyPreview.slice(0, 200)}`,
+      );
     }
     bytes = Buffer.from(await res.arrayBuffer());
   } else {
