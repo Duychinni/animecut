@@ -87,7 +87,7 @@ export default function Home() {
       });
 
       await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
-      window.location.href = `/dashboard/projects/${projectId}?autorun=1`;
+      window.location.href = `/dashboard`;
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
       if (text.toLowerCase().includes('unauthorized')) {
@@ -124,7 +124,7 @@ export default function Home() {
       }
 
       await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
-      window.location.href = `/dashboard/projects/${projectId}?autorun=1`;
+      window.location.href = `/dashboard`;
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not upload file';
       if (text.toLowerCase().includes('unauthorized')) {

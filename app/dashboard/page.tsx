@@ -54,6 +54,21 @@ export default function DashboardPage() {
 
       const projects = ((data.projects ?? []) as ProjectListItem[]).slice(0, 24);
 
+      const sortByQueue = (items: ProjectListItem[]) => {
+        return [...items].sort((a, b) => {
+          const aPercent = Number(a.progress_percent ?? (a.status === 'completed' ? 100 : 0));
+          const bPercent = Number(b.progress_percent ?? (b.status === 'completed' ? 100 : 0));
+          const aProcessing = aPercent < 100;
+          const bProcessing = bPercent < 100;
+
+          if (aProcessing !== bProcessing) return aProcessing ? -1 : 1;
+
+          const aTime = new Date(a.created_at).getTime();
+          const bTime = new Date(b.created_at).getTime();
+          return bTime - aTime;
+        });
+      };
+
       if (initial || recentProjects.length === 0) {
         const enriched = await Promise.all(
           projects.map(async (p) => {
@@ -73,12 +88,14 @@ export default function DashboardPage() {
           }),
         );
 
-        hasProcessingRef.current = enriched.some((p) => {
+        const sortedEnriched = sortByQueue(enriched);
+
+        hasProcessingRef.current = sortedEnriched.some((p) => {
           const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
           return pct < 100;
         });
 
-        setRecentProjects(enriched);
+        setRecentProjects(sortedEnriched);
         return;
       }
 
@@ -115,12 +132,14 @@ export default function DashboardPage() {
           } as ProjectListItem;
         });
 
-        hasProcessingRef.current = merged.some((p) => {
+        const sortedMerged = sortByQueue(merged);
+
+        hasProcessingRef.current = sortedMerged.some((p) => {
           const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
           return pct < 100;
         });
 
-        return merged;
+        return sortedMerged;
       });
     } finally {
       if (initial) setLoadingProjects(false);
@@ -311,6 +330,7 @@ export default function DashboardPage() {
         {orderedProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = percent < 100;
+          const processingLabel = `Processing ${percent}%`;
 
           const thumb = (
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
@@ -321,11 +341,11 @@ export default function DashboardPage() {
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}
 
-              {showProcessing && percent > 0 ? (
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 pb-3 pt-8">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/45 px-2.5 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
+              {showProcessing ? (
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-3 pb-3 pt-10">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/55 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/95 backdrop-blur-sm">
                     <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                    {percent}% processing
+                    {processingLabel}
                   </div>
                 </div>
               ) : null}
