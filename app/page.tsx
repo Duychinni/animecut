@@ -421,14 +421,6 @@ export default function Home() {
         </section>
 
         <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 overflow-hidden border-y border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] py-16">
-          <div className="mx-auto mb-10 max-w-7xl px-6 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Scrolling clip feed</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">See the product before you read the pitch.</h2>
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/65 md:text-base">
-              A moving reel of what the engine actually produces — scored moments, caption-ready cuts, and exports that are ready to publish.
-            </p>
-          </div>
-
           <div className="group relative overflow-hidden">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-[#05050a] to-transparent" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-[#05050a] to-transparent" />
@@ -520,13 +512,7 @@ export default function Home() {
             </div>
 
             <div className="order-1 lg:order-2">
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Feature showcase</p>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">One product surface, multiple value moments.</h2>
-              <p className="mt-4 max-w-xl text-sm leading-7 text-white/65 md:text-base">
-                Instead of four more generic feature cards, this section should feel like a product reveal. Big surface area, layered UI, and strong hierarchy.
-              </p>
-
-              <div className="mt-8 space-y-4">
+              <div className="space-y-4">
                 {[
                   ['AI scoring', 'Show confidence, hook quality, and clip ranking as part of the interface.'],
                   ['Caption presets', 'Preview different caption treatments without leaving the workflow.'],
@@ -544,12 +530,7 @@ export default function Home() {
         </section>
 
         <section className="py-20">
-          <div className="text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Testimonials</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">Social proof can move here later without changing the rhythm.</h2>
-          </div>
-
-          <div className="group mt-10 overflow-hidden">
+          <div className="group overflow-hidden">
             <div className="flex w-max gap-5 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 34s linear infinite' }}>
               {[1, 2, 3, 4, 5, 6].map((n) => (
                 <div key={n} className="w-[340px] rounded-[28px] border border-white/10 bg-white/[0.03] p-5 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
@@ -571,13 +552,6 @@ export default function Home() {
 
         <section className="rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025))] px-6 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl md:px-10 md:py-12">
           <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Pricing</p>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-5xl">Start with one upload. Scale when the clips start working.</h2>
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/65 md:text-base">
-                Keep this section clear and conversion-focused. By the time people reach pricing, the product should already feel obvious, credible, and desirable.
-              </p>
-            </div>
             <div className="flex flex-wrap gap-3">
               <Link href="/pricing" className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)]">
                 See Pricing
