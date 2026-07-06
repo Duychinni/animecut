@@ -1,14 +1,37 @@
-'use client';
-
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-import {
-  PLAN_CONFIG,
-  type BillingInterval,
-  type PlanConfig,
-  buildPlanFeatures,
-} from '@/lib/plans';
+import { PLAN_CONFIG, type BillingInterval, type PlanConfig, buildPlanFeatures } from '@/lib/plans';
+import { PricingActions } from '@/components/billing/PricingActions';
+import { createClient } from '@/lib/supabase/server';
+import { SignOutButton } from '@/components/auth/SignOutButton';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+type ProfileLike = { email?: string | null; user_metadata?: Record<string, unknown> | null };
+
+function getDisplayName(user: ProfileLike | null) {
+  if (!user) return '';
+  const username =
+    (typeof user.user_metadata?.username === 'string' && user.user_metadata.username) ||
+    (typeof user.user_metadata?.name === 'string' && user.user_metadata.name) ||
+    (typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name) ||
+    null;
+  if (username) return username;
+  if (user.email) return user.email.split('@')[0];
+  return 'User';
+}
+
+function getAvatarUrl(user: ProfileLike | null) {
+  if (!user) return null;
+  return (
+    (typeof user.user_metadata?.avatar_url === 'string' && user.user_metadata.avatar_url) ||
+    (typeof user.user_metadata?.picture === 'string' && user.user_metadata.picture) ||
+    null
+  );
+}
+
+function getInitials(name: string) {
+  return name.charAt(0).toUpperCase();
+}
 
 function PlanCard({
   plan,
@@ -51,14 +74,7 @@ function PlanCard({
         {plan.secondaryCta ? <p className="text-sm text-white/58">{plan.secondaryCta}</p> : null}
       </div>
 
-      <button
-        type="button"
-        className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-          plan.highlighted ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
-        }`}
-      >
-        {plan.cta}
-      </button>
+      <PricingActions plan={plan} interval={interval} />
 
       <ul className="mt-6 space-y-3 text-sm text-white/80">
         {features.map((feature) => (
@@ -72,16 +88,36 @@ function PlanCard({
   );
 }
 
-export default function PricingPage() {
-  const [interval, setInterval] = useState<BillingInterval>('monthly');
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ interval?: string }>;
+}) {
+  const { interval: rawInterval } = await searchParams;
+  const interval: BillingInterval = rawInterval === 'yearly' ? 'yearly' : 'monthly';
 
-  const toggleLabel = useMemo(
-    () =>
-      interval === 'monthly'
-        ? 'Monthly billing selected'
-        : 'Yearly billing selected — save 20%',
-    [interval],
-  );
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const displayName = getDisplayName(user);
+  const avatarUrl = getAvatarUrl(user);
+
+  let tokenBalance = 0;
+  if (user) {
+    try {
+      const admin = createAdminClient();
+      const { data: profile } = await admin
+        .from('profiles')
+        .select('processing_minutes_remaining')
+        .eq('id', user.id)
+        .maybeSingle();
+      tokenBalance = Number(profile?.processing_minutes_remaining ?? 0);
+    } catch {
+      tokenBalance = 0;
+    }
+  }
 
   return (
     <main className="app-shell min-h-screen text-white">
@@ -90,15 +126,38 @@ export default function PricingPage() {
           <HomeLogoLink />
 
           <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
-            <Link href="/#features" className="transition hover:text-white">Features</Link>
+            <Link href="/#feature-showcase" className="transition hover:text-white">Features</Link>
             <Link href="/pricing" className="text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
           <div className="flex items-center justify-end gap-2">
-            <Link href="/auth/login" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
-              Login
-            </Link>
+            {user ? (
+              <>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
+                  <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
+                  <span>{tokenBalance.toLocaleString()}</span>
+                </div>
+                <div className="group relative">
+                  {avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={avatarUrl} alt={`${displayName} avatar`} title={displayName} className="h-8 w-8 rounded-full border border-white/20 object-cover" />
+                  ) : (
+                    <div title={displayName} className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85">
+                      {getInitials(displayName)}
+                    </div>
+                  )}
+                  <span className="pointer-events-none absolute -bottom-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/20 bg-black/90 px-2 py-1 text-xs text-white/85 group-hover:block">
+                    {displayName}
+                  </span>
+                </div>
+                <SignOutButton />
+              </>
+            ) : (
+              <Link href="/auth/login?next=/pricing" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
+                Login
+              </Link>
+            )}
           </div>
         </header>
 
@@ -112,32 +171,20 @@ export default function PricingPage() {
               Upgrade when you like the results.
             </span>
           </h1>
+
           <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm text-white/75 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-            <button
-              type="button"
-              onClick={() => setInterval('monthly')}
-              className={`rounded-full px-4 py-2 font-medium transition ${
-                interval === 'monthly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'
-              }`}
-            >
+            <Link href="/pricing?interval=monthly" className={`rounded-full px-4 py-2 font-medium transition ${interval === 'monthly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'}`}>
               Monthly
-            </button>
-            <button
-              type="button"
-              onClick={() => setInterval('yearly')}
-              className={`rounded-full px-4 py-2 font-medium transition ${
-                interval === 'yearly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'
-              }`}
-            >
+            </Link>
+            <Link href="/pricing?interval=yearly" className={`rounded-full px-4 py-2 font-medium transition ${interval === 'yearly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'}`}>
               Yearly
               <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
                 Save 20%
               </span>
-            </button>
+            </Link>
           </div>
 
-          <p className="mt-3 text-sm text-white/55">{toggleLabel}</p>
-
+          <p className="mt-3 text-sm text-white/55">{interval === 'monthly' ? 'Monthly billing selected' : 'Yearly billing selected — save 20%'}</p>
         </section>
 
         <section className="mt-14 grid items-stretch gap-6 lg:grid-cols-3">

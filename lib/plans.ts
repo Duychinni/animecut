@@ -1,7 +1,8 @@
 export type BillingInterval = 'monthly' | 'yearly';
+export type PlanId = 'free' | 'starter' | 'pro' | 'business';
 
 export type PlanConfig = {
-  id: 'starter' | 'pro' | 'business';
+  id: Exclude<PlanId, 'free'>;
   name: string;
   subtitle: string;
   monthlyPrice: string;
@@ -61,6 +62,8 @@ export const PLAN_CONFIG: PlanConfig[] = [
     isSalesOnly: true,
   },
 ];
+
+export const PLAN_LOOKUP = Object.fromEntries(PLAN_CONFIG.map((plan) => [plan.id, plan])) as Record<Exclude<PlanId, 'free'>, PlanConfig>;
 
 export function formatMinutesLabel(minutes: number | null) {
   if (minutes == null) return 'Custom processing minutes';
