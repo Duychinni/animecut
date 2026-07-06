@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { renderVerticalClip } from '@/lib/ffmpeg';
+import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
 import { makeExportObjectPath, uploadExportObject } from '@/lib/storage';
 
@@ -126,6 +126,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     autoReframe: options?.auto_reframe !== false,
     reframeMode: options?.reframe_mode ?? 'basic',
   });
+
+  await validateRenderedVideo(outPath);
 
   const bytes = await readFile(outPath);
   const objectPath = makeExportObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);

@@ -20,6 +20,58 @@ type RenderOpts = {
   reframeMode?: ReframeMode;
 };
 
+export async function validateRenderedVideo(outputPath: string) {
+  const result = await runJsonCommand('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate',
+    '-of', 'json',
+    outputPath,
+  ]);
+
+  const data = result.json as {
+    streams?: Array<{
+      codec_type?: string;
+      codec_name?: string;
+      width?: number;
+      height?: number;
+      avg_frame_rate?: string;
+    }>;
+    format?: { duration?: string; size?: string };
+  };
+
+  const streams = Array.isArray(data.streams) ? data.streams : [];
+  const video = streams.find((stream) => stream.codec_type === 'video');
+  const audio = streams.find((stream) => stream.codec_type === 'audio');
+  const duration = Number(data.format?.duration ?? 0);
+  const size = Number(data.format?.size ?? 0);
+  const stderr = (result.stderr || '').trim();
+  const decodeErrors = /Invalid NAL unit|missing picture|Error splitting the input into NAL units|co located POCs unavailable|Prediction is not allowed|channel element .* is not allocated|Missing reference picture|mmco:/i.test(stderr);
+
+  if (result.code !== 0) {
+    throw new Error(`Rendered export failed ffprobe validation: ${stderr || 'ffprobe error'}`);
+  }
+
+  if (!video || !video.width || !video.height) {
+    throw new Error('Rendered export is missing a valid video stream');
+  }
+
+  if (!audio) {
+    throw new Error('Rendered export is missing an audio stream');
+  }
+
+  if (!Number.isFinite(duration) || duration <= 0.25) {
+    throw new Error('Rendered export duration is invalid');
+  }
+
+  if (!Number.isFinite(size) || size < 128 * 1024) {
+    throw new Error('Rendered export file is suspiciously small');
+  }
+
+  if (decodeErrors) {
+    throw new Error(`Rendered export is corrupted: ${stderr.split('\n').slice(0, 4).join(' | ')}`);
+  }
+}
+
 function escapeSubtitlesPathForFilter(path: string) {
   return path
     .replace(/\\/g, '\\\\')
@@ -54,7 +106,7 @@ async function runFfmpeg(args: string[]) {
 }
 
 async function runJsonCommand(cmd: string, args: string[]) {
-  return await new Promise<unknown>((resolve, reject) => {
+  return await new Promise<{ code: number | null; stdout: string; stderr: string; json: unknown }>((resolve, reject) => {
     const p = spawn(cmd, args);
     let stdout = '';
     let stderr = '';
@@ -67,12 +119,13 @@ async function runJsonCommand(cmd: string, args: string[]) {
     });
 
     p.on('close', (code) => {
-      if (code !== 0 && !stdout.trim()) {
-        reject(new Error(`${cmd} failed (${code}): ${stderr.trim()}`));
-        return;
-      }
       try {
-        resolve(JSON.parse(stdout.trim() || '{}'));
+        resolve({
+          code,
+          stdout,
+          stderr,
+          json: JSON.parse(stdout.trim() || '{}'),
+        });
       } catch {
         reject(new Error(`${cmd} returned non-JSON output`));
       }
@@ -211,15 +264,16 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
   try {
     const script = `${process.cwd()}/scripts/reframe_cv.py`;
-    const raw = (await runJsonCommand('python3', [
+    const probe = await runJsonCommand('python3', [
       script,
       opts.inputPath,
       String(opts.startSec),
       String(opts.endSec),
       '2.0',
-    ])) as { ok?: boolean; points?: Array<{ t?: number; nx?: number; ny?: number }>; error?: string };
+    ]);
+    const raw = probe.json as { ok?: boolean; points?: Array<{ t?: number; nx?: number; ny?: number }>; error?: string };
 
-    if (!raw?.ok || !raw?.points?.length) return undefined;
+    if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
 
     const points = raw.points
       .map((p) => ({ t: Number(p.t ?? 0), nx: clamp01(Number(p.nx ?? 0.5)), ny: clamp01(Number(p.ny ?? 0.5)) }))
