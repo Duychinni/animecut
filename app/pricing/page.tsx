@@ -104,7 +104,7 @@ export default function PricingPage() {
 
         <section className="mx-auto mt-16 max-w-6xl text-center">
           <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">
-            SIMPLE PRICING
+            CHOOSE A PLAN
           </p>
           <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.8rem]">
             Pick the plan that matches
