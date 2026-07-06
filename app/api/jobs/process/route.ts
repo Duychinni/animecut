@@ -7,7 +7,40 @@ import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
 
+async function maybeFinalizeProject(projectId: string) {
+  const supabase = createAdminClient();
+
+  const [{ count: total }, { count: done }, { count: failed }] = await Promise.all([
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'done'),
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'error'),
+  ]);
+
+  const totalCount = Number(total ?? 0);
+  const doneCount = Number(done ?? 0);
+  const failedCount = Number(failed ?? 0);
+
+  if (totalCount > 0 && doneCount + failedCount >= totalCount) {
+    await supabase
+      .from('projects')
+      .update({
+        status: 'completed',
+        pipeline_status: 'completed',
+        pipeline_error: failedCount > 0 ? 'Some exports failed. Review generated reels for details.' : null,
+        pipeline_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId);
+  }
+}
+
 type JobRow = { id: string; payload: { export_id?: string } };
+
+async function getProjectIdForExport(exportId: string) {
+  const supabase = createAdminClient();
+  const { data } = await supabase.from('exports').select('project_id').eq('id', exportId).maybeSingle();
+  return String(data?.project_id ?? '');
+}
 
 type ExportBundle = {
   id: string;
@@ -349,6 +382,7 @@ export async function POST() {
       if (item.jobId) {
         await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', item.jobId);
       }
+      await maybeFinalizeProject(await getProjectIdForExport(exportId));
       processed += 1;
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : 'Job failed';
@@ -404,6 +438,7 @@ export async function POST() {
           .from('exports')
           .update({ status: 'error', error_message: message, updated_at: new Date().toISOString() })
           .eq('id', exportId);
+        await maybeFinalizeProject(await getProjectIdForExport(exportId));
       }
     }
   }
