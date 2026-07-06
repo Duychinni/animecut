@@ -2,33 +2,32 @@ import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 
 const starterFeatures = [
-  '150 credits per month',
-  'AI clip detection + smart ranking',
-  'Auto transcript analysis',
-  'TikTok / Reels / Shorts-ready clips',
-  'Project dashboard and saved clip library',
-  'Download final rendered clips',
+  '15 videos per month',
+  'Up to 15 AI clips per video',
+  'HD exports',
+  'Premium captions',
+  'Speaker detection',
+  'No watermark',
 ];
 
 const proFeatures = [
+  '40 videos per month',
   'Everything in Starter',
-  'Higher monthly credits',
   'Priority processing queue',
-  'More clip generations per project',
   'Longer source video support',
   'Advanced clip scoring and ranking',
   'Faster export turnaround',
-  'Better support access',
+  'Premium support access',
 ];
 
 const businessFeatures = [
+  'Custom video volume',
   'Everything in Pro',
-  'Custom usage and volume pricing',
   'Team workflows',
   'Priority infrastructure allocation',
   'API / custom integrations',
   'Dedicated support',
-  'Enterprise security and onboarding',
+  'Enterprise onboarding',
 ];
 
 function PlanCard({
@@ -91,6 +90,7 @@ export default function PricingPage() {
 
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
             <Link href="/#features" className="transition hover:text-white">Features</Link>
+            <Link href="/#how-it-works" className="transition hover:text-white">How It Works</Link>
             <Link href="/pricing" className="text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
@@ -109,18 +109,18 @@ export default function PricingPage() {
           <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.8rem]">
             Pick the plan that matches
             <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
-              your clip volume.
+              your content volume.
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-3xl text-[15px] leading-7 text-white/70 md:text-base">
-            No free membership. Start with a creator plan, upgrade when you need more processing power, and scale to business when volume matters.
+            No confusing credit math. Choose the number of videos you want to turn into shorts each month, then scale when you need more output.
           </p>
         </section>
 
         <section className="mt-14 grid gap-6 lg:grid-cols-3">
           <PlanCard
             name="Starter"
-            subtitle="For individual creators getting started"
+            subtitle="For creators testing short-form repurposing"
             price="$15"
             features={starterFeatures}
             cta="Choose Starter"

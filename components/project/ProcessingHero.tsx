@@ -18,9 +18,9 @@ type ProgressPayload = {
 };
 
 function getProcessingLabel(status: string) {
-  if (status === 'created') return 'Fetching video and preparing transcript';
-  if (status === 'transcribed') return 'Transcript ready — finding the best moments';
-  if (status === 'analyzed') return 'Rendering clips and packaging exports';
+  if (status === 'created') return 'Finding hooks...';
+  if (status === 'transcribed') return 'Scoring moments...';
+  if (status === 'analyzed') return 'Rendering captions and generating thumbnails...';
   if (status === 'completed') return 'Completed';
   return 'Processing your video';
 }

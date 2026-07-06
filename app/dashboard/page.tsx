@@ -395,10 +395,15 @@ export default function DashboardPage() {
         {orderedProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = percent < 100;
-          const processingLabel = `Processing ${percent}%`;
+          const processingStage = p.pipeline_status === 'queued'
+            ? 'Finding hooks...'
+            : p.pipeline_status === 'processing'
+              ? (percent < 45 ? 'Finding hooks...' : percent < 70 ? 'Scoring moments...' : percent < 92 ? 'Rendering captions...' : 'Generating thumbnails...')
+              : 'Processing';
+          const processingLabel = `${processingStage} ${percent}%`;
 
           const thumb = (
-            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black transition duration-300 group-hover:scale-[1.015] group-hover:border-[#9b6bff]/35 group-hover:shadow-[0_0_0_1px_rgba(155,107,255,0.18),0_18px_55px_rgba(102,51,153,0.24)]">
               {p.thumbnail_url || p.source_thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={p.thumbnail_url || p.source_thumbnail_url || ''} alt={p.source_title || p.title} className="aspect-video w-full object-cover brightness-110" loading="lazy" referrerPolicy="no-referrer" />
@@ -413,7 +418,13 @@ export default function DashboardPage() {
                     {processingLabel}
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="pointer-events-none absolute inset-0 flex items-end justify-start opacity-0 transition duration-300 group-hover:opacity-100">
+                  <div className="m-3 rounded-full border border-[#9b6bff]/35 bg-black/55 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/95 backdrop-blur-sm">
+                    Open Project
+                  </div>
+                </div>
+              )}
             </div>
           );
 

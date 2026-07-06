@@ -52,11 +52,28 @@ function formatDisplayScore(score: number) {
 
 function getScoreColor(score: number) {
   const value = toDisplayScore(score);
-  if (value >= 92) return '#22c55e';
-  if (value >= 82) return '#4ade80';
-  if (value >= 72) return '#84cc16';
-  if (value >= 60) return '#facc15';
+  if (value >= 95) return '#22c55e';
+  if (value >= 90) return '#4ade80';
+  if (value >= 80) return '#84cc16';
+  if (value >= 70) return '#facc15';
+  if (value >= 60) return '#fb923c';
   return '#fb7185';
+}
+
+function getClipTags(clip: ClipItem) {
+  const title = clip.title.toLowerCase();
+  const tags: string[] = [];
+  const score = toDisplayScore(clip.score);
+
+  if (score >= 85) tags.push('📈 Viral');
+  if (/hook|opening|start|first/i.test(clip.title)) tags.push('🔥 Hook');
+  if (/funny|laugh|comedy|joke/i.test(title)) tags.push('😂 Funny');
+  if (/learn|how to|educat|explain|tips/i.test(title)) tags.push('🧠 Educational');
+  if (/story|journey|moment|reveal/i.test(title)) tags.push('❤️ Story');
+  if (/fight|crazy|wild|intense|energy|reaction/i.test(title)) tags.push('⚡ High Energy');
+
+  if (!tags.length && score >= 80) tags.push('🔥 Hook');
+  return tags.slice(0, 3);
 }
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
@@ -183,6 +200,14 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
                   <div className="min-h-[112px] px-1 pb-2">
                     <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {getClipTags(clip).map((tag) => (
+                        <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] font-semibold text-white/80">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
 
                     <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
                       <div className="flex items-center gap-2">

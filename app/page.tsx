@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { DemoShowcase } from '@/components/home/DemoShowcase';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type MeResponse = {
   authenticated: boolean;
@@ -15,6 +15,17 @@ type MeResponse = {
     tokenBalance?: number;
   };
 };
+
+const templatePresets = [
+  '🔥 Joe Rogan Style',
+  '🎙 Podcast',
+  '📈 Educational',
+  '😂 Comedy',
+  '🎮 Gaming',
+  '💼 Business',
+  '🥊 MMA',
+  '💰 Finance',
+];
 
 function makeProjectTitle() {
   return 'MAIN PROJECTS';
@@ -51,8 +62,6 @@ export default function Home() {
       isMounted = false;
     };
   }, []);
-
-  const canAnalyzeLink = useMemo(() => !loading, [loading]);
 
   async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string }) {
     const res = await fetch('/api/projects', {
@@ -162,6 +171,7 @@ export default function Home() {
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
             <Link href="#features" className="transition hover:text-white">Features</Link>
             <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
+            <Link href="#faq" className="transition hover:text-white">FAQ</Link>
             <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
@@ -210,16 +220,24 @@ export default function Home() {
         <section className="mx-auto mt-16 max-w-6xl text-center">
           <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI CLIP TOOL</p>
           <h1 className="mt-4 text-[3.25rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
-            Turn one long video into
+            Upload once.
             <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
-              viral-ready clips.
+              Get weeks of content.
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-4xl text-[15px] leading-7 text-white/70 md:text-base">
-            Paste a link or upload a file to turn videos into shorts and instantly go viral.
+            Ready in minutes. Paste a link or upload a file and turn one long video into polished shorts for TikTok, Reels, and YouTube Shorts.
           </p>
 
           <div className="mx-auto mt-8 w-full max-w-3xl">
+            <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+              {templatePresets.map((preset) => (
+                <span key={preset} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white/80">
+                  {preset}
+                </span>
+              ))}
+            </div>
+
             <div className="mx-auto flex w-full max-w-3xl items-center gap-2 rounded-2xl border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
               <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
                 <input
@@ -252,12 +270,51 @@ export default function Home() {
                 />
               </label>
             </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/70">
+              <span>⭐⭐⭐⭐⭐ Trusted by 2,000+ creators</span>
+              <span className="hidden h-1 w-1 rounded-full bg-white/25 md:inline-block" />
+              <span>Over 1,000 hours of video clipped</span>
+            </div>
+
             {file ? <p className="mt-2 text-left text-xs text-white/50">Selected: {file.name}</p> : null}
             {msg ? <p className="mt-3 text-left text-sm text-white/70">{msg}</p> : null}
           </div>
         </section>
 
-        <section id="features">
+        <section id="features" className="mt-16 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Before vs After</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">One podcast episode becomes weeks of posts.</h2>
+            <div className="mt-8 grid gap-4 md:grid-cols-3">
+              {[
+                { title: '45 minute podcast', desc: 'One long-form source video.' },
+                { title: '12 AI-picked shorts', desc: 'Best hooks, reactions, and standout moments.' },
+                { title: 'Ready to post', desc: 'Vertical exports with captions and polished framing.' },
+              ].map((item, index) => (
+                <div key={item.title} className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/35">0{index + 1}</p>
+                  <h3 className="mt-3 text-lg font-semibold text-white">{item.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-white/60">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Supported platforms</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Works with the content you already make.</h2>
+            <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {['▶️ YouTube', '🎵 TikTok', '📸 Instagram', '📘 Facebook', '🎙 Podcast', '📁 MP4 Upload'].map((platform) => (
+                <div key={platform} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-5 text-center text-sm font-semibold text-white/80">
+                  {platform}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-16">
           <DemoShowcase />
         </section>
 
@@ -301,6 +358,49 @@ export default function Home() {
             ))}
           </div>
         </section>
+
+        <section id="faq" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Questions creators ask before they upload.</h2>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2">
+            {[
+              ['How long can videos be?', 'Longer uploads work best on higher plans, and the app is built for podcasts, interviews, and long-form content.'],
+              ['How many clips are generated?', 'Clip count depends on source length, but AnimaCut targets multiple strong shorts from every video.'],
+              ['Do I keep ownership?', 'Yes. Your source content stays yours, and the exported clips are yours to publish.'],
+              ['Can I upload YouTube links?', 'Yes — you can paste YouTube links directly or upload your own MP4 files.'],
+              ['Can I upload podcasts?', 'Yes. Podcast episodes are one of the best use cases for generating multiple shorts.'],
+              ['Can I edit captions?', 'Yes. You can re-render clips with different caption presets and styles.'],
+              ['Can I cancel anytime?', 'Yes. Plans are simple and can be changed as your usage grows.'],
+              ['Does it support multiple platforms?', 'Yes. The output is built for TikTok, Reels, Shorts, and other vertical video channels.'],
+            ].map(([question, answer]) => (
+              <div key={question} className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+                <h3 className="text-lg font-semibold text-white">{question}</h3>
+                <p className="mt-3 text-sm leading-6 text-white/60">{answer}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <footer className="mt-16 border-t border-white/10 py-8 text-sm text-white/60">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <p className="text-white/75">AnimaCut — upload once, get weeks of content.</p>
+            <div className="flex flex-wrap items-center gap-4">
+              <Link href="#features" className="transition hover:text-white">Features</Link>
+              <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
+              <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
+              <a href="#faq" className="transition hover:text-white">Support</a>
+              <a href="#" className="transition hover:text-white">Terms</a>
+              <a href="#" className="transition hover:text-white">Privacy</a>
+              <a href="#" className="transition hover:text-white">Contact</a>
+              <a href="#" className="transition hover:text-white">Discord</a>
+              <a href="#" className="transition hover:text-white">Twitter</a>
+              <a href="#" className="transition hover:text-white">LinkedIn</a>
+            </div>
+          </div>
+        </footer>
       </div>
     </main>
   );
