@@ -161,6 +161,7 @@ export default function Home() {
 
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
             <Link href="#features" className="transition hover:text-white">Features</Link>
+            <Link href="#how-it-works" className="transition hover:text-white">How It Works</Link>
             <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
@@ -256,7 +257,50 @@ export default function Home() {
           </div>
         </section>
 
-        <DemoShowcase />
+        <section id="features">
+          <DemoShowcase />
+        </section>
+
+        <section id="how-it-works" className="mt-16 rounded-[28px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">How it works</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">From long video to ready-to-post clips.</h2>
+            <p className="mt-4 text-sm leading-7 text-white/65 md:text-base">
+              AnimaCut handles the full short-form workflow for you — from ingesting the source to finding the strongest moments and exporting polished clips.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              {
+                step: '01',
+                title: 'Add your source',
+                desc: 'Paste a YouTube link or upload a file to create a project instantly.',
+              },
+              {
+                step: '02',
+                title: 'AI analyzes the content',
+                desc: 'The app transcribes the video, scores moments, and ranks the best potential clips.',
+              },
+              {
+                step: '03',
+                title: 'Smart framing + captions',
+                desc: 'Exports are rendered vertically with captions, high-quality thumbnails, and smart reframing.',
+              },
+              {
+                step: '04',
+                title: 'Review and download',
+                desc: 'Open your finished project, compare top clips, and download the ones worth posting.',
+              },
+            ].map((item) => (
+              <div key={item.step} className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/35">{item.step}</p>
+                <h3 className="mt-3 text-lg font-semibold text-white">{item.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-white/60">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );
