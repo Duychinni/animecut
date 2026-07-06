@@ -353,18 +353,21 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
     const stabilized = downsamplePoints(smoothPoints(points, 0.62), 20);
 
+    const cropWidth = 980;
+    const cropHeight = 1742;
+
     const xExprRaw = buildTimelineExpr(
       stabilized,
       (p) => {
         const faceWidthNorm = p.w && Number.isFinite(p.w) ? p.w / 1920 : 0;
         const pairBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
-        const stableBias = p.framing === 'single_stable' ? 0.18 : 0.1;
-        const edgeGuard = faceWidthNorm > 0.22 ? 0.09 : faceWidthNorm > 0.18 ? 0.06 : 0.02;
-        const centeredBias = 0.5 + (pairBias - 0.5) * 1.12;
+        const stableBias = p.framing === 'single_stable' ? 0.2 : 0.12;
+        const edgeGuard = faceWidthNorm > 0.22 ? 0.08 : faceWidthNorm > 0.18 ? 0.05 : 0.015;
+        const centeredBias = 0.5 + (pairBias - 0.5) * 1.18;
         const target = clamp01(edgeGuard + centeredBias * (1 - edgeGuard * 2) + (centeredBias - 0.5) * stableBias);
-        return `min(max((iw-1080)*${target.toFixed(4)},0),iw-1080)`;
+        return `min(max((iw-${cropWidth})*${target.toFixed(4)},0),iw-${cropWidth})`;
       },
-      '(iw-1080)/2',
+      `(iw-${cropWidth})/2`,
     );
 
     // Better podcast/interview framing: keep eyes in the upper-middle instead of centering the whole body.
@@ -373,11 +376,11 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       (p) => {
         const isPair = p.framing === 'wide_pair';
         const isStableSingle = p.framing === 'single_stable';
-        const headroomBias = isPair ? 0.07 : isStableSingle ? 0.26 : 0.23;
+        const headroomBias = isPair ? 0.06 : isStableSingle ? 0.28 : 0.25;
         const target = clamp01((p.ny ?? 0.42) - headroomBias);
-        return `min(max((ih-1920)*${target.toFixed(4)},0),ih-1920)`;
+        return `min(max((ih-${cropHeight})*${target.toFixed(4)},0),ih-${cropHeight})`;
       },
-      'min(max((ih-1920)*0.30,0),ih-1920)',
+      `min(max((ih-${cropHeight})*0.28,0),ih-${cropHeight})`,
     );
 
     const xExpr = escapeFfmpegExpr(xExprRaw);
@@ -392,14 +395,16 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   const mode = opts.reframeMode ?? 'off';
   const enabled = opts.autoReframe !== false && mode !== 'off';
+  const cropWidth = 980;
+  const cropHeight = 1742;
 
-  if (!enabled) return 'crop=1080:1920';
+  if (!enabled) return `crop=${cropWidth}:${cropHeight}`;
   if (mode === 'smart' && smartCropExpr) return smartCropExpr;
 
-  // Baseline stable framing with better portrait headroom for talking-head clips.
-  const xExpr = '(iw-1080)/2';
-  const yExpr = escapeFfmpegExpr('min(max((ih-1920)*0.26,0),ih-1920)');
-  return `crop=1080:1920:${xExpr}:${yExpr}`;
+  // Baseline stable framing with tighter portrait crop for talking-head clips.
+  const xExpr = `(iw-${cropWidth})/2`;
+  const yExpr = escapeFfmpegExpr(`min(max((ih-${cropHeight})*0.24,0),ih-${cropHeight})`);
+  return `crop=${cropWidth}:${cropHeight}:${xExpr}:${yExpr}`;
 }
 
 function resolveOutputHeight() {
