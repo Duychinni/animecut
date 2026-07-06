@@ -492,9 +492,8 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-start justify-between gap-3">
+                  <div className="mt-3">
                     <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
-                    <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
                   </div>
                 </button>
               ))}
