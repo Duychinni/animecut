@@ -64,7 +64,7 @@ export default function Home() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
 
-  const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel, ...clipCarousel], []);
+  const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel, ...clipCarousel, ...clipCarousel], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -200,7 +200,7 @@ export default function Home() {
         }
         @keyframes marqueeLeft {
           0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-33.333%, 0, 0); }
+          100% { transform: translate3d(-25%, 0, 0); }
         }
         @keyframes marqueeLogos {
           0% { transform: translate3d(0, 0, 0); }
@@ -351,27 +351,27 @@ export default function Home() {
           <div className="group relative overflow-hidden">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-32 bg-gradient-to-r from-[#05050a] to-transparent" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-32 bg-gradient-to-l from-[#05050a] to-transparent" />
-            <div className="flex w-max gap-4 px-6 group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 28s linear infinite' }}>
+            <div className="flex w-max gap-3 px-4 [will-change:transform] group-hover:[animation-play-state:paused]" style={{ animation: 'marqueeLeft 42s linear infinite' }}>
               {carouselItems.map((clip, index) => (
                 <article
                   key={`${clip.title}-${index}`}
-                  className="w-[260px] shrink-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.28)] transition duration-300 hover:-translate-y-1.5 hover:border-[#8b7cff]/35 hover:shadow-[0_28px_70px_rgba(139,124,255,0.16)]"
+                  className="w-[220px] shrink-0 rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-2.5 shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_24px_60px_rgba(139,124,255,0.14)]"
                 >
-                  <div className="aspect-[9/16] rounded-[20px] border border-white/10 bg-[radial-gradient(circle_at_50%_12%,rgba(255,123,216,0.25),transparent_28%),linear-gradient(180deg,#1b1522_0%,#09090f_100%)] p-2.5">
-                    <div className="flex h-full flex-col justify-between rounded-[16px] border border-white/8 bg-black/20 p-2.5 backdrop-blur">
+                  <div className="aspect-[9/16] rounded-[18px] border border-white/10 bg-[radial-gradient(circle_at_50%_12%,rgba(255,123,216,0.22),transparent_26%),linear-gradient(180deg,#1b1522_0%,#09090f_100%)] p-2">
+                    <div className="flex h-full flex-col justify-between rounded-[14px] border border-white/8 bg-black/20 p-2 backdrop-blur">
                       <div className="flex items-center justify-between">
                         <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea]">🔥 {clip.score}</span>
                         <span className={`text-[11px] font-semibold ${getPlatformTone(clip.platform)}`}>{clip.platform}</span>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-black/30 p-2.5 text-xs leading-5 text-white/80">
+                      <div className="rounded-xl border border-white/10 bg-black/30 p-2 text-[11px] leading-4.5 text-white/78">
                         {clip.caption}
                       </div>
                     </div>
                   </div>
                   <div className="mt-3 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-white">{clip.title}</h3>
-                      <p className="mt-1 text-xs text-white/55">Caption preview + high-confidence hook.</p>
+                      <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
+                      <p className="mt-1 text-[11px] leading-4 text-white/52">Caption preview + high-confidence hook.</p>
                     </div>
                     <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
                   </div>
