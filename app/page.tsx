@@ -234,6 +234,10 @@ export default function Home() {
       throw new Error(message);
     }
 
+    if (data?.devBypass) {
+      setMsg('Development billing bypass is active — this local test will not use your real upload/minute allowance.');
+    }
+
     return data.project.id as string;
   }
 

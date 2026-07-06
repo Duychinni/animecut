@@ -6,6 +6,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
 
+const BILLING_DEV_BYPASS = process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true';
+
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
@@ -77,34 +79,36 @@ export async function POST(req: Request) {
     const configuredPlan = planId === 'starter' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;
     const uploadMinutes = minutesRequiredFromSeconds(sourceMeta.sourceDurationSeconds);
 
-    if (configuredPlan?.maxUploadLengthMinutes && uploadMinutes > configuredPlan.maxUploadLengthMinutes) {
-      return NextResponse.json(
-        {
-          error: `This upload is too long for your ${configuredPlan.name} plan. Maximum upload length is ${configuredPlan.maxUploadLengthMinutes} minutes.`,
-        },
-        { status: 400 },
-      );
-    }
-
-    if (planId === 'free') {
-      const freeUploadsRemaining = Number(profile?.free_uploads_remaining ?? 1);
-      if (freeUploadsRemaining <= 0) {
+    if (!BILLING_DEV_BYPASS) {
+      if (configuredPlan?.maxUploadLengthMinutes && uploadMinutes > configuredPlan.maxUploadLengthMinutes) {
         return NextResponse.json(
           {
-            error: 'Your free upload has already been used. Upgrade your plan to continue creating clips.',
+            error: `This upload is too long for your ${configuredPlan.name} plan. Maximum upload length is ${configuredPlan.maxUploadLengthMinutes} minutes.`,
           },
-          { status: 402 },
+          { status: 400 },
         );
       }
-    } else if (uploadMinutes > 0) {
-      const remaining = Number(profile?.processing_minutes_remaining ?? 0);
-      if (remaining < uploadMinutes) {
-        return NextResponse.json(
-          {
-            error: `You only have ${remaining} processing minutes remaining. This upload requires ${uploadMinutes} minutes. Upgrade your plan or wait until your next billing cycle.`,
-          },
-          { status: 402 },
-        );
+
+      if (planId === 'free') {
+        const freeUploadsRemaining = Number(profile?.free_uploads_remaining ?? 1);
+        if (freeUploadsRemaining <= 0) {
+          return NextResponse.json(
+            {
+              error: 'Your free upload has already been used. Upgrade your plan to continue creating clips.',
+            },
+            { status: 402 },
+          );
+        }
+      } else if (uploadMinutes > 0) {
+        const remaining = Number(profile?.processing_minutes_remaining ?? 0);
+        if (remaining < uploadMinutes) {
+          return NextResponse.json(
+            {
+              error: `You only have ${remaining} processing minutes remaining. This upload requires ${uploadMinutes} minutes. Upgrade your plan or wait until your next billing cycle.`,
+            },
+            { status: 402 },
+          );
+        }
       }
     }
 
@@ -128,37 +132,39 @@ export async function POST(req: Request) {
 
     if (error) throw error;
 
-    if (planId === 'free') {
-      const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1) - 1);
-      await admin.from('profiles').update({ free_uploads_remaining: freeUploadsRemaining, updated_at: new Date().toISOString() }).eq('id', user.id);
-      await admin.from('usage_ledger').insert({
-        user_id: user.id,
-        project_id: data.id,
-        usage_type: 'free_upload',
-        quantity: 1,
-        notes: 'Free trial upload used',
-      });
-    } else if (uploadMinutes > 0) {
-      const currentRemaining = Number(profile?.processing_minutes_remaining ?? 0);
-      const currentUsed = Number(profile?.processing_minutes_used ?? 0);
-      await admin
-        .from('profiles')
-        .update({
-          processing_minutes_used: currentUsed + uploadMinutes,
-          processing_minutes_remaining: Math.max(0, currentRemaining - uploadMinutes),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-      await admin.from('usage_ledger').insert({
-        user_id: user.id,
-        project_id: data.id,
-        usage_type: 'processing_minutes',
-        quantity: uploadMinutes,
-        notes: 'Reserved at project creation based on uploaded source duration',
-      });
+    if (!BILLING_DEV_BYPASS) {
+      if (planId === 'free') {
+        const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1) - 1);
+        await admin.from('profiles').update({ free_uploads_remaining: freeUploadsRemaining, updated_at: new Date().toISOString() }).eq('id', user.id);
+        await admin.from('usage_ledger').insert({
+          user_id: user.id,
+          project_id: data.id,
+          usage_type: 'free_upload',
+          quantity: 1,
+          notes: 'Free trial upload used',
+        });
+      } else if (uploadMinutes > 0) {
+        const currentRemaining = Number(profile?.processing_minutes_remaining ?? 0);
+        const currentUsed = Number(profile?.processing_minutes_used ?? 0);
+        await admin
+          .from('profiles')
+          .update({
+            processing_minutes_used: currentUsed + uploadMinutes,
+            processing_minutes_remaining: Math.max(0, currentRemaining - uploadMinutes),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+        await admin.from('usage_ledger').insert({
+          user_id: user.id,
+          project_id: data.id,
+          usage_type: 'processing_minutes',
+          quantity: uploadMinutes,
+          notes: 'Reserved at project creation based on uploaded source duration',
+        });
+      }
     }
 
-    return NextResponse.json({ project: data });
+    return NextResponse.json({ project: data, devBypass: BILLING_DEV_BYPASS });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 });
   }
