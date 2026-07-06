@@ -130,6 +130,24 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     updatePlayback(id, { volume: value });
   }
 
+  async function handleFullscreen(id: string) {
+    const video = videoRefs.current[id];
+    if (!video) return;
+
+    const container = video.parentElement;
+    if (!container) return;
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await container.requestFullscreen();
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
 
@@ -358,12 +376,25 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                                 className="h-1.5 w-16 cursor-pointer accent-white"
                                 aria-label="Clip volume"
                               />
+                              <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
+                                {currentLabel} / {totalLabel}
+                              </span>
                             </div>
-
-                            <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
-                              {currentLabel} / {totalLabel}
-                            </span>
                           </div>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleFullscreen(clip.exportId)}
+                            className="absolute bottom-3 right-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white/80 backdrop-blur-sm transition hover:bg-black/50 hover:text-white"
+                            aria-label="Fullscreen clip"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+                              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+                              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+                              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
                     </div>
