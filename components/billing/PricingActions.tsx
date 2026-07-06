@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BillingInterval, PlanConfig } from '@/lib/plans';
+import { readJsonSafe } from '@/lib/safe-json';
 
 export function PricingActions({
   plan,
@@ -28,13 +29,13 @@ export function PricingActions({
         body: JSON.stringify({ planId: plan.id, interval }),
       });
 
-      const data = await res.json();
+      const data = await readJsonSafe(res);
       if (!res.ok) {
         if (res.status === 401) {
           router.push(`/auth/login?next=${encodeURIComponent('/pricing')}`);
           return;
         }
-        throw new Error(data?.error || 'Could not start checkout');
+        throw new Error(String(data?.error || 'Could not start checkout'));
       }
 
       if (data?.url) {

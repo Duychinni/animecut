@@ -1,3 +1,5 @@
+import { readJsonSafe } from '@/lib/safe-json';
+
 type MultipartPreparation = {
   provider: 'r2-multipart';
   sessionId: string;
@@ -21,9 +23,9 @@ export async function uploadFileMultipartToR2(file: File, prep: MultipartPrepara
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sessionId: prep.sessionId, partNumber }),
     });
-    const partData = await partRes.json();
+    const partData = await readJsonSafe(partRes);
     if (!partRes.ok) {
-      throw new Error(partData?.error || 'Could not prepare multipart upload part');
+      throw new Error(String(partData?.error || 'Could not prepare multipart upload part'));
     }
 
     const uploadRes = await fetch(partData.uploadUrl, {
@@ -53,9 +55,9 @@ export async function uploadFileMultipartToR2(file: File, prep: MultipartPrepara
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ sessionId: prep.sessionId, parts: completedParts }),
   });
-  const completeData = await completeRes.json();
+  const completeData = await readJsonSafe(completeRes);
   if (!completeRes.ok) {
-    throw new Error(completeData?.error || 'Could not complete multipart upload');
+    throw new Error(String(completeData?.error || 'Could not complete multipart upload'));
   }
 
   return completeData;

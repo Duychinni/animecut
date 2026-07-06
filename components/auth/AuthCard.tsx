@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { readJsonSafe } from '@/lib/safe-json';
 
 type Mode = 'login' | 'signup';
 
@@ -39,9 +40,9 @@ export function AuthCard({
         body: JSON.stringify({ email, password, next }),
       });
 
-      const data = await res.json();
+      const data = await readJsonSafe(res);
       if (!res.ok) {
-        setLocalError(data?.error || 'Request failed');
+        setLocalError(String(data?.error || 'Request failed'));
         return;
       }
 

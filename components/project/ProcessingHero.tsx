@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { readJsonSafe } from '@/lib/safe-json';
 
 type ProgressPayload = {
   project?: {
@@ -42,7 +43,7 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
     const tick = async () => {
       try {
         const res = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
-        const json = (await res.json()) as ProgressPayload;
+        const json = (await readJsonSafe(res)) as ProgressPayload;
         if (!alive || !res.ok) return;
         setData(json);
       } catch {

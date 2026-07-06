@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { readJsonSafe } from '@/lib/safe-json';
 
 type ProgressPayload = {
   project?: {
@@ -47,7 +48,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const refreshProgress = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
-      const data = (await res.json()) as ProgressPayload;
+      const data = (await readJsonSafe(res)) as ProgressPayload;
       if (res.ok) setProgress(data);
     } catch {
       // ignore transient polling failures
@@ -110,9 +111,9 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
     try {
       const start = await fetch(`/api/projects/${projectId}/start`, { method: 'POST' });
-      const startData = await start.json();
+      const startData = await readJsonSafe(start);
       if (!start.ok) {
-        setLog(`Start failed: ${startData.error || 'unknown'}`);
+        setLog(`Start failed: ${String(startData.error || 'unknown')}`);
         setLoading(false);
         return;
       }

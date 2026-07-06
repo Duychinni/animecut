@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
+import { readJsonSafe } from '@/lib/safe-json';
 
 type ProjectCreatedPayload = {
   id: string;
@@ -32,8 +33,8 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       body: JSON.stringify(input),
     });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'Failed to create project');
+    const data = await readJsonSafe(res);
+    if (!res.ok) throw new Error(String(data?.error || 'Failed to create project'));
 
     if (data?.devBypass) {
       setMsg('Development billing bypass is active — this local test will not use your real upload/minute allowance.');
@@ -93,9 +94,9 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
           size: selectedFile.size,
         }),
       });
-      const prepData = await prep.json();
+      const prepData = await readJsonSafe(prep);
       if (!prep.ok) {
-        throw new Error(prepData?.error || 'Could not prepare upload');
+        throw new Error(String(prepData?.error || 'Could not prepare upload'));
       }
 
       if (prepData.provider === 'r2-multipart') {

@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { CAPTION_PRESETS } from '@/lib/caption-presets';
+import { readJsonSafe } from '@/lib/safe-json';
 
 type ClipItem = {
   exportId: string;
@@ -171,8 +172,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ presetId: selectedPresetId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Could not apply preset');
+      const data = await readJsonSafe(res);
+      if (!res.ok) throw new Error(String(data?.error || 'Could not apply preset'));
       setEditingClip(null);
       window.location.reload();
     } catch (error) {
