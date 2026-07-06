@@ -90,6 +90,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
   const [applyingPreset, setApplyingPreset] = useState(false);
+  const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
@@ -130,22 +131,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     updatePlayback(id, { volume: value });
   }
 
-  async function handleFullscreen(id: string) {
-    const video = videoRefs.current[id];
-    if (!video) return;
-
-    const frame = video.closest('[data-clip-frame="true"]') as HTMLElement | null;
-    if (!frame) return;
-
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-        return;
-      }
-      await frame.requestFullscreen();
-    } catch (error) {
-      console.error(error);
-    }
+  function handleFullscreen(id: string) {
+    setExpandedClipId(id);
   }
 
   async function handleDownload(clip: ClipItem) {
@@ -411,6 +398,40 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
           </div>
         </div>
       </section>
+
+      {expandedClipId ? (() => {
+        const expandedClip = clips.find((clip) => clip.exportId === expandedClipId) ?? null;
+        return expandedClip ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6 backdrop-blur-sm" onClick={() => setExpandedClipId(null)}>
+            <div className="relative flex h-full max-h-[96vh] w-full max-w-[420px] items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              <div className="relative aspect-[9/16] h-full max-h-[96vh] w-auto overflow-hidden rounded-[18px] bg-black shadow-[0_0_60px_rgba(0,0,0,0.45)]">
+                {expandedClip.signedUrl ? (
+                  <video
+                    src={expandedClip.signedUrl}
+                    controls
+                    autoPlay
+                    className="h-full w-full bg-black object-contain"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-sm text-white/50">Preview unavailable</div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setExpandedClipId(null)}
+                  className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/45 text-white/85 backdrop-blur-sm transition hover:bg-black/60 hover:text-white"
+                  aria-label="Close expanded reel"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12" />
+                    <path d="M18 6 6 18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null;
+      })() : null}
 
       {editingClip ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/55 backdrop-blur-sm">
