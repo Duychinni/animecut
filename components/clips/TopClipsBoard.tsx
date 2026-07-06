@@ -51,8 +51,8 @@ function formatClock(totalSeconds: number) {
 }
 
 function toDisplayScore(score: number) {
-  const raw = Number.isFinite(score) ? score * 10 : 0;
-  return Math.max(0, Math.min(100, Math.round(raw)));
+  const normalized = Number.isFinite(score) ? Math.max(0, Math.min(10, score)) / 10 : 0;
+  return Math.round(70 + normalized * 30);
 }
 
 function formatDisplayScore(score: number) {
@@ -61,12 +61,12 @@ function formatDisplayScore(score: number) {
 
 function getScoreColor(score: number) {
   const value = toDisplayScore(score);
-  if (value >= 95) return '#22c55e';
-  if (value >= 90) return '#4ade80';
-  if (value >= 80) return '#84cc16';
-  if (value >= 70) return '#facc15';
-  if (value >= 60) return '#fb923c';
-  return '#fb7185';
+  if (value >= 98) return '#22c55e';
+  if (value >= 94) return '#4ade80';
+  if (value >= 88) return '#a3e635';
+  if (value >= 82) return '#facc15';
+  if (value >= 76) return '#fb923c';
+  return '#f87171';
 }
 
 function getClipTags(clip: ClipItem) {
