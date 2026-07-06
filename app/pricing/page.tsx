@@ -112,10 +112,6 @@ export default function PricingPage() {
               Upgrade when you like the results.
             </span>
           </h1>
-          <p className="mx-auto mt-5 max-w-3xl text-[15px] leading-7 text-white/70 md:text-base">
-            Animacut charges based on uploaded source duration processed — not number of clips. One uploaded minute equals one AI processing minute.
-          </p>
-
           <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm text-white/75 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
             <button
               type="button"
