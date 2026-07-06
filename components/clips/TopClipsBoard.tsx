@@ -132,7 +132,16 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     updatePlayback(id, { volume: value });
   }
 
+  function pauseOtherVideos(activeId: string) {
+    for (const [id, video] of Object.entries(videoRefs.current)) {
+      if (!video || id === activeId) continue;
+      video.pause();
+      updatePlayback(id, { paused: true });
+    }
+  }
+
   function handleFullscreen(id: string) {
+    pauseOtherVideos(id);
     setExpandedClipId(id);
   }
 
@@ -304,7 +313,10 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                               duration: v.duration || 0,
                             });
                           }}
-                          onPlay={() => updatePlayback(clip.exportId, { paused: false })}
+                          onPlay={() => {
+                            pauseOtherVideos(clip.exportId);
+                            updatePlayback(clip.exportId, { paused: false });
+                          }}
                           onPause={() => updatePlayback(clip.exportId, { paused: true })}
                           onVolumeChange={(e) => {
                             const v = e.currentTarget;
@@ -414,6 +426,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     playsInline
                     preload="auto"
                     className="aspect-[9/16] h-full w-full bg-black object-cover"
+                    onPlay={() => pauseOtherVideos(expandedClip.exportId)}
                   />
                 ) : (
                   <div className="grid h-full w-full place-items-center text-sm text-white/50">Preview unavailable</div>
