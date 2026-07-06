@@ -479,6 +479,12 @@ export default function Home() {
 
         <section className="rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025))] px-6 py-10 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl md:px-10 md:py-12">
           <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight text-white md:text-5xl">Start with one upload. Scale when the clips start working.</h2>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-white/65 md:text-base">
+                Keep this section clear and conversion-focused. By the time people reach pricing, the product should already feel obvious, credible, and desirable.
+              </p>
+            </div>
             <div className="flex flex-wrap gap-3">
               <Link href="/pricing" className="rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)]">
                 See Pricing
