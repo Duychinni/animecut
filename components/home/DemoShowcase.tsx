@@ -95,31 +95,20 @@ function DemoResultsSlide() {
 
 function DemoUploadSlide({ images }: { images: { src: string; alt: string }[] }) {
   const primary = images[0];
-  const secondary = images[1];
 
   return (
-    <div className="grid gap-3 bg-black p-3 lg:grid-cols-[1.35fr_0.65fr]">
+    <div className="bg-black p-3">
       <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black shadow-[0_18px_40px_rgba(0,0,0,0.28)]">
         <div className="relative aspect-[16/10]">
           <Image src={primary.src} alt={primary.alt} fill className="object-cover object-center" />
         </div>
-      </div>
 
-      {secondary ? (
-        <div className="flex flex-col gap-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ff7bd8]">Step 1</p>
-            <p className="mt-2 text-sm font-semibold text-white">Drop a link and hit Get Clips</p>
-            <p className="mt-2 text-sm leading-6 text-white/60">The first screen should do most of the selling, so it now gets the bigger visual weight.</p>
-          </div>
-
-          <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-            <div className="relative aspect-[10/10]">
-              <Image src={secondary.src} alt={secondary.alt} fill className="object-cover object-center" />
-            </div>
-          </div>
+        <div className="absolute right-4 top-4 max-w-[220px] rounded-2xl border border-white/10 bg-black/55 p-4 backdrop-blur-sm">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#ff7bd8]">Step 1</p>
+          <p className="mt-2 text-sm font-semibold text-white">Drop a link and hit Get Clips</p>
+          <p className="mt-2 text-sm leading-6 text-white/70">The upload screen now gets the full spotlight without that extra bottom-right box.</p>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
