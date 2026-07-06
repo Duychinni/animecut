@@ -271,7 +271,7 @@ export default function Home() {
               </label>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/70">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/90">
               <span>⭐⭐⭐⭐⭐ Trusted by 2,000+ creators</span>
               <span className="hidden h-1 w-1 rounded-full bg-white/25 md:inline-block" />
               <span>Over 1,000 hours of video clipped</span>
