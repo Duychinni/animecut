@@ -462,6 +462,7 @@ export default function Home() {
               <span>Over 1,000 hours of video clipped</span>
             </div>
 
+            <p className="mt-2 text-xs text-white/45">Current direct upload limit: 500MB per file.</p>
             {file ? <p className="mt-2 text-xs text-white/50">Selected: {file.name}</p> : null}
             {msg ? <p className="mt-3 text-sm text-white/70">{msg}</p> : null}
           </div>
