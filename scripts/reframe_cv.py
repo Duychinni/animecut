@@ -43,7 +43,21 @@ def face_score(face: Tuple[float, float, float, float], width: float, height: fl
     area_ratio = area / frame_area
     center_bias = 1.0 - min(1.0, abs((cx / max(width, 1.0)) - 0.5) * 1.5)
     upper_bias = 1.0 - min(1.0, abs((cy / max(height, 1.0)) - 0.42) * 1.35)
-    return area_ratio * 4.5 + center_bias * 0.9 + upper_bias * 0.8
+    portrait_bias = 1.0 - min(1.0, abs((cx / max(width, 1.0)) - 0.5) * 1.1)
+    return area_ratio * 5.0 + center_bias * 0.9 + upper_bias * 0.85 + portrait_bias * 0.5
+
+
+def track_score(candidate: Tuple[float, float, float, float], active_bbox: Optional[Tuple[float, float, float, float]], width: float, height: float) -> float:
+    base = face_score(candidate, width, height)
+    if active_bbox is None:
+        return base
+
+    overlap = iou(active_bbox, candidate)
+    acx, acy = center(active_bbox)
+    ccx, ccy = center(candidate)
+    dist = math.hypot((ccx - acx) / max(width, 1.0), (ccy - acy) / max(height, 1.0))
+    continuity = max(0.0, 1.0 - dist * 2.4)
+    return base + overlap * 2.2 + continuity * 1.4
 
 
 def motion_regions(prev_gray, gray, width: float, height: float):
@@ -104,6 +118,7 @@ def main():
     active_mode = "face"
     pending_switch_count = 0
     prev_gray = None
+    active_track_age = 0
 
     while True:
         ok, frame = cap.read()
@@ -155,36 +170,42 @@ def main():
         selected_mode = "motion"
 
         if faces:
-            best_face = faces[0]
+            ranked_faces = sorted(faces, key=lambda f: track_score(f, active_bbox if active_mode == "face" else None, width, height), reverse=True)
+            best_face = ranked_faces[0]
             if active_bbox is not None and active_mode == "face":
-                best_iou = max(iou(active_bbox, f) for f in faces)
+                best_iou = max(iou(active_bbox, f) for f in ranked_faces)
                 if best_iou >= 0.10:
-                    selected = max(faces, key=lambda f: iou(active_bbox, f) * 1.6 + face_score(f, width, height))
+                    selected = ranked_faces[0]
                     pending_switch_count = 0
+                    active_track_age += 1
                 else:
                     pending_switch_count += 1
-                    if pending_switch_count >= 2:
+                    if pending_switch_count >= 3:
                         selected = best_face
                         pending_switch_count = 0
+                        active_track_age = 0
                     else:
                         selected = active_bbox
             else:
                 selected = best_face
                 pending_switch_count = 0
+                active_track_age = 0
 
             selected_mode = "face"
 
-            if len(faces) >= 2:
-                f1, f2 = faces[0], faces[1]
+            if len(ranked_faces) >= 2:
+                f1, f2 = ranked_faces[0], ranked_faces[1]
                 a1, a2 = f1[2] * f1[3], f2[2] * f2[3]
                 ratio = (a1 / a2) if a2 > 0 else 999.0
                 c1x, c1y = center(f1)
                 c2x, c2y = center(f2)
                 dx = abs(c1x - c2x) / max(width, 1.0)
                 dy = abs(c1y - c2y) / max(height, 1.0)
-                if ratio < 1.6 and 0.10 < dx < 0.62 and dy < 0.24:
+                if ratio < 1.8 and 0.08 < dx < 0.68 and dy < 0.28:
                     mx = (c1x + c2x) / 2.0
                     my = (c1y + c2y) / 2.0
+                    span_w = abs(c1x - c2x) + max(f1[2], f2[2])
+                    span_h = max(f1[3], f2[3])
                     points.append(
                         {
                             "t": rel_t,
@@ -192,8 +213,8 @@ def main():
                             "cy": my,
                             "nx": clamp01(mx / width),
                             "ny": clamp01(my / height),
-                            "w": max(f1[2], f2[2]),
-                            "h": max(f1[3], f2[3]),
+                            "w": span_w,
+                            "h": span_h,
                             "framing": "wide_pair",
                             "mode": "face_pair",
                         }
@@ -201,6 +222,7 @@ def main():
                     chosen_subject.append({"t": rel_t, "mode": "face_pair"})
                     active_bbox = None
                     active_mode = "face"
+                    active_track_age = 0
                     frame_idx += 1
                     continue
 
@@ -211,12 +233,14 @@ def main():
             selected = best_motion
             selected_mode = "motion"
             pending_switch_count = 0
+            active_track_age = 0
 
         if selected is None:
             frame_idx += 1
             continue
 
         cx, cy = center(selected)
+        framing = "single_stable" if selected_mode == "face" and active_track_age >= 2 else "single"
         points.append(
             {
                 "t": rel_t,
@@ -226,7 +250,7 @@ def main():
                 "ny": clamp01(cy / height),
                 "w": selected[2],
                 "h": selected[3],
-                "framing": "single",
+                "framing": framing,
                 "mode": selected_mode,
             }
         )
