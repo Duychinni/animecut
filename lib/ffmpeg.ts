@@ -250,7 +250,11 @@ function smoothPoints(points: ReframePoint[], alpha = 0.35) {
   for (const p of points) {
     sx = alpha * p.nx + (1 - alpha) * sx;
     sy = alpha * p.ny + (1 - alpha) * sy;
-    out.push({ t: p.t, nx: clamp01(sx), ny: clamp01(sy) });
+    out.push({
+      ...p,
+      nx: clamp01(sx),
+      ny: clamp01(sy),
+    });
   }
 
   return out;
@@ -319,15 +323,15 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
     if (points.length < 2) return undefined;
 
-    const stabilized = downsamplePoints(smoothPoints(points, 0.42), 14);
+    const stabilized = downsamplePoints(smoothPoints(points, 0.5), 18);
 
     const xExprRaw = buildTimelineExpr(
       stabilized,
       (p) => {
         const faceWidthNorm = p.w && Number.isFinite(p.w) ? p.w / 1920 : 0;
         const pairBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
-        const stableBias = p.framing === 'single_stable' ? 0.06 : 0.0;
-        const edgeGuard = faceWidthNorm > 0.22 ? 0.14 : faceWidthNorm > 0.18 ? 0.12 : 0.08;
+        const stableBias = p.framing === 'single_stable' ? 0.09 : 0.03;
+        const edgeGuard = faceWidthNorm > 0.22 ? 0.13 : faceWidthNorm > 0.18 ? 0.1 : 0.06;
         const target = clamp01(edgeGuard + pairBias * (1 - edgeGuard * 2) + (pairBias - 0.5) * stableBias);
         return `min(max((iw-1080)*${target.toFixed(4)},0),iw-1080)`;
       },
@@ -340,7 +344,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       (p) => {
         const isPair = p.framing === 'wide_pair';
         const isStableSingle = p.framing === 'single_stable';
-        const headroomBias = isPair ? 0.12 : isStableSingle ? 0.20 : 0.18;
+        const headroomBias = isPair ? 0.1 : isStableSingle ? 0.22 : 0.19;
         const target = clamp01((p.ny ?? 0.42) - headroomBias);
         return `min(max((ih-1920)*${target.toFixed(4)},0),ih-1920)`;
       },
@@ -365,7 +369,7 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
 
   // Baseline stable framing with better portrait headroom for talking-head clips.
   const xExpr = '(iw-1080)/2';
-  const yExpr = escapeFfmpegExpr('min(max((ih-1920)*0.30,0),ih-1920)');
+  const yExpr = escapeFfmpegExpr('min(max((ih-1920)*0.26,0),ih-1920)');
   return `crop=1080:1920:${xExpr}:${yExpr}`;
 }
 
