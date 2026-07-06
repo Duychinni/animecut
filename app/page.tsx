@@ -279,8 +279,8 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="relative grid items-center gap-14 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
-          <div>
+        <section className="relative py-16 lg:py-24">
+          <div className="mx-auto max-w-4xl text-center">
             <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI CLIP TOOL</p>
             <h1 className="mt-4 text-[3.25rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
               Upload once.
@@ -288,11 +288,11 @@ export default function Home() {
                 Get weeks of content.
               </span>
             </h1>
-            <p className="mt-5 max-w-2xl text-[15px] leading-7 text-white/70 md:text-base">
+            <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-white/70 md:text-base">
               Ready in minutes. Paste a link or upload a file and turn one long video into polished shorts for TikTok, Reels, and YouTube Shorts.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-2">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
               {templatePresets.map((preset) => (
                 <span key={preset} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-xs font-semibold text-white/80 whitespace-nowrap transition hover:border-[#8B7CFF]/30 hover:bg-white/[0.06] hover:text-white">
                   {preset}
@@ -300,7 +300,7 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="mt-8 w-full max-w-3xl rounded-[28px] border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+            <div className="mx-auto mt-8 w-full max-w-3xl rounded-[28px] border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
                 <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
                   <input
@@ -336,7 +336,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-white/90">
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/90">
               <span>⭐⭐⭐⭐⭐ Trusted by 2,000+ creators</span>
               <span className="hidden h-1 w-1 rounded-full bg-white/25 md:inline-block" />
               <span>Over 1,000 hours of video clipped</span>
@@ -344,79 +344,6 @@ export default function Home() {
 
             {file ? <p className="mt-2 text-xs text-white/50">Selected: {file.name}</p> : null}
             {msg ? <p className="mt-3 text-sm text-white/70">{msg}</p> : null}
-          </div>
-
-          <div className="relative">
-            <div className="absolute -left-10 top-12 h-28 w-28 rounded-full bg-[#8b7cff]/18 blur-3xl" />
-            <div className="absolute -right-6 top-2 h-36 w-36 rounded-full bg-[#ff7bd8]/14 blur-3xl" />
-            <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl" style={{ animation: 'floatSlow 6s ease-in-out infinite' }}>
-              <div className="rounded-[26px] border border-white/10 bg-[#080811]/90 p-4">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.24em] text-white/35">Live demo</p>
-                    <p className="mt-1 text-base font-semibold text-white">AI Clip Pipeline</p>
-                  </div>
-                  <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                    12 viral clips found
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-center justify-between text-sm text-white/70">
-                      <span>Upload</span>
-                      <span className="text-white">podcast-episode.mp4</span>
-                    </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full w-[82%] rounded-full bg-[linear-gradient(90deg,#8B7CFF,#FF7BD8,#FFB347)]" style={{ animation: 'glowSweep 5s ease-in-out infinite' }} />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {[
-                      ['Analyzing', 'Transcript + scenes'],
-                      ['Hook Score', '94 / 100'],
-                      ['Output', '9:16 captions'],
-                    ].map(([label, value], idx) => (
-                      <div
-                        key={label}
-                        className="rounded-2xl border border-white/10 bg-black/30 p-4 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/30 hover:shadow-[0_12px_30px_rgba(139,124,255,0.14)]"
-                        style={{ animation: `floatSlow ${5 + idx}s ease-in-out infinite` }}
-                      >
-                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">{label}</p>
-                        <p className="mt-2 text-sm font-semibold text-white">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(139,124,255,0.12),rgba(255,255,255,0.03))] p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.18em] text-white/35">Top clip</p>
-                        <p className="mt-1 text-lg font-semibold text-white">Most creators are doing this backwards.</p>
-                      </div>
-                      <div className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-xs font-semibold text-[#ffb1ea]">94 Viral Score</div>
-                    </div>
-                    <div className="mt-4 grid gap-4 sm:grid-cols-[0.95fr_1.05fr]">
-                      <div className="aspect-[9/16] rounded-[22px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3">
-                        <div className="flex h-full items-end rounded-[18px] bg-[radial-gradient(circle_at_50%_20%,rgba(255,123,216,0.35),transparent_32%),linear-gradient(180deg,#1a1322_0%,#09090f_100%)] p-3">
-                          <div className="w-full rounded-2xl border border-white/10 bg-black/30 p-3 text-xs text-white/80 backdrop-blur">
-                            “You do not need more content. You need better moments.”
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        {['Auto captions synced', 'Speaker reframed', 'Hook confidence detected', 'Exports queued for TikTok + Reels'].map((item) => (
-                          <div key={item} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white/75">
-                            {item}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -560,31 +487,6 @@ export default function Home() {
                 Open Dashboard
               </Link>
             </div>
-          </div>
-        </section>
-
-        <section id="faq" className="mt-16 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
-          <div className="max-w-3xl">
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Questions creators ask before they upload.</h2>
-          </div>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
-            {[
-              ['How long can videos be?', 'Longer uploads work best on higher plans, and the app is built for podcasts, interviews, and long-form content.'],
-              ['How many clips are generated?', 'Clip count depends on source length, but AnimaCut targets multiple strong shorts from every video.'],
-              ['Do I keep ownership?', 'Yes. Your source content stays yours, and the exported clips are yours to publish.'],
-              ['Can I upload YouTube links?', 'Yes — you can paste YouTube links directly or upload your own MP4 files.'],
-              ['Can I upload podcasts?', 'Yes. Podcast episodes are one of the best use cases for generating multiple shorts.'],
-              ['Can I edit captions?', 'Yes. You can re-render clips with different caption presets and styles.'],
-              ['Can I cancel anytime?', 'Yes. Plans are simple and can be changed as your usage grows.'],
-              ['Does it support multiple platforms?', 'Yes. The output is built for TikTok, Reels, Shorts, and other vertical video channels.'],
-            ].map(([question, answer]) => (
-              <div key={question} className="rounded-[24px] border border-white/10 bg-black/20 p-5 transition duration-300 hover:-translate-y-1 hover:border-[#8b7cff]/35 hover:shadow-[0_18px_50px_rgba(139,124,255,0.12)]">
-                <h3 className="text-lg font-semibold text-white">{question}</h3>
-                <p className="mt-3 text-sm leading-6 text-white/60">{answer}</p>
-              </div>
-            ))}
           </div>
         </section>
 
