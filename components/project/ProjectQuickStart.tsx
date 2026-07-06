@@ -98,11 +98,10 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       }
 
       setMsg('Uploading file directly to storage...');
-      const uploadRes = await fetch(prepData.signedUrl, {
-        method: 'PUT',
-        headers: {
+      const uploadRes = await fetch(prepData.uploadUrl, {
+        method: prepData.method || 'PUT',
+        headers: prepData.headers || {
           'content-type': selectedFile.type || 'application/octet-stream',
-          'x-upsert': 'true',
         },
         body: selectedFile,
       });

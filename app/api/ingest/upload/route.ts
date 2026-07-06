@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { makeRawObjectPath } from '@/lib/storage';
+import { prepareUploadTarget } from '@/lib/upload-targets';
 
 export async function POST(req: Request) {
   try {
@@ -23,20 +23,19 @@ export async function POST(req: Request) {
     const user = userRes.user;
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const ext = (filename.split('.').pop() || 'mp4').toLowerCase();
-    const objectPath = makeRawObjectPath(user.id, projectId, ext);
-
-    const { data: signed, error: signedError } = await supabase.storage
-      .from('raw-media')
-      .createSignedUploadUrl(objectPath);
-
-    if (signedError) throw signedError;
+    const target = await prepareUploadTarget({
+      userId: user.id,
+      projectId,
+      filename,
+      contentType,
+      size: typeof body.size === 'number' ? body.size : undefined,
+    });
 
     const { error: updateError } = await supabase
       .from('projects')
       .update({
         source_type: 'upload',
-        source_storage_path: objectPath,
+        source_storage_path: target.objectPath,
         status: 'created',
       })
       .eq('id', projectId)
@@ -47,9 +46,12 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       project_id: projectId,
-      objectPath,
-      signedUrl: signed.signedUrl,
-      token: signed.token,
+      provider: target.provider,
+      bucket: target.bucket,
+      objectPath: target.objectPath,
+      uploadUrl: target.uploadUrl,
+      method: target.method,
+      headers: target.headers,
       contentType,
       size: typeof body.size === 'number' ? body.size : null,
     });
