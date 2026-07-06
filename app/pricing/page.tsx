@@ -1,76 +1,131 @@
+'use client';
+
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 
-const starterFeatures = [
-  '15 videos per month',
-  'Up to 15 AI clips per video',
-  'HD exports',
-  'Premium captions',
-  'Speaker detection',
-  'No watermark',
-];
+type BillingInterval = 'monthly' | 'yearly';
 
-const proFeatures = [
-  '40 videos per month',
-  'Everything in Starter',
-  'Priority processing queue',
-  'Longer source video support',
-  'Advanced clip scoring and ranking',
-  'Faster export turnaround',
-  'Premium support access',
-];
-
-const businessFeatures = [
-  'Custom video volume',
-  'Everything in Pro',
-  'Team workflows',
-  'Priority infrastructure allocation',
-  'API / custom integrations',
-  'Dedicated support',
-  'Enterprise onboarding',
-];
-
-function PlanCard({
-  name,
-  subtitle,
-  price,
-  highlighted = false,
-  features,
-  cta,
-}: {
+type Plan = {
   name: string;
   subtitle: string;
-  price: string;
+  monthlyPrice: string;
+  yearlyPrice?: string;
+  yearlyBadge?: string;
   highlighted?: boolean;
   features: string[];
   cta: string;
+  secondaryCta?: string;
+  isSalesOnly?: boolean;
+};
+
+const plans: Plan[] = [
+  {
+    name: 'Starter',
+    subtitle: 'For creators testing short-form repurposing',
+    monthlyPrice: '$14.99',
+    yearlyPrice: '$144',
+    yearlyBadge: 'Save 20%',
+    features: [
+      '1 free upload to test the product first',
+      '15 videos per month after upgrade',
+      'Up to 15 AI clips per video',
+      'HD exports',
+      'Premium captions',
+      'Speaker detection',
+      'No watermark',
+    ],
+    cta: 'Start Free Trial',
+    secondaryCta: 'Then upgrade when you like the results',
+  },
+  {
+    name: 'Pro',
+    subtitle: 'For serious creators, marketers, and power users',
+    monthlyPrice: '$29.99',
+    yearlyPrice: '$288',
+    yearlyBadge: 'Save 20%',
+    highlighted: true,
+    features: [
+      '1 free upload before committing',
+      '40 videos per month',
+      'Everything in Starter',
+      'Priority processing queue',
+      'Longer source video support',
+      'Advanced clip scoring and ranking',
+      'Faster export turnaround',
+      'Premium support access',
+    ],
+    cta: 'Get Started',
+    secondaryCta: 'Best for consistent weekly clip output',
+  },
+  {
+    name: 'Business',
+    subtitle: 'For teams, agencies, and high-volume workflows',
+    monthlyPrice: 'Custom',
+    features: [
+      'Higher custom limits',
+      'Everything in Pro',
+      'Team workflows',
+      'Priority infrastructure allocation',
+      'API / custom integrations',
+      'Dedicated support',
+      'Enterprise onboarding',
+    ],
+    cta: 'Contact Sales',
+    secondaryCta: 'Need higher limits? Let’s talk.',
+    isSalesOnly: true,
+  },
+];
+
+function PlanCard({
+  plan,
+  interval,
+}: {
+  plan: Plan;
+  interval: BillingInterval;
 }) {
+  const showingYearly = interval === 'yearly' && plan.yearlyPrice;
+  const price = showingYearly ? plan.yearlyPrice : plan.monthlyPrice;
+  const suffix = plan.isSalesOnly ? '' : showingYearly ? '/yr' : '/mo';
+
   return (
     <article
       className={`rounded-[28px] border p-6 backdrop-blur-sm ${
-        highlighted
+        plan.highlighted
           ? 'border-white/30 bg-white/[0.07] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_30px_80px_rgba(0,0,0,0.35)]'
           : 'border-white/10 bg-white/[0.03]'
       }`}
     >
-      <h2 className="text-3xl font-bold tracking-tight text-white">{name}</h2>
-      <p className="mt-2 text-sm text-white/60">{subtitle}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-white">{plan.name}</h2>
+          <p className="mt-2 text-sm text-white/60">{plan.subtitle}</p>
+        </div>
+        {showingYearly && plan.yearlyBadge ? (
+          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+            {plan.yearlyBadge}
+          </span>
+        ) : null}
+      </div>
+
       <div className="mt-6 flex items-end gap-1">
         <span className="text-5xl font-black tracking-tight text-white">{price}</span>
-        <span className="pb-1 text-sm text-white/60">/mo</span>
+        {suffix ? <span className="pb-1 text-sm text-white/60">{suffix}</span> : null}
       </div>
+
+      {plan.secondaryCta ? <p className="mt-3 text-sm text-white/58">{plan.secondaryCta}</p> : null}
 
       <button
         type="button"
         className={`mt-6 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-          highlighted ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
+          plan.highlighted ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
         }`}
       >
-        {cta}
+        {plan.cta}
       </button>
 
       <ul className="mt-6 space-y-3 text-sm text-white/80">
-        {features.map((feature) => (
+        {plan.features.map((feature) => (
           <li key={feature} className="flex gap-3">
             <span className="mt-[2px] text-[#ffd84d]">✓</span>
             <span>{feature}</span>
@@ -82,6 +137,16 @@ function PlanCard({
 }
 
 export default function PricingPage() {
+  const [interval, setInterval] = useState<BillingInterval>('monthly');
+
+  const toggleLabel = useMemo(
+    () =>
+      interval === 'monthly'
+        ? 'Monthly billing selected'
+        : 'Yearly billing selected — save 20%',
+    [interval],
+  );
+
   return (
     <main className="app-shell min-h-screen text-white">
       <div className="relative mx-auto max-w-6xl px-6 py-6">
@@ -90,7 +155,6 @@ export default function PricingPage() {
 
           <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
             <Link href="/#features" className="transition hover:text-white">Features</Link>
-            <Link href="/#how-it-works" className="transition hover:text-white">How It Works</Link>
             <Link href="/pricing" className="text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
@@ -107,41 +171,46 @@ export default function PricingPage() {
             CHOOSE A PLAN
           </p>
           <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.8rem]">
-            Pick the plan that matches
-            <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#ffffff_0%,#ff8dde_38%,#d06bff_68%,#ffb347_100%)] bg-clip-text text-transparent">
-              your content volume.
+            Try one upload free.
+            <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent">
+              Upgrade when you like the results.
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-3xl text-[15px] leading-7 text-white/70 md:text-base">
-            No confusing credit math. Choose the number of videos you want to turn into shorts each month, then scale when you need more output.
+            Animacut is visual. People should experience the AI first. Start with one free upload, then choose the plan that matches your monthly content volume.
           </p>
+
+          <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm text-white/75 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+            <button
+              type="button"
+              onClick={() => setInterval('monthly')}
+              className={`rounded-full px-4 py-2 font-medium transition ${
+                interval === 'monthly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setInterval('yearly')}
+              className={`rounded-full px-4 py-2 font-medium transition ${
+                interval === 'yearly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'
+              }`}
+            >
+              Yearly
+              <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                Save 20%
+              </span>
+            </button>
+          </div>
+
+          <p className="mt-3 text-sm text-white/55">{toggleLabel}</p>
         </section>
 
         <section className="mt-14 grid gap-6 lg:grid-cols-3">
-          <PlanCard
-            name="Starter"
-            subtitle="For creators testing short-form repurposing"
-            price="$15"
-            features={starterFeatures}
-            cta="Choose Starter"
-          />
-
-          <PlanCard
-            name="Pro"
-            subtitle="For serious creators, marketers, and power users"
-            price="$29"
-            highlighted
-            features={proFeatures}
-            cta="Choose Pro"
-          />
-
-          <PlanCard
-            name="Business"
-            subtitle="For teams, agencies, and high-volume workflows"
-            price="Custom"
-            features={businessFeatures}
-            cta="Contact Sales"
-          />
+          {plans.map((plan) => (
+            <PlanCard key={plan.name} plan={plan} interval={interval} />
+          ))}
         </section>
       </div>
     </main>
