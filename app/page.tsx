@@ -64,7 +64,7 @@ export default function Home() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
 
-  const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel], []);
+  const carouselItems = useMemo(() => [...clipCarousel, ...clipCarousel, ...clipCarousel], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -200,7 +200,7 @@ export default function Home() {
         }
         @keyframes marqueeLeft {
           0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-50%, 0, 0); }
+          100% { transform: translate3d(-33.333%, 0, 0); }
         }
         @keyframes marqueeLogos {
           0% { transform: translate3d(0, 0, 0); }
