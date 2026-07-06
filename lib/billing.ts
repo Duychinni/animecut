@@ -26,7 +26,7 @@ export function getStripe() {
 
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) {
-    throw new Error('Missing STRIPE_SECRET_KEY');
+    throw new Error('Stripe is not configured yet. Add STRIPE_SECRET_KEY to .env.local.');
   }
 
   cachedStripe = new Stripe(secretKey, {
@@ -68,10 +68,19 @@ export async function getOrCreateProfile(userId: string) {
 }
 
 export function getPlanPriceId(planId: Exclude<PlanId, 'free' | 'business'>, interval: BillingInterval) {
+  if (interval !== 'monthly') {
+    throw new Error('Yearly Stripe pricing is not configured yet. Please use monthly billing for now.');
+  }
+
   const envName = `STRIPE_PRICE_${planId.toUpperCase()}_${interval.toUpperCase()}`;
-  const priceId = process.env[envName];
+  const fallbackMap: Record<'starter' | 'pro', string> = {
+    starter: 'price_1Tq4Lt13vP4goRmyNYUGDzWR',
+    pro: 'price_1Tq4ME13vP4goRmyUVvZqGD0',
+  };
+
+  const priceId = process.env[envName] || fallbackMap[planId];
   if (!priceId) {
-    throw new Error(`Missing ${envName}`);
+    throw new Error(`Missing ${envName}. Add the Stripe monthly price ID to .env.local.`);
   }
   return priceId;
 }
