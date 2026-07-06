@@ -64,15 +64,17 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
 
   const percent = Math.max(0, Math.min(100, Number(data?.progress?.percent ?? fallbackPercent)));
   const status = String(data?.project?.status ?? 'created');
+  const pipelineStatus = String(data?.project?.pipeline_status ?? 'idle');
   const pipelineError = data?.project?.pipeline_error ?? null;
+  const shouldRedirectDone = status === 'completed' || pipelineStatus === 'completed' || percent >= 100;
 
   useEffect(() => {
     if (completedNavRef.current) return;
-    if (status === 'completed') {
+    if (shouldRedirectDone) {
       completedNavRef.current = true;
       router.replace(`/dashboard/projects/${projectId}?done=${Date.now()}`);
     }
-  }, [projectId, router, status]);
+  }, [projectId, router, shouldRedirectDone]);
 
   return (
     <div className="flex min-h-[68vh] w-full items-start justify-center">
