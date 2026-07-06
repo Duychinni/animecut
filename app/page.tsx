@@ -482,20 +482,20 @@ export default function Home() {
                   className="w-[248px] shrink-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-300 hover:-translate-y-1.5 hover:border-[#8b7cff]/35 hover:shadow-[0_24px_60px_rgba(139,124,255,0.16)]"
                 >
                   <div className={`aspect-[9/16] rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
-                    <div className="flex h-full flex-col justify-between rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
+                    <div className="flex h-full flex-col justify-start rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
                       <div className="flex items-center justify-between gap-2">
                         <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea]">🔥 {clip.score}</span>
                         <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getPlatformBadge(clip.platform)} ${getPlatformTone(clip.platform)}`}>
                           {clip.platform}
                         </span>
                       </div>
-
-                      <div className="rounded-xl border border-white/10 bg-black/35 p-2.5 text-[11px] leading-4.5 text-white/78">
-                        {clip.caption}
-                      </div>
                     </div>
                   </div>
 
+                  <div className="mt-3 flex items-start justify-between gap-3">
+                    <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
+                    <span className="text-[11px] font-medium text-white/45">{clip.length}</span>
+                  </div>
                 </button>
               ))}
             </div>
