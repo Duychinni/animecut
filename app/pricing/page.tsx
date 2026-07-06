@@ -86,10 +86,10 @@ export default function PricingPage() {
   return (
     <main className="app-shell min-h-screen text-white">
       <div className="relative mx-auto max-w-6xl px-6 py-6">
-        <header className="grid grid-cols-[auto_1fr_auto] items-center border-b border-white/10 pb-4">
+        <header className="relative flex items-center justify-between border-b border-white/10 pb-4">
           <HomeLogoLink />
 
-          <nav className="hidden items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
+          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
             <Link href="/#features" className="transition hover:text-white">Features</Link>
             <Link href="/pricing" className="text-white">Pricing</Link>
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
