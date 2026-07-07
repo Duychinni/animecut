@@ -55,7 +55,7 @@ export async function GET() {
       const failedExports = rows.filter((r) => r.status === 'error').length;
       const sourceDurationSeconds = Number(project.source_duration_seconds ?? 0);
       const targetCount = Math.max(1, targetClipCountForDuration(sourceDurationSeconds));
-      const isCompleted = project.status === 'completed' || (activeExports === 0 && rows.length > 0 && (doneExports >= targetCount || doneExports === rows.length || doneExports + failedExports >= targetCount));
+      const isCompleted = project.status === 'completed' || project.pipeline_status === 'completed' || (activeExports === 0 && doneExports > 0) || (activeExports === 0 && rows.length > 0 && (doneExports >= targetCount || doneExports === rows.length || doneExports + failedExports >= targetCount));
       const progressPercent = isCompleted
         ? 100
         : activeExports > 0

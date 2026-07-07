@@ -375,8 +375,9 @@ export default function DashboardPage() {
 
       <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {orderedProjects.map((p) => {
-          const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
-          const showProcessing = percent < 100;
+          const isCompleted = p.status === 'completed' || p.pipeline_status === 'completed';
+          const percent = isCompleted ? 100 : Math.max(0, Math.min(100, Number(p.progress_percent ?? 0)));
+          const showProcessing = !isCompleted && percent < 100;
           const processingStage = p.pipeline_status === 'queued'
             ? 'Finding hooks...'
             : p.pipeline_status === 'processing'
