@@ -333,7 +333,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
     if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
 
-    const clipId = opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '') || 'unknown';
+    const clipId = (opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
     const candidateId = opts.debugCandidateId ?? null;
     const backendScript = script;
     let jsonSaved = false;
