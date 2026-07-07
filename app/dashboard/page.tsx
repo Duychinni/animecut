@@ -87,39 +87,20 @@ export default function DashboardPage() {
       };
 
       if (initial || recentProjects.length === 0) {
-        const enriched = await Promise.all(
-          projects.map(async (p) => {
-            try {
-              const pr = await fetch(`/api/projects/${p.id}/progress`, { cache: 'no-store' });
-              const prData = await pr.json();
-              if (!pr.ok) return p;
-              const nextProgress = applyProgressFloor(
-                p.id,
-                Number(prData?.progress?.percent ?? 0),
-                typeof prData?.project?.status === 'string' ? prData.project.status : p.status,
-              );
+        const seeded = projects.map((p) => ({
+          ...p,
+          thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
+          progress_percent: p.status === 'completed' ? 100 : p.progress_percent,
+        })) as ProjectListItem[];
 
-              return {
-                ...p,
-                thumbnail_url: p.source_thumbnail_url ?? prData?.project?.thumbnail_url ?? null,
-                progress_percent: nextProgress,
-                eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
-                pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
-              } as ProjectListItem;
-            } catch {
-              return p;
-            }
-          }),
-        );
+        const sortedSeeded = sortByQueue(seeded);
 
-        const sortedEnriched = sortByQueue(enriched);
-
-        hasProcessingRef.current = sortedEnriched.some((p) => {
+        hasProcessingRef.current = sortedSeeded.some((p) => {
           const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
           return pct < 100;
         });
 
-        setRecentProjects(sortedEnriched);
+        setRecentProjects(sortedSeeded);
         return;
       }
 
