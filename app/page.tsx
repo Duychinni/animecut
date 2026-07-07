@@ -196,7 +196,7 @@ export default function Home() {
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
 
-  const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips, ...showcaseClips, ...showcaseClips], []);
+  const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips], []);
 
   useEffect(() => {
     let isMounted = true;
@@ -364,7 +364,7 @@ export default function Home() {
         }
         @keyframes marqueeLeft {
           0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-25%, 0, 0); }
+          100% { transform: translate3d(-50%, 0, 0); }
         }
         @keyframes glowSweep {
           0% { transform: translateX(-10%); opacity: .45; }
@@ -514,7 +514,7 @@ export default function Home() {
           </div>
 
           <div className="overflow-hidden">
-            <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 68s linear infinite' }}>
+            <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 84s linear infinite' }}>
               {carouselItems.map((clip, index) => (
                 <button
                   key={`${clip.title}-${index}`}
