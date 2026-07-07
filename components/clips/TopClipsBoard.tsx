@@ -90,6 +90,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+  const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
   const [applyingPreset, setApplyingPreset] = useState(false);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
@@ -181,13 +182,22 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     if (!editingClip) return;
     try {
       setApplyingPreset(true);
-      const res = await fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ presetId: selectedPresetId }),
-      });
-      const data = await readJsonSafe(res);
-      if (!res.ok) throw new Error(String(data?.error || 'Could not apply preset'));
+      const [presetRes, reframeRes] = await Promise.all([
+        fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ presetId: selectedPresetId }),
+        }),
+        fetch(`/api/exports/${editingClip.exportId}/reframe`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ preset: selectedReframePreset }),
+        }),
+      ]);
+      const presetData = await readJsonSafe(presetRes);
+      const reframeData = await readJsonSafe(reframeRes);
+      if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
+      if (!reframeRes.ok) throw new Error(String(reframeData?.error || 'Could not apply reframe preset'));
       setEditingClip(null);
       window.location.reload();
     } catch (error) {
@@ -481,7 +491,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               <div className="flex flex-col p-6">
                 <div className="mb-5 flex gap-2 text-xs font-semibold text-white/60">
                   <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-white">Presets</span>
-                  <span className="rounded-full border border-white/10 px-3 py-1.5">Font</span>
+                  <span className="rounded-full border border-white/10 px-3 py-1.5">Framing</span>
                   <span className="rounded-full border border-white/10 px-3 py-1.5">Effects</span>
                 </div>
 
@@ -512,9 +522,33 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   })}
                 </div>
 
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  {[
+                    ['auto', 'Auto'],
+                    ['tight', 'Tight center'],
+                    ['left', 'Left speaker'],
+                    ['center', 'Center speaker'],
+                    ['right', 'Right speaker'],
+                  ].map(([value, label]) => {
+                    const active = selectedReframePreset === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setSelectedReframePreset(value as 'auto' | 'tight' | 'left' | 'center' | 'right')}
+                        className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                          active ? 'border-white/25 bg-white/[0.08] text-white' : 'border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="mt-auto pt-6">
                   <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
-                    Applying <span className="font-semibold text-white">{activePreset?.name}</span> will re-render this MP4 with burned-in captions and save the preset to this clip.
+                    Applying <span className="font-semibold text-white">{activePreset?.name}</span> with <span className="font-semibold text-white">{selectedReframePreset}</span> framing will re-render this MP4 and save the clip changes.
                   </div>
                   <button
                     type="button"
