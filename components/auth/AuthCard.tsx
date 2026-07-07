@@ -23,12 +23,13 @@ export function AuthCard({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(mode === 'login');
   const [localError, setLocalError] = useState<string | null>(error ?? null);
   const [localMsg, setLocalMsg] = useState<string | null>(msg ?? null);
 
   const isLogin = mode === 'login';
 
-  async function onGoogleAuth() {
+  async function onOAuth(provider: 'google' | 'apple') {
     setLoading(true);
     setLocalError(null);
     setLocalMsg(null);
@@ -37,7 +38,7 @@ export function AuthCard({
       const supabase = createSupabaseBrowserClient();
       const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next || '/dashboard')}`;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider,
         options: { redirectTo },
       });
 
@@ -45,7 +46,7 @@ export function AuthCard({
         setLocalError(oauthError.message);
       }
     } catch (err: unknown) {
-      setLocalError(err instanceof Error ? err.message : 'Google sign-in failed');
+      setLocalError(err instanceof Error ? err.message : `${provider} sign-in failed`);
     } finally {
       setLoading(false);
     }
@@ -77,6 +78,12 @@ export function AuthCard({
         return;
       }
 
+      if (!showPassword) {
+        setShowPassword(true);
+        setLocalMsg('Now add a password to finish creating your account.');
+        return;
+      }
+
       const signupMsg = typeof data?.msg === 'string' ? data.msg : 'Check your email to confirm your account';
       router.push(`/auth/login?msg=${encodeURIComponent(signupMsg)}`);
       router.refresh();
@@ -88,63 +95,88 @@ export function AuthCard({
   }
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-sm">
-      <h1 className="text-3xl font-bold tracking-tight text-white">{isLogin ? 'Login' : 'Create account'}</h1>
+    <div className="rounded-[32px] border border-white/10 bg-[#1c1c1c]/95 p-7 text-center shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+      <h1 className="text-3xl font-bold tracking-tight text-white">
+        {isLogin ? 'Welcome back' : 'Finish signing up to get your free clips'}
+      </h1>
+      <p className="mt-3 text-sm text-white/55">
+        {isLogin ? 'Login to keep creating polished clips.' : 'Free plan available. No credit card required.'}
+      </p>
       {localMsg ? <p className="mt-3 text-sm text-emerald-300">{localMsg}</p> : null}
       {localError ? <p className="mt-3 text-sm text-red-300">{localError}</p> : null}
 
-      <div className="mt-5 space-y-3">
+      <div className="mt-6 space-y-3">
         <button
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/12 bg-white/[0.03] px-4 py-3 font-medium text-white transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.10] px-4 py-3.5 font-semibold text-white transition hover:bg-white/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
-          onClick={onGoogleAuth}
+          onClick={() => void onOAuth('google')}
           disabled={loading}
         >
-          <span className="text-base">G</span>
-          <span>{loading ? 'Working...' : `${isLogin ? 'Continue' : 'Sign up'} with Google`}</span>
+          <span className="text-lg">G</span>
+          <span>{loading ? 'Working...' : 'Continue with Google'}</span>
         </button>
-
-        <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-white/35">
-          <div className="h-px flex-1 bg-white/10" />
-          <span>or</span>
-          <div className="h-px flex-1 bg-white/10" />
-        </div>
+        <button
+          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.10] px-4 py-3.5 font-semibold text-white transition hover:bg-white/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+          type="button"
+          onClick={() => void onOAuth('apple')}
+          disabled={loading}
+        >
+          <span className="text-lg"></span>
+          <span>{loading ? 'Working...' : 'Continue with Apple'}</span>
+        </button>
       </div>
 
-      <form onSubmit={onSubmit} className="mt-5 space-y-3">
+      <div className="mt-6 flex items-center gap-3 text-sm text-white/40">
+        <div className="h-px flex-1 bg-white/10" />
+        <span>{isLogin ? 'or continue with email' : 'or continue with email'}</span>
+        <div className="h-px flex-1 bg-white/10" />
+      </div>
+
+      <form onSubmit={onSubmit} className="mt-6 space-y-3 text-left">
         <input
-          className="w-full rounded-xl border border-white/12 bg-white/[0.03] p-3 text-white placeholder:text-white/40 outline-none"
+          className="w-full rounded-2xl border border-white/12 bg-white/[0.03] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"
           name="email"
-          placeholder="Email"
+          placeholder="Enter email address"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        <input
-          className="w-full rounded-xl border border-white/12 bg-white/[0.03] p-3 text-white placeholder:text-white/40 outline-none"
-          type="password"
-          name="password"
-          placeholder="Password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button className="w-full rounded-xl bg-white px-4 py-3 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60" type="submit" disabled={loading}>
-          {loading ? 'Working...' : isLogin ? 'Login' : 'Create account'}
+        {isLogin || showPassword ? (
+          <input
+            className="w-full rounded-2xl border border-white/12 bg-white/[0.03] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
+            type="password"
+            name="password"
+            placeholder="Enter password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        ) : null}
+        <button
+          className="w-full rounded-2xl bg-white px-4 py-3.5 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+          type="submit"
+          disabled={loading}
+        >
+          {loading ? 'Working...' : isLogin ? 'Continue with email' : showPassword ? 'Finish sign up' : 'Continue with email'}
         </button>
       </form>
 
-      <p className="mt-4 text-sm text-white/60">
+      <p className="mt-5 text-sm text-white/55">
         {isLogin ? (
           <>
             New here? <Link className="text-white underline underline-offset-4" href="/auth/signup">Create account</Link>
           </>
         ) : (
           <>
-            Already have an account? <Link className="text-white underline underline-offset-4" href="/auth/login">Login</Link>
+            Already have an account? <Link className="text-white underline underline-offset-4" href="/auth/login">Login here</Link>
           </>
         )}
+      </p>
+
+      <p className="mt-6 text-xs leading-6 text-white/35">
+        By continuing, you agree to our <Link className="underline underline-offset-4" href="/terms">Terms of Service</Link>.<br />
+        Read our <Link className="underline underline-offset-4" href="/privacy">Privacy Policy</Link>.
       </p>
     </div>
   );
