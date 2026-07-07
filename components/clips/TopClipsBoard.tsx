@@ -277,7 +277,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     <div className="mt-1.5 flex min-h-[28px] items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[1.35rem] font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
-                        {toDisplayScore(clip.score) > 90 ? (
+                        {toDisplayScore(clip.score) >= 90 ? (
                           <span title="Viral clip" aria-label="Viral clip" className="cursor-help text-xl leading-none">🔥</span>
                         ) : null}
                       </div>
