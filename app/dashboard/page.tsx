@@ -445,15 +445,15 @@ export default function DashboardPage() {
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black transition duration-300 group-hover:scale-[1.015] group-hover:border-[#9b6bff]/35 group-hover:shadow-[0_0_0_1px_rgba(155,107,255,0.18),0_18px_55px_rgba(102,51,153,0.24)]">
               {p.thumbnail_url || p.source_thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.thumbnail_url || p.source_thumbnail_url || ''} alt={p.source_title || p.title} className={`aspect-video w-full object-cover ${showProcessing ? 'brightness-[0.72]' : 'brightness-110'}`} loading="lazy" referrerPolicy="no-referrer" />
+                <img src={p.thumbnail_url || p.source_thumbnail_url || ''} alt={p.source_title || p.title} className={`aspect-video w-full object-cover ${showProcessing ? 'brightness-[0.82]' : 'brightness-110'}`} loading="lazy" referrerPolicy="no-referrer" />
               ) : (
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}
 
               {showProcessing ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/38 px-4 text-center">
-                  <div className="rounded-[18px] border border-white/12 bg-black/58 px-4 py-3 text-white shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-sm">
-                    <div className="text-[2rem] font-extrabold leading-none tracking-tight">{percent}%</div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/24 px-4 text-center">
+                  <div className="rounded-[16px] border border-white/12 bg-black/52 px-3.5 py-2.5 text-white shadow-[0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+                    <div className="text-[1.55rem] font-extrabold leading-none tracking-tight">{percent}%</div>
                     <div className="mt-2 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/85">
                       <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
                       {processingStage}
