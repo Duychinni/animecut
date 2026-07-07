@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
+import { AuthModal } from '@/components/auth/AuthModal';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -195,6 +196,8 @@ export default function Home() {
   const [tokenBalance, setTokenBalance] = useState<number>(0);
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
 
   const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips, ...showcaseClips, ...showcaseClips], []);
 
@@ -262,10 +265,9 @@ export default function Home() {
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
       if (text.toLowerCase().includes('unauthorized')) {
-        setMsg('Please log in first. Redirecting...');
-        setTimeout(() => {
-          window.location.href = '/auth/login';
-        }, 800);
+        setMsg('Please log in first.');
+        setAuthMode('signup');
+        setAuthModalOpen(true);
         return;
       }
       setMsg(`Error: ${text}`);
@@ -327,10 +329,9 @@ export default function Home() {
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not upload file';
       if (text.toLowerCase().includes('unauthorized')) {
-        setMsg('Please log in first. Redirecting...');
-        setTimeout(() => {
-          window.location.href = '/auth/login';
-        }, 800);
+        setMsg('Please log in first.');
+        setAuthMode('signup');
+        setAuthModalOpen(true);
         return;
       }
       setMsg(`Error: ${text}`);
@@ -675,6 +676,14 @@ export default function Home() {
           </div>
         </footer>
       </div>
+
+      <AuthModal
+        open={authModalOpen}
+        mode={authMode}
+        next="/dashboard"
+        onClose={() => setAuthModalOpen(false)}
+        onSwitchMode={(mode) => setAuthMode(mode)}
+      />
 
       {selectedClip ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm" onClick={() => setSelectedClip(null)}>
