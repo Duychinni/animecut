@@ -51,7 +51,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
         caption_font: preset.caption_font,
         motion_tracking: false,
         auto_reframe: true,
-        reframe_mode: 'basic',
+        reframe_mode: 'smart',
       },
       status: 'queued',
     });
