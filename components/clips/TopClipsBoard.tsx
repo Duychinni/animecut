@@ -249,7 +249,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
         {!visible.length && <p className="px-4 text-sm text-white/60">No clips yet.</p>}
 
         <div className="px-4 pb-2">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3 xl:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
             {visible.slice(0, 10).map((clip) => {
               const durationLabel = formatDuration(clip.startSec, clip.endSec);
               const playbackState = playback[clip.exportId];
@@ -262,21 +262,21 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
 
               return (
-                <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[12px] border border-transparent px-3 py-3 transition hover:border-white/12 hover:bg-white/[0.03]">
-                  <div className="min-h-[112px] px-1 pb-2">
-                    <p className="line-clamp-3 min-h-[60px] text-[17px] font-extrabold leading-5 text-white">{clip.title}</p>
+                <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
+                  <div className="min-h-[96px] px-0.5 pb-1.5">
+                    <p className="line-clamp-3 min-h-[52px] text-[15px] font-extrabold leading-[1.15rem] text-white">{clip.title}</p>
 
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {getClipTags(clip).map((tag) => (
-                        <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[11px] font-semibold text-white/80">
+                        <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
                           {tag}
                         </span>
                       ))}
                     </div>
 
-                    <div className="mt-2 flex min-h-[32px] items-center justify-between gap-3">
+                    <div className="mt-1.5 flex min-h-[28px] items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-2xl font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
+                        <span className="text-[1.35rem] font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
                         {toDisplayScore(clip.score) >= 85 ? (
                           <span title="Viral clip" aria-label="Viral clip" className="cursor-help text-xl leading-none">🔥</span>
                         ) : null}
@@ -327,8 +327,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   </div>
 
                   {clip.signedUrl ? (
-                    <div className="flex justify-center bg-transparent px-2">
-                      <div data-clip-frame="true" className="relative aspect-[9/16] w-full max-w-[270px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0">
+                    <div className="flex justify-center bg-transparent px-1.5">
+                      <div data-clip-frame="true" className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0">
                         <video
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
