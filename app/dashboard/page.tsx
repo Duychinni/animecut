@@ -77,8 +77,8 @@ export default function DashboardPage() {
         return [...items].sort((a, b) => {
           const aPercent = Number(a.progress_percent ?? (a.status === 'completed' ? 100 : 0));
           const bPercent = Number(b.progress_percent ?? (b.status === 'completed' ? 100 : 0));
-          const aProcessing = aPercent < 100;
-          const bProcessing = bPercent < 100;
+          const aProcessing = (a.pipeline_status === 'queued' || a.pipeline_status === 'processing') && aPercent < 100;
+          const bProcessing = (b.pipeline_status === 'queued' || b.pipeline_status === 'processing') && bPercent < 100;
 
           if (aProcessing !== bProcessing) return aProcessing ? -1 : 1;
 
@@ -203,13 +203,23 @@ export default function DashboardPage() {
       await loadProjects();
     };
 
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void loadProjects();
+      }
+    };
+
     void loadProjects(true);
 
     const timer = setInterval(() => {
       void tick();
     }, 4000);
+    document.addEventListener('visibilitychange', onVisibility);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
 
