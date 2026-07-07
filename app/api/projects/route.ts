@@ -6,15 +6,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
 
-function targetClipCountForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes <= 5) return 5;
-  if (minutes <= 15) return 7;
-  if (minutes <= 30) return 10;
-  if (minutes <= 60) return 15;
-  return 20;
-}
-
 const BILLING_DEV_BYPASS = process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true';
 
 function getErrorMessage(error: unknown): string {
@@ -50,28 +41,15 @@ export async function GET() {
 
     const projects = (data ?? []).map((project) => {
       const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
-      const doneExports = rows.filter((r) => r.status === 'done').length;
-       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
+      const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
-      const failedExports = rows.filter((r) => r.status === 'error').length;
-      const sourceDurationSeconds = Number(project.source_duration_seconds ?? 0);
-      const targetCount = Math.max(1, targetClipCountForDuration(sourceDurationSeconds));
-      const isCompleted = project.status === 'completed' || project.pipeline_status === 'completed' || readyExports > 0 || (activeExports === 0 && doneExports > 0) || (activeExports === 0 && rows.length > 0 && (doneExports >= targetCount || doneExports === rows.length || doneExports + failedExports >= targetCount));
-      const progressPercent = isCompleted
-        ? 100
-        : activeExports > 0
-          ? Math.min(99, Math.round(68 + (doneExports / Math.max(1, targetCount)) * 28 + 4))
-          : project.pipeline_status === 'processing'
-            ? 24
-            : project.pipeline_status === 'queued'
-              ? 8
-              : 0;
+      const isCompleted = project.status === 'completed' || project.pipeline_status === 'completed' || (readyExports > 0 && activeExports === 0);
 
       return {
         ...project,
         status: isCompleted ? 'completed' : project.status,
         pipeline_status: isCompleted ? 'completed' : project.pipeline_status,
-        progress_percent: progressPercent,
+        progress_percent: isCompleted ? 100 : undefined,
         exports: undefined,
       };
     });
