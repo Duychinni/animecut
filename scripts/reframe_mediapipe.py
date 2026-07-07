@@ -4,7 +4,8 @@ import math
 import sys
 from typing import Optional, Tuple
 
-TARGET_FACE_TOP = 0.38
+TARGET_FACE_TOP = 0.40
+SAFE_EDGE_MARGIN_X = 0.10
 
 
 def fail(code: int, error: str):
@@ -65,8 +66,9 @@ def track_score(candidate: Tuple[float, float, float, float], active_bbox: Optio
     acx, acy = center(active_bbox)
     ccx, ccy = center(candidate)
     dist = math.hypot((ccx - acx) / max(width, 1.0), (ccy - acy) / max(height, 1.0))
-    continuity = max(0.0, 1.0 - dist * 2.6)
-    return base + overlap * 2.4 + continuity * 1.6
+    continuity = max(0.0, 1.0 - dist * 2.8)
+    size_bonus = min(1.0, ((candidate[2] * candidate[3]) / max(width * height, 1.0)) * 10.0)
+    return base + overlap * 2.6 + continuity * 1.8 + size_bonus * 0.6
 
 
 def motion_regions(cv2, prev_gray, gray, width: float, height: float):
@@ -110,7 +112,8 @@ def main():
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920.0
     height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080.0
-    step = max(1, int(round(fps / max(sample_fps, 0.25))))
+    sample_interval_sec = 0.5
+    step = max(1, int(round(fps * sample_interval_sec)))
 
     body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_upperbody.xml")
 
@@ -185,7 +188,7 @@ def main():
         selected_mode = "motion"
 
         if faces:
-            ranked_faces = sorted(faces, key=lambda f: track_score(f, active_bbox if active_mode == "face" else None, width, height), reverse=True)
+            ranked_faces = sorted(faces, key=lambda f: ((f[2] * f[3]), track_score(f, active_bbox if active_mode == "face" else None, width, height)), reverse=True)
             best_face = ranked_faces[0]
             if active_bbox is not None and active_mode == "face":
                 best_iou = max(iou(active_bbox, f) for f in ranked_faces)
@@ -193,13 +196,13 @@ def main():
                 current_score = track_score(current_face, active_bbox, width, height)
                 locked_score = track_score(active_bbox, active_bbox, width, height)
 
-                if best_iou >= 0.16 or current_score >= locked_score * 0.92:
+                if best_iou >= 0.18 or current_score >= locked_score * 0.95:
                     selected = current_face
                     pending_switch_count = 0
                     active_track_age += 1
                 else:
                     pending_switch_count += 1
-                    if pending_switch_count >= 7:
+                    if pending_switch_count >= 8:
                         selected = best_face
                         pending_switch_count = 0
                         active_track_age = 0
@@ -243,12 +246,16 @@ def main():
 
         if selected_mode == "face":
             face_cx = clamp01(cx / width)
-            nx = clamp01(0.97 * face_cx + 0.03 * 0.5)
+            nx = clamp01(max(SAFE_EDGE_MARGIN_X, min(1.0 - SAFE_EDGE_MARGIN_X, face_cx)))
             face_top = clamp01(selected[1] / max(height, 1.0))
-            ny = clamp01(face_top + TARGET_FACE_TOP * 0.26)
+            face_h_norm = clamp01(selected[3] / max(height, 1.0))
+            ny = clamp01(face_top + face_h_norm * TARGET_FACE_TOP)
         elif selected_mode == "body":
+            body_cx = clamp01(cx / width)
+            nx = clamp01(max(SAFE_EDGE_MARGIN_X, min(1.0 - SAFE_EDGE_MARGIN_X, body_cx)))
             body_top = clamp01(selected[1] / max(height, 1.0))
-            ny = clamp01(body_top + 0.30)
+            body_h_norm = clamp01(selected[3] / max(height, 1.0))
+            ny = clamp01(body_top + body_h_norm * 0.32)
         else:
             ny = ny_raw
 
