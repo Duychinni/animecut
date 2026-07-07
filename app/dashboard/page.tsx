@@ -106,6 +106,7 @@ export default function DashboardPage() {
 
       const processingIds = projects
         .filter((p) => p.status !== 'completed')
+        .slice(0, 6)
         .map((p) => p.id);
 
       const progressUpdates = await Promise.all(
