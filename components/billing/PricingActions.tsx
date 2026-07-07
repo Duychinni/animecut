@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { BillingInterval, PlanConfig } from '@/lib/plans';
 import { readJsonSafe } from '@/lib/safe-json';
@@ -8,12 +8,20 @@ import { readJsonSafe } from '@/lib/safe-json';
 export function PricingActions({
   plan,
   interval,
+  selected,
+  onSelect,
 }: {
   plan: PlanConfig;
   interval: BillingInterval;
+  selected?: boolean;
+  onSelect?: (planId: string) => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (selected) onSelect?.(plan.id);
+  }, [onSelect, plan.id, selected]);
 
   async function onClick() {
     if (plan.isSalesOnly) {
@@ -55,7 +63,10 @@ export function PricingActions({
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        onSelect?.(plan.id);
+        void onClick();
+      }}
       disabled={loading}
       className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
         plan.highlighted ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
