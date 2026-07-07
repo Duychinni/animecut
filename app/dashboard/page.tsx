@@ -16,6 +16,7 @@ type ProjectListItem = {
   id: string;
   title: string;
   status: string;
+  optimistic?: boolean;
   source_type: 'youtube' | 'upload';
   source_url?: string | null;
   created_at: string;
@@ -178,6 +179,21 @@ export default function DashboardPage() {
     const createdId = searchParams.get('created');
     if (!createdId) return;
 
+    setRecentProjects((prev) => {
+      if (prev.some((p) => p.id === createdId)) return prev;
+      const optimisticProject: ProjectListItem = {
+        id: createdId,
+        title: 'New project',
+        status: 'created',
+        optimistic: true,
+        source_type: 'upload',
+        created_at: new Date().toISOString(),
+        progress_percent: 5,
+        pipeline_status: 'queued',
+      };
+      return [optimisticProject, ...prev].slice(0, 24);
+    });
+
     void (async () => {
       try {
         const res = await fetch('/api/projects');
@@ -188,7 +204,7 @@ export default function DashboardPage() {
 
         setRecentProjects((prev) => {
           const withoutDupes = prev.filter((p) => p.id !== createdProject.id);
-          return [createdProject, ...withoutDupes].slice(0, 24);
+          return [{ ...createdProject, optimistic: false }, ...withoutDupes].slice(0, 24);
         });
       } catch {
         // best effort only
@@ -472,6 +488,7 @@ export default function DashboardPage() {
                   ) : (
                     <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
                   )}
+                  {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
                       {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
