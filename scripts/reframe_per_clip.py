@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import json
+import math
 import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
 DEBUG_FRAME_NAME = 'debug-still.jpg'
+SAFE_EDGE_MARGIN_X = 0.10
+MOTION_MIN_AREA_RATIO = 0.0035
 
 
 def fail(code: int, error: str):
@@ -22,11 +25,59 @@ def center(b: Tuple[float, float, float, float]) -> Tuple[float, float]:
     return x + w / 2.0, y + h / 2.0
 
 
-def save_debug_frame(cv2, frame, out_path: Path, detected_box, crop_box):
+def motion_regions(cv2, prev_gray, gray, width: float, height: float):
+    if prev_gray is None:
+        return []
+    diff = cv2.absdiff(prev_gray, gray)
+    diff = cv2.GaussianBlur(diff, (7, 7), 0)
+    _, thresh = cv2.threshold(diff, 18, 255, cv2.THRESH_BINARY)
+    thresh = cv2.dilate(thresh, None, iterations=2)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    min_area = max(1200.0, width * height * MOTION_MIN_AREA_RATIO)
+    boxes = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = float(w * h)
+        if area < min_area:
+            continue
+        boxes.append((float(x), float(y), float(w), float(h)))
+    boxes.sort(key=lambda b: b[2] * b[3], reverse=True)
+    return boxes[:5]
+
+
+def merge_subject_and_motion(subject_box: Optional[Tuple[float, float, float, float]], motion_box: Optional[Tuple[float, float, float, float]], width: float):
+    if subject_box is None and motion_box is None:
+        return width / 2.0, True
+    if subject_box is None and motion_box is not None:
+        mx, _ = center(motion_box)
+        return mx, True
+    if subject_box is not None and motion_box is None:
+        sx, _ = center(subject_box)
+        return sx, False
+
+    sx, _ = center(subject_box)
+    mx, _ = center(motion_box)
+    subject_area = subject_box[2] * subject_box[3]
+    motion_area = motion_box[2] * motion_box[3]
+    if subject_area <= 0:
+        return mx, True
+
+    center_delta_norm = abs(mx - sx) / max(width, 1.0)
+    if center_delta_norm <= 0.08:
+        return sx * 0.78 + mx * 0.22, False
+    if center_delta_norm <= 0.18:
+        return sx * 0.88 + mx * 0.12, False
+    return sx, False
+
+
+def save_debug_frame(cv2, frame, out_path: Path, detected_box, motion_box, crop_box):
     img = frame.copy()
     if detected_box is not None:
         x, y, w, h = [int(round(v)) for v in detected_box]
         cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 3)
+    if motion_box is not None:
+        x, y, w, h = [int(round(v)) for v in motion_box]
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 200, 255), 2)
     if crop_box is not None:
         x, y, w, h = [int(round(v)) for v in crop_box]
         cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 3)
@@ -74,6 +125,8 @@ def main():
     centers_x = []
     first_debug_frame = None
     first_box = None
+    first_motion_box = None
+    prev_gray = None
 
     for sample_t in sample_times:
         cap.set(cv2.CAP_PROP_POS_MSEC, sample_t * 1000.0)
@@ -86,6 +139,7 @@ def main():
         result = detector.process(rgb)
 
         selected_box: Optional[Tuple[float, float, float, float]] = None
+        motion_box: Optional[Tuple[float, float, float, float]] = None
         fallback_used = False
 
         if result.detections:
@@ -106,26 +160,47 @@ def main():
                 selected_box = (float(x), float(y), float(w), float(h))
                 fallback_used = True
 
-        if selected_box is None:
-            continue
+        motion_boxes = motion_regions(cv2, prev_gray, gray, source_w, source_h)
+        prev_gray = gray
+        if motion_boxes:
+            motion_box = motion_boxes[0]
 
-        cx, cy = center(selected_box)
+        chosen_center_x, motion_fallback_used = merge_subject_and_motion(selected_box, motion_box, source_w)
+        fallback_used = fallback_used or motion_fallback_used
+        chosen_center_x = clamp(chosen_center_x, source_w * SAFE_EDGE_MARGIN_X, source_w * (1.0 - SAFE_EDGE_MARGIN_X))
+
+        if selected_box is not None:
+            _, cy = center(selected_box)
+            chosen_center_y = cy
+        elif motion_box is not None:
+            _, cy = center(motion_box)
+            chosen_center_y = cy
+        else:
+            chosen_center_y = source_h / 2.0
+
         centers_x.append({
             'timestamp': round(sample_t - start_sec, 3),
-            'detected_face': {
+            'detected_face': None if selected_box is None else {
                 'x': selected_box[0],
                 'y': selected_box[1],
                 'w': selected_box[2],
                 'h': selected_box[3],
             },
-            'chosen_center_x': cx,
-            'chosen_center_y': cy,
+            'motion_box': None if motion_box is None else {
+                'x': motion_box[0],
+                'y': motion_box[1],
+                'w': motion_box[2],
+                'h': motion_box[3],
+            },
+            'chosen_center_x': chosen_center_x,
+            'chosen_center_y': chosen_center_y,
             'fallback_used': fallback_used,
         })
 
         if first_debug_frame is None:
             first_debug_frame = frame.copy()
             first_box = selected_box
+            first_motion_box = motion_box
 
     cap.release()
     detector.close()
@@ -141,7 +216,7 @@ def main():
     crop_box = (crop_x, 0.0, float(crop_w), float(crop_h))
 
     if debug_enabled and first_debug_frame is not None:
-        save_debug_frame(cv2, first_debug_frame, debug_dir / f'{clip_id}-{DEBUG_FRAME_NAME}', first_box, crop_box)
+        save_debug_frame(cv2, first_debug_frame, debug_dir / f'{clip_id}-{DEBUG_FRAME_NAME}', first_box, first_motion_box, crop_box)
 
     result = {
         'ok': True,
@@ -153,6 +228,7 @@ def main():
         'detected_center_x': avg_center_x,
         'crop_x': crop_x,
         'fallback_used': fallback_used,
+        'motion_enabled': True,
         'samples': centers_x,
         'ffmpeg_crop': f'crop={crop_w}:{crop_h}:{int(round(crop_x))}:0,scale=1080:1920',
     }
