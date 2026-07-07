@@ -47,12 +47,14 @@ export function AuthCard({
       }
 
       if (isLogin) {
-        router.push(data?.next || next || '/dashboard');
+        const nextPath = typeof data?.next === 'string' ? data.next : (next || '/dashboard');
+        router.push(nextPath);
         router.refresh();
         return;
       }
 
-      router.push(`/auth/login?msg=${encodeURIComponent(data?.msg || 'Check your email to confirm your account')}`);
+      const signupMsg = typeof data?.msg === 'string' ? data.msg : 'Check your email to confirm your account';
+      router.push(`/auth/login?msg=${encodeURIComponent(signupMsg)}`);
       router.refresh();
     } catch (err: unknown) {
       setLocalError(err instanceof Error ? err.message : 'Request failed');
