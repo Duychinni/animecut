@@ -37,6 +37,13 @@ type PlaybackState = {
   volume: number;
 };
 
+type ExpandedPlayback = {
+  clipId: string;
+  current: number;
+  paused: boolean;
+  volume: number;
+};
+
 function formatDuration(startSec: number | null, endSec: number | null) {
   if (startSec == null || endSec == null) return null;
   const total = Math.max(0, Math.round(endSec - startSec));
@@ -94,6 +101,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
+  const [expandedPlayback, setExpandedPlayback] = useState<ExpandedPlayback | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
@@ -145,10 +153,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   function handleFullscreen(id: string) {
     pauseOtherVideos(id);
     const currentVideo = videoRefs.current[id];
+    const currentState = playback[id];
+    const currentTime = currentVideo?.currentTime ?? currentState?.current ?? 0;
+    const paused = currentVideo?.paused ?? currentState?.paused ?? true;
+    const volume = currentVideo?.muted ? 0 : (currentVideo?.volume ?? currentState?.volume ?? 1);
     if (currentVideo) {
       currentVideo.pause();
-      updatePlayback(id, { paused: true });
+      updatePlayback(id, { paused: true, current: currentTime, volume });
     }
+    setExpandedPlayback({ clipId: id, current: currentTime, paused, volume });
     setExpandedClipId(id);
   }
 
@@ -451,10 +464,19 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   <video
                     src={expandedClip.signedUrl}
                     controls
-                    autoPlay
+                    autoPlay={!expandedPlayback?.paused}
                     playsInline
                     preload="auto"
                     className="aspect-[9/16] h-full w-full bg-black object-cover"
+                    onLoadedMetadata={(e) => {
+                      if (expandedPlayback?.clipId !== expandedClip.exportId) return;
+                      e.currentTarget.currentTime = expandedPlayback.current;
+                      e.currentTarget.volume = expandedPlayback.volume;
+                      e.currentTarget.muted = expandedPlayback.volume === 0;
+                      if (!expandedPlayback.paused) {
+                        void e.currentTarget.play().catch(() => null);
+                      }
+                    }}
                     onPlay={() => pauseOtherVideos(expandedClip.exportId)}
                   />
                 ) : (
