@@ -5,6 +5,7 @@ type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'r
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
 
 type ReframeMode = 'off' | 'basic' | 'smart';
+type LayoutMode = 'single' | 'split_stack';
 
 type RenderOpts = {
   inputPath: string;
@@ -240,6 +241,17 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
 }
 
 type ReframePoint = { t: number; nx: number; ny: number; w?: number; h?: number; framing?: string; mode?: string };
+type SubjectBox = { x: number; y: number; w: number; h: number; cx?: number; cy?: number };
+type SplitStackLayout = {
+  mode: 'split_stack';
+  sourceW: number;
+  sourceH: number;
+  topBox: SubjectBox;
+  bottomBox: SubjectBox;
+  cropWidth: number;
+  outputWidth: number;
+  outputHeight: number;
+};
 
 function clamp01(v: number) {
   return Math.max(0, Math.min(1, v));
@@ -300,7 +312,71 @@ function resolveSmartReframeScript() {
   return process.env.SMART_REFRAME_SCRIPT || `${process.cwd()}/scripts/reframe_per_clip.py`;
 }
 
-async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string | undefined> {
+function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox | undefined {
+  if (!box) return undefined;
+  const x = Number(box.x ?? 0);
+  const y = Number(box.y ?? 0);
+  const w = Number(box.w ?? 0);
+  const h = Number(box.h ?? 0);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h) || w <= 1 || h <= 1) return undefined;
+  return { x, y, w, h, cx: Number(box.cx ?? (x + w / 2)), cy: Number(box.cy ?? (y + h / 2)) };
+}
+
+function averageSubjectBoxes(items: SubjectBox[]): SubjectBox | undefined {
+  if (!items.length) return undefined;
+  const total = items.reduce(
+    (acc, item) => ({
+      x: acc.x + item.x,
+      y: acc.y + item.y,
+      w: acc.w + item.w,
+      h: acc.h + item.h,
+      cx: (acc.cx ?? 0) + (item.cx ?? (item.x + item.w / 2)),
+      cy: (acc.cy ?? 0) + (item.cy ?? (item.y + item.h / 2)),
+    }),
+    { x: 0, y: 0, w: 0, h: 0, cx: 0, cy: 0 },
+  );
+  const count = items.length;
+  return { x: total.x / count, y: total.y / count, w: total.w / count, h: total.h / count, cx: (total.cx ?? 0) / count, cy: (total.cy ?? 0) / count };
+}
+
+function maybeBuildSplitStackLayout(raw: {
+  mode?: string;
+  source_w?: number;
+  source_h?: number;
+  detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number; cx?: number; cy?: number }> }>;
+}): SplitStackLayout | undefined {
+  if (raw.mode !== 'split_stack') return undefined;
+  const sourceW = Number(raw.source_w ?? 0);
+  const sourceH = Number(raw.source_h ?? 0);
+  if (!Number.isFinite(sourceW) || !Number.isFinite(sourceH) || sourceW < 100 || sourceH < 100) return undefined;
+
+  const leftFaces: SubjectBox[] = [];
+  const rightFaces: SubjectBox[] = [];
+  for (const frame of raw.detected_faces ?? []) {
+    const faces = (frame.faces ?? []).map((face) => normalizeBox(face)).filter(Boolean) as SubjectBox[];
+    if (faces.length < 2) continue;
+    faces.sort((a, b) => (a.cx ?? (a.x + a.w / 2)) - (b.cx ?? (b.x + b.w / 2)));
+    leftFaces.push(faces[0]);
+    rightFaces.push(faces[1]);
+  }
+
+  const topBox = averageSubjectBoxes(leftFaces);
+  const bottomBox = averageSubjectBoxes(rightFaces);
+  if (!topBox || !bottomBox) return undefined;
+
+  return {
+    mode: 'split_stack',
+    sourceW,
+    sourceH,
+    topBox,
+    bottomBox,
+    cropWidth: Math.round(sourceH * 9 / 16),
+    outputWidth: 1080,
+    outputHeight: 1920,
+  };
+}
+
+async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropExpr?: string; layout?: SplitStackLayout }> {
   if (opts.reframeMode !== 'smart' || opts.autoReframe === false) {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -308,7 +384,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       enabled: false,
       reason: opts.autoReframe === false ? 'auto_reframe_disabled' : 'reframe_mode_not_smart',
     });
-    return undefined;
+    return {};
   }
 
   try {
@@ -342,7 +418,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       error?: string;
     };
 
-    if (probe.code !== 0 || !raw?.ok) return undefined;
+    if (probe.code !== 0 || !raw?.ok) return {};
 
     const clipId = (opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
     const candidateId = opts.debugCandidateId ?? null;
@@ -354,6 +430,18 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       await mkdir(debugDir, { recursive: true });
       await writeFile(`${debugDir}/${clipId}.json`, JSON.stringify(raw, null, 2), 'utf8');
       jsonSaved = true;
+    }
+
+    const splitStackLayout = maybeBuildSplitStackLayout(raw);
+    if (splitStackLayout) {
+      console.log('[smart-reframe-layout]', {
+        clipId,
+        candidateId,
+        mode: splitStackLayout.mode,
+        topBox: splitStackLayout.topBox,
+        bottomBox: splitStackLayout.bottomBox,
+      });
+      return { layout: splitStackLayout };
     }
 
     if (raw.mode === 'per_clip' && typeof raw.crop_w === 'number' && typeof raw.crop_h === 'number' && typeof raw.crop_x === 'number') {
@@ -372,7 +460,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
         ffmpegCommandCrop: raw.ffmpeg_crop ?? null,
         jsonSaved,
       });
-      return `${raw.ffmpeg_crop},format=yuv420p,fps=30`;
+      return { cropExpr: `${raw.ffmpeg_crop},format=yuv420p,fps=30` };
     }
 
     console.log('[smart-reframe]', {
@@ -402,7 +490,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       .filter((p) => Number.isFinite(p.t))
       .sort((a, b) => a.t - b.t);
 
-    if (points.length < 2) return undefined;
+    if (points.length < 2) return {};
 
     const stabilized = downsamplePoints(smoothPoints(points, 0.62), 20);
 
@@ -444,7 +532,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
     const xExpr = escapeFfmpegExpr(xExprRaw);
     const yExpr = escapeFfmpegExpr(yExprRaw);
 
-    return `crop=1080:1920:${xExpr}:${yExpr}`;
+    return { cropExpr: `crop=1080:1920:${xExpr}:${yExpr}` };
   } catch (error) {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -455,8 +543,66 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       jsonSaved: false,
       fallbackReason: error instanceof Error ? error.message : 'unknown_error',
     });
-    return undefined;
+    return {};
   }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function buildSplitStackFilter(
+  opts: RenderOpts,
+  layout: SplitStackLayout,
+  includeCaptions: boolean,
+  escapedPath?: string,
+  captionPath?: string,
+) {
+  const cropWidth = Math.min(layout.cropWidth, layout.sourceW);
+  const paneHeight = 850;
+  const seamHeight = layout.outputHeight - paneHeight * 2;
+  const topCenterX = layout.topBox.cx ?? (layout.topBox.x + layout.topBox.w / 2);
+  const bottomCenterX = layout.bottomBox.cx ?? (layout.bottomBox.x + layout.bottomBox.w / 2);
+  const topCropX = clamp(topCenterX - cropWidth / 2, 0, layout.sourceW - cropWidth);
+  const bottomCropX = clamp(bottomCenterX - cropWidth / 2, 0, layout.sourceW - cropWidth);
+
+  const topCropY = clamp((layout.topBox.y + layout.topBox.h * 0.18) - paneHeight * 0.42, 0, layout.sourceH - paneHeight);
+  const bottomCropY = clamp((layout.bottomBox.y + layout.bottomBox.h * 0.18) - paneHeight * 0.42, 0, layout.sourceH - paneHeight);
+
+  const filterParts = [
+    `[0:v]split=2[topsrc][bottomsrc]`,
+    `[topsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(topCropX)}:${Math.round(topCropY)},scale=${layout.outputWidth}:${paneHeight}[topv]`,
+    `[bottomsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(bottomCropX)}:${Math.round(bottomCropY)},scale=${layout.outputWidth}:${paneHeight}[bottomv]`,
+    `color=c=black:s=${layout.outputWidth}x${layout.outputHeight}:d=1[base]`,
+    `[base][topv]overlay=0:0[tmp1]`,
+    `[tmp1][bottomv]overlay=0:${paneHeight + seamHeight}[tmp2]`,
+    `[tmp2]drawbox=x=0:y=${paneHeight}:w=${layout.outputWidth}:h=${seamHeight}:color=black@0.88:t=fill[tmp3]`,
+  ];
+
+  if (includeCaptions && escapedPath) {
+    const isAssInput = (captionPath ?? '').toLowerCase().endsWith('.ass');
+    if (isAssInput) {
+      filterParts.push(`[tmp3]subtitles=filename='${escapedPath}'[outv]`);
+    } else {
+      const style = escapeForceStyleForFilter([
+        'FontName=Arial',
+        'FontSize=12',
+        'PrimaryColour=&H00FFFFFF',
+        'OutlineColour=&H00101010',
+        'BorderStyle=1',
+        'Outline=5',
+        'Shadow=0',
+        'Bold=1',
+        `MarginV=${Math.round(layout.outputHeight * 0.42)}`,
+        'Alignment=2',
+      ].join(','));
+      filterParts.push(`[tmp3]subtitles=filename='${escapedPath}':force_style='${style}'[outv]`);
+    }
+  } else {
+    filterParts.push('[tmp3]copy[outv]');
+  }
+
+  return filterParts.join(';');
 }
 
 function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
@@ -656,7 +802,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
   let escapedPath: string | undefined;
   let canUseCaptions = false;
   let escapedMotionTransformPath: string | undefined;
-  const smartCropExpr = await maybeBuildSmartCropExpression(effectiveOpts);
+  const smartReframe = await maybeBuildSmartCropExpression(effectiveOpts);
+  const smartCropExpr = smartReframe.cropExpr;
+  const splitStackLayout = smartReframe.layout;
 
   if (effectiveOpts.captionsEnabled !== false && effectiveOpts.srtPath) {
     try {
@@ -712,13 +860,28 @@ export async function renderVerticalClip(opts: RenderOpts) {
       String(effectiveOpts.endSec),
       '-i',
       effectiveOpts.inputPath,
-      '-vf',
-      buildFilter(effectiveOpts, includeCaptions, escapedPath, escapedMotionTransformPath, effectiveOpts.srtPath, smartCropExpr),
+    ];
+
+    if (splitStackLayout) {
+      common.push(
+        '-filter_complex',
+        buildSplitStackFilter(effectiveOpts, splitStackLayout, includeCaptions, escapedPath, effectiveOpts.srtPath),
+        '-map',
+        '[outv]',
+      );
+    } else {
+      common.push(
+        '-vf',
+        buildFilter(effectiveOpts, includeCaptions, escapedPath, escapedMotionTransformPath, effectiveOpts.srtPath, smartCropExpr),
+      );
+    }
+
+    common.push(
       '-r',
       '30',
       '-c:v',
       encoder,
-    ];
+    );
 
     if (encoder === 'libx264') {
       common.push('-preset', configuredPreset, '-crf', configuredCrf, '-threads', '0');

@@ -123,6 +123,7 @@ def main():
     body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_upperbody.xml')
 
     centers_x = []
+    detected_faces = []
     first_debug_frame = None
     first_box = None
     first_motion_box = None
@@ -142,8 +143,8 @@ def main():
         motion_box: Optional[Tuple[float, float, float, float]] = None
         fallback_used = False
 
+        faces = []
         if result.detections:
-            faces = []
             for det in result.detections:
                 bbox = det.location_data.relative_bounding_box
                 x = max(0.0, bbox.xmin * source_w)
@@ -164,6 +165,11 @@ def main():
         prev_gray = gray
         if motion_boxes:
             motion_box = motion_boxes[0]
+
+        detected_faces.append({
+            'timestamp': round(sample_t - start_sec, 3),
+            'faces': [{'x': f[0], 'y': f[1], 'w': f[2], 'h': f[3], 'cx': center(f)[0], 'cy': center(f)[1]} for f in faces[:4]],
+        })
 
         chosen_center_x, motion_fallback_used = merge_subject_and_motion(selected_box, motion_box, source_w)
         fallback_used = fallback_used or motion_fallback_used
@@ -218,9 +224,21 @@ def main():
     if debug_enabled and first_debug_frame is not None:
         save_debug_frame(cv2, first_debug_frame, debug_dir / f'{clip_id}-{DEBUG_FRAME_NAME}', first_box, first_motion_box, crop_box)
 
+    dual_frames = 0
+    for frame in detected_faces:
+        faces = frame.get('faces', [])
+        if len(faces) >= 2:
+            faces = sorted(faces[:2], key=lambda f: f['cx'])
+            separation = abs(faces[1]['cx'] - faces[0]['cx']) / max(source_w, 1.0)
+            size_ratio = min(faces[0]['w'] * faces[0]['h'], faces[1]['w'] * faces[1]['h']) / max(1.0, max(faces[0]['w'] * faces[0]['h'], faces[1]['w'] * faces[1]['h']))
+            if separation >= 0.18 and size_ratio >= 0.38:
+                dual_frames += 1
+
+    split_stack = dual_frames >= max(2, math.ceil(len(detected_faces) * 0.35))
+
     result = {
         'ok': True,
-        'mode': 'per_clip',
+        'mode': 'split_stack' if split_stack else 'per_clip',
         'source_w': source_w,
         'source_h': source_h,
         'crop_w': crop_w,
@@ -230,6 +248,7 @@ def main():
         'fallback_used': fallback_used,
         'motion_enabled': True,
         'samples': centers_x,
+        'detected_faces': detected_faces,
         'ffmpeg_crop': f'crop={crop_w}:{crop_h}:{int(round(crop_x))}:0,scale=1080:1920',
     }
     print(json.dumps(result))
