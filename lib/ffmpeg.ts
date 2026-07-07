@@ -19,6 +19,8 @@ type RenderOpts = {
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
   debugReframeOverlay?: boolean;
+  debugClipId?: string;
+  debugCandidateId?: string;
 };
 
 export async function extractVideoThumbnail(inputPath: string, outputPath: string, atSeconds = 5) {
@@ -298,7 +300,15 @@ function resolveSmartReframeScript() {
 }
 
 async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string | undefined> {
-  if (opts.reframeMode !== 'smart' || opts.autoReframe === false) return undefined;
+  if (opts.reframeMode !== 'smart' || opts.autoReframe === false) {
+    console.log('[smart-reframe]', {
+      clipId: opts.debugClipId ?? null,
+      candidateId: opts.debugCandidateId ?? null,
+      enabled: false,
+      reason: opts.autoReframe === false ? 'auto_reframe_disabled' : 'reframe_mode_not_smart',
+    });
+    return undefined;
+  }
 
   try {
     const script = resolveSmartReframeScript();
@@ -323,22 +333,30 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
     if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
 
-    const clipId = opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '') || 'unknown';
-
-    console.log('[smart-reframe]', {
-      clipId,
-      detectionsFound: raw?.meta?.points ?? raw.points.length,
-      averageFaceCenterX: raw?.meta?.average_face_center?.x ?? null,
-      averageFaceCenterY: raw?.meta?.average_face_center?.y ?? null,
-      framesWithDetectionPct: raw?.meta?.frames_with_detection_pct ?? null,
-      fallbackUsed: raw?.meta?.fallback_used ?? null,
-    });
+    const clipId = opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '') || 'unknown';
+    const candidateId = opts.debugCandidateId ?? null;
+    const backendScript = script;
+    let jsonSaved = false;
 
     if (process.env.DEBUG_REFRAME_SAVE_JSON === 'true') {
       const debugDir = `${process.cwd()}/tmp/reframe-debug`;
       await mkdir(debugDir, { recursive: true });
       await writeFile(`${debugDir}/${clipId}.json`, JSON.stringify(raw, null, 2), 'utf8');
+      jsonSaved = true;
     }
+
+    console.log('[smart-reframe]', {
+      clipId,
+      candidateId,
+      backendScript,
+      smartCropReturnedPoints: Boolean(raw?.points?.length),
+      detectionsFound: raw?.meta?.points ?? raw.points.length,
+      averageFaceCenterX: raw?.meta?.average_face_center?.x ?? null,
+      averageFaceCenterY: raw?.meta?.average_face_center?.y ?? null,
+      framesWithDetectionPct: raw?.meta?.frames_with_detection_pct ?? null,
+      fallbackUsed: raw?.meta?.fallback_used ?? null,
+      jsonSaved,
+    });
 
     const points = raw.points
       .map((p) => ({
@@ -391,7 +409,16 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
     const yExpr = escapeFfmpegExpr(yExprRaw);
 
     return `crop=1080:1920:${xExpr}:${yExpr}`;
-  } catch {
+  } catch (error) {
+    console.log('[smart-reframe]', {
+      clipId: opts.debugClipId ?? null,
+      candidateId: opts.debugCandidateId ?? null,
+      enabled: true,
+      backendScript: resolveSmartReframeScript(),
+      smartCropReturnedPoints: false,
+      jsonSaved: false,
+      fallbackReason: error instanceof Error ? error.message : 'unknown_error',
+    });
     return undefined;
   }
 }

@@ -259,6 +259,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     motionTracking: options?.motion_tracking !== false,
     autoReframe: options?.auto_reframe !== false,
     reframeMode: options?.reframe_mode ?? 'smart',
+    debugClipId: bundle.id,
+    debugCandidateId: bundle.clip_candidate_id,
   });
 
   await validateRenderedVideo(outPath);
