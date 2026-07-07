@@ -30,6 +30,24 @@ type ProjectListItem = {
   pipeline_status?: string | null;
 };
 
+async function fetchProjectProgress(projectId: string) {
+  try {
+    const pr = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
+    const prData = await pr.json();
+    if (!pr.ok) return null;
+    return {
+      id: projectId,
+      thumbnail_url: prData?.project?.thumbnail_url ?? null,
+      progress_percent: Number(prData?.progress?.percent ?? 0),
+      eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
+      pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
+      status: typeof prData?.project?.status === 'string' ? prData.project.status : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -108,24 +126,16 @@ export default function DashboardPage() {
 
       const progressUpdates = await Promise.all(
         processingIds.map(async (id) => {
-          try {
-            const pr = await fetch(`/api/projects/${id}/progress`, { cache: 'no-store' });
-            const prData = await pr.json();
-            if (!pr.ok) return null;
-            return {
+          const live = await fetchProjectProgress(id);
+          if (!live) return null;
+          return {
+            ...live,
+            progress_percent: applyProgressFloor(
               id,
-              thumbnail_url: prData?.project?.thumbnail_url ?? null,
-              progress_percent: applyProgressFloor(
-                id,
-                Number(prData?.progress?.percent ?? 0),
-                typeof prData?.project?.status === 'string' ? prData.project.status : null,
-              ),
-              eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
-              pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
-            };
-          } catch {
-            return null;
-          }
+              Number(live.progress_percent ?? 0),
+              typeof live.status === 'string' ? live.status : null,
+            ),
+          };
         }),
       );
 
@@ -200,10 +210,11 @@ export default function DashboardPage() {
         if (!res.ok) return;
         const createdProject = ((data.projects ?? []) as ProjectListItem[]).find((p) => p.id === createdId);
         if (!createdProject) return;
+        const live = await fetchProjectProgress(createdId);
 
         setRecentProjects((prev) => {
           const withoutDupes = prev.filter((p) => p.id !== createdProject.id);
-          return [{ ...createdProject, optimistic: false }, ...withoutDupes].slice(0, 24);
+          return [{ ...createdProject, ...live, optimistic: false }, ...withoutDupes].slice(0, 24);
         });
       } catch {
         // best effort only
