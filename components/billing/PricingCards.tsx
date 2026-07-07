@@ -20,7 +20,7 @@ function PlanCard({
   const price = showingYearly ? plan.yearlyPrice : plan.monthlyPrice;
   const suffix = plan.isSalesOnly ? '' : showingYearly ? '/yr' : '/mo';
   const features = buildPlanFeatures(plan);
-  const emphasized = plan.highlighted || selected;
+  const emphasized = selected;
 
   return (
     <article

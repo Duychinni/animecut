@@ -69,7 +69,7 @@ export function PricingActions({
       }}
       disabled={loading}
       className={`mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-        plan.highlighted ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
+        selected ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
       } disabled:cursor-not-allowed disabled:opacity-60`}
     >
       {loading ? 'Redirecting...' : plan.cta}
