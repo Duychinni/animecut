@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     // Enable explicitly per request when needed.
     const motionTracking = motion_tracking === true;
     const autoReframe = auto_reframe !== false;
-    const reframeMode = (reframe_mode ?? 'basic') as 'off' | 'basic' | 'smart';
+    const reframeMode = (reframe_mode ?? 'smart') as 'off' | 'basic' | 'smart';
 
     let targetCount = Math.max(1, Math.min(20, Number(target_count ?? 0)));
     let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];

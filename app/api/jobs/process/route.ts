@@ -258,7 +258,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     captionFont: options?.caption_font ?? 'arial',
     motionTracking: options?.motion_tracking !== false,
     autoReframe: options?.auto_reframe !== false,
-    reframeMode: options?.reframe_mode ?? 'basic',
+    reframeMode: options?.reframe_mode ?? 'smart',
   });
 
   await validateRenderedVideo(outPath);
