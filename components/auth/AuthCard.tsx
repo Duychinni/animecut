@@ -114,19 +114,19 @@ export function AuthCard({
   }
 
   return (
-    <div className="rounded-[32px] border border-white/10 bg-[#1c1c1c]/95 p-7 text-center shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-      <h1 className="text-3xl font-bold tracking-tight text-white">
-        {isLogin ? 'Welcome back' : 'Finish signing up to get your free clips'}
+    <div className="rounded-[32px] border border-white/12 bg-[#242424]/96 p-8 text-center shadow-[0_30px_90px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+      <h1 className="text-[2rem] font-bold tracking-tight text-white">
+        {isLogin ? 'Welcome back' : 'Create your account'}
       </h1>
-      <p className="mt-3 text-sm text-white/55">
-        {isLogin ? 'Login to keep creating polished clips.' : 'Free plan available. No credit card required.'}
+      <p className="mt-3 text-sm text-white/60">
+        {isLogin ? 'Continue creating polished clips in minutes.' : 'Start turning long videos into short-form content.'}
       </p>
       {localMsg ? <p className="mt-3 text-sm text-emerald-300">{localMsg}</p> : null}
       {localError ? <p className="mt-3 text-sm text-red-300">{localError}</p> : null}
 
       <div className="mt-6 space-y-3">
         <button
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.10] px-4 py-3.5 font-semibold text-white transition hover:bg-white/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={() => void onOAuth('google')}
           disabled={loading}
@@ -135,7 +135,7 @@ export function AuthCard({
           <span>{loading ? 'Working...' : 'Continue with Google'}</span>
         </button>
         <button
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.10] px-4 py-3.5 font-semibold text-white transition hover:bg-white/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
           type="button"
           onClick={() => void onOAuth('apple')}
           disabled={loading}
@@ -145,15 +145,15 @@ export function AuthCard({
         </button>
       </div>
 
-      <div className="mt-6 flex items-center gap-3 text-sm text-white/40">
+      <div className="mt-6 flex items-center gap-3 text-sm text-white/38">
         <div className="h-px flex-1 bg-white/10" />
-        <span>{isLogin ? 'or continue with email' : 'or continue with email'}</span>
+        <span>or continue with email</span>
         <div className="h-px flex-1 bg-white/10" />
       </div>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-3 text-left">
         <input
-          className="w-full rounded-2xl border border-white/12 bg-white/[0.03] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
+          className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"
           name="email"
           placeholder="Enter email address"
@@ -163,7 +163,7 @@ export function AuthCard({
         />
         {isLogin || showPassword ? (
           <input
-            className="w-full rounded-2xl border border-white/12 bg-white/[0.03] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
+            className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
             type="password"
             name="password"
             placeholder="Enter password"
