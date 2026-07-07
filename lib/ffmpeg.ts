@@ -357,17 +357,17 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 
     const stabilized = downsamplePoints(smoothPoints(points, 0.62), 20);
 
-    const cropWidth = 980;
-    const cropHeight = 1742;
+    const cropWidth = 920;
+    const cropHeight = 1636;
 
     const xExprRaw = buildTimelineExpr(
       stabilized,
       (p) => {
         const faceWidthNorm = p.w && Number.isFinite(p.w) ? p.w / 1920 : 0;
         const pairBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
-        const stableBias = p.framing === 'single_stable' ? 0.2 : 0.12;
-        const edgeGuard = faceWidthNorm > 0.22 ? 0.08 : faceWidthNorm > 0.18 ? 0.05 : 0.015;
-        const centeredBias = 0.5 + (pairBias - 0.5) * 1.18;
+        const stableBias = p.framing === 'single_stable' ? 0.24 : 0.16;
+        const edgeGuard = faceWidthNorm > 0.22 ? 0.07 : faceWidthNorm > 0.18 ? 0.04 : 0.01;
+        const centeredBias = 0.5 + (pairBias - 0.5) * 1.24;
         const target = clamp01(edgeGuard + centeredBias * (1 - edgeGuard * 2) + (centeredBias - 0.5) * stableBias);
         return `min(max((iw-${cropWidth})*${target.toFixed(4)},0),iw-${cropWidth})`;
       },
@@ -380,7 +380,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       (p) => {
         const isPair = p.framing === 'wide_pair';
         const isStableSingle = p.framing === 'single_stable';
-        const headroomBias = isPair ? 0.06 : isStableSingle ? 0.28 : 0.25;
+        const headroomBias = isPair ? 0.05 : isStableSingle ? 0.31 : 0.28;
         const target = clamp01((p.ny ?? 0.42) - headroomBias);
         return `min(max((ih-${cropHeight})*${target.toFixed(4)},0),ih-${cropHeight})`;
       },
@@ -399,8 +399,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
 function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   const mode = opts.reframeMode ?? 'off';
   const enabled = opts.autoReframe !== false && mode !== 'off';
-  const cropWidth = 980;
-  const cropHeight = 1742;
+  const cropWidth = 920;
+  const cropHeight = 1636;
 
   if (!enabled) return `crop=${cropWidth}:${cropHeight}`;
   if (mode === 'smart' && smartCropExpr) return smartCropExpr;
