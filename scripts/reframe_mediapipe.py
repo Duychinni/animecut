@@ -189,13 +189,17 @@ def main():
             best_face = ranked_faces[0]
             if active_bbox is not None and active_mode == "face":
                 best_iou = max(iou(active_bbox, f) for f in ranked_faces)
-                if best_iou >= 0.12:
-                    selected = ranked_faces[0]
+                current_face = ranked_faces[0]
+                current_score = track_score(current_face, active_bbox, width, height)
+                locked_score = track_score(active_bbox, active_bbox, width, height)
+
+                if best_iou >= 0.16 or current_score >= locked_score * 0.92:
+                    selected = current_face
                     pending_switch_count = 0
                     active_track_age += 1
                 else:
                     pending_switch_count += 1
-                    if pending_switch_count >= 5:
+                    if pending_switch_count >= 7:
                         selected = best_face
                         pending_switch_count = 0
                         active_track_age = 0
@@ -239,9 +243,9 @@ def main():
 
         if selected_mode == "face":
             face_cx = clamp01(cx / width)
-            nx = clamp01(0.92 * face_cx + 0.08 * 0.5)
+            nx = clamp01(0.97 * face_cx + 0.03 * 0.5)
             face_top = clamp01(selected[1] / max(height, 1.0))
-            ny = clamp01(face_top + TARGET_FACE_TOP * 0.24)
+            ny = clamp01(face_top + TARGET_FACE_TOP * 0.26)
         elif selected_mode == "body":
             body_top = clamp01(selected[1] / max(height, 1.0))
             ny = clamp01(body_top + 0.30)
