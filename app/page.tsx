@@ -366,6 +366,12 @@ export default function Home() {
           0% { transform: translate3d(0, 0, 0); }
           100% { transform: translate3d(-25%, 0, 0); }
         }
+        @media (prefers-reduced-motion: reduce) {
+          .hero-marquee {
+            animation: none !important;
+            transform: translate3d(0, 0, 0) !important;
+          }
+        }
         @keyframes glowSweep {
           0% { transform: translateX(-10%); opacity: .45; }
           50% { opacity: .85; }
@@ -514,7 +520,7 @@ export default function Home() {
           </div>
 
           <div className="overflow-hidden">
-            <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 88s linear infinite' }}>
+            <div className="hero-marquee flex w-max flex-nowrap gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 88s linear infinite' }}>
               {carouselItems.map((clip, index) => (
                 <div
                   key={`${clip.title}-${index}`}
