@@ -72,7 +72,17 @@ export async function POST() {
     await callInternalJson('/api/analyze', { project_id: projectId });
 
     for (let round = 0; round < 8; round += 1) {
-      const queueData = await callInternalJson('/api/clips/export', { project_id: projectId });
+      let queueData: Record<string, unknown> = {};
+      try {
+        queueData = await callInternalJson('/api/clips/export', { project_id: projectId });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Pipeline step failed: /api/clips/export';
+        const alreadyQueuedLike = /duplicate|already exists|already queued|unique/i.test(message);
+        if (!alreadyQueuedLike) {
+          throw error;
+        }
+        queueData = { queued: 0, recovered: true };
+      }
       const queued = Number(queueData?.queued ?? 0);
 
       let idlePasses = 0;
