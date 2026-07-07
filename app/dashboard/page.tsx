@@ -45,8 +45,6 @@ export default function DashboardPage() {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'youtube' | 'upload'>('all');
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
-  const autoStartedRef = useRef<Set<string>>(new Set());
-  const completedRedirectRef = useRef<Set<string>>(new Set());
   const progressFloorRef = useRef<Map<string, number>>(new Map());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
 
@@ -210,43 +208,6 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const pendingProjects = recentProjects.filter((project) => {
-      const percent = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
-      const pipelineStatus = (project.pipeline_status ?? '').toLowerCase();
-      const isPending = project.status !== 'completed' && percent < 100;
-      const shouldKick = !pipelineStatus || pipelineStatus === 'idle' || pipelineStatus === 'queued';
-      return isPending && shouldKick && !autoStartedRef.current.has(project.id);
-    });
-
-    if (!pendingProjects.length) return;
-
-    pendingProjects.forEach((project) => {
-      autoStartedRef.current.add(project.id);
-
-      void (async () => {
-        try {
-          await fetch(`/api/projects/${project.id}/start`, { method: 'POST' });
-          await fetch('/api/pipeline/process', { method: 'POST' });
-          await fetch('/api/jobs/process', { method: 'POST' });
-        } catch {
-          autoStartedRef.current.delete(project.id);
-        }
-      })();
-    });
-  }, [recentProjects]);
-
-  useEffect(() => {
-    const completedProject = recentProjects.find((project) => {
-      const percent = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
-      return percent >= 100 && project.status === 'completed' && !completedRedirectRef.current.has(project.id);
-    });
-
-    if (!completedProject) return;
-
-    completedRedirectRef.current.add(completedProject.id);
-    router.push(`/dashboard/projects/${completedProject.id}`);
-  }, [recentProjects, router]);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
