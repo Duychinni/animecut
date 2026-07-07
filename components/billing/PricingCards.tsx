@@ -77,7 +77,7 @@ export function PricingCards({ plans, interval }: { plans: PlanConfig[]; interva
           plan={plan}
           interval={interval}
           selected={selectedPlanId === plan.id}
-          onSelect={setSelectedPlanId}
+          onSelect={(planId) => setSelectedPlanId(planId as PlanConfig['id'])}
         />
       ))}
     </section>

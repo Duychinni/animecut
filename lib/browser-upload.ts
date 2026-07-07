@@ -29,9 +29,19 @@ export async function uploadFileMultipartToR2(file: File, prep: MultipartPrepara
       throw new Error(String(partData?.error || 'Could not prepare multipart upload part'));
     }
 
-    const uploadRes = await fetch(partData.uploadUrl, {
-      method: partData.method || 'PUT',
-      headers: partData.headers || { 'content-type': 'application/octet-stream' },
+    const uploadUrl = typeof partData.uploadUrl === 'string' ? partData.uploadUrl : null;
+    const uploadMethod = typeof partData.method === 'string' ? partData.method : 'PUT';
+    const uploadHeaders = (partData.headers && typeof partData.headers === 'object')
+      ? (partData.headers as HeadersInit)
+      : { 'content-type': 'application/octet-stream' };
+
+    if (!uploadUrl) {
+      throw new Error(`Multipart upload part ${partNumber} missing upload URL`);
+    }
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: uploadMethod,
+      headers: uploadHeaders,
       body: blob,
     });
 

@@ -99,16 +99,31 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
         throw new Error(String(prepData?.error || 'Could not prepare upload'));
       }
 
-      if (prepData.provider === 'r2-multipart') {
+      if (
+        prepData.provider === 'r2-multipart' &&
+        typeof prepData.uploadId === 'string' &&
+        typeof prepData.objectPath === 'string' &&
+        typeof prepData.partSize === 'number' &&
+        typeof prepData.partUrl === 'string' &&
+        typeof prepData.completeUrl === 'string'
+      ) {
         setMsg('Uploading file in parts to R2 storage...');
-        await uploadFileMultipartToR2(selectedFile, prepData, setUploadProgress);
+        await uploadFileMultipartToR2(selectedFile, prepData as Parameters<typeof uploadFileMultipartToR2>[1], setUploadProgress);
       } else {
+        const uploadUrl = typeof prepData.uploadUrl === 'string' ? prepData.uploadUrl : null;
+        const uploadMethod = typeof prepData.method === 'string' ? prepData.method : 'PUT';
+        const uploadHeaders = (prepData.headers && typeof prepData.headers === 'object')
+          ? (prepData.headers as HeadersInit)
+          : { 'content-type': selectedFile.type || 'application/octet-stream' };
+
+        if (!uploadUrl) {
+          throw new Error('Upload URL missing');
+        }
+
         setMsg('Uploading file directly to storage...');
-        const uploadRes = await fetch(prepData.uploadUrl, {
-          method: prepData.method || 'PUT',
-          headers: prepData.headers || {
-            'content-type': selectedFile.type || 'application/octet-stream',
-          },
+        const uploadRes = await fetch(uploadUrl, {
+          method: uploadMethod,
+          headers: uploadHeaders,
           body: selectedFile,
         });
 

@@ -388,7 +388,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       jsonSaved,
     });
 
-    const points = raw.points
+    const pointsSource = raw.points ?? [];
+    const points = pointsSource
       .map((p) => ({
         t: Number(p.t ?? 0),
         nx: clamp01(Number(p.nx ?? 0.5)),
