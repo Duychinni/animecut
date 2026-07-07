@@ -88,25 +88,20 @@ export default function DashboardPage() {
         });
       };
 
+      const baseProjects = (initial || recentProjects.length === 0)
+        ? (projects.map((p) => ({
+            ...p,
+            thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
+            progress_percent: p.status === 'completed' ? 100 : p.progress_percent,
+          })) as ProjectListItem[])
+        : recentProjects;
+
       if (initial || recentProjects.length === 0) {
-        const seeded = projects.map((p) => ({
-          ...p,
-          thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
-          progress_percent: p.status === 'completed' ? 100 : p.progress_percent,
-        })) as ProjectListItem[];
-
-        const sortedSeeded = sortByQueue(seeded);
-
-        hasProcessingRef.current = sortedSeeded.some((p) => {
-          const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
-          return pct < 100;
-        });
-
+        const sortedSeeded = sortByQueue(baseProjects);
         setRecentProjects(sortedSeeded);
-        return;
       }
 
-      const processingIds = (recentProjects.length ? recentProjects : projects)
+      const processingIds = (baseProjects.length ? baseProjects : projects)
         .filter((p) => p.pipeline_status === 'queued' || p.pipeline_status === 'processing')
         .slice(0, 6)
         .map((p) => p.id);
@@ -199,6 +194,7 @@ export default function DashboardPage() {
 
     void (async () => {
       try {
+        await loadProjects();
         const res = await fetch('/api/projects');
         const data = await res.json();
         if (!res.ok) return;
