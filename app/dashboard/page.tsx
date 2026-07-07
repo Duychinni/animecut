@@ -75,6 +75,13 @@ export default function DashboardPage() {
     return isCompleted ? 100 : floored;
   }
 
+  function getFlooredProgress(project: ProjectListItem) {
+    const direct = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
+    const previous = progressFloorRef.current.get(project.id) ?? 0;
+    if (project.status === 'completed' || project.pipeline_status === 'completed') return 100;
+    return Math.max(previous, Math.max(0, Math.min(100, Number.isFinite(direct) ? direct : 0)));
+  }
+
   useEffect(() => {
     void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
   }, []);
@@ -93,8 +100,8 @@ export default function DashboardPage() {
 
       const sortByQueue = (items: ProjectListItem[]) => {
         return [...items].sort((a, b) => {
-          const aPercent = Number(a.progress_percent ?? (a.status === 'completed' ? 100 : 0));
-          const bPercent = Number(b.progress_percent ?? (b.status === 'completed' ? 100 : 0));
+          const aPercent = getFlooredProgress(a);
+          const bPercent = getFlooredProgress(b);
           const aProcessing = (a.pipeline_status === 'queued' || a.pipeline_status === 'processing') && aPercent < 100;
           const bProcessing = (b.pipeline_status === 'queued' || b.pipeline_status === 'processing') && bPercent < 100;
 
@@ -172,7 +179,7 @@ export default function DashboardPage() {
         const sortedMerged = sortByQueue(merged);
 
         hasProcessingRef.current = sortedMerged.some((p) => {
-          const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
+          const pct = getFlooredProgress(p);
           return pct < 100;
         });
 
@@ -334,7 +341,7 @@ export default function DashboardPage() {
     .filter((p) => {
       const matchesSearch = searchQuery.trim() ? (p.source_title || p.title).toLowerCase().includes(searchQuery.trim().toLowerCase()) : true;
 
-      const percent = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
+      const percent = getFlooredProgress(p);
       const active = p.pipeline_status === 'queued' || p.pipeline_status === 'processing';
       const matchesStatus =
         statusFilter === 'all'
