@@ -6,6 +6,15 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
 
+function targetClipCountForDuration(totalSeconds: number) {
+  const minutes = totalSeconds / 60;
+  if (minutes <= 5) return 5;
+  if (minutes <= 15) return 7;
+  if (minutes <= 30) return 10;
+  if (minutes <= 60) return 15;
+  return 20;
+}
+
 const BILLING_DEV_BYPASS = process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true';
 
 function getErrorMessage(error: unknown): string {
@@ -33,12 +42,40 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('projects')
-      .select('id, title, status, source_type, source_url, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds')
+      .select('id, title, status, pipeline_status, source_type, source_url, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return NextResponse.json({ projects: data ?? [] });
+
+    const projects = (data ?? []).map((project) => {
+      const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null }> : [];
+      const doneExports = rows.filter((r) => r.status === 'done').length;
+      const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
+      const failedExports = rows.filter((r) => r.status === 'error').length;
+      const sourceDurationSeconds = Number(project.source_duration_seconds ?? 0);
+      const targetCount = Math.max(1, targetClipCountForDuration(sourceDurationSeconds));
+      const isCompleted = project.status === 'completed' || (activeExports === 0 && rows.length > 0 && (doneExports >= targetCount || doneExports === rows.length || doneExports + failedExports >= targetCount));
+      const progressPercent = isCompleted
+        ? 100
+        : activeExports > 0
+          ? Math.min(99, Math.round(68 + (doneExports / Math.max(1, targetCount)) * 28 + 4))
+          : project.pipeline_status === 'processing'
+            ? 24
+            : project.pipeline_status === 'queued'
+              ? 8
+              : 0;
+
+      return {
+        ...project,
+        status: isCompleted ? 'completed' : project.status,
+        pipeline_status: isCompleted ? 'completed' : project.pipeline_status,
+        progress_percent: progressPercent,
+        exports: undefined,
+      };
+    });
+
+    return NextResponse.json({ projects });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 });
   }
