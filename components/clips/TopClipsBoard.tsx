@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CAPTION_PRESETS } from '@/lib/caption-presets';
 import { readJsonSafe } from '@/lib/safe-json';
 
@@ -208,6 +208,19 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       setApplyingPreset(false);
     }
   }
+
+  useEffect(() => {
+    if (!expandedClipId) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExpandedClipId(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [expandedClipId]);
 
   const visible = useMemo(() => {
     return [...clips].sort((a, b) => b.score - a.score);
