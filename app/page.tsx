@@ -428,9 +428,16 @@ export default function Home() {
                 </a>
               </>
             ) : (
-              <Link href="/auth/login" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthModalOpen(true);
+                }}
+                className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]"
+              >
                 Login
-              </Link>
+              </button>
             )}
           </div>
         </header>
