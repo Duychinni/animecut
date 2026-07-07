@@ -42,20 +42,21 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('projects')
-      .select('id, title, status, pipeline_status, source_type, source_url, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status)')
+      .select('id, title, status, pipeline_status, source_type, source_url, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
     const projects = (data ?? []).map((project) => {
-      const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null }> : [];
+      const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
       const doneExports = rows.filter((r) => r.status === 'done').length;
+       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
       const failedExports = rows.filter((r) => r.status === 'error').length;
       const sourceDurationSeconds = Number(project.source_duration_seconds ?? 0);
       const targetCount = Math.max(1, targetClipCountForDuration(sourceDurationSeconds));
-      const isCompleted = project.status === 'completed' || project.pipeline_status === 'completed' || (activeExports === 0 && doneExports > 0) || (activeExports === 0 && rows.length > 0 && (doneExports >= targetCount || doneExports === rows.length || doneExports + failedExports >= targetCount));
+      const isCompleted = project.status === 'completed' || project.pipeline_status === 'completed' || readyExports > 0 || (activeExports === 0 && doneExports > 0) || (activeExports === 0 && rows.length > 0 && (doneExports >= targetCount || doneExports === rows.length || doneExports + failedExports >= targetCount));
       const progressPercent = isCompleted
         ? 100
         : activeExports > 0
