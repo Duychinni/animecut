@@ -106,8 +106,8 @@ export default function DashboardPage() {
         return;
       }
 
-      const processingIds = projects
-        .filter((p) => p.status !== 'completed')
+      const processingIds = (recentProjects.length ? recentProjects : projects)
+        .filter((p) => p.pipeline_status === 'queued' || p.pipeline_status === 'processing')
         .slice(0, 6)
         .map((p) => p.id);
 
@@ -138,10 +138,29 @@ export default function DashboardPage() {
         const merged = projects.map((project) => {
           const previous = prev.find((p) => p.id === project.id);
           const update = progressUpdates.find((u) => u?.id === project.id);
+          const activeLive = previous && (previous.pipeline_status === 'queued' || previous.pipeline_status === 'processing');
+
+          if (activeLive && !update) {
+            return {
+              ...project,
+              ...previous,
+              optimistic: false,
+            } as ProjectListItem;
+          }
+
+          if (update) {
+            return {
+              ...project,
+              ...previous,
+              ...update,
+              optimistic: false,
+            } as ProjectListItem;
+          }
+
           return {
             ...previous,
             ...project,
-            ...(update ?? {}),
+            optimistic: false,
           } as ProjectListItem;
         });
 
@@ -309,13 +328,14 @@ export default function DashboardPage() {
       const matchesSearch = searchQuery.trim() ? (p.source_title || p.title).toLowerCase().includes(searchQuery.trim().toLowerCase()) : true;
 
       const percent = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
+      const active = p.pipeline_status === 'queued' || p.pipeline_status === 'processing';
       const matchesStatus =
         statusFilter === 'all'
           ? true
           : statusFilter === 'processing'
-            ? percent < 100 && p.status !== 'failed'
+            ? active && percent < 100 && p.status !== 'failed'
             : statusFilter === 'completed'
-              ? percent >= 100 || p.status === 'completed'
+              ? percent >= 100 || p.status === 'completed' || p.pipeline_status === 'completed'
               : p.status === 'failed';
 
       const matchesSource = sourceFilter === 'all' ? true : p.source_type === sourceFilter;
