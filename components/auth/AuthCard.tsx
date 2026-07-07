@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { readJsonSafe } from '@/lib/safe-json';
+import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type Mode = 'login' | 'signup';
 
@@ -26,6 +27,29 @@ export function AuthCard({
   const [localMsg, setLocalMsg] = useState<string | null>(msg ?? null);
 
   const isLogin = mode === 'login';
+
+  async function onGoogleAuth() {
+    setLoading(true);
+    setLocalError(null);
+    setLocalMsg(null);
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next || '/dashboard')}`;
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo },
+      });
+
+      if (oauthError) {
+        setLocalError(oauthError.message);
+      }
+    } catch (err: unknown) {
+      setLocalError(err instanceof Error ? err.message : 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,6 +92,24 @@ export function AuthCard({
       <h1 className="text-3xl font-bold tracking-tight text-white">{isLogin ? 'Login' : 'Create account'}</h1>
       {localMsg ? <p className="mt-3 text-sm text-emerald-300">{localMsg}</p> : null}
       {localError ? <p className="mt-3 text-sm text-red-300">{localError}</p> : null}
+
+      <div className="mt-5 space-y-3">
+        <button
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/12 bg-white/[0.03] px-4 py-3 font-medium text-white transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60"
+          type="button"
+          onClick={onGoogleAuth}
+          disabled={loading}
+        >
+          <span className="text-base">G</span>
+          <span>{loading ? 'Working...' : `${isLogin ? 'Continue' : 'Sign up'} with Google`}</span>
+        </button>
+
+        <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-white/35">
+          <div className="h-px flex-1 bg-white/10" />
+          <span>or</span>
+          <div className="h-px flex-1 bg-white/10" />
+        </div>
+      </div>
 
       <form onSubmit={onSubmit} className="mt-5 space-y-3">
         <input
