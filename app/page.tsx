@@ -514,13 +514,11 @@ export default function Home() {
           </div>
 
           <div className="overflow-hidden">
-            <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 84s linear infinite' }}>
+            <div className="flex w-max gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 96s linear infinite' }}>
               {carouselItems.map((clip, index) => (
-                <button
+                <div
                   key={`${clip.title}-${index}`}
-                  type="button"
-                  onClick={() => setSelectedClip(clip)}
-                  className="w-[248px] shrink-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-300 hover:-translate-y-1.5 hover:border-[#8b7cff]/35 hover:shadow-[0_24px_60px_rgba(139,124,255,0.16)]"
+                  className="w-[248px] shrink-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)]"
                 >
                   <div className={`aspect-[9/16] rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
                     <div className="flex h-full flex-col justify-start rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
@@ -536,7 +534,7 @@ export default function Home() {
                   <div className="mt-3">
                     <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
