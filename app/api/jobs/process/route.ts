@@ -69,6 +69,7 @@ type ExportRenderOptions = {
   motion_tracking?: boolean;
   auto_reframe?: boolean;
   reframe_mode?: 'off' | 'basic' | 'smart';
+  reframe_preset?: 'auto' | 'tight' | 'left' | 'center' | 'right';
 };
 
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
@@ -259,6 +260,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     motionTracking: options?.motion_tracking !== false,
     autoReframe: options?.auto_reframe !== false,
     reframeMode: options?.reframe_mode ?? 'smart',
+    reframePreset: options?.reframe_preset ?? 'auto',
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
   });
