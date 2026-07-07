@@ -297,7 +297,7 @@ function resolveSmartReframePython() {
 }
 
 function resolveSmartReframeScript() {
-  return process.env.SMART_REFRAME_SCRIPT || `${process.cwd()}/scripts/reframe_cv.py`;
+  return process.env.SMART_REFRAME_SCRIPT || `${process.cwd()}/scripts/reframe_per_clip.py`;
 }
 
 async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string | undefined> {
@@ -322,6 +322,16 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
     ]);
     const raw = probe.json as {
       ok?: boolean;
+      mode?: string;
+      source_w?: number;
+      source_h?: number;
+      crop_w?: number;
+      crop_h?: number;
+      detected_center_x?: number;
+      crop_x?: number;
+      ffmpeg_crop?: string;
+      fallback_used?: boolean;
+      samples?: Array<{ timestamp?: number; detected_face?: { x?: number; y?: number; w?: number; h?: number }; chosen_center_x?: number; chosen_center_y?: number; fallback_used?: boolean }>;
       points?: Array<{ t?: number; nx?: number; ny?: number; w?: number; h?: number; framing?: string; mode?: string }>;
       meta?: {
         points?: number;
@@ -332,7 +342,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       error?: string;
     };
 
-    if (probe.code !== 0 || !raw?.ok || !raw?.points?.length) return undefined;
+    if (probe.code !== 0 || !raw?.ok) return undefined;
 
     const clipId = (opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
     const candidateId = opts.debugCandidateId ?? null;
@@ -346,12 +356,31 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<string |
       jsonSaved = true;
     }
 
+    if (raw.mode === 'per_clip' && typeof raw.crop_w === 'number' && typeof raw.crop_h === 'number' && typeof raw.crop_x === 'number') {
+      console.log('[smart-reframe]', {
+        clipId,
+        candidateId,
+        backendScript,
+        mode: raw.mode,
+        source_w: raw.source_w ?? null,
+        source_h: raw.source_h ?? null,
+        crop_w: raw.crop_w,
+        crop_h: raw.crop_h,
+        detected_center_x: raw.detected_center_x ?? null,
+        crop_x: raw.crop_x,
+        fallbackUsed: raw.fallback_used ?? null,
+        ffmpegCommandCrop: raw.ffmpeg_crop ?? null,
+        jsonSaved,
+      });
+      return `${raw.ffmpeg_crop},format=yuv420p,fps=30`;
+    }
+
     console.log('[smart-reframe]', {
       clipId,
       candidateId,
       backendScript,
       smartCropReturnedPoints: Boolean(raw?.points?.length),
-      detectionsFound: raw?.meta?.points ?? raw.points.length,
+      detectionsFound: raw?.meta?.points ?? raw.points?.length ?? 0,
       averageFaceCenterX: raw?.meta?.average_face_center?.x ?? null,
       averageFaceCenterY: raw?.meta?.average_face_center?.y ?? null,
       framesWithDetectionPct: raw?.meta?.frames_with_detection_pct ?? null,
