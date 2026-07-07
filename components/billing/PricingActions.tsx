@@ -46,8 +46,9 @@ export function PricingActions({
         throw new Error(String(data?.error || 'Could not start checkout'));
       }
 
-      if (data?.url) {
-        window.location.href = data.url;
+      const checkoutUrl = typeof data?.url === 'string' ? data.url : null;
+      if (checkoutUrl) {
+        window.location.href = checkoutUrl;
         return;
       }
 
