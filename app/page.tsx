@@ -356,11 +356,7 @@ export default function Home() {
         }
         @keyframes driftOrb {
           0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-          50% { transform: translate3d(22px, -18px, 0) scale(1.08); }
-        }
-        @keyframes gridMove {
-          0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(56px, 56px, 0); }
+          50% { transform: translate3d(10px, -8px, 0) scale(1.03); }
         }
         @keyframes marqueeLeft {
           0% { transform: translate3d(0, 0, 0); }
@@ -380,11 +376,10 @@ export default function Home() {
       `}</style>
 
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-14 h-[22rem] w-[22rem] rounded-full bg-[#8a4dff]/18 blur-[120px]" style={{ animation: 'driftOrb 18s ease-in-out infinite' }} />
-        <div className="absolute right-[-6rem] top-[18rem] h-[26rem] w-[26rem] rounded-full bg-[#ff52c4]/14 blur-[140px]" style={{ animation: 'driftOrb 22s ease-in-out infinite reverse' }} />
-        <div className="absolute bottom-[-8rem] left-[20%] h-[24rem] w-[24rem] rounded-full bg-[#ffb347]/10 blur-[140px]" style={{ animation: 'driftOrb 26s ease-in-out infinite' }} />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.16),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.12),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.08),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.025),transparent_36%)]" />
-        <div className="absolute inset-[-56px] opacity-[0.03] [background-image:linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] [background-size:56px_56px]" style={{ animation: 'gridMove 24s linear infinite' }} />
+        <div className="absolute -left-24 top-14 h-[22rem] w-[22rem] rounded-full bg-[#8a4dff]/14 blur-[110px]" style={{ animation: 'driftOrb 28s ease-in-out infinite' }} />
+        <div className="absolute right-[-6rem] top-[18rem] h-[26rem] w-[26rem] rounded-full bg-[#ff52c4]/10 blur-[120px]" style={{ animation: 'driftOrb 34s ease-in-out infinite reverse' }} />
+        <div className="absolute bottom-[-8rem] left-[20%] h-[24rem] w-[24rem] rounded-full bg-[#ffb347]/8 blur-[120px]" style={{ animation: 'driftOrb 40s ease-in-out infinite' }} />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.12),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.08),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.06),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.02),transparent_36%)]" />
       </div>
 
       <div className="relative mx-auto max-w-7xl px-6 py-6">
