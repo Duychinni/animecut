@@ -57,6 +57,10 @@ export default function DashboardPage() {
     return isCompleted ? 100 : floored;
   }
 
+  useEffect(() => {
+    void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+  }, []);
+
   async function loadProjects(initial = false) {
     if (initial) setLoadingProjects(true);
     try {
