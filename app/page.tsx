@@ -6,6 +6,7 @@ import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type MeResponse = {
   authenticated: boolean;
@@ -187,6 +188,7 @@ function getPlatformBadge(platform: ShowcaseClip['platform']) {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [sourceUrl, setSourceUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [msg, setMsg] = useState('');
@@ -261,7 +263,7 @@ export default function Home() {
       });
 
       await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
-      window.location.href = `/dashboard`;
+      router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
       if (text.toLowerCase().includes('unauthorized')) {
@@ -325,7 +327,7 @@ export default function Home() {
       }
       setMsg('Upload complete. Starting processing...');
       await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
-      window.location.href = `/dashboard`;
+      router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not upload file';
       if (text.toLowerCase().includes('unauthorized')) {

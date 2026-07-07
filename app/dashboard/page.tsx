@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 function fmtDuration(totalSec: number | null | undefined) {
@@ -31,6 +31,7 @@ type ProjectListItem = {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -172,6 +173,28 @@ export default function DashboardPage() {
       if (initial) setLoadingProjects(false);
     }
   }
+
+  useEffect(() => {
+    const createdId = searchParams.get('created');
+    if (!createdId) return;
+
+    void (async () => {
+      try {
+        const res = await fetch('/api/projects');
+        const data = await res.json();
+        if (!res.ok) return;
+        const createdProject = ((data.projects ?? []) as ProjectListItem[]).find((p) => p.id === createdId);
+        if (!createdProject) return;
+
+        setRecentProjects((prev) => {
+          const withoutDupes = prev.filter((p) => p.id !== createdProject.id);
+          return [createdProject, ...withoutDupes].slice(0, 24);
+        });
+      } catch {
+        // best effort only
+      }
+    })();
+  }, [searchParams]);
 
   useEffect(() => {
     const tick = async () => {
