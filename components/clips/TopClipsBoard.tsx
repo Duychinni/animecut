@@ -91,6 +91,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
   const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
+  const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
@@ -490,61 +491,89 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
               <div className="flex flex-col p-6">
                 <div className="mb-5 flex gap-2 text-xs font-semibold text-white/60">
-                  <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-white">Presets</span>
-                  <span className="rounded-full border border-white/10 px-3 py-1.5">Framing</span>
-                  <span className="rounded-full border border-white/10 px-3 py-1.5">Effects</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditorTab('presets')}
+                    className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'presets' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
+                  >
+                    Presets
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditorTab('framing')}
+                    className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'framing' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
+                  >
+                    Framing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditorTab('effects')}
+                    className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'effects' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
+                  >
+                    Effects
+                  </button>
                 </div>
 
-                <div className="grid gap-3">
-                  {CAPTION_PRESETS.map((preset) => {
-                    const active = preset.id === selectedPresetId;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => setSelectedPresetId(preset.id)}
-                        className={`rounded-2xl border px-4 py-4 text-left transition ${
-                          active ? 'border-white/25 bg-white/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-white">{preset.name}</p>
-                            <p className="mt-1 text-xs text-white/60">{preset.captionFontFamily}</p>
+                {editorTab === 'presets' ? (
+                  <div className="grid gap-3">
+                    {CAPTION_PRESETS.map((preset) => {
+                      const active = preset.id === selectedPresetId;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => setSelectedPresetId(preset.id)}
+                          className={`rounded-2xl border px-4 py-4 text-left transition ${
+                            active ? 'border-white/25 bg-white/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-white">{preset.name}</p>
+                              <p className="mt-1 text-xs text-white/60">{preset.captionFontFamily}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionTextColor }} />
+                              <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionHighlightColor }} />
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionTextColor }} />
-                            <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionHighlightColor }} />
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  {[
-                    ['auto', 'Auto'],
-                    ['tight', 'Tight center'],
-                    ['left', 'Left speaker'],
-                    ['center', 'Center speaker'],
-                    ['right', 'Right speaker'],
-                  ].map(([value, label]) => {
-                    const active = selectedReframePreset === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setSelectedReframePreset(value as 'auto' | 'tight' | 'left' | 'center' | 'right')}
-                        className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                          active ? 'border-white/25 bg-white/[0.08] text-white' : 'border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/[0.05]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
+                {editorTab === 'framing' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      ['auto', 'Auto'],
+                      ['tight', 'Tight center'],
+                      ['left', 'Left speaker'],
+                      ['center', 'Center speaker'],
+                      ['right', 'Right speaker'],
+                    ].map(([value, label]) => {
+                      const active = selectedReframePreset === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setSelectedReframePreset(value as 'auto' | 'tight' | 'left' | 'center' | 'right')}
+                          className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                            active ? 'border-white/25 bg-white/[0.08] text-white' : 'border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/[0.05]'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {editorTab === 'effects' ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/60">
+                    Effects controls coming soon. Use Presets and Framing for now.
+                  </div>
+                ) : null}
 
                 <div className="mt-auto pt-6">
                   <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
