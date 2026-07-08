@@ -88,7 +88,9 @@ export default function DashboardPage() {
   function getFlooredProgress(project: ProjectListItem) {
     const direct = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
     const previous = progressFloorRef.current.get(project.id) ?? 0;
+    const active = project.pipeline_status === 'queued' || project.pipeline_status === 'processing';
     if (project.status === 'completed' || project.pipeline_status === 'completed') return 100;
+    if (active && previous > 0 && (!Number.isFinite(direct) || direct <= 0)) return previous;
     return Math.max(previous, Math.max(0, Math.min(100, Number.isFinite(direct) ? direct : 0)));
   }
 
@@ -181,10 +183,14 @@ export default function DashboardPage() {
           }
 
           if (update) {
+            const previousProgress = previous ? getFlooredProgress(previous) : 0;
+            const incomingProgress = Number(update.progress_percent ?? 0);
+            const activeIncoming = update.pipeline_status === 'queued' || update.pipeline_status === 'processing';
             return {
               ...project,
               ...previous,
               ...update,
+              progress_percent: activeIncoming && previousProgress > 0 && incomingProgress <= 0 ? previousProgress : update.progress_percent,
               optimistic: false,
             } as ProjectListItem;
           }
