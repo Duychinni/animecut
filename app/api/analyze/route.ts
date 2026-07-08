@@ -6,8 +6,10 @@ import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 type RawCandidate = Record<string, string | number | null | undefined>;
 
 const GLOBAL_MAX_CLIP_SEC = 90;
+const GLOBAL_MIN_CLIP_SEC = 20;
 const EXPAND_SEC = 15;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
+const MIN_TOP_CLIP_SCORE = 70;
 
 type TranscriptSegment = {
   start?: number;
@@ -324,7 +326,7 @@ export async function POST(req: Request) {
         const rawEnd = num(c.raw_end ?? c.end_sec ?? c.adjusted_end);
         const modelAdjustedStart = num(c.adjusted_start ?? rawStart);
         const modelAdjustedEnd = num(c.adjusted_end ?? rawEnd);
-        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, policy.minSec, Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
+        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, Math.max(policy.minSec, GLOBAL_MIN_CLIP_SEC), Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
 
         const openingLine = String(c.opening_line ?? openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
@@ -391,8 +393,8 @@ export async function POST(req: Request) {
         };
       })
       .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
-      .filter((c: RankedCandidate) => (c.duration_seconds >= policy.minSec) || Number(c.overall_score ?? 0) >= 92)
-      .filter((c: RankedCandidate) => Number(c.overall_score ?? 0) >= 60);
+      .filter((c: RankedCandidate) => c.duration_seconds >= Math.max(policy.minSec, GLOBAL_MIN_CLIP_SEC))
+      .filter((c: RankedCandidate) => Number(c.overall_score ?? 0) >= MIN_TOP_CLIP_SCORE);
 
     const filteredCandidates = scoredCandidates;
 

@@ -19,6 +19,7 @@ type CandidateRow = {
   overall_score: number;
   start_sec: number;
   end_sec: number;
+  duration_seconds?: number;
   reason: string;
   hook_strength: number;
   rank: number | null;
@@ -109,7 +110,7 @@ export default async function ProjectDetailPage({
       .limit(10),
     supabase
       .from('clip_candidates')
-      .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')
+      .select('id, title, overall_score, start_sec, end_sec, duration_seconds, reason, hook_strength, rank')
       .eq('project_id', projectId)
       .limit(50),
     supabase
@@ -136,19 +137,43 @@ export default async function ProjectDetailPage({
 
       const candidate = row.clip_candidate_id ? candidatesById.get(String(row.clip_candidate_id)) : undefined;
 
+      const startSec = candidate ? Number(candidate.start_sec) : null;
+      const endSec = candidate ? Number(candidate.end_sec) : null;
+      const derivedDuration = startSec != null && endSec != null ? Math.max(0, endSec - startSec) : 0;
+      const durationSeconds = Number(candidate?.duration_seconds ?? derivedDuration ?? 0);
+      const score = Math.max(70, Math.min(100, Number(candidate?.overall_score ?? 0)));
+
       return {
         ...row,
         signedUrl,
         title: candidate?.title ?? 'Untitled clip',
-        score: Number(candidate?.overall_score ?? 0),
-        startSec: candidate ? Number(candidate.start_sec) : null,
-        endSec: candidate ? Number(candidate.end_sec) : null,
+        score,
+        startSec,
+        endSec,
+        durationSeconds,
         reason: candidate?.reason ?? null,
         hookStrength: candidate ? Number(candidate.hook_strength) : null,
         rank: candidate?.rank ?? null,
       };
     }),
   );
+
+  const filteredExportItems = exportItems
+    .filter((row) => row.status !== 'done' || ((row.durationSeconds ?? 0) >= 20 && (row.score ?? 0) >= 70))
+    .filter((row, index, arr) => {
+      const title = String(row.title ?? '').trim().toLowerCase();
+      const duration = Number(row.durationSeconds ?? 0);
+      return arr.findIndex((other) => {
+        const otherTitle = String(other.title ?? '').trim().toLowerCase();
+        const otherDuration = Number(other.durationSeconds ?? 0);
+        const similarTitle = title && otherTitle && (title === otherTitle || title.slice(0, 36) === otherTitle.slice(0, 36));
+        const similarWindow = row.startSec != null && row.endSec != null && other.startSec != null && other.endSec != null
+          ? Math.abs(row.startSec - other.startSec) < 3 && Math.abs(row.endSec - other.endSec) < 3
+          : false;
+        const similarDuration = Math.abs(duration - otherDuration) < 3;
+        return similarTitle || (similarWindow && similarDuration);
+      }) === index;
+    });
 
   const pageTitle =
     typeof projectRow?.source_title === 'string' && projectRow.source_title.trim().length
@@ -162,7 +187,7 @@ export default async function ProjectDetailPage({
   const sourceDurationSeconds = Number(projectRow?.source_duration_seconds ?? 0);
   const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
   const targetCount = Math.max(1, targetClipCountForDuration(totalSeconds));
-  const doneExports = exportItems.filter((row) => row.status === 'done').length;
+  const doneExports = filteredExportItems.filter((row) => row.status === 'done').length;
   const activeExports = exportItems.filter((row) => row.status === 'queued' || row.status === 'processing').length;
   const failedExports = exportItems.filter((row) => row.status === 'error').length;
   const createdAtMs = projectRow?.created_at ? new Date(projectRow.created_at).getTime() : Date.now();
@@ -203,10 +228,10 @@ export default async function ProjectDetailPage({
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
           />
-        ) : exportItems.length ? (
+        ) : filteredExportItems.length ? (
           <TopClipsBoard
             projectId={projectId}
-            clips={exportItems.map((row) => ({
+            clips={filteredExportItems.map((row) => ({
               exportId: row.id,
               clipCandidateId: row.clip_candidate_id,
               title: row.title,

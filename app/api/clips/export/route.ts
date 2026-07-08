@@ -45,8 +45,10 @@ export async function POST(req: Request) {
           .eq('project_id', project_id),
         supabase
           .from('clip_candidates')
-          .select('id, overall_score')
+          .select('id, overall_score, duration_seconds, title, start_sec, end_sec')
           .eq('project_id', project_id)
+          .gte('overall_score', 70)
+          .gte('duration_seconds', 20)
           .order('overall_score', { ascending: false })
           .limit(100),
       ]);
@@ -79,10 +81,22 @@ export async function POST(req: Request) {
           .filter((v): v is string => Boolean(v)),
       );
 
-      selectedIds = (topCandidates ?? [])
+      const deduped = (topCandidates ?? []).filter((row, index, arr) => {
+        const title = String(row.title ?? '').trim().toLowerCase();
+        const start = Number(row.start_sec ?? 0);
+        const end = Number(row.end_sec ?? 0);
+        return arr.findIndex((other) => {
+          const otherTitle = String(other.title ?? '').trim().toLowerCase();
+          const otherStart = Number(other.start_sec ?? 0);
+          const otherEnd = Number(other.end_sec ?? 0);
+          return title === otherTitle || (Math.abs(start - otherStart) < 3 && Math.abs(end - otherEnd) < 3);
+        }) === index;
+      });
+
+      selectedIds = deduped
         .map((row) => String(row.id))
         .filter((id) => !blockedCandidateIds.has(id))
-        .slice(0, needed);
+        .slice(0, Math.min(needed, 10));
     }
 
     console.log('[clips/export] counts', {
