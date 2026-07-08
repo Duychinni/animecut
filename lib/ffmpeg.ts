@@ -17,6 +17,8 @@ type RenderOpts = {
   captionsEnabled?: boolean;
   captionTemplate?: CaptionTemplate;
   captionFont?: CaptionFont;
+  hookTextEnabled?: boolean;
+  hookText?: string | null;
   motionTracking?: boolean;
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
@@ -685,6 +687,25 @@ function resolveOutputWidth(outputHeight: number) {
   return Math.round((outputHeight * 9) / 16);
 }
 
+function buildHookDrawtextFilter(hookText: string) {
+  const escaped = escapeDrawtextText(hookText);
+  return [
+    `drawtext=text='${escaped}'`,
+    'fontcolor=black',
+    'fontsize=54',
+    'fontfile=/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+    'box=1',
+    'boxcolor=white@0.96',
+    'boxborderw=20',
+    'borderw=0',
+    'shadowx=0',
+    'shadowy=0',
+    'x=(w-text_w)/2',
+    'y=140',
+    "enable='between(t,0,4.5)'",
+  ].join(':');
+}
+
 function buildFilter(
   opts: RenderOpts,
   includeCaptions: boolean,
@@ -711,6 +732,10 @@ function buildFilter(
       "drawbox=x=0:y=ih*0.35:w=iw:h=6:color=cyan@0.55:t=fill",
       "drawbox=x=0:y=ih*0.45:w=iw:h=6:color=cyan@0.55:t=fill"
     );
+  }
+
+  if (opts.hookTextEnabled !== false && opts.hookText && opts.hookText.trim()) {
+    filterParts.push(buildHookDrawtextFilter(opts.hookText.trim()));
   }
 
   if (includeCaptions && escapedPath) {

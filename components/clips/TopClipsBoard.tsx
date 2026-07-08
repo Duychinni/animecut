@@ -100,6 +100,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
+  const [hookTextEnabled, setHookTextEnabled] = useState(true);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [expandedPlayback, setExpandedPlayback] = useState<ExpandedPlayback | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
@@ -196,7 +197,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     if (!editingClip) return;
     try {
       setApplyingPreset(true);
-      const [presetRes, reframeRes] = await Promise.all([
+      const [presetRes, reframeRes, hookRes] = await Promise.all([
         fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -207,11 +208,18 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ preset: selectedReframePreset }),
         }),
+        fetch(`/api/exports/${editingClip.exportId}/hook-text`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled: hookTextEnabled }),
+        }),
       ]);
       const presetData = await readJsonSafe(presetRes);
       const reframeData = await readJsonSafe(reframeRes);
+      const hookData = await readJsonSafe(hookRes);
       if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
       if (!reframeRes.ok) throw new Error(String(reframeData?.error || 'Could not apply reframe preset'));
+      if (!hookRes.ok) throw new Error(String(hookData?.error || 'Could not update hook text'));
       setEditingClip(null);
       window.location.reload();
     } catch (error) {
@@ -288,6 +296,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             onClick={() => {
                               setEditingClip(clip);
                               setSelectedPresetId(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+                              setHookTextEnabled(true);
                             }}
                             className="inline-flex items-center justify-center text-white transition hover:text-white/90"
                             aria-label="Edit clip"
@@ -605,8 +614,22 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 ) : null}
 
                 {editorTab === 'effects' ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/60">
-                    Effects controls coming soon. Use Presets and Framing for now.
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-white">Auto hook text</p>
+                        <p className="mt-1 text-xs text-white/55">Shows a generated top-of-screen hook for the first few seconds based on the clip title and opening transcript.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setHookTextEnabled((prev) => !prev)}
+                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${hookTextEnabled ? 'bg-emerald-400' : 'bg-white/15'}`}
+                        aria-pressed={hookTextEnabled}
+                        aria-label="Toggle auto hook text"
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${hookTextEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                    </div>
                   </div>
                 ) : null}
 

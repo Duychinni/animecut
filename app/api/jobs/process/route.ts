@@ -7,6 +7,7 @@ import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
 import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
+import { generateHookText } from '@/lib/hook-text';
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
@@ -47,6 +48,8 @@ type ExportBundle = {
   id: string;
   project_id: string;
   clip_candidate_id: string;
+  hook_text_enabled?: boolean | null;
+  hook_text?: string | null;
   project: {
     id: string;
     user_id: string;
@@ -57,6 +60,7 @@ type ExportBundle = {
   clip: {
     start_sec: number;
     end_sec: number;
+    title?: string | null;
   };
   transcript: {
     segments_json: Array<{ start?: number; end?: number; text?: string }> | null;
@@ -179,7 +183,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const { data: ex, error } = await supabase
     .from('exports')
-    .select('id, project_id, clip_candidate_id')
+    .select('id, project_id, clip_candidate_id, hook_text_enabled, hook_text')
     .eq('id', exportId)
     .single();
   if (error || !ex) throw new Error('Export row not found');
@@ -192,7 +196,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       .single(),
     supabase
       .from('clip_candidates')
-      .select('start_sec, end_sec')
+      .select('start_sec, end_sec, title')
       .eq('id', ex.clip_candidate_id)
       .single(),
     supabase
@@ -210,6 +214,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     id: String(ex.id),
     project_id: String(ex.project_id),
     clip_candidate_id: String(ex.clip_candidate_id),
+    hook_text_enabled: ex.hook_text_enabled !== false,
+    hook_text: typeof ex.hook_text === 'string' ? ex.hook_text : null,
     project: {
       id: String(project.id),
       user_id: String(project.user_id),
@@ -220,6 +226,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     clip: {
       start_sec: Number(clip.start_sec),
       end_sec: Number(clip.end_sec),
+      title: typeof clip.title === 'string' ? clip.title : null,
     },
     transcript: transcript
       ? {
@@ -249,6 +256,17 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     : '1\n00:00:00,000 --> 00:00:00,500\n\n';
   await writeFile(srtPath, captionText || fallbackCaption);
 
+  const hookTextEnabled = bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
+  const hookText = (typeof options?.hook_text === 'string' && options.hook_text.trim())
+    || (bundle.hook_text?.trim())
+    || generateHookText({
+      clipTitle: bundle.clip.title ?? null,
+      transcriptSegments: bundle.transcript?.segments_json ?? [],
+      startSec: bundle.clip.start_sec,
+      endSec: bundle.clip.end_sec,
+    })
+    || null;
+
   await renderVerticalClip({
     inputPath,
     outputPath: outPath,
@@ -258,6 +276,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     captionsEnabled: options?.captions_enabled !== false,
     captionTemplate,
     captionFont: options?.caption_font ?? 'arial',
+    hookTextEnabled,
+    hookText,
     motionTracking: options?.motion_tracking !== false,
     autoReframe: options?.auto_reframe !== false,
     reframeMode: options?.reframe_mode ?? 'smart',

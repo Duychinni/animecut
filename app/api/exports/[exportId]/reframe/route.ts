@@ -41,6 +41,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
         auto_reframe: true,
         reframe_mode: 'smart',
         reframe_preset: chosen,
+        hook_text_enabled: true,
       },
       status: 'queued',
     });
