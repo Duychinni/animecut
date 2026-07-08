@@ -37,7 +37,14 @@ async function callInternalJson(path: string, body: Record<string, unknown>) {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        lastError = typeof data?.error === 'string' ? data.error : `Pipeline step failed: ${path}`;
+        lastError = typeof data?.error === 'string'
+          ? data.error
+          : typeof data?.message === 'string'
+            ? data.message
+            : data && typeof data === 'object'
+              ? JSON.stringify(data)
+              : `Pipeline step failed: ${path}`;
+        console.error('[pipeline] internal-call-failed', { path, baseUrl, status: res.status, data, lastError });
         continue;
       }
 

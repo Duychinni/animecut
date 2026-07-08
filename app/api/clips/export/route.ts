@@ -2,6 +2,45 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getTargetClipCount } from '@/lib/clip-policy';
 
+function serializeUnknownError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      type: error.constructor?.name ?? 'Error',
+      message: error.message,
+      stack: error.stack ?? null,
+    };
+  }
+
+  if (typeof error === 'string') {
+    return {
+      type: 'string',
+      message: error,
+      stack: null,
+    };
+  }
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    return {
+      type: record.constructor && typeof record.constructor === 'function' ? (record.constructor as { name?: string }).name ?? 'object' : 'object',
+      message:
+        typeof record.message === 'string'
+          ? record.message
+          : typeof record.error === 'string'
+            ? record.error
+            : JSON.stringify(record),
+      details: record,
+      stack: typeof record.stack === 'string' ? record.stack : null,
+    };
+  }
+
+  return {
+    type: typeof error,
+    message: String(error),
+    stack: null,
+  };
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -191,11 +230,8 @@ export async function POST(req: Request) {
       },
     });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Export queue failed';
-    console.error('[clips/export] route-failed', {
-      message,
-      stack: e instanceof Error ? e.stack : null,
-    });
-    return NextResponse.json({ error: message }, { status: 400 });
+    const serialized = serializeUnknownError(e);
+    console.error('[clips/export] route-failed', serialized);
+    return NextResponse.json({ error: serialized.message || 'Export queue failed', debug_type: serialized.type }, { status: 400 });
   }
 }
