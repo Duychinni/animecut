@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
@@ -114,7 +115,32 @@ function escapeForceStyleForFilter(style: string) {
   return style.replace(/'/g, "\\'").replace(/:/g, '\\:');
 }
 
-async function runFfmpeg(args: string[]) {
+function shellQuote(arg: string) {
+  return /[^A-Za-z0-9_./:=,+-]/.test(arg) ? `'${arg.replace(/'/g, `'"'"'`)}'` : arg;
+}
+
+function formatCommand(cmd: string, args: string[]) {
+  return [cmd, ...args].map(shellQuote).join(' ');
+}
+
+async function writeDebugCommandFile(clipId: string, commandText: string, outputPath: string) {
+  const debugDir = path.join(process.cwd(), 'tmp', 'reframe-debug');
+  await mkdir(debugDir, { recursive: true });
+  const bundle = {
+    clipId,
+    outputPath,
+    ffmpegCommand: commandText,
+  };
+  await writeFile(path.join(debugDir, `${clipId}.ffmpeg-command.txt`), `${commandText}\n`, 'utf8');
+  await writeFile(path.join(debugDir, `${clipId}.bundle.json`), JSON.stringify(bundle, null, 2), 'utf8');
+}
+
+async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outputPath?: string | null }) {
+  const commandText = formatCommand('ffmpeg', args);
+  console.log('[ffmpeg] command', { clipId: debug?.clipId ?? null, outputPath: debug?.outputPath ?? null, command: commandText });
+  if (debug?.clipId && debug?.outputPath) {
+    await writeDebugCommandFile(debug.clipId, commandText, debug.outputPath);
+  }
   await new Promise<void>((resolve, reject) => {
     const p = spawn('ffmpeg', args);
     let stderr = '';
@@ -452,12 +478,13 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         mode: raw.mode,
         source_w: raw.source_w ?? null,
         source_h: raw.source_h ?? null,
+        crop_x: raw.crop_x,
+        crop_y: 0,
         crop_w: raw.crop_w,
         crop_h: raw.crop_h,
         detected_center_x: raw.detected_center_x ?? null,
-        crop_x: raw.crop_x,
         fallbackUsed: raw.fallback_used ?? null,
-        ffmpegCommandCrop: raw.ffmpeg_crop ?? null,
+        ffmpeg_crop: raw.ffmpeg_crop ?? null,
         jsonSaved,
       });
       return { cropExpr: `${raw.ffmpeg_crop},format=yuv420p,fps=30` };
@@ -851,6 +878,8 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'veryfast').trim();
   const configuredCrf = (process.env.FFMPEG_X264_CRF || '22').trim();
 
+  const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
+
   const buildArgs = (includeCaptions: boolean, encoder = configuredEncoder) => {
     const common = [
       '-y',
@@ -906,7 +935,8 @@ export async function renderVerticalClip(opts: RenderOpts) {
   };
 
   try {
-    await runFfmpeg(buildArgs(canUseCaptions));
+    console.log('[render] output-path', { clipId: debugClipId, localMp4Path: effectiveOpts.outputPath, inputPath: effectiveOpts.inputPath, startSec: effectiveOpts.startSec, endSec: effectiveOpts.endSec, smartCropExpr: smartCropExpr ?? null, splitStack: Boolean(splitStackLayout) });
+    await runFfmpeg(buildArgs(canUseCaptions), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     const subtitlesUnavailable = /No such filter: 'subtitles'|Filter not found/i.test(msg);
@@ -915,7 +945,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
     if (configuredEncoder !== 'libx264' && encoderUnavailable) {
       // Server-safe fallback: if requested hardware encoder is unavailable on this host,
       // transparently retry with libx264 so customer renders still succeed.
-      await runFfmpeg(buildArgs(canUseCaptions, 'libx264'));
+      await runFfmpeg(buildArgs(canUseCaptions, 'libx264'), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
       return;
     }
 
@@ -961,7 +991,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
           '-movflags',
           '+faststart',
           effectiveOpts.outputPath,
-        ]);
+        ], { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
         return;
       } catch (fallbackError) {
         const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
