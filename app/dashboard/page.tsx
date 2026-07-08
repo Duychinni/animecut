@@ -28,6 +28,10 @@ type ProjectListItem = {
   progress_percent?: number;
   eta_seconds?: number | null;
   pipeline_status?: string | null;
+  pipeline_stage?: string | null;
+  pipeline_stage_label?: string | null;
+  pipeline_error?: string | null;
+  worker_last_seen_at?: string | null;
 };
 
 async function fetchProjectProgress(projectId: string) {
@@ -150,7 +154,7 @@ export default function DashboardPage() {
 
       const processingIds = (baseProjects.length ? baseProjects : projects)
         .filter((p) => p.pipeline_status === 'queued' || p.pipeline_status === 'processing')
-        .slice(0, 6)
+        .slice(0, 8)
         .map((p) => p.id);
 
       const progressUpdates = await Promise.all(
@@ -190,7 +194,8 @@ export default function DashboardPage() {
               ...project,
               ...previous,
               ...update,
-              progress_percent: activeIncoming && previousProgress > 0 && incomingProgress <= 0 ? previousProgress : update.progress_percent,
+              thumbnail_url: update.thumbnail_url ?? previous?.thumbnail_url ?? project.thumbnail_url ?? project.source_thumbnail_url ?? null,
+              progress_percent: activeIncoming ? Math.max(previousProgress, incomingProgress) : update.progress_percent,
               optimistic: false,
             } as ProjectListItem;
           }
@@ -272,7 +277,7 @@ export default function DashboardPage() {
 
     const timer = setInterval(() => {
       void tick();
-    }, 4000);
+    }, 2000);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
@@ -450,13 +455,14 @@ export default function DashboardPage() {
       <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {orderedProjects.map((p) => {
           const isCompleted = p.status === 'completed' || p.pipeline_status === 'completed';
+          const isFailed = p.pipeline_status === 'error' || p.status === 'failed';
           const percent = isCompleted ? 100 : Math.max(0, Math.min(100, Number(p.progress_percent ?? 0)));
-          const showProcessing = !isCompleted && percent < 100;
-          const processingStage = p.pipeline_status === 'queued'
-            ? 'Finding hooks...'
+          const showProcessing = !isCompleted && !isFailed && percent < 100;
+          const processingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
+            ? 'Queued'
             : p.pipeline_status === 'processing'
-              ? (percent < 45 ? 'Finding hooks...' : percent < 70 ? 'Scoring moments...' : percent < 92 ? 'Rendering captions...' : 'Generating thumbnails...')
-              : 'Processing';
+              ? (percent < 25 ? 'Transcribing audio' : percent < 40 ? 'Finding hooks' : percent < 55 ? 'Creating clips' : percent < 85 ? 'Rendering clips' : percent < 95 ? 'Uploading outputs' : 'Finalizing')
+              : 'Processing');
           const processingLabel = `${processingStage} ${percent}%`;
 
           const thumb = (
