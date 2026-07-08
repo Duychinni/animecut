@@ -9,6 +9,8 @@ type ProgressPayload = {
     id: string;
     status: string;
     pipeline_status?: string | null;
+    pipeline_stage?: string | null;
+    pipeline_stage_label?: string | null;
     pipeline_error?: string | null;
   };
   progress?: {
@@ -18,11 +20,20 @@ type ProgressPayload = {
   };
 };
 
-function getProcessingLabel(status: string) {
-  if (status === 'created') return 'Finding hooks...';
-  if (status === 'transcribed') return 'Scoring moments...';
-  if (status === 'analyzed') return 'Rendering captions and generating thumbnails...';
-  if (status === 'completed') return 'Completed';
+function getProcessingLabel(stage: string | null | undefined, fallbackStatus: string) {
+  if (stage === 'downloading') return 'Preparing source video...';
+  if (stage === 'extracting_audio') return 'Extracting audio...';
+  if (stage === 'transcribing') return 'Transcribing audio...';
+  if (stage === 'finding_hooks') return 'Finding hooks...';
+  if (stage === 'creating_clips') return 'Creating top clip candidates...';
+  if (stage === 'rendering') return 'Rendering clips...';
+  if (stage === 'uploading_outputs') return 'Uploading final clips...';
+  if (stage === 'completed') return 'Completed';
+
+  if (fallbackStatus === 'created') return 'Preparing source video...';
+  if (fallbackStatus === 'transcribed') return 'Scoring moments...';
+  if (fallbackStatus === 'analyzed') return 'Rendering captions and generating thumbnails...';
+  if (fallbackStatus === 'completed') return 'Completed';
   return 'Processing your video';
 }
 
@@ -65,8 +76,11 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   const percent = Math.max(0, Math.min(100, Number(data?.progress?.percent ?? fallbackPercent)));
   const status = String(data?.project?.status ?? 'created');
   const pipelineStatus = String(data?.project?.pipeline_status ?? 'idle');
+  const pipelineStage = data?.project?.pipeline_stage ?? null;
+  const pipelineStageLabel = data?.project?.pipeline_stage_label ?? null;
   const pipelineError = data?.project?.pipeline_error ?? null;
-  const shouldRedirectDone = status === 'completed' || pipelineStatus === 'completed' || percent >= 100;
+  const isNotEnoughContent = pipelineError === 'not_enough_content';
+  const shouldRedirectDone = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
 
   useEffect(() => {
     if (completedNavRef.current) return;
@@ -92,15 +106,24 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
 
           <div className="flex flex-col justify-center px-8 py-10 lg:px-10">
             <p className="text-sm uppercase tracking-[0.22em] text-white/45">Processing project</p>
-            <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">{getProcessingLabel(status)}</h2>
+            <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">{isNotEnoughContent ? 'Not enough standalone clip material' : getProcessingLabel(pipelineStage, status)}</h2>
             <p className="mt-3 max-w-md text-sm leading-6 text-white/60">
-              We’re generating clips from this video now. Keep this page open if you want to watch progress, or come back when it’s done.
+              {isNotEnoughContent
+                ? 'This upload finished analysis, but it did not contain enough complete standalone moments to turn into good reels under the current clip rules.'
+                : `Current stage: ${pipelineStageLabel || getProcessingLabel(pipelineStage, status)}. Keep this page open if you want to watch progress, or come back when it’s done.`}
             </p>
 
-            {pipelineError ? (
+            {pipelineError && !isNotEnoughContent ? (
               <div className="mt-5 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                 <p className="font-semibold">Pipeline error</p>
                 <p className="mt-1 text-red-100/80">{pipelineError}</p>
+              </div>
+            ) : null}
+
+            {isNotEnoughContent ? (
+              <div className="mt-5 rounded-2xl border border-amber-400/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
+                <p className="font-semibold">No valid clips found</p>
+                <p className="mt-1 text-amber-50/80">Try a longer source, or a segment with clearer complete thoughts, stronger hooks, and more spoken payoff.</p>
               </div>
             ) : null}
 

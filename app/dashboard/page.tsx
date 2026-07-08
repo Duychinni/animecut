@@ -45,6 +45,9 @@ async function fetchProjectProgress(projectId: string) {
       progress_percent: Number(prData?.progress?.percent ?? 0),
       eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
       pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
+      pipeline_stage: typeof prData?.project?.pipeline_stage === 'string' ? prData.project.pipeline_stage : null,
+      pipeline_stage_label: typeof prData?.project?.pipeline_stage_label === 'string' ? prData.project.pipeline_stage_label : null,
+      pipeline_error: typeof prData?.project?.pipeline_error === 'string' ? prData.project.pipeline_error : null,
       status: typeof prData?.project?.status === 'string' ? prData.project.status : null,
     };
   } catch {
@@ -455,15 +458,22 @@ export default function DashboardPage() {
       <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {orderedProjects.map((p) => {
           const isCompleted = p.status === 'completed' || p.pipeline_status === 'completed';
-          const isFailed = p.pipeline_status === 'error' || p.status === 'failed';
-          const percent = isCompleted ? 100 : Math.max(0, Math.min(100, Number(p.progress_percent ?? 0)));
-          const showProcessing = !isCompleted && !isFailed && percent < 100;
+          const isNotEnoughContent = p.pipeline_error === 'not_enough_content';
+          const isFailed = (p.pipeline_status === 'error' || p.status === 'failed') && !isNotEnoughContent;
+          const percent = isCompleted ? 100 : getFlooredProgress(p);
+          const showProcessing = !isCompleted && !isFailed && !isNotEnoughContent && percent < 100;
           const processingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
             : p.pipeline_status === 'processing'
-              ? (percent < 25 ? 'Transcribing audio' : percent < 40 ? 'Finding hooks' : percent < 55 ? 'Creating clips' : percent < 85 ? 'Rendering clips' : percent < 95 ? 'Uploading outputs' : 'Finalizing')
+              ? (p.pipeline_stage === 'downloading' ? 'Preparing source video'
+                : p.pipeline_stage === 'extracting_audio' ? 'Extracting audio'
+                : p.pipeline_stage === 'transcribing' ? 'Transcribing audio'
+                : p.pipeline_stage === 'finding_hooks' ? 'Finding hooks'
+                : p.pipeline_stage === 'creating_clips' ? 'Creating top clip candidates'
+                : p.pipeline_stage === 'rendering' ? 'Rendering clips'
+                : p.pipeline_stage === 'uploading_outputs' ? 'Uploading outputs'
+                : 'Processing')
               : 'Processing');
-          const processingLabel = `${processingStage} ${percent}%`;
 
           const thumb = (
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black transition duration-300 group-hover:scale-[1.015] group-hover:border-[#9b6bff]/35 group-hover:shadow-[0_0_0_1px_rgba(155,107,255,0.18),0_18px_55px_rgba(102,51,153,0.24)]">
@@ -516,6 +526,8 @@ export default function DashboardPage() {
                     <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
                   )}
                   {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
+                  {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found</p> : null}
+                  {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%</p> : null}
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
                       {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
