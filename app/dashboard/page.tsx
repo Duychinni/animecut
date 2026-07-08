@@ -443,11 +443,14 @@ export default function DashboardPage() {
               )}
 
               {showProcessing ? (
-                <div className="absolute left-3 top-3 rounded-full border border-white/12 bg-black/58 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/90 backdrop-blur-sm">
-                  <span className="inline-flex items-center gap-2">
-                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                    {processingStage}
-                  </span>
+                <div className="absolute inset-0 flex items-center justify-center bg-black/18 px-4 text-center pointer-events-none">
+                  <div className="rounded-[14px] border border-white/12 bg-black/46 px-3 py-2 text-white shadow-[0_8px_20px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+                    <div className="text-[1.1rem] font-extrabold leading-none tracking-tight">{percent}%</div>
+                    <div className="mt-1 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/82">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                      {processingStage}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="pointer-events-none absolute inset-0 flex items-end justify-start opacity-0 transition duration-300 group-hover:opacity-100">
