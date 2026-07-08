@@ -175,8 +175,8 @@ export default async function ProjectDetailPage({
   try {
     const progressRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/projects/${projectId}/progress`, { cache: 'no-store' });
     const progressJson = await readJsonSafe(progressRes) as {
-      project?: { status?: string | null };
-      progress?: { percent?: number | null; eta_seconds?: number | null };
+      project?: { status?: string | null; pipeline_status?: string | null; pipeline_error?: string | null };
+      progress?: { percent?: number | null; eta_seconds?: number | null; done_exports?: number | null; active_exports?: number | null };
     };
     if (progressRes.ok) {
       progressPercent = Math.max(0, Math.min(100, Number(progressJson?.progress?.percent ?? 0)));
@@ -190,7 +190,9 @@ export default async function ProjectDetailPage({
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
   const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
-  const showProcessingHero = doneExports === 0;
+  const hasRenderableResults = filteredExportItems.some((row) => row.status === 'done' && Boolean(row.signedUrl));
+  const shouldShowCompletedState = effectiveStatus === 'completed' || progressPercent >= 100;
+  const showProcessingHero = !hasRenderableResults && !shouldShowCompletedState;
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -227,6 +229,11 @@ export default async function ProjectDetailPage({
               rank: row.rank,
             }))}
           />
+        ) : shouldShowCompletedState ? (
+          <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] px-8 py-12 text-center">
+            <h2 className="text-2xl font-semibold text-white">Processing finished</h2>
+            <p className="mt-3 text-sm text-white/60">The backend marked this project complete, but no playable reels were available in this page load yet. Refresh once and the reels should appear.</p>
+          </div>
         ) : null}
       </section>
     </main>
