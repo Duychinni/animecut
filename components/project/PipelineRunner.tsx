@@ -41,6 +41,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
   const autoRanRef = useRef(false);
+  const processingKickInFlightRef = useRef(false);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
   const isCompleted = progress?.project?.status === 'completed';
@@ -56,11 +57,15 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }, [projectId]);
 
   const kickBackgroundProcessing = useCallback(async () => {
+    if (processingKickInFlightRef.current) return;
+    processingKickInFlightRef.current = true;
     try {
       await fetch('/api/pipeline/process', { method: 'POST' });
       await fetch('/api/jobs/process', { method: 'POST' });
     } catch {
       // best effort only
+    } finally {
+      processingKickInFlightRef.current = false;
     }
   }, []);
 
@@ -71,19 +76,26 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
-      await kickBackgroundProcessing();
       await refreshProgress();
+
+      const pipelineStatus = progress?.project?.pipeline_status ?? 'idle';
+      const activeExports = Number(progress?.progress?.active_exports ?? 0);
+      const doneExports = Number(progress?.progress?.done_exports ?? 0);
+
+      if (pipelineStatus === 'queued' || pipelineStatus === 'processing' || activeExports > 0 || doneExports === 0) {
+        await kickBackgroundProcessing();
+      }
     };
 
     void tick();
     timer = setInterval(() => {
       void tick();
-    }, 1500);
+    }, 4000);
 
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [kickBackgroundProcessing, refreshProgress, progressPct]);
+  }, [kickBackgroundProcessing, refreshProgress, progressPct, progress]);
 
   useEffect(() => {
     if (!autoStart || autoRanRef.current || loading) return;

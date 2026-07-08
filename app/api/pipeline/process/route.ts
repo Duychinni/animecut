@@ -83,6 +83,19 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
 export async function POST() {
   const supabase = createAdminClient();
 
+  const { data: processingJobs, error: processingError } = await supabase
+    .from('jobs')
+    .select('id, project_id, updated_at')
+    .eq('type', 'pipeline')
+    .eq('status', 'processing')
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (processingError) return NextResponse.json({ error: processingError.message }, { status: 400 });
+  if (processingJobs?.length) {
+    return NextResponse.json({ ok: true, processed: 0, busy: true, project_id: processingJobs[0].project_id });
+  }
+
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('id, project_id, payload, status')
@@ -100,10 +113,19 @@ export async function POST() {
     return NextResponse.json({ error: 'Pipeline job missing project_id' }, { status: 400 });
   }
 
-  await supabase
+  const processingTimestamp = new Date().toISOString();
+  const { data: claimedJobs, error: claimError } = await supabase
     .from('jobs')
-    .update({ status: 'processing', attempts: 1, updated_at: new Date().toISOString() })
-    .eq('id', job.id);
+    .update({ status: 'processing', attempts: 1, updated_at: processingTimestamp })
+    .eq('id', job.id)
+    .eq('status', 'queued')
+    .select('id')
+    .limit(1);
+
+  if (claimError) return NextResponse.json({ error: claimError.message }, { status: 400 });
+  if (!claimedJobs?.length) {
+    return NextResponse.json({ ok: true, processed: 0, skipped: 'claim_lost' });
+  }
 
   await supabase
     .from('projects')
