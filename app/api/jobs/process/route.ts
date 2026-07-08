@@ -23,12 +23,15 @@ async function maybeFinalizeProject(projectId: string) {
   const failedCount = Number(failed ?? 0);
 
   if (totalCount > 0 && doneCount + failedCount >= totalCount) {
+    const terminalStatus = doneCount > 0 ? 'completed' : 'error';
     await supabase
       .from('projects')
       .update({
-        status: 'completed',
-        pipeline_status: 'completed',
-        pipeline_error: failedCount > 0 ? 'Some exports failed. Review generated reels for details.' : null,
+        status: terminalStatus,
+        pipeline_status: terminalStatus === 'completed' ? 'completed' : 'error',
+        pipeline_error: doneCount > 0
+          ? (failedCount > 0 ? 'Some exports failed. Review generated reels for details.' : null)
+          : 'All export attempts failed. No reels were successfully rendered.',
         pipeline_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -71,6 +74,8 @@ type ExportRenderOptions = {
   captions_enabled?: boolean;
   caption_template?: 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
   caption_font?: 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
+  hook_text_enabled?: boolean;
+  hook_text?: string;
   motion_tracking?: boolean;
   auto_reframe?: boolean;
   reframe_mode?: 'off' | 'basic' | 'smart';
@@ -399,6 +404,8 @@ export async function POST() {
           | 'bebas'
           | 'poppins'
           | undefined,
+        hook_text_enabled: item.payload?.hook_text_enabled as boolean | undefined,
+        hook_text: item.payload?.hook_text as string | undefined,
         motion_tracking: item.payload?.motion_tracking as boolean | undefined,
         auto_reframe: item.payload?.auto_reframe as boolean | undefined,
         reframe_mode: item.payload?.reframe_mode as 'off' | 'basic' | 'smart' | undefined,
@@ -414,6 +421,12 @@ export async function POST() {
       processed += 1;
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : 'Job failed';
+      console.error('[jobs/process] export-failed', {
+        export_id: item.exportId,
+        job_id: item.jobId,
+        raw_error: rawMessage,
+        payload: item.payload,
+      });
       const message = normalizeRenderErrorMessage(rawMessage);
       const exportId = item.exportId;
 

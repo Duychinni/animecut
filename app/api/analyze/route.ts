@@ -328,8 +328,8 @@ export async function POST(req: Request) {
     const minimumWordCount = transcriptMaxEnd < 60 ? 40 : 80;
     const policy = getClipPolicy(transcriptMaxEnd);
     const targetClipCount = getTargetClipCount(transcriptMaxEnd);
-    const minimumCandidatePool = policy.candidateCount;
-    const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 3);
+    const minimumCandidatePool = Math.max(policy.candidateCount, targetClipCount * 4);
+    const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
 
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
@@ -447,6 +447,7 @@ export async function POST(req: Request) {
       project_id,
       videoDurationSeconds: Number(transcriptMaxEnd.toFixed(2)),
       targetClipCount: targetClipCount,
+      minimumCandidatePool,
       candidateCountGenerated: aiReturnedCount,
       candidateCountAfterLengthFilter: filteredCandidates.length,
       candidateCountAfterOverlapRemoval: deduped.length,
@@ -460,6 +461,10 @@ export async function POST(req: Request) {
         reasonSelected: c.reason,
       })),
       rejectedCandidates: (parsed.candidates ?? []).length - ranked.length,
+      rejectedReasonsSample: scoredCandidates
+        .filter((c) => c.reject_reason)
+        .slice(0, 20)
+        .map((c) => ({ title: c.title, reject_reason: c.reject_reason, start: c.start_sec, end: c.end_sec, score: c.overall_score })),
     });
 
     const toLegacyTenPoint = (value: number) => Math.max(1, Math.min(10, Math.round(value / 10)));
