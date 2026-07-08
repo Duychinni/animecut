@@ -3,6 +3,7 @@ import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
+import { readJsonSafe } from '@/lib/safe-json';
 
 type ExportRow = {
   id: string;
@@ -52,28 +53,6 @@ function targetClipCountForDuration(totalSeconds: number) {
   if (minutes <= 30) return 10;
   if (minutes <= 60) return 15;
   return 20;
-}
-
-function computeProgress(status: string, doneExports: number, targetCount: number, elapsedSeconds: number) {
-  const safeTarget = Math.max(1, targetCount);
-
-  if (status === 'completed') return 100;
-
-  if (status === 'created') {
-    const early = Math.min(42, 10 + Math.floor(elapsedSeconds / 4));
-    return early;
-  }
-
-  if (status === 'transcribed') {
-    const mid = Math.min(62, 45 + Math.floor(elapsedSeconds / 6));
-    return mid;
-  }
-
-  if (status === 'analyzed') {
-    return Math.min(99, Math.round(65 + (doneExports / safeTarget) * 35));
-  }
-
-  return 5;
 }
 
 function getProcessingLabel(status: string) {
@@ -189,26 +168,29 @@ export default async function ProjectDetailPage({
   const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
   const targetCount = Math.max(1, targetClipCountForDuration(totalSeconds));
   const doneExports = filteredExportItems.filter((row) => row.status === 'done').length;
-  const activeExports = exportItems.filter((row) => row.status === 'queued' || row.status === 'processing').length;
-  const failedExports = exportItems.filter((row) => row.status === 'error').length;
-  const createdAtMs = projectRow?.created_at ? new Date(projectRow.created_at).getTime() : Date.now();
-  const elapsedSeconds = Math.max(0, Math.round((Date.now() - createdAtMs) / 1000));
-  const isReallyCompleted =
-    activeExports === 0 &&
-    (doneExports >= targetCount || doneExports + failedExports >= targetCount || (exportItems.length > 0 && doneExports === exportItems.length));
-  const effectiveStatus = isReallyCompleted ? 'completed' : String(projectRow?.status ?? 'created');
-  const progressPercent = isReallyCompleted ? 100 : computeProgress(effectiveStatus, doneExports, targetCount, elapsedSeconds);
 
+  let progressPercent = 0;
+  let effectiveStatus = String(projectRow?.status ?? 'created');
   let etaSeconds: number | null = null;
-  if (effectiveStatus === 'created') etaSeconds = 180;
-  else if (effectiveStatus === 'transcribed') etaSeconds = 100;
-  else if (effectiveStatus === 'analyzed') etaSeconds = Math.max(0, targetCount - doneExports) * 45;
-  else if (effectiveStatus === 'completed') etaSeconds = 0;
+  try {
+    const progressRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/projects/${projectId}/progress`, { cache: 'no-store' });
+    const progressJson = await readJsonSafe(progressRes) as {
+      project?: { status?: string | null };
+      progress?: { percent?: number | null; eta_seconds?: number | null };
+    };
+    if (progressRes.ok) {
+      progressPercent = Math.max(0, Math.min(100, Number(progressJson?.progress?.percent ?? 0)));
+      effectiveStatus = String(progressJson?.project?.status ?? effectiveStatus);
+      etaSeconds = typeof progressJson?.progress?.eta_seconds === 'number' ? progressJson.progress.eta_seconds : null;
+    }
+  } catch {
+    progressPercent = 0;
+  }
 
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
   const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
-  const showProcessingHero = effectiveStatus !== 'completed';
+  const showProcessingHero = doneExports === 0;
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
