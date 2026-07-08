@@ -273,7 +273,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     startSec: bundle.clip.start_sec,
     endSec: bundle.clip.end_sec,
     srtPath,
-    captionsEnabled: options?.captions_enabled !== false,
+    captionsEnabled: false,
     captionTemplate,
     captionFont: options?.caption_font ?? 'arial',
     hookTextEnabled,
