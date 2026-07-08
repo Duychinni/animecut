@@ -143,8 +143,17 @@ export async function POST() {
 
     await updateProjectProgress(projectId, 'finding_hooks', 'Finding hooks');
     console.log('[pipeline] before analyze', { projectId });
-    await withTimeout(callInternalJson('/api/analyze', { project_id: projectId }), 120000, 'finding_hooks timeout after 2 minutes');
+    const analyzeData = await withTimeout(callInternalJson('/api/analyze', { project_id: projectId }), 120000, 'finding_hooks timeout after 2 minutes');
     console.log('[pipeline] after analyze', { projectId });
+
+    if (analyzeData?.reason === 'not_enough_content' || Number(analyzeData?.count ?? 0) === 0) {
+      await supabase
+        .from('jobs')
+        .update({ status: 'done', updated_at: new Date().toISOString() })
+        .eq('id', job.id);
+
+      return NextResponse.json({ ok: true, processed: 1, project_id: projectId, reason: 'not_enough_content' });
+    }
 
     await updateProjectProgress(projectId, 'creating_clips', 'Creating top clip candidates');
 

@@ -77,6 +77,16 @@ export async function POST(req: Request) {
     let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];
     let blockedCount = 0;
 
+    const { data: projectRow } = await supabase
+      .from('projects')
+      .select('pipeline_status, pipeline_error')
+      .eq('id', project_id)
+      .maybeSingle();
+
+    if (projectRow?.pipeline_error === 'not_enough_content') {
+      return NextResponse.json({ ok: true, queued: 0, exports: [], reason: 'not_enough_content', counts: { selected_before_queue: 0, resolved_target_count: targetCount } });
+    }
+
     if (!selectedIds.length) {
       const [{ data: existingExports, error: exErr }, { data: topCandidates, error: cErr }] = await Promise.all([
         supabase
@@ -165,6 +175,18 @@ export async function POST(req: Request) {
       resolved_target_count: targetCount,
       selected_before_queue: selectedIds.length,
     });
+
+    if (selectedIds.length) {
+      const { data: existingCandidates, error: candidateCheckError } = await supabase
+        .from('clip_candidates')
+        .select('id')
+        .eq('project_id', project_id)
+        .in('id', selectedIds);
+
+      if (candidateCheckError) throw candidateCheckError;
+      const validIds = new Set((existingCandidates ?? []).map((row) => String(row.id)));
+      selectedIds = selectedIds.filter((id) => validIds.has(id));
+    }
 
     if (!selectedIds.length) {
       console.log('[clips/export] no-valid-clips', {

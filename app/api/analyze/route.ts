@@ -5,8 +5,8 @@ import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 
 type RawCandidate = Record<string, string | number | null | undefined>;
 
-const GLOBAL_MAX_CLIP_SEC = 90;
-const GLOBAL_MIN_CLIP_SEC = 20;
+const GLOBAL_MAX_CLIP_SEC = 120;
+const GLOBAL_MIN_CLIP_SEC = 30;
 const EXPAND_SEC = 15;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
 const MIN_TOP_CLIP_SCORE = 7.0;
@@ -147,6 +147,19 @@ function clampDurationWithSegments(startSec: number, endSec: number, segments: T
   }
 
   return { start, end };
+}
+
+function countWords(text: string) {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function countTranscriptWordsInRange(segments: TranscriptSegment[], startSec: number, endSec: number) {
+  return segments
+    .filter((seg) => segEnd(seg) >= startSec && segStart(seg) <= endSec)
+    .reduce((total, seg) => total + countWords(textOf(seg)), 0);
 }
 
 function normalizeTitle(t: string) {
@@ -311,6 +324,8 @@ export async function POST(req: Request) {
       );
 
     const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
+    const effectiveGlobalMinClipSec = transcriptMaxEnd < 60 ? 20 : GLOBAL_MIN_CLIP_SEC;
+    const minimumWordCount = transcriptMaxEnd < 60 ? 40 : 80;
     const policy = getClipPolicy(transcriptMaxEnd);
     const targetClipCount = getTargetClipCount(transcriptMaxEnd);
     const minimumCandidatePool = policy.candidateCount;
@@ -330,6 +345,7 @@ export async function POST(req: Request) {
 
         const openingLine = String(c.opening_line ?? openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
+        const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
         const passesQuality = passesStandaloneQualityChecks(openingLine, closingLine) && payoffStrong;
 
@@ -383,17 +399,20 @@ export async function POST(req: Request) {
           overall_score: clamp100(calibratedOverall),
           reject_reason: !passesQuality
             ? 'failed_quality_checks'
-            : duration < policy.minSec
+            : duration < effectiveGlobalMinClipSec
               ? 'duration_below_minimum'
-              : calibratedOverall < 60
-                ? 'score_below_minimum'
-                : null,
+              : transcriptWordCount < minimumWordCount
+                ? 'word_count_below_minimum'
+                : calibratedOverall < 60
+                  ? 'score_below_minimum'
+                  : null,
           rank: idx + 1,
           passes_quality: passesQuality,
         };
       })
       .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
-      .filter((c: RankedCandidate) => c.duration_seconds >= Math.max(policy.minSec, GLOBAL_MIN_CLIP_SEC))
+      .filter((c: RankedCandidate) => c.duration_seconds >= Math.max(policy.minSec, effectiveGlobalMinClipSec))
+      .filter((c: RankedCandidate) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= minimumWordCount)
       .filter((c: RankedCandidate) => Number(c.overall_score ?? 0) >= MIN_TOP_CLIP_SCORE);
 
     const filteredCandidates = scoredCandidates;
@@ -459,12 +478,30 @@ export async function POST(req: Request) {
       rank: item.rank,
     }));
 
+    await supabase.from('exports').delete().eq('project_id', project_id).in('status', ['queued', 'processing']);
+    await supabase.from('jobs').delete().eq('project_id', project_id).eq('type', 'export').in('status', ['queued', 'processing']);
+
     await supabase.from('clip_candidates').delete().eq('project_id', project_id);
-    const { error: insErr } = await supabase.from('clip_candidates').insert(dbRows);
+    const { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
     if (insErr) throw insErr;
 
-    await supabase.from('projects').update({ status: 'analyzed' }).eq('id', project_id);
-    return NextResponse.json({ ok: true, count: ranked.length, candidates: ranked });
+    if (!ranked.length) {
+      await supabase.from('projects').update({
+        status: 'completed',
+        pipeline_status: 'completed',
+        pipeline_stage: 'completed',
+        pipeline_stage_label: 'No valid clips found',
+        pipeline_progress_percent: 100,
+        pipeline_error: 'not_enough_content',
+        pipeline_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', project_id);
+
+      return NextResponse.json({ ok: true, count: 0, candidates: [], reason: 'not_enough_content' });
+    }
+
+    await supabase.from('projects').update({ status: 'analyzed', pipeline_error: null }).eq('id', project_id);
+    return NextResponse.json({ ok: true, count: ranked.length, candidates: ranked, inserted_candidate_ids: insertedRows?.map((row) => row.id) ?? [] });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Analyze failed';
     return NextResponse.json({ error: message }, { status: 400 });
