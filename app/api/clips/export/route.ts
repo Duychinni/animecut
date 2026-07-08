@@ -97,6 +97,12 @@ export async function POST(req: Request) {
         .map((row) => String(row.id))
         .filter((id) => !blockedCandidateIds.has(id))
         .slice(0, Math.min(needed, 10));
+      console.log('[clips/export] after-dedupe-selection', {
+        project_id,
+        deduped_count: deduped.length,
+        selected_count: selectedIds.length,
+        selectedIds,
+      });
     }
 
     console.log('[clips/export] counts', {
@@ -107,6 +113,11 @@ export async function POST(req: Request) {
     });
 
     if (!selectedIds.length) {
+      console.log('[clips/export] no-valid-clips', {
+        project_id,
+        targetCount,
+        blocked_count: blockedCandidateIds.size,
+      });
       return NextResponse.json({ ok: true, queued: 0, exports: [], reason: 'no_valid_clips', counts: { selected_before_queue: 0, resolved_target_count: targetCount } });
     }
 
