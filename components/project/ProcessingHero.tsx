@@ -86,7 +86,11 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
     if (completedNavRef.current) return;
     if (shouldRedirectDone) {
       completedNavRef.current = true;
-      router.replace(`/dashboard/projects/${projectId}?done=${Date.now()}`);
+      const nextUrl = `/dashboard/projects/${projectId}?done=${Date.now()}`;
+      router.replace(nextUrl);
+      setTimeout(() => {
+        window.location.href = nextUrl;
+      }, 250);
     }
   }, [projectId, router, shouldRedirectDone]);
 
