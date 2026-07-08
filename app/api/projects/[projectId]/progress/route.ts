@@ -101,7 +101,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
-        .select('id, title, status, pipeline_status, pipeline_error, source_type, source_url, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
+        .select('id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, worker_last_seen_at, worker_last_log_message, pipeline_error, source_type, source_url, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
         .eq('id', projectId)
         .single(),
       supabase
@@ -147,20 +147,29 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       (doneExports >= targetCount || doneExports + failedExports >= targetCount || (rows.length > 0 && doneExports === rows.length));
 
     const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
-    const pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
+    let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
     const hasTranscript = transcriptSegments.length > 0;
+    const explicitPercent = Number((project as { pipeline_progress_percent?: number | null }).pipeline_progress_percent ?? NaN);
+    const lastSeenRaw = (project as { worker_last_seen_at?: string | null }).worker_last_seen_at ?? null;
+    const lastSeenMs = lastSeenRaw ? new Date(lastSeenRaw).getTime() : 0;
+    const staleWorker = pipelineStatus === 'processing' && lastSeenMs > 0 && (Date.now() - lastSeenMs) > 5 * 60 * 1000;
+    if (staleWorker) {
+      pipelineStatus = 'error';
+    }
     const progressPercent = isReallyCompleted
       ? 100
-      : computeProgress({
-          status: effectiveStatus,
-          pipelineStatus,
-          elapsedSeconds,
-          hasTranscript,
-          analyzedCandidates,
-          doneExports,
-          activeExports,
-          targetCount,
-        });
+      : Number.isFinite(explicitPercent)
+        ? explicitPercent
+        : computeProgress({
+            status: effectiveStatus,
+            pipelineStatus,
+            elapsedSeconds,
+            hasTranscript,
+            analyzedCandidates,
+            doneExports,
+            activeExports,
+            targetCount,
+          });
 
     const etaSeconds = estimateEtaSeconds({
       status: effectiveStatus,
@@ -201,8 +210,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         id: project.id,
         title: project.title,
         status: effectiveStatus,
-        pipeline_status: (project as { pipeline_status?: string | null }).pipeline_status ?? null,
-        pipeline_error: (project as { pipeline_error?: string | null }).pipeline_error ?? null,
+        pipeline_status: pipelineStatus,
+        pipeline_stage: (project as { pipeline_stage?: string | null }).pipeline_stage ?? null,
+        pipeline_stage_label: staleWorker ? 'Worker heartbeat expired' : ((project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null),
+        worker_last_seen_at: lastSeenRaw,
+        worker_last_log_message: (project as { worker_last_log_message?: string | null }).worker_last_log_message ?? null,
+        pipeline_error: staleWorker ? 'Worker heartbeat expired after 5 minutes without progress update.' : ((project as { pipeline_error?: string | null }).pipeline_error ?? null),
         source_type: project.source_type,
         source_url: sourceUrl,
         thumbnail_url: thumbnailUrl,
