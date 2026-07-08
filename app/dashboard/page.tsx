@@ -497,7 +497,7 @@ export default function DashboardPage() {
           return (
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="min-w-0">
-                <Link href={`/dashboard/projects/${p.id}`} prefetch>{thumb}</Link>
+                <Link href={`/dashboard/projects/${p.id}`} prefetch={false}>{thumb}</Link>
 
                 <div className="mt-3">
                   {renamingId === p.id ? (
