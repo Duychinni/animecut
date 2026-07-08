@@ -6,6 +6,7 @@ import { resolveProjectVideoSource } from '@/lib/source';
 import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
+import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
@@ -386,7 +387,10 @@ export async function POST() {
       if (item.jobId) {
         await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', item.jobId);
       }
-      await maybeFinalizeProject(await getProjectIdForExport(exportId));
+      const projectId = await getProjectIdForExport(exportId);
+      const cleanupLog = await cleanupProjectTempFiles(projectId);
+      console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'completed', ...summarizeCleanup(cleanupLog) });
+      await maybeFinalizeProject(projectId);
       processed += 1;
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : 'Job failed';
@@ -442,7 +446,10 @@ export async function POST() {
           .from('exports')
           .update({ status: 'error', error_message: message, updated_at: new Date().toISOString() })
           .eq('id', exportId);
-        await maybeFinalizeProject(await getProjectIdForExport(exportId));
+        const projectId = await getProjectIdForExport(exportId);
+        const cleanupLog = await cleanupProjectTempFiles(projectId);
+        console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'failed', ...summarizeCleanup(cleanupLog) });
+        await maybeFinalizeProject(projectId);
       }
     }
   }
