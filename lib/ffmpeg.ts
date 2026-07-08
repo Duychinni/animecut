@@ -444,7 +444,16 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       error?: string;
     };
 
-    if (probe.code !== 0 || !raw?.ok) return {};
+    if (probe.code !== 0 || !raw?.ok) {
+      console.log('[smart-reframe-fallback]', {
+        clipId: opts.debugClipId ?? null,
+        candidateId: opts.debugCandidateId ?? null,
+        reason: probe.code !== 0 ? 'python_probe_nonzero_exit' : 'raw_not_ok',
+        probeCode: probe.code,
+        raw,
+      });
+      return {};
+    }
 
     const clipId = (opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
     const candidateId = opts.debugCandidateId ?? null;
@@ -517,7 +526,16 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       .filter((p) => Number.isFinite(p.t))
       .sort((a, b) => a.t - b.t);
 
-    if (points.length < 2) return {};
+    if (points.length < 2) {
+      console.log('[smart-reframe-fallback]', {
+        clipId,
+        candidateId,
+        reason: 'insufficient_timeline_points',
+        pointsLength: points.length,
+        rawMode: raw.mode ?? null,
+      });
+      return {};
+    }
 
     const stabilized = downsamplePoints(smoothPoints(points, 0.62), 20);
 
@@ -639,8 +657,14 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   const cropWidth = preset === 'tight' ? 760 : 860;
   const cropHeight = preset === 'tight' ? 1351 : 1529;
 
-  if (!enabled) return `crop=${cropWidth}:${cropHeight}`;
+  if (!enabled) {
+    console.log('[smart-reframe-fallback]', { reason: 'auto_reframe_disabled', mode, cropWidth, cropHeight });
+    return `crop=${cropWidth}:${cropHeight}`;
+  }
   if (mode === 'smart' && smartCropExpr) return smartCropExpr;
+  if (mode === 'smart' && !smartCropExpr) {
+    console.log('[smart-reframe-fallback]', { reason: 'smart_mode_without_crop_expr', mode, cropWidth, cropHeight });
+  }
 
   const xExpr = preset === 'left'
     ? `max((iw-${cropWidth})*0.18,0)`
@@ -819,6 +843,16 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const outputWidth = resolveOutputWidth(outputHeight);
   const envMode = ((process.env.AUTO_REFRAME_MODE || 'basic').trim().toLowerCase() as ReframeMode);
   const effectiveMode: ReframeMode = opts.reframeMode ?? (envMode === 'off' || envMode === 'smart' ? envMode : 'basic');
+  console.log('[render] reframe-mode', {
+    clipId: opts.debugClipId ?? null,
+    requestedMode: opts.reframeMode ?? null,
+    envMode,
+    effectiveMode,
+    autoReframeRequested: opts.autoReframe ?? null,
+    autoReframeEnabled: opts.autoReframe ?? process.env.AUTO_REFRAME_ENABLED !== 'false',
+    smartScript: resolveSmartReframeScript(),
+    smartPython: resolveSmartReframePython(),
+  });
   const effectiveOpts: RenderOpts = {
     ...opts,
     autoReframe: opts.autoReframe ?? process.env.AUTO_REFRAME_ENABLED !== 'false',
@@ -999,7 +1033,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
 
         if (drawtextUnavailable) {
           // Last-resort fallback: render without captions so export still succeeds on minimal ffmpeg builds.
-          await runFfmpeg(buildArgs(false, 'libx264'));
+          await runFfmpeg(buildArgs(false, 'libx264'), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
           return;
         }
 
