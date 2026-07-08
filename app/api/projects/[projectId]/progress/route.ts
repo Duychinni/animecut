@@ -143,8 +143,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const elapsedSeconds = Math.max(0, Math.round((now - createdAtMs) / 1000));
 
     const isReallyCompleted =
-      activeExports === 0 &&
-      (doneExports >= targetCount || doneExports + failedExports >= targetCount || (rows.length > 0 && doneExports === rows.length));
+      activeExports === 0 && doneExports > 0 && doneExports >= targetCount;
 
     const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
     let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;

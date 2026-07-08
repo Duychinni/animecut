@@ -8,21 +8,51 @@ import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
 import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
+import { getTargetClipCount } from '@/lib/clip-policy';
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
 
-  const [{ count: total }, { count: done }, { count: failed }] = await Promise.all([
+  const [
+    { count: total },
+    { count: done },
+    { count: failed },
+    { data: transcriptRow },
+    { count: candidateCount },
+  ] = await Promise.all([
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'done'),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'error'),
+    supabase.from('transcripts').select('segments_json').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single(),
+    supabase.from('clip_candidates').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
   ]);
 
   const totalCount = Number(total ?? 0);
   const doneCount = Number(done ?? 0);
   const failedCount = Number(failed ?? 0);
+  const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow.segments_json as { end?: number }[]) : [];
+  const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
+  const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
+  const availableCandidates = Number(candidateCount ?? 0);
 
-  if (totalCount > 0 && doneCount + failedCount >= totalCount) {
+  if (doneCount >= targetCount) {
+    await supabase
+      .from('projects')
+      .update({
+        status: 'completed',
+        pipeline_status: 'completed',
+        pipeline_error: failedCount > 0 ? 'Some exports failed, but target reel count was reached.' : null,
+        pipeline_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId);
+    return;
+  }
+
+  const candidatePoolExhausted = totalCount >= availableCandidates && availableCandidates > 0;
+  const allAttemptsSettled = totalCount > 0 && doneCount + failedCount >= totalCount;
+
+  if (allAttemptsSettled && candidatePoolExhausted) {
     const terminalStatus = doneCount > 0 ? 'completed' : 'error';
     await supabase
       .from('projects')
@@ -30,8 +60,8 @@ async function maybeFinalizeProject(projectId: string) {
         status: terminalStatus,
         pipeline_status: terminalStatus === 'completed' ? 'completed' : 'error',
         pipeline_error: doneCount > 0
-          ? (failedCount > 0 ? 'Some exports failed. Review generated reels for details.' : null)
-          : 'All export attempts failed. No reels were successfully rendered.',
+          ? `Only ${doneCount} of ${targetCount} target reels were rendered before candidate pool was exhausted.`
+          : 'All export attempts failed and no backup candidates remained.',
         pipeline_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -482,6 +512,20 @@ export async function POST() {
         const projectId = await getProjectIdForExport(exportId);
         const cleanupLog = await cleanupProjectTempFiles(projectId);
         console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'failed', ...summarizeCleanup(cleanupLog) });
+
+        try {
+          const refillRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/clips/export`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ project_id: projectId }),
+            cache: 'no-store',
+          });
+          const refillData = await refillRes.json().catch(() => ({}));
+          console.log('[jobs/process] refill-attempt', { project_id: projectId, export_id: exportId, refillData, status: refillRes.status });
+        } catch (refillError) {
+          console.warn('[jobs/process] refill-failed', { project_id: projectId, export_id: exportId, refillError });
+        }
+
         await maybeFinalizeProject(projectId);
       }
     }
