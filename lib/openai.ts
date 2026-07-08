@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { buildMockCandidates, isMockAiEnabled } from '@/lib/dev-ai';
 
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -183,6 +184,9 @@ export async function analyzeClipCandidates(
   transcript: string,
   segments: Array<{ start?: number; end?: number; text?: string }> = [],
 ) {
+  if (isMockAiEnabled()) {
+    return buildMockCandidates();
+  }
   const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
   const targetCandidates = minCandidatePoolForDuration(totalSeconds);
   const prompt = buildPrompt(targetCandidates, totalSeconds);

@@ -1,7 +1,12 @@
 import { createReadStream } from 'node:fs';
 import { openai } from '@/lib/openai';
+import { buildMockTranscript, isMockAiEnabled } from '@/lib/dev-ai';
 
 export async function transcribeAudioFile(filePath: string) {
+  if (isMockAiEnabled()) {
+    return buildMockTranscript();
+  }
+
   const transcript = await openai.audio.transcriptions.create({
     file: createReadStream(filePath),
     model: 'whisper-1',
