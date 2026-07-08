@@ -85,7 +85,7 @@ export async function POST(req: Request) {
           .eq('project_id', project_id),
         supabase
           .from('clip_candidates')
-          .select('id, overall_score, duration_seconds, title, start_sec, end_sec')
+          .select('id, overall_score, title, start_sec, end_sec')
           .eq('project_id', project_id)
           .gte('overall_score', 7.0)
           .order('overall_score', { ascending: false })
