@@ -1,10 +1,60 @@
 import { createReadStream } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { openai } from '@/lib/openai';
 import { buildMockTranscript, isMockAiEnabled } from '@/lib/dev-ai';
+
+function getTranscriptionProvider() {
+  return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
+}
+
+async function transcribeWithWhisperX(filePath: string) {
+  const pythonBin = process.env.WHISPERX_PYTHON || process.env.SMART_REFRAME_PYTHON || 'python3';
+  const scriptPath = process.env.WHISPERX_SCRIPT || `${process.cwd()}/scripts/transcribe_whisperx.py`;
+  const modelName = process.env.WHISPERX_MODEL || 'base';
+  const device = process.env.WHISPERX_DEVICE || 'cpu';
+  const computeType = process.env.WHISPERX_COMPUTE_TYPE || 'int8';
+
+  return await new Promise<{ language: string; fullText: string; segments: unknown[] }>((resolve, reject) => {
+    const proc = spawn(pythonBin, [scriptPath, filePath, modelName, device, computeType]);
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('close', (code) => {
+      try {
+        const parsed = JSON.parse(stdout || '{}');
+        if (code !== 0 || parsed?.error) {
+          reject(new Error(parsed?.error || stderr || `whisperx failed with code ${code}`));
+          return;
+        }
+        resolve({
+          language: parsed?.language || 'en',
+          fullText: parsed?.fullText || '',
+          segments: Array.isArray(parsed?.segments) ? parsed.segments : [],
+        });
+      } catch (error) {
+        reject(new Error(`whisperx returned invalid JSON: ${stderr || String(error)}`));
+      }
+    });
+
+    proc.on('error', reject);
+  });
+}
 
 export async function transcribeAudioFile(filePath: string) {
   if (isMockAiEnabled()) {
     return buildMockTranscript();
+  }
+
+  const provider = getTranscriptionProvider();
+  if (provider === 'whisperx') {
+    return await transcribeWithWhisperX(filePath);
   }
 
   const transcript = await openai.audio.transcriptions.create({
