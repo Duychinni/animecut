@@ -5,8 +5,9 @@ import { fetchYouTubeSourceMetadata } from '@/lib/source-metadata';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
+import { isMockAiEnabled } from '@/lib/dev-ai';
 
-const BILLING_DEV_BYPASS = process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true';
+const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
