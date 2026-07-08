@@ -14,7 +14,10 @@ export async function ensurePipelineJob(projectId: string) {
     .maybeSingle();
 
   if (existingError) throw existingError;
-  if (existing) return existing;
+  if (existing) {
+    console.log('[pipeline/job] existing', { projectId, jobId: existing.id, status: existing.status });
+    return existing;
+  }
 
   const { data, error } = await supabase
     .from('jobs')
@@ -28,6 +31,8 @@ export async function ensurePipelineJob(projectId: string) {
     .single();
 
   if (error) throw error;
+
+  console.log('[pipeline/job] created', { projectId, jobId: data.id, status: data.status });
 
   await supabase
     .from('projects')

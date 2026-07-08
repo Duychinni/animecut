@@ -44,6 +44,7 @@ export async function POST(_: Request, context: { params: Promise<{ projectId: s
     }
 
     const job = await ensurePipelineJob(projectId);
+    console.log('[projects/start] queued-pipeline-job', { projectId, jobId: job.id, status: job.status, sourceType: project.source_type });
 
     if (project.source_type === 'upload') {
       void (async () => {

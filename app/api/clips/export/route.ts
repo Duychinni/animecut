@@ -36,6 +36,7 @@ export async function POST(req: Request) {
 
     let targetCount = Math.max(1, Math.min(20, Number(target_count ?? 0)));
     let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];
+    let blockedCount = 0;
 
     if (!selectedIds.length) {
       const [{ data: existingExports, error: exErr }, { data: topCandidates, error: cErr }] = await Promise.all([
@@ -48,7 +49,6 @@ export async function POST(req: Request) {
           .select('id, overall_score, duration_seconds, title, start_sec, end_sec')
           .eq('project_id', project_id)
           .gte('overall_score', 7.0)
-          .gte('duration_seconds', 20)
           .order('overall_score', { ascending: false })
           .limit(100),
       ]);
@@ -80,8 +80,23 @@ export async function POST(req: Request) {
           .map((r) => (r.clip_candidate_id ? String(r.clip_candidate_id) : null))
           .filter((v): v is string => Boolean(v)),
       );
+      blockedCount = blockedCandidateIds.size;
 
-      const deduped = (topCandidates ?? []).filter((row, index, arr) => {
+      const durationFiltered = (topCandidates ?? []).filter((row) => {
+        const explicitDuration = Number(row.duration_seconds ?? NaN);
+        const derivedDuration = Math.max(0, Number(row.end_sec ?? 0) - Number(row.start_sec ?? 0));
+        const duration = Number.isFinite(explicitDuration) && explicitDuration > 0 ? explicitDuration : derivedDuration;
+        return duration >= 20;
+      });
+
+      console.log('[clips/export] candidate-pool', {
+        project_id,
+        fetched_count: (topCandidates ?? []).length,
+        duration_filtered_count: durationFiltered.length,
+        blocked_count: blockedCount,
+      });
+
+      const deduped = durationFiltered.filter((row, index, arr) => {
         const title = String(row.title ?? '').trim().toLowerCase();
         const start = Number(row.start_sec ?? 0);
         const end = Number(row.end_sec ?? 0);
@@ -116,7 +131,7 @@ export async function POST(req: Request) {
       console.log('[clips/export] no-valid-clips', {
         project_id,
         targetCount,
-        blocked_count: blockedCandidateIds.size,
+        blocked_count: blockedCount,
       });
       return NextResponse.json({ ok: true, queued: 0, exports: [], reason: 'no_valid_clips', counts: { selected_before_queue: 0, resolved_target_count: targetCount } });
     }
