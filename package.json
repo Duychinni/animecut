@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker:deps": "python3 -m pip install -r requirements-worker.txt"
+    "worker:deps": "python3 -m pip install -r requirements-worker.txt",
+    "worker": "npx tsx workers/pipelineWorker.ts",
+    "worker:once": "npx tsx workers/pipelineWorker.ts --once"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
