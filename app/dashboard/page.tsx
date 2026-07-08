@@ -66,12 +66,22 @@ export default function DashboardPage() {
   const progressFloorRef = useRef<Map<string, number>>(new Map());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
 
+  function persistProgressFloor() {
+    try {
+      const payload = JSON.stringify(Object.fromEntries(progressFloorRef.current.entries()));
+      sessionStorage.setItem('animacut.dashboard.progressFloor', payload);
+    } catch {
+      // ignore persistence errors
+    }
+  }
+
   function applyProgressFloor(projectId: string, nextPercent: number, status?: string | null) {
     const normalized = Math.max(0, Math.min(100, Number.isFinite(nextPercent) ? nextPercent : 0));
     const previous = progressFloorRef.current.get(projectId) ?? 0;
     const floored = Math.max(previous, normalized);
     const isCompleted = status === 'completed' || floored >= 100;
     progressFloorRef.current.set(projectId, isCompleted ? 100 : floored);
+    persistProgressFloor();
     return isCompleted ? 100 : floored;
   }
 
@@ -83,6 +93,16 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('animacut.dashboard.progressFloor');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, number>;
+        progressFloorRef.current = new Map(Object.entries(parsed).map(([key, value]) => [key, Number(value) || 0]));
+      }
+    } catch {
+      // ignore restore errors
+    }
+
     void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
   }, []);
 
@@ -117,7 +137,7 @@ export default function DashboardPage() {
         ? (projects.map((p) => ({
             ...p,
             thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
-            progress_percent: p.status === 'completed' ? 100 : p.progress_percent,
+            progress_percent: p.status === 'completed' ? 100 : Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0)),
           })) as ProjectListItem[])
         : recentProjects;
 
