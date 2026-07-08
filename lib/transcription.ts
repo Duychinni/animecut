@@ -7,12 +7,12 @@ function getTranscriptionProvider() {
   return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
 }
 
-async function transcribeWithWhisperX(filePath: string) {
-  const pythonBin = process.env.WHISPERX_PYTHON || process.env.SMART_REFRAME_PYTHON || 'python3';
-  const scriptPath = process.env.WHISPERX_SCRIPT || `${process.cwd()}/scripts/transcribe_whisperx.py`;
-  const modelName = process.env.WHISPERX_MODEL || 'base';
-  const device = process.env.WHISPERX_DEVICE || 'cpu';
-  const computeType = process.env.WHISPERX_COMPUTE_TYPE || 'int8';
+async function transcribeWithFasterWhisper(filePath: string) {
+  const pythonBin = process.env.FASTER_WHISPER_PYTHON || process.env.SMART_REFRAME_PYTHON || 'python3';
+  const scriptPath = process.env.FASTER_WHISPER_SCRIPT || `${process.cwd()}/scripts/transcribe_faster_whisper.py`;
+  const modelName = process.env.FASTER_WHISPER_MODEL || 'base';
+  const device = process.env.FASTER_WHISPER_DEVICE || 'cpu';
+  const computeType = process.env.FASTER_WHISPER_COMPUTE_TYPE || 'int8';
 
   return await new Promise<{ language: string; fullText: string; segments: unknown[] }>((resolve, reject) => {
     const proc = spawn(pythonBin, [scriptPath, filePath, modelName, device, computeType]);
@@ -30,7 +30,7 @@ async function transcribeWithWhisperX(filePath: string) {
       try {
         const parsed = JSON.parse(stdout || '{}');
         if (code !== 0 || parsed?.error) {
-          reject(new Error(parsed?.error || stderr || `whisperx failed with code ${code}`));
+          reject(new Error(parsed?.error || stderr || `faster-whisper failed with code ${code}`));
           return;
         }
         resolve({
@@ -39,7 +39,7 @@ async function transcribeWithWhisperX(filePath: string) {
           segments: Array.isArray(parsed?.segments) ? parsed.segments : [],
         });
       } catch (error) {
-        reject(new Error(`whisperx returned invalid JSON: ${stderr || String(error)}`));
+        reject(new Error(`faster-whisper returned invalid JSON: ${stderr || String(error)}`));
       }
     });
 
@@ -53,8 +53,8 @@ export async function transcribeAudioFile(filePath: string) {
   }
 
   const provider = getTranscriptionProvider();
-  if (provider === 'whisperx') {
-    return await transcribeWithWhisperX(filePath);
+  if (provider === 'faster-whisper') {
+    return await transcribeWithFasterWhisper(filePath);
   }
 
   const transcript = await openai.audio.transcriptions.create({
