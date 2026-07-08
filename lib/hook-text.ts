@@ -27,7 +27,7 @@ function toTitleCaseHook(text: string) {
     .join(' ');
 }
 
-function shortenWords(text: string, maxWords = 8, maxChars = 42) {
+function shortenWords(text: string, maxWords = 6, maxChars = 28) {
   const words = cleanText(text).split(/\s+/).filter(Boolean);
   const kept: string[] = [];
   for (const word of words) {
@@ -58,13 +58,18 @@ export function generateHookText(params: {
   const endSec = Number(params.endSec ?? 0);
   const openingTranscript = pickOpeningTranscript(params.transcriptSegments ?? [], startSec, endSec);
 
-  const candidates = [
-    stripTrailingPunctuation(clipTitle),
-    stripTrailingPunctuation(openingTranscript),
-  ].filter(Boolean);
+  const titleCandidate = stripTrailingPunctuation(clipTitle)
+    .split(/[:|—-]/)[0]
+    ?.trim() ?? '';
+
+  const transcriptCandidate = stripTrailingPunctuation(openingTranscript)
+    .replace(/^(so|and|but|because|then|like|you know)\s+/i, '')
+    .trim();
+
+  const candidates = [titleCandidate, transcriptCandidate].filter(Boolean);
 
   for (const candidate of candidates) {
-    const shortened = shortenWords(candidate, 8, 42);
+    const shortened = shortenWords(candidate, 6, 28);
     if (!shortened) continue;
     return toTitleCaseHook(shortened);
   }

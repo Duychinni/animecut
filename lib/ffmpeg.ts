@@ -687,21 +687,43 @@ function resolveOutputWidth(outputHeight: number) {
   return Math.round((outputHeight * 9) / 16);
 }
 
+function wrapHookTextForDrawtext(hookText: string) {
+  const words = hookText.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 3) return hookText.trim();
+
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > 16 && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.slice(0, 2).join('\n');
+}
+
 function buildHookDrawtextFilter(hookText: string) {
-  const escaped = escapeDrawtextText(hookText);
+  const wrapped = wrapHookTextForDrawtext(hookText);
+  const escaped = escapeDrawtextText(wrapped).replace(/\n/g, '\\n');
   return [
     `drawtext=text='${escaped}'`,
     'fontcolor=black',
-    'fontsize=54',
+    'fontsize=44',
+    'line_spacing=10',
     'fontfile=/System/Library/Fonts/Supplemental/Arial Bold.ttf',
     'box=1',
-    'boxcolor=white@0.96',
-    'boxborderw=20',
+    'boxcolor=white@0.98',
+    'boxborderw=18',
     'borderw=0',
     'shadowx=0',
     'shadowy=0',
+    'text_align=C',
     'x=(w-text_w)/2',
-    'y=140',
+    'y=96',
     "enable='between(t,0,4.5)'",
   ].join(':');
 }
