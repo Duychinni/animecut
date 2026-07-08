@@ -45,3 +45,8 @@ next-env.d.ts
 .next
 node_modules
 tmp
+animacut-code/
+animacut-code.zip
+PRODUCTION_ROADMAP.html
+PRODUCTION_ROADMAP.md
+scripts/__pycache__/
