@@ -141,7 +141,8 @@ export default async function ProjectDetailPage({
       const endSec = candidate ? Number(candidate.end_sec) : null;
       const derivedDuration = startSec != null && endSec != null ? Math.max(0, endSec - startSec) : 0;
       const durationSeconds = Number(candidate?.duration_seconds ?? derivedDuration ?? 0);
-      const score = Math.max(70, Math.min(100, Number(candidate?.overall_score ?? 0)));
+      const rawScore = Number(candidate?.overall_score ?? 0);
+      const score = Math.max(70, Math.min(100, Math.round(rawScore <= 10 ? rawScore * 10 : rawScore)));
 
       return {
         ...row,

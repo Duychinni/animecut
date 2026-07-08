@@ -9,7 +9,7 @@ const GLOBAL_MAX_CLIP_SEC = 90;
 const GLOBAL_MIN_CLIP_SEC = 20;
 const EXPAND_SEC = 15;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
-const MIN_TOP_CLIP_SCORE = 70;
+const MIN_TOP_CLIP_SCORE = 7.0;
 
 type TranscriptSegment = {
   start?: number;

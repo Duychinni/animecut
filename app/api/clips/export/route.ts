@@ -47,7 +47,7 @@ export async function POST(req: Request) {
           .from('clip_candidates')
           .select('id, overall_score, duration_seconds, title, start_sec, end_sec')
           .eq('project_id', project_id)
-          .gte('overall_score', 70)
+          .gte('overall_score', 7.0)
           .gte('duration_seconds', 20)
           .order('overall_score', { ascending: false })
           .limit(100),
