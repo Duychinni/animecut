@@ -124,8 +124,10 @@ export async function POST() {
       let queueData: Record<string, unknown> = {};
       try {
         queueData = await callInternalJson('/api/clips/export', { project_id: projectId });
+        console.log('[pipeline] export-response', { projectId, round: round + 1, queueData });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Pipeline step failed: /api/clips/export';
+        console.error('[pipeline] export-call-failed', { projectId, round: round + 1, message, stack: error instanceof Error ? error.stack : null });
         const alreadyQueuedLike = /duplicate|already exists|already queued|unique/i.test(message);
         if (!alreadyQueuedLike) {
           throw error;

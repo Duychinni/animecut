@@ -143,7 +143,10 @@ export async function POST(req: Request) {
     }));
 
     const { data: exportsRows, error } = await supabase.from('exports').insert(rows).select('*');
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) {
+      console.error('[clips/export] exports-insert-failed', { project_id, message: error.message, details: error.details, hint: error.hint, code: error.code });
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
     const jobs = (exportsRows ?? []).map((row) => ({
       project_id,
@@ -163,6 +166,7 @@ export async function POST(req: Request) {
     if (jobs.length) {
       const { error: jErr } = await supabase.from('jobs').insert(jobs);
       if (jErr) {
+        console.error('[clips/export] jobs-insert-failed', { project_id, message: jErr.message, details: jErr.details, hint: jErr.hint, code: jErr.code, export_ids: (exportsRows ?? []).map((r) => r.id) });
         await supabase.from('exports').update({ status: 'error' }).in(
           'id',
           (exportsRows ?? []).map((r) => r.id),
@@ -170,6 +174,12 @@ export async function POST(req: Request) {
         throw jErr;
       }
     }
+
+    console.log('[clips/export] queued-exports', {
+      project_id,
+      queued_count: rows.length,
+      export_ids: (exportsRows ?? []).map((row) => row.id),
+    });
 
     return NextResponse.json({
       ok: true,
@@ -182,6 +192,10 @@ export async function POST(req: Request) {
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Export queue failed';
+    console.error('[clips/export] route-failed', {
+      message,
+      stack: e instanceof Error ? e.stack : null,
+    });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
