@@ -154,7 +154,7 @@ export default function DashboardPage() {
 
       const processingIds = (baseProjects.length ? baseProjects : projects)
         .filter((p) => p.pipeline_status === 'queued' || p.pipeline_status === 'processing')
-        .slice(0, 8)
+        .slice(0, 3)
         .map((p) => p.id);
 
       const progressUpdates = await Promise.all(
@@ -277,7 +277,7 @@ export default function DashboardPage() {
 
     const timer = setInterval(() => {
       void tick();
-    }, 2000);
+    }, 3500);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
