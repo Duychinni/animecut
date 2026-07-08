@@ -107,7 +107,7 @@ export async function POST(req: Request) {
     });
 
     if (!selectedIds.length) {
-      return NextResponse.json({ ok: true, queued: 0, counts: { selected_before_queue: 0, resolved_target_count: targetCount } });
+      return NextResponse.json({ ok: true, queued: 0, exports: [], reason: 'no_valid_clips', counts: { selected_before_queue: 0, resolved_target_count: targetCount } });
     }
 
     const rows = selectedIds.map((clip_candidate_id) => ({
