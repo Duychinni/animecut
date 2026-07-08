@@ -59,35 +59,6 @@ async function transcribeWithWhisperX(filePath: string) {
   const computeType = process.env.WHISPERX_COMPUTE_TYPE || 'int8';
 
   return await runPythonTranscriber([pythonBin, scriptPath, filePath, modelName, device, computeType], 'whisperx');
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    proc.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on('close', (code) => {
-      try {
-        const parsed = JSON.parse(stdout || '{}');
-        if (code !== 0 || parsed?.error) {
-          reject(new Error(parsed?.error || stderr || `faster-whisper failed with code ${code}`));
-          return;
-        }
-        resolve({
-          language: parsed?.language || 'en',
-          fullText: parsed?.fullText || '',
-          segments: Array.isArray(parsed?.segments) ? parsed.segments : [],
-        });
-      } catch (error) {
-        reject(new Error(`faster-whisper returned invalid JSON: ${stderr || String(error)}`));
-      }
-    });
-
-    proc.on('error', reject);
-  });
 }
 
 export async function transcribeAudioFile(filePath: string) {
