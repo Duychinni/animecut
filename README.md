@@ -5,7 +5,7 @@ Lean MVP for podcast/talking-head clipping.
 ## Stack
 - Next.js (app router)
 - Supabase (auth, postgres, storage)
-- OpenAI or faster-whisper (transcription) + OpenAI (clip candidate analysis)
+- OpenAI, faster-whisper, or WhisperX (transcription) + OpenAI (clip candidate analysis)
 - FFmpeg (9:16 clip export)
 
 ## Implemented in v0
@@ -51,8 +51,8 @@ Update Supabase Auth settings:
 1. `cp .env.example .env.local`
 2. Fill env vars
 3. Ensure `yt-dlp` and `ffmpeg` are installed on host
-4. If using faster-whisper locally: `npm run worker:deps`
-5. Set `TRANSCRIPTION_PROVIDER=faster-whisper` in `.env.local` and verify `FASTER_WHISPER_PYTHON` points at the Python environment where faster-whisper was installed
+4. If using faster-whisper or WhisperX locally: `npm run worker:deps`
+5. Set `TRANSCRIPTION_PROVIDER=faster-whisper` or `TRANSCRIPTION_PROVIDER=whisperx` in `.env.local` and verify the matching Python path points at the environment where that package was installed
 6. `npm run dev`
 7. Run Supabase migrations in your Supabase SQL editor (or CLI):
    - `supabase/migrations/0001_init.sql`
