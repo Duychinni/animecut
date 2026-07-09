@@ -133,9 +133,7 @@ export async function POST(req: Request) {
       blockedCount = blockedCandidateIds.size;
 
       const durationFiltered = (topCandidates ?? []).filter((row) => {
-        const explicitDuration = Number(row.duration_seconds ?? NaN);
-        const derivedDuration = Math.max(0, Number(row.end_sec ?? 0) - Number(row.start_sec ?? 0));
-        const duration = Number.isFinite(explicitDuration) && explicitDuration > 0 ? explicitDuration : derivedDuration;
+        const duration = Math.max(0, Number(row.end_sec ?? 0) - Number(row.start_sec ?? 0));
         return duration >= 20;
       });
 
