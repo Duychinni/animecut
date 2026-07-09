@@ -501,12 +501,16 @@ export default function DashboardPage() {
 
               {showProcessing ? (
                 <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
-                  <div className="relative isolate inline-flex min-w-[86px] items-center justify-center overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-[12px] font-extrabold text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
+                  <div className="relative isolate flex min-w-[150px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
                     <div
                       className="absolute inset-y-0 left-0 -z-10 bg-emerald-400/35 shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-[width] duration-500 ease-out"
                       style={{ width: `${Math.max(6, Math.min(100, percent))}%` }}
                     />
-                    <span>{percent}%</span>
+                    <span className="inline-flex items-center gap-1.5 text-[12px] font-extrabold leading-none">
+                      <ClockIcon className="h-3.5 w-3.5" />
+                      {percent}%
+                    </span>
+                    <span className="max-w-[132px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{processingStage}</span>
                   </div>
                 </div>
               ) : (
@@ -523,7 +527,7 @@ export default function DashboardPage() {
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="min-w-0">
                 {showProcessing ? (
-                  <div className="cursor-wait" aria-disabled="true">{thumb}</div>
+                  <div className="cursor-pointer" aria-disabled="true">{thumb}</div>
                 ) : (
                   <Link href={`/dashboard/projects/${p.id}`} prefetch={false}>{thumb}</Link>
                 )}

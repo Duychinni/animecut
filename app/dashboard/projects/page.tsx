@@ -21,6 +21,9 @@ type ProjectListItem = {
   thumbnail_url?: string | null;
   progress_percent?: number;
   eta_seconds?: number | null;
+  pipeline_status?: string | null;
+  pipeline_stage?: string | null;
+  pipeline_stage_label?: string | null;
 };
 
 function ClockIcon({ className = '' }: { className?: string }) {
@@ -62,6 +65,9 @@ export default function ProjectsPage() {
               thumbnail_url: prData?.project?.thumbnail_url ?? null,
               progress_percent: Number(prData?.progress?.percent ?? 0),
               eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
+              pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
+              pipeline_stage: typeof prData?.project?.pipeline_stage === 'string' ? prData.project.pipeline_stage : null,
+              pipeline_stage_label: typeof prData?.project?.pipeline_stage_label === 'string' ? prData.project.pipeline_stage_label : null,
             } as ProjectListItem;
           } catch {
             return p;
@@ -139,6 +145,16 @@ export default function ProjectsPage() {
         {recentProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = p.status !== 'completed';
+          const processingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
+            ? 'Queued'
+            : p.pipeline_stage === 'downloading' ? 'Preparing source video'
+            : p.pipeline_stage === 'extracting_audio' ? 'Extracting audio'
+            : p.pipeline_stage === 'transcribing' ? 'Transcribing audio'
+            : p.pipeline_stage === 'finding_hooks' ? 'Finding hooks'
+            : p.pipeline_stage === 'creating_clips' ? 'Creating top clip candidates'
+            : p.pipeline_stage === 'rendering' ? 'Rendering clips'
+            : p.pipeline_stage === 'uploading_outputs' ? 'Uploading outputs'
+            : 'Processing');
 
           const cardBody = (
             <>
@@ -152,12 +168,16 @@ export default function ProjectsPage() {
 
                 {showProcessing ? (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
-                    <div className="relative isolate inline-flex min-w-[86px] items-center justify-center overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-[12px] font-extrabold text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
+                    <div className="relative isolate flex min-w-[150px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
                       <div
                         className="absolute inset-y-0 left-0 -z-10 bg-emerald-400/35 shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-[width] duration-500 ease-out"
                         style={{ width: `${Math.max(6, Math.min(100, percent))}%` }}
                       />
-                      <span>{percent}%</span>
+                      <span className="inline-flex items-center gap-1.5 text-[12px] font-extrabold leading-none">
+                        <ClockIcon className="h-3.5 w-3.5" />
+                        {percent}%
+                      </span>
+                      <span className="max-w-[132px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{processingStage}</span>
                     </div>
                   </div>
                 ) : null}
@@ -176,7 +196,7 @@ export default function ProjectsPage() {
             <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/25 hover:bg-white/[0.05] backdrop-blur-sm">
               <div className="flex items-start justify-between gap-3">
                 {showProcessing ? (
-                  <div className="min-w-0 flex-1 opacity-95">{cardBody}</div>
+                  <div className="min-w-0 flex-1 cursor-pointer opacity-95">{cardBody}</div>
                 ) : (
                   <Link href={`/dashboard/projects/${p.id}`} className="min-w-0 flex-1">
                     {cardBody}
