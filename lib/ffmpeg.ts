@@ -19,6 +19,7 @@ type RenderOpts = {
   captionFont?: CaptionFont;
   hookTextEnabled?: boolean;
   hookText?: string | null;
+  hookTextFilePath?: string;
   motionTracking?: boolean;
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
@@ -210,10 +211,24 @@ function stripAssOverrides(text: string) {
 
 function escapeDrawtextText(text: string) {
   return text
+    .replace(/\r?\n/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, '')
+    .replace(/,/g, '\\,')
+    .replace(/%/g, '\\%');
+}
+
+function escapeDrawtextPathForFilter(filePath: string) {
+  return filePath
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:')
     .replace(/'/g, "\\'")
-    .replace(/%/g, '\\%');
+    .replace(/,/g, '\\,');
+}
+
+function drawtextBetween(start: number, end: number) {
+  return `enable=between(t\\,${start.toFixed(3)}\\,${end.toFixed(3)})`;
 }
 
 async function buildDrawtextFiltersFromSrt(srtPath: string) {
@@ -239,7 +254,7 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
       if (!text) continue;
 
       filters.push(
-        `drawtext=text='${text}':fontcolor=white:fontsize=108:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h-620:enable='between(t,${start.toFixed(3)},${end.toFixed(3)})'`,
+        `drawtext=text='${text}':fontcolor=white:fontsize=108:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h-620:${drawtextBetween(start, end)}`,
       );
     }
 
@@ -261,7 +276,7 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
     if (!text) continue;
 
     filters.push(
-      `drawtext=text='${text}':fontcolor=white:fontsize=108:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h-620:enable='between(t,${start.toFixed(3)},${end.toFixed(3)})'`,
+      `drawtext=text='${text}':fontcolor=white:fontsize=108:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h-620:${drawtextBetween(start, end)}`,
     );
   }
 
@@ -698,11 +713,13 @@ function wrapHookTextForDrawtext(hookText: string) {
   return kept.join(' ') || 'Top Moment';
 }
 
-function buildHookDrawtextFilter(hookText: string) {
+function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
   const wrapped = wrapHookTextForDrawtext(hookText);
-  const escaped = escapeDrawtextText(wrapped);
+  const source = hookTextFilePath
+    ? `textfile='${escapeDrawtextPathForFilter(hookTextFilePath)}':reload=0`
+    : `text='${escapeDrawtextText(wrapped)}'`;
   return [
-    `drawtext=text='${escaped}'`,
+    `drawtext=${source}`,
     'fontcolor=black',
     'fontsize=48',
     'box=1',
@@ -711,10 +728,9 @@ function buildHookDrawtextFilter(hookText: string) {
     'borderw=0',
     'shadowx=0',
     'shadowy=0',
-    'text_align=C',
     'x=(w-text_w)/2',
     'y=82',
-    "enable='between(t,0,4.5)'",
+    drawtextBetween(0, 4.5),
   ].join(':');
 }
 
@@ -747,7 +763,7 @@ function buildFilter(
   }
 
   if (opts.hookTextEnabled !== false && opts.hookText && opts.hookText.trim()) {
-    filterParts.push(buildHookDrawtextFilter(opts.hookText.trim()));
+    filterParts.push(buildHookDrawtextFilter(opts.hookText.trim(), opts.hookTextFilePath));
   }
 
   if (includeCaptions && escapedPath) {
@@ -950,6 +966,11 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const configuredCrf = (process.env.FFMPEG_X264_CRF || '22').trim();
 
   const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
+  if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
+    const hookFilePath = `${effectiveOpts.outputPath}.hook.txt`;
+    await writeFile(hookFilePath, wrapHookTextForDrawtext(effectiveOpts.hookText), 'utf8');
+    effectiveOpts.hookTextFilePath = hookFilePath;
+  }
 
   const buildArgs = (includeCaptions: boolean, encoder = configuredEncoder) => {
     const common = [
@@ -1010,8 +1031,8 @@ export async function renderVerticalClip(opts: RenderOpts) {
     await runFfmpeg(buildArgs(canUseCaptions), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    const subtitlesUnavailable = /No such filter: 'subtitles'|Filter not found/i.test(msg);
-    const textOverlayFailed = /drawtext|Cannot find a valid font|Error initializing filter/i.test(msg);
+    const subtitlesUnavailable = /No such filter: 'subtitles'/i.test(msg);
+    const textOverlayFailed = /drawtext|Cannot find a valid font|Error initializing filter|No such filter: '[0-9.]+|No such filter: 'between|Filter not found/i.test(msg);
     const encoderUnavailable = /Unknown encoder|Error while opening encoder|Encoder .* not found|Invalid argument/i.test(msg);
 
     if (configuredEncoder !== 'libx264' && encoderUnavailable) {

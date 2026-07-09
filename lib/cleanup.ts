@@ -68,6 +68,7 @@ export async function cleanupExportTempFiles(projectId: string, exportId: string
     path.join(exportDir, `${exportId}.ass`),
     path.join(exportDir, `${exportId}.srt`),
     path.join(exportDir, `${exportId}.mp4.trf`),
+    path.join(exportDir, `${exportId}.mp4.hook.txt`),
   ];
 
   for (const targetPath of paths) {

@@ -2,6 +2,40 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+type ExportRepairRow = {
+  id?: string | null;
+  status?: string | null;
+  output_storage_path?: string | null;
+  error_message?: string | null;
+};
+
+function isRetryableRenderError(message: string | null | undefined) {
+  return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted/i.test(message ?? '');
+}
+
+async function ensureExportJob(admin: ReturnType<typeof createAdminClient>, projectId: string, exportId: string) {
+  const { data: existingJob, error: jobError } = await admin
+    .from('jobs')
+    .select('id')
+    .eq('type', 'export')
+    .in('status', ['queued', 'processing'])
+    .contains('payload', { export_id: exportId })
+    .maybeSingle();
+
+  if (jobError) throw jobError;
+  if (existingJob?.id) return false;
+
+  const { error } = await admin.from('jobs').insert({
+    project_id: projectId,
+    type: 'export',
+    payload: { export_id: exportId, repair: true },
+    status: 'queued',
+  });
+
+  if (error) throw error;
+  return true;
+}
+
 export async function POST() {
   try {
     const supabase = await createClient();
@@ -16,7 +50,7 @@ export async function POST() {
     const admin = createAdminClient();
     const { data: projects, error } = await admin
       .from('projects')
-      .select('id, user_id, status, pipeline_status, exports(status, output_storage_path)')
+      .select('id, user_id, status, pipeline_status, exports(id, status, output_storage_path, error_message)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -24,15 +58,66 @@ export async function POST() {
     if (error) throw error;
 
     let repaired = 0;
+    let requeuedExports = 0;
+    let ensuredJobs = 0;
 
     for (const project of projects ?? []) {
       const rows = Array.isArray(project.exports)
-        ? (project.exports as Array<{ status?: string | null; output_storage_path?: string | null }>)
+        ? (project.exports as ExportRepairRow[])
         : [];
-      const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
+      const retryableErrors = rows.filter((r) => r.id && r.status === 'error' && isRetryableRenderError(r.error_message));
+
+      if (retryableErrors.length) {
+        const ids = retryableErrors.map((r) => String(r.id));
+        const { error: requeueError } = await admin
+          .from('exports')
+          .update({
+            status: 'queued',
+            output_storage_path: null,
+            error_message: 'Requeued after renderer repair.',
+            updated_at: new Date().toISOString(),
+          })
+          .in('id', ids);
+
+        if (requeueError) throw requeueError;
+
+        for (const exportId of ids) {
+          const created = await ensureExportJob(admin, String(project.id), exportId);
+          if (created) ensuredJobs += 1;
+        }
+
+        requeuedExports += ids.length;
+      }
+
+      const queuedRows = rows.filter((r) => r.id && r.status === 'queued');
+      for (const row of queuedRows) {
+        const created = await ensureExportJob(admin, String(project.id), String(row.id));
+        if (created) ensuredJobs += 1;
+      }
+
+      const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length + retryableErrors.length;
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
 
-      if (readyExports > 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed' || activeExports > 0)) {
+      if (activeExports > 0 && (project.status === 'completed' || project.pipeline_status === 'completed')) {
+        await admin
+          .from('projects')
+          .update({
+            status: 'processing',
+            pipeline_status: 'processing',
+            pipeline_stage: 'rendering',
+            pipeline_stage_label: 'Rendering clips',
+            pipeline_error: null,
+            pipeline_completed_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', project.id)
+          .eq('user_id', user.id);
+
+        repaired += 1;
+        continue;
+      }
+
+      if (readyExports > 0 && activeExports === 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed')) {
         await admin
           .from('projects')
           .update({
@@ -55,7 +140,7 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({ ok: true, repaired });
+    return NextResponse.json({ ok: true, repaired, requeuedExports, ensuredJobs });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Repair failed';
     return NextResponse.json({ error: message }, { status: 400 });

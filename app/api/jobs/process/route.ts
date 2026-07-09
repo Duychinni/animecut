@@ -77,7 +77,7 @@ async function maybeFinalizeProject(projectId: string) {
   return false;
 }
 
-type JobRow = { id: string; payload: { export_id?: string } };
+type JobRow = { id: string; payload: { export_id?: string } & Record<string, unknown> };
 
 async function getProjectIdForExport(exportId: string) {
   const supabase = createAdminClient();
@@ -127,9 +127,10 @@ const REPAIR_SCAN_LIMIT = 6;
 const STALE_PROCESSING_MINUTES = 10;
 
 function getWorkerBatchLimit() {
-  const raw = Number(process.env.EXPORT_WORKER_BATCH_SIZE ?? 6);
-  if (!Number.isFinite(raw)) return 6;
-  return Math.max(1, Math.min(10, Math.round(raw)));
+  const defaultLimit = 1;
+  const raw = Number(process.env.EXPORT_WORKER_BATCH_SIZE ?? defaultLimit);
+  if (!Number.isFinite(raw)) return defaultLimit;
+  return Math.max(1, Math.min(process.env.VERCEL ? 2 : 4, Math.round(raw)));
 }
 
 function normalizeRenderErrorMessage(message: string) {
@@ -187,6 +188,47 @@ async function enqueueRepairJob(exportId: string, projectId: string) {
 
   if (error) throw error;
   return true;
+}
+
+async function ensureQueuedExportJobs(limit = REPAIR_SCAN_LIMIT) {
+  const supabase = createAdminClient();
+  const { data: queuedExports, error } = await supabase
+    .from('exports')
+    .select('id, project_id')
+    .eq('status', 'queued')
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+
+  let created = 0;
+
+  for (const row of queuedExports ?? []) {
+    const exportId = String(row.id);
+    const projectId = String(row.project_id);
+    const { data: existingJob, error: jobError } = await supabase
+      .from('jobs')
+      .select('id')
+      .eq('type', 'export')
+      .in('status', ['queued', 'processing'])
+      .contains('payload', { export_id: exportId })
+      .maybeSingle();
+
+    if (jobError) throw jobError;
+    if (existingJob?.id) continue;
+
+    const { error: insertError } = await supabase.from('jobs').insert({
+      project_id: projectId,
+      type: 'export',
+      payload: { export_id: exportId, repair: true },
+      status: 'queued',
+    });
+
+    if (insertError) throw insertError;
+    created += 1;
+  }
+
+  return created;
 }
 
 async function repairBrokenCompletedExports() {
@@ -412,6 +454,10 @@ export async function POST() {
     console.warn('[jobs/process] repair scan failed', error);
     return 0;
   });
+  const ensuredQueuedJobs = await ensureQueuedExportJobs().catch((error) => {
+    console.warn('[jobs/process] queued export job repair failed', error);
+    return 0;
+  });
   const batchLimit = getWorkerBatchLimit();
 
   const { data: jobs, error } = await supabase
@@ -440,7 +486,7 @@ export async function POST() {
     );
     const { data: queuedExports, error: exErr } = await supabase
       .from('exports')
-      .select('id')
+      .select('id, project_id')
       .eq('status', 'queued')
       .order('created_at', { ascending: true })
       .limit(batchLimit * 2);
@@ -466,6 +512,7 @@ export async function POST() {
     repaired_done_exports: repaired,
     stale_jobs_requeued: stale.staleJobs,
     stale_exports_requeued: stale.staleExports,
+    ensured_queued_jobs: ensuredQueuedJobs,
     batch_limit: batchLimit,
   });
 
@@ -486,19 +533,37 @@ export async function POST() {
         const previousAttempts = Number(jobRow?.attempts ?? 0);
         attemptNumber = previousAttempts + 1;
 
-        await supabase
+        const { data: claimedJob } = await supabase
           .from('jobs')
           .update({ status: 'processing', attempts: attemptNumber, updated_at: new Date().toISOString() })
-          .eq('id', item.jobId);
+          .eq('id', item.jobId)
+          .eq('status', 'queued')
+          .select('id')
+          .maybeSingle();
+
+        if (!claimedJob?.id) continue;
       }
 
       const exportId = item.exportId;
       if (!exportId) throw new Error('Missing export_id in payload');
 
-      await supabase
+      const { data: claimedExport } = await supabase
         .from('exports')
         .update({ status: 'processing', updated_at: new Date().toISOString() })
-        .eq('id', exportId);
+        .eq('id', exportId)
+        .eq('status', 'queued')
+        .select('id')
+        .maybeSingle();
+
+      if (!claimedExport?.id) {
+        if (item.jobId) {
+          await supabase
+            .from('jobs')
+            .update({ status: 'done', updated_at: new Date().toISOString(), payload: { ...item.payload, skipped: 'export_not_queued' } })
+            .eq('id', item.jobId);
+        }
+        continue;
+      }
 
       await processExportJob(exportId, {
         captions_enabled: item.payload?.captions_enabled as boolean | undefined,
@@ -633,5 +698,5 @@ export async function POST() {
     processed,
   });
 
-  return NextResponse.json({ ok: true, processed, repaired, counts: { work_items_selected: workItems.length, processed, repaired } });
+  return NextResponse.json({ ok: true, processed, repaired, ensuredQueuedJobs, counts: { work_items_selected: workItems.length, processed, repaired, ensured_queued_jobs: ensuredQueuedJobs } });
 }
