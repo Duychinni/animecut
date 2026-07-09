@@ -5,6 +5,9 @@ import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'local-analysis-disabled-key' });
 
+const OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS ?? 45000);
+const OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS ?? 90000);
+
 function stripCodeFences(text: string) {
   const trimmed = text.trim();
   if (!trimmed.startsWith('```')) return trimmed;
@@ -33,7 +36,7 @@ async function parseJsonWithRepair(rawText: string) {
   try {
     return tryParseJson(rawText);
   } catch (firstError) {
-    const repaired = await openai.responses.create({
+    const repaired = await createAnalysisResponse({
       model: 'gpt-4.1-mini',
       input: [
         {
@@ -62,17 +65,47 @@ function analysisProvider() {
   return raw === 'local' || raw === 'openai' ? raw : 'auto';
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function createAnalysisResponse(params: Parameters<typeof openai.responses.create>[0]) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await openai.responses.create(params, { signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`OpenAI clip analysis request timed out after ${Math.round(OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS / 1000)} seconds`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function hasOpenAiKey() {
   return Boolean(process.env.OPENAI_API_KEY?.trim());
 }
 
-function isOpenAiQuotaLikeError(error: unknown) {
+function isOpenAiTransientError(error: unknown) {
   const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  return /429|quota|insufficient_quota|rate limit|billing/i.test(text);
+  return /timeout|timed out|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|network|rate limit|429|quota|insufficient_quota|billing/i.test(text);
 }
 
 function shouldUseLocalFallback(error: unknown) {
-  return analysisProvider() !== 'openai' && process.env.LOCAL_ANALYSIS_FALLBACK !== 'false' && isOpenAiQuotaLikeError(error);
+  return analysisProvider() !== 'openai' && process.env.LOCAL_ANALYSIS_FALLBACK !== 'false' && isOpenAiTransientError(error);
 }
 
 function buildPrompt(targetCandidates: number, totalSeconds: number) {
@@ -232,17 +265,33 @@ export async function analyzeClipCandidates(
     const targetCandidates = minCandidatePoolForDuration(totalSeconds);
     const prompt = buildPrompt(targetCandidates, totalSeconds);
 
-    const chunked = segments.length ? chunkSegments(segments) : [];
-    const allCandidates: unknown[] = [];
+    return await withTimeout((async () => {
+      const chunked = segments.length ? chunkSegments(segments) : [];
+      const allCandidates: unknown[] = [];
 
-    if (chunked.length) {
-      for (const chunk of chunked) {
-        const timeline = buildTimeline(chunk);
-        const res = await openai.responses.create({
+      if (chunked.length) {
+        for (const chunk of chunked) {
+          const timeline = buildTimeline(chunk);
+          const res = await createAnalysisResponse({
+            model: 'gpt-4.1-mini',
+            input: [
+              { role: 'system', content: prompt },
+              { role: 'user', content: `TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
+            ],
+          });
+
+          const parsed = await parseJsonWithRepair(res.output_text);
+          if (Array.isArray(parsed?.candidates)) {
+            allCandidates.push(...parsed.candidates);
+          }
+        }
+      } else {
+        const userInput = transcript.slice(0, 100000);
+        const res = await createAnalysisResponse({
           model: 'gpt-4.1-mini',
           input: [
             { role: 'system', content: prompt },
-            { role: 'user', content: `TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
+            { role: 'user', content: userInput },
           ],
         });
 
@@ -251,46 +300,36 @@ export async function analyzeClipCandidates(
           allCandidates.push(...parsed.candidates);
         }
       }
-    } else {
-      const userInput = transcript.slice(0, 100000);
-      const res = await openai.responses.create({
-        model: 'gpt-4.1-mini',
-        input: [
-          { role: 'system', content: prompt },
-          { role: 'user', content: userInput },
-        ],
-      });
 
-      const parsed = await parseJsonWithRepair(res.output_text);
-      if (Array.isArray(parsed?.candidates)) {
-        allCandidates.push(...parsed.candidates);
+      const merged = { candidates: allCandidates };
+      if (!allCandidates.length) {
+        return analyzeTranscriptLocally(transcript, segments);
       }
-    }
 
-    const merged = { candidates: allCandidates };
-
-    const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
+      const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
 Keep a broad candidate pool, but remove near-duplicate or overlapping clips that use the same transcript section.
 Every remaining clip must end on a complete sentence, punchline, answer, or clear statement.
+If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
 Return revised JSON only.`;
 
-    const refineRes = await openai.responses.create({
-      model: 'gpt-4.1-mini',
-      input: [
-        { role: 'system', content: prompt },
-        { role: 'assistant', content: JSON.stringify(merged) },
-        { role: 'user', content: refinePrompt },
-      ],
-    });
+      const refineRes = await createAnalysisResponse({
+        model: 'gpt-4.1-mini',
+        input: [
+          { role: 'system', content: prompt },
+          { role: 'assistant', content: JSON.stringify(merged) },
+          { role: 'user', content: refinePrompt },
+        ],
+      });
 
-    const refined = await parseJsonWithRepair(refineRes.output_text);
-    if (Array.isArray(refined?.candidates)) {
-      return refined;
-    }
+      const refined = await parseJsonWithRepair(refineRes.output_text);
+      if (Array.isArray(refined?.candidates)) {
+        return refined;
+      }
 
-    return merged;
+      return merged;
+    })(), OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS, 'OpenAI clip analysis');
   } catch (error) {
     if (shouldUseLocalFallback(error)) {
       console.warn('[analysis] OpenAI analysis unavailable; using local transcript analysis.', error);

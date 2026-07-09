@@ -88,23 +88,19 @@ function textOf(seg: TranscriptSegment): string {
   return String(seg.text ?? '').trim();
 }
 
+function segmentOverlapsWindow(seg: TranscriptSegment, startSec: number, endSec: number): boolean {
+  return segEnd(seg) > startSec && segStart(seg) < endSec;
+}
+
 function openingLineForWindow(startSec: number, endSec: number, segments: TranscriptSegment[]): string {
-  const first = segments.find((s) => segEnd(s) >= startSec && segStart(s) <= endSec);
+  const first = segments.find((s) => segmentOverlapsWindow(s, startSec, endSec));
   return first ? textOf(first) : '';
 }
 
 function closingLineForWindow(startSec: number, endSec: number, segments: TranscriptSegment[]): string {
-  const inRange = segments.filter((s) => segEnd(s) >= startSec && segStart(s) <= endSec);
+  const inRange = segments.filter((s) => segmentOverlapsWindow(s, startSec, endSec));
   const last = inRange[inRange.length - 1];
   return last ? textOf(last) : '';
-}
-
-function passesStandaloneQualityChecks(startLine: string, endLine: string): boolean {
-  if (!startLine || !endLine) return false;
-  if (!startsLikeNaturalBoundary(startLine)) return false;
-  if (endsWithFiller(endLine)) return false;
-  if (!endsSentence(endLine)) return false;
-  return true;
 }
 
 function startsLikeNaturalBoundary(text: string): boolean {
@@ -123,6 +119,68 @@ function endsSentence(text: string): boolean {
 function endsWithFiller(text: string): boolean {
   const t = text.toLowerCase().trim();
   return /(\b(uh|um|like|you know|i mean|kinda|sorta|basically|anyway|so)\b[,.! ]*)$/.test(t);
+}
+
+function isIncompleteTrailingPhrase(text: string): boolean {
+  return /\b(and|but|because|so|if|when|while|where|that|which|who|to|for|with|about|from|into|of|or|as)\b[,\s]*$/i.test(text.trim());
+}
+
+function isCompleteStatementBoundary(segments: TranscriptSegment[], idx: number): boolean {
+  const cur = segments[idx];
+  const text = textOf(cur);
+  if (!text || endsWithFiller(text) || isIncompleteTrailingPhrase(text)) return false;
+  if (endsSentence(text)) return true;
+
+  const next = segments[idx + 1];
+  const pauseAfter = next ? segStart(next) - segEnd(cur) : 0;
+  return pauseAfter >= 0.8 && countWords(text) >= 4;
+}
+
+function segmentIndexAtClipEnd(segments: TranscriptSegment[], endSec: number): number {
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    if (segStart(segments[i]) < endSec && segEnd(segments[i]) <= endSec + 0.05) return i;
+  }
+  return -1;
+}
+
+function snapEndToCompleteStatement(
+  startSec: number,
+  preferredEndSec: number,
+  segments: TranscriptSegment[],
+  minClipSec: number,
+  maxClipSec: number,
+) {
+  const transcriptEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
+  const minEnd = Math.min(transcriptEnd || startSec + minClipSec, startSec + minClipSec);
+  const maxEnd = transcriptEnd > 0 ? Math.min(transcriptEnd, startSec + maxClipSec) : startSec + maxClipSec;
+  const completeBoundaries = segments
+    .map((seg, idx) => ({ idx, end: segEnd(seg) }))
+    .filter((item) => item.end >= minEnd && item.end <= maxEnd && isCompleteStatementBoundary(segments, item.idx));
+
+  if (!completeBoundaries.length) {
+    const currentIdx = segmentIndexAtClipEnd(segments, preferredEndSec);
+    return {
+      end: preferredEndSec,
+      idx: currentIdx,
+      snapped: false,
+      complete: currentIdx >= 0 ? isCompleteStatementBoundary(segments, currentIdx) : false,
+    };
+  }
+
+  const nearbyAfter = completeBoundaries
+    .filter((item) => item.end >= preferredEndSec - 0.1 && item.end <= preferredEndSec + 18)
+    .sort((a, b) => a.end - b.end)[0];
+  const nearest = completeBoundaries
+    .slice()
+    .sort((a, b) => Math.abs(a.end - preferredEndSec) - Math.abs(b.end - preferredEndSec))[0];
+  const chosen = nearbyAfter ?? nearest;
+
+  return {
+    end: chosen.end,
+    idx: chosen.idx,
+    snapped: Math.abs(chosen.end - preferredEndSec) >= 0.3,
+    complete: true,
+  };
 }
 
 function clampDurationWithSegments(startSec: number, endSec: number, segments: TranscriptSegment[], minClipSec: number, maxClipSec: number) {
@@ -161,7 +219,7 @@ function countWords(text: string) {
 
 function countTranscriptWordsInRange(segments: TranscriptSegment[], startSec: number, endSec: number) {
   return segments
-    .filter((seg) => segEnd(seg) >= startSec && segStart(seg) <= endSec)
+    .filter((seg) => segmentOverlapsWindow(seg, startSec, endSec))
     .reduce((total, seg) => total + countWords(textOf(seg)), 0);
 }
 
@@ -321,6 +379,7 @@ function adjustBoundaries(
   end_sec: number;
   reason: string;
   confidence: number;
+  end_complete: boolean;
 } {
   const base = normalizeWindow(startRaw, endRaw, minClipSec, maxClipSec);
   if (!segments.length) {
@@ -329,6 +388,7 @@ function adjustBoundaries(
       end_sec: base.end_sec,
       reason: 'No transcript segments available for second-pass boundary cleaning; kept normalized window.',
       confidence: 0.45,
+      end_complete: false,
     };
   }
 
@@ -346,6 +406,7 @@ function adjustBoundaries(
       end_sec: base.end_sec,
       reason: 'No aligned transcript chunks in expanded window; kept normalized window.',
       confidence: 0.5,
+      end_complete: false,
     };
   }
 
@@ -382,30 +443,35 @@ function adjustBoundaries(
   const adjustedStart = segStart(segments[startIdx]);
   const adjustedEnd = segEnd(segments[endIdx]);
   const clamped = clampDurationWithSegments(adjustedStart, adjustedEnd, segments, minClipSec, maxClipSec);
+  const snappedEnd = snapEndToCompleteStatement(clamped.start, clamped.end, segments, minClipSec, maxClipSec);
 
   const startMoved = Math.abs(clamped.start - base.start_sec) >= 0.3;
-  const endMoved = Math.abs(clamped.end - base.end_sec) >= 0.3;
-  const endText = textOf(segments[endIdx]);
+  const endMoved = Math.abs(snappedEnd.end - base.end_sec) >= 0.3;
+  const finalEndIdx = snappedEnd.idx >= 0 ? snappedEnd.idx : segmentIndexAtClipEnd(segments, snappedEnd.end);
+  const endText = finalEndIdx >= 0 ? textOf(segments[finalEndIdx]) : closingLineForWindow(clamped.start, snappedEnd.end, segments);
   const startText = textOf(segments[startIdx]);
 
   let confidence = 0.62;
   if (startsLikeNaturalBoundary(startText)) confidence += 0.14;
-  if (endText && endsSentence(endText)) confidence += 0.14;
+  if (snappedEnd.complete) confidence += 0.14;
   if (!endsWithFiller(endText)) confidence += 0.08;
-  if (clamped.end - clamped.start >= minClipSec && clamped.end - clamped.start <= Math.min(maxClipSec, 60)) confidence += 0.08;
+  if (snappedEnd.end - clamped.start >= minClipSec && snappedEnd.end - clamped.start <= Math.min(maxClipSec, 60)) confidence += 0.08;
   confidence = Math.max(0, Math.min(1, Number(confidence.toFixed(2))));
 
   const reasons = [] as string[];
   if (startMoved) reasons.push('shifted start to nearest natural sentence/thought boundary');
   if (endMoved) reasons.push('extended/trimmed end to complete the speaker payoff');
+  if (snappedEnd.snapped) reasons.push('snapped export end to a complete statement boundary');
   if (endsWithFiller(endText)) reasons.push('detected filler-style tail (lower self-contained confidence)');
+  if (!snappedEnd.complete) reasons.push('could not confirm a complete statement ending');
   if (!reasons.length) reasons.push('raw timestamps already aligned with natural boundaries');
 
   return {
     start_sec: clamped.start,
-    end_sec: clamped.end,
+    end_sec: snappedEnd.end,
     reason: reasons.join('; '),
     confidence,
+    end_complete: snappedEnd.complete,
   };
 }
 
@@ -453,12 +519,12 @@ export async function POST(req: Request) {
         const modelAdjustedEnd = num(c.adjusted_end ?? rawEnd);
         const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, Math.max(policy.minSec, effectiveGlobalMinClipSec), Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
 
-        const openingLine = String(c.opening_line ?? openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
-        const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
+        const openingLine = openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.opening_line ?? '');
+        const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.closing_line ?? '');
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
-        const completeEnding = endsSentence(closingLine) && !endsWithFiller(closingLine);
-        const strictQualityPass = passesStandaloneQualityChecks(openingLine, closingLine) && payoffStrong;
+        const completeEnding = cleaned.end_complete && !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
+        const strictQualityPass = startsLikeNaturalBoundary(openingLine) && completeEnding && payoffStrong;
         const passesQuality = localAnalysisCandidate
           ? Boolean(startsLikeNaturalBoundary(openingLine) && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
           : strictQualityPass;
@@ -509,9 +575,9 @@ export async function POST(req: Request) {
             startSec: cleaned.start_sec,
             endSec: cleaned.end_sec,
           }),
-          reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${String(c.boundary_adjustment_reason ?? cleaned.reason)} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
+          reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${cleaned.reason} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
           self_contained_confidence: Math.max(0, Math.min(1, num(c.standalone_confidence) || cleaned.confidence)),
-          boundary_adjustment_reason: String(c.boundary_adjustment_reason ?? cleaned.reason),
+          boundary_adjustment_reason: cleaned.reason,
           opening_line: openingLine,
           closing_line: closingLine,
           hook_strength: hookStrength,
@@ -539,6 +605,7 @@ export async function POST(req: Request) {
       .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
       .filter((c: RankedCandidate) => c.duration_seconds >= Math.max(policy.minSec, effectiveGlobalMinClipSec))
       .filter((c: RankedCandidate) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= minimumWordCount)
+      .filter((c: RankedCandidate) => c.reject_reason !== 'incomplete_sentence_ending')
       .filter((c: RankedCandidate) => Number(c.overall_score ?? 0) >= MIN_TOP_CLIP_SCORE);
 
     const filteredCandidates = scoredCandidates;

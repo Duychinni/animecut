@@ -209,71 +209,83 @@ function getPlatformBadge(platform: ShowcaseClip['platform']) {
 }
 
 function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
-  const bubbleClass = 'grid h-11 w-11 place-items-center rounded-full border border-white/12 shadow-[0_14px_30px_rgba(0,0,0,0.35)] ring-1 ring-white/10';
+  const bubbleClass = 'grid h-12 w-12 place-items-center rounded-full border border-white/12 bg-white/10 shadow-[0_14px_30px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md';
 
   if (platform === 'Instagram') {
     return (
-      <span className={`${bubbleClass} bg-[radial-gradient(circle_at_30%_105%,#feda75_0%,#fa7e1e_28%,#d62976_52%,#962fbf_74%,#4f5bd5_100%)]`} aria-label="Instagram">
-        <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] text-white" aria-hidden="true" fill="none">
-          <rect x="5.1" y="5.1" width="13.8" height="13.8" rx="4.2" stroke="currentColor" strokeWidth="2" />
-          <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="2" />
-          <circle cx="16.7" cy="7.4" r="1.1" fill="currentColor" />
-        </svg>
+      <span className={bubbleClass} aria-label="Instagram">
+        <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[radial-gradient(circle_at_30%_105%,#feda75_0%,#fa7e1e_28%,#d62976_52%,#962fbf_74%,#4f5bd5_100%)] shadow-[0_8px_18px_rgba(214,41,118,0.34)]">
+          <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] text-white" aria-hidden="true" fill="none">
+            <rect x="5.1" y="5.1" width="13.8" height="13.8" rx="4.2" stroke="currentColor" strokeWidth="2" />
+            <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="2" />
+            <circle cx="16.7" cy="7.4" r="1.1" fill="currentColor" />
+          </svg>
+        </span>
       </span>
     );
   }
 
   if (platform === 'TikTok') {
     return (
-      <span className={`${bubbleClass} bg-[#050505]`} aria-label="TikTok">
-        <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" aria-hidden="true" fill="none">
-          <path d="M13.1 5.1v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="#25f4ee" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M14.3 4.6c.5 2.5 2 4 4.5 4.4" stroke="#25f4ee" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M12 5.8v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="#fe2c55" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M13.2 5.3c.5 2.5 2 4 4.5 4.4" stroke="#fe2c55" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M12.7 5.2v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="white" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M13.9 4.8c.5 2.5 2 4 4.5 4.4" stroke="white" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <span className={bubbleClass} aria-label="TikTok">
+        <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#050505] shadow-[0_8px_18px_rgba(0,0,0,0.36)]">
+          <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" aria-hidden="true" fill="none">
+            <path d="M13.1 5.1v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="#25f4ee" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M14.3 4.6c.5 2.5 2 4 4.5 4.4" stroke="#25f4ee" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M12 5.8v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="#fe2c55" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M13.2 5.3c.5 2.5 2 4 4.5 4.4" stroke="#fe2c55" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M12.7 5.2v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="white" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M13.9 4.8c.5 2.5 2 4 4.5 4.4" stroke="white" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
       </span>
     );
   }
 
   if (platform === 'Facebook') {
     return (
-      <span className={`${bubbleClass} bg-[#1877f2]`} aria-label="Facebook">
-        <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" aria-hidden="true" fill="currentColor">
-          <path d="M14.8 8.4h2.3V4.5c-.4-.1-1.8-.2-3.4-.2-3.4 0-5.7 2.1-5.7 6v3.4H4.2v4.4H8V24h4.7v-5.9h3.7l.6-4.4h-4.3v-2.9c0-1.3.4-2.4 2.1-2.4Z" />
-        </svg>
+      <span className={bubbleClass} aria-label="Facebook">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-[#1877f2] shadow-[0_8px_18px_rgba(24,119,242,0.34)]">
+          <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" aria-hidden="true" fill="currentColor">
+            <path d="M14.8 8.4h2.3V4.5c-.4-.1-1.8-.2-3.4-.2-3.4 0-5.7 2.1-5.7 6v3.4H4.2v4.4H8V24h4.7v-5.9h3.7l.6-4.4h-4.3v-2.9c0-1.3.4-2.4 2.1-2.4Z" />
+          </svg>
+        </span>
       </span>
     );
   }
 
   if (platform === 'X') {
     return (
-      <span className={`${bubbleClass} bg-[#1f1f1f]`} aria-label="X">
-        <svg viewBox="0 0 24 24" className="h-[21px] w-[21px] text-white" aria-hidden="true" fill="currentColor">
-          <path d="M18.9 2.9h3.3l-7.3 8.3 8.5 11.2h-6.7l-5.2-6.8-6 6.8H2.2l7.8-8.9L1.8 2.9h6.9l4.7 6.2 5.5-6.2Zm-1.2 17.6h1.8L7.7 4.7h-2l12 15.8Z" />
-        </svg>
+      <span className={bubbleClass} aria-label="X">
+        <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#050505] shadow-[0_8px_18px_rgba(0,0,0,0.36)]">
+          <svg viewBox="0 0 24 24" className="h-[19px] w-[19px] text-white" aria-hidden="true" fill="currentColor">
+            <path d="M18.9 2.9h3.3l-7.3 8.3 8.5 11.2h-6.7l-5.2-6.8-6 6.8H2.2l7.8-8.9L1.8 2.9h6.9l4.7 6.2 5.5-6.2Zm-1.2 17.6h1.8L7.7 4.7h-2l12 15.8Z" />
+          </svg>
+        </span>
       </span>
     );
   }
 
   if (platform === 'YouTube') {
     return (
-      <span className={`${bubbleClass} bg-[#ff0033]`} aria-label="YouTube">
-        <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" aria-hidden="true" fill="currentColor">
-          <path d="M9.4 7.8v8.4l7.3-4.2-7.3-4.2Z" />
-        </svg>
+      <span className={bubbleClass} aria-label="YouTube">
+        <span className="grid h-8 w-8 place-items-center rounded-[9px] bg-[#ff0033] shadow-[0_8px_18px_rgba(255,0,51,0.34)]">
+          <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" aria-hidden="true" fill="currentColor">
+            <path d="M9.4 7.8v8.4l7.3-4.2-7.3-4.2Z" />
+          </svg>
+        </span>
       </span>
     );
   }
 
   if (platform === 'Snapchat') {
     return (
-      <span className={`${bubbleClass} bg-[#fffc00]`} aria-label="Snapchat">
-        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true" fill="white">
-          <path d="M12 2.6c2.7 0 4.5 2 4.5 5.1v2.4c0 .4.2.7.6.9.4.2.9.4 1.5.6.4.1.8.4.8.8 0 .6-.9 1.1-2 1.3-.4.1-.5.3-.3.6.6.9 1.5 1.6 2.7 1.9.4.1.6.4.5.8-.1.5-.8.8-2.1 1-.6.1-.8.2-1 .6-.5.9-1.2 1.3-2.1 1.1-.9-.2-1.5-.2-2.2.4-.6.5-1 .8-1.4.8s-.8-.3-1.4-.8c-.7-.6-1.3-.6-2.2-.4-.9.2-1.6-.2-2.1-1.1-.2-.4-.4-.5-1-.6-1.3-.2-2-.5-2.1-1-.1-.4.1-.7.5-.8 1.2-.3 2.1-1 2.7-1.9.2-.3.1-.5-.3-.6-1.1-.2-2-.7-2-1.3 0-.4.4-.7.8-.8.6-.2 1.1-.4 1.5-.6.4-.2.6-.5.6-.9V7.7c0-3.1 1.8-5.1 4.5-5.1Z" stroke="black" strokeWidth="1.25" strokeLinejoin="round" />
-        </svg>
+      <span className={bubbleClass} aria-label="Snapchat">
+        <span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[#fffc00] shadow-[0_8px_18px_rgba(255,252,0,0.22)]">
+          <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true" fill="white">
+            <path d="M12 2.6c2.7 0 4.5 2 4.5 5.1v2.4c0 .4.2.7.6.9.4.2.9.4 1.5.6.4.1.8.4.8.8 0 .6-.9 1.1-2 1.3-.4.1-.5.3-.3.6.6.9 1.5 1.6 2.7 1.9.4.1.6.4.5.8-.1.5-.8.8-2.1 1-.6.1-.8.2-1 .6-.5.9-1.2 1.3-2.1 1.1-.9-.2-1.5-.2-2.2.4-.6.5-1 .8-1.4.8s-.8-.3-1.4-.8c-.7-.6-1.3-.6-2.2-.4-.9.2-1.6-.2-2.1-1.1-.2-.4-.4-.5-1-.6-1.3-.2-2-.5-2.1-1-.1-.4.1-.7.5-.8 1.2-.3 2.1-1 2.7-1.9.2-.3.1-.5-.3-.6-1.1-.2-2-.7-2-1.3 0-.4.4-.7.8-.8.6-.2 1.1-.4 1.5-.6.4-.2.6-.5.6-.9V7.7c0-3.1 1.8-5.1 4.5-5.1Z" stroke="black" strokeWidth="1.25" strokeLinejoin="round" />
+          </svg>
+        </span>
       </span>
     );
   }
@@ -683,8 +695,8 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="demo" className="relative left-1/2 -mt-4 w-screen -translate-x-1/2 py-8 lg:-mt-8">
-          <div className="mx-auto mb-5 max-w-7xl px-6 text-center">
+        <section id="demo" className="relative left-1/2 -mt-4 w-screen -translate-x-1/2 pt-8 pb-10 lg:-mt-8">
+          <div className="mx-auto mb-12 max-w-7xl px-6 text-center">
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
