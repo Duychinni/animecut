@@ -119,7 +119,11 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
 
     const rows = exportsRows ?? [];
     const doneExports = rows.filter((r) => r.status === 'done').length;
-    const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
+    const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
+    const hasSavedExports = doneExports > 0;
+    const activeExports = projectMarkedCompleted && hasSavedExports
+      ? 0
+      : rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
     const failedExports = rows.filter((r) => r.status === 'error').length;
 
     const analyzedCandidates = Math.max(0, Number(candidateCount ?? 0));
@@ -135,7 +139,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const elapsedSeconds = Math.max(0, Math.round((now - createdAtMs) / 1000));
 
     const isReallyCompleted =
-      activeExports === 0 && doneExports > 0 && doneExports >= targetCount;
+      activeExports === 0 && doneExports > 0 && (projectMarkedCompleted || doneExports >= targetCount);
 
     const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
     let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
@@ -143,7 +147,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const explicitPercent = Number((project as { pipeline_progress_percent?: number | null }).pipeline_progress_percent ?? NaN);
     const lastSeenRaw = (project as { worker_last_seen_at?: string | null }).worker_last_seen_at ?? null;
     const lastSeenMs = lastSeenRaw ? new Date(lastSeenRaw).getTime() : 0;
-    const staleWorker = pipelineStatus === 'processing' && lastSeenMs > 0 && (Date.now() - lastSeenMs) > 5 * 60 * 1000;
+    const staleWorker = !isReallyCompleted && pipelineStatus === 'processing' && lastSeenMs > 0 && (Date.now() - lastSeenMs) > 5 * 60 * 1000;
     if (staleWorker) {
       pipelineStatus = 'error';
     }

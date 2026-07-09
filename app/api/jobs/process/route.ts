@@ -85,6 +85,30 @@ async function getProjectIdForExport(exportId: string) {
   return String(data?.project_id ?? '');
 }
 
+async function isCompletedProject(projectId: string) {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('projects')
+    .select('status, pipeline_status')
+    .eq('id', projectId)
+    .maybeSingle();
+
+  return data?.status === 'completed' || data?.pipeline_status === 'completed';
+}
+
+async function shouldSkipExportForCompletedProject(exportId: string) {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from('exports')
+    .select('project_id')
+    .eq('id', exportId)
+    .maybeSingle();
+
+  const projectId = typeof data?.project_id === 'string' ? data.project_id : '';
+  if (!projectId) return { skip: false, projectId: '' };
+  return { skip: await isCompletedProject(projectId), projectId };
+}
+
 type ExportBundle = {
   id: string;
   project_id: string;
@@ -127,7 +151,7 @@ const REPAIR_SCAN_LIMIT = 6;
 const STALE_PROCESSING_MINUTES = 10;
 
 function getWorkerBatchLimit() {
-  const defaultLimit = 1;
+  const defaultLimit = process.env.VERCEL ? 1 : 2;
   const raw = Number(process.env.EXPORT_WORKER_BATCH_SIZE ?? defaultLimit);
   if (!Number.isFinite(raw)) return defaultLimit;
   return Math.max(1, Math.min(process.env.VERCEL ? 2 : 4, Math.round(raw)));
@@ -206,6 +230,8 @@ async function ensureQueuedExportJobs(limit = REPAIR_SCAN_LIMIT) {
   for (const row of queuedExports ?? []) {
     const exportId = String(row.id);
     const projectId = String(row.project_id);
+    if (await isCompletedProject(projectId)) continue;
+
     const { data: existingJob, error: jobError } = await supabase
       .from('jobs')
       .select('id')
@@ -261,6 +287,10 @@ async function repairBrokenCompletedExports() {
 
       await enqueueRepairJob(String(row.id), String(row.project_id));
       repaired += 1;
+      continue;
+    }
+
+    if (process.env.EXPORT_REPAIR_VALIDATE_DONE !== 'true') {
       continue;
     }
 
@@ -496,6 +526,8 @@ export async function POST() {
     for (const row of queuedExports ?? []) {
       const exportId = String(row.id);
       if (alreadySelectedExportIds.has(exportId)) continue;
+      if (await isCompletedProject(String(row.project_id))) continue;
+
       workItems.push({
         jobId: null,
         exportId,
@@ -546,6 +578,21 @@ export async function POST() {
 
       const exportId = item.exportId;
       if (!exportId) throw new Error('Missing export_id in payload');
+
+      const completedGate = await shouldSkipExportForCompletedProject(exportId);
+      if (completedGate.skip) {
+        if (item.jobId) {
+          await supabase
+            .from('jobs')
+            .update({
+              status: 'done',
+              updated_at: new Date().toISOString(),
+              payload: { ...item.payload, skipped: 'project_completed' },
+            })
+            .eq('id', item.jobId);
+        }
+        continue;
+      }
 
       const { data: claimedExport } = await supabase
         .from('exports')
