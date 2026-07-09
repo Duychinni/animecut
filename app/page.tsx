@@ -22,11 +22,13 @@ type ShowcaseClip = {
   title: string;
   score: number;
   caption: string;
-  platform: 'YouTube' | 'TikTok' | 'Instagram' | 'Podcast' | 'Facebook';
+  platform: 'Instagram' | 'TikTok' | 'Facebook' | 'X' | 'YouTube' | 'Snapchat' | 'Podcast';
   length: string;
   source: string;
   gradient: string;
 };
+
+const SHOWCASE_CARD_COUNT = 6;
 
 const templatePresets = [
   '🔥 Viral Clips',
@@ -43,7 +45,7 @@ const showcaseClips: ShowcaseClip[] = [
     title: 'He explains why most creators quit too early',
     score: 96,
     caption: 'The real edge is consistency after the first boring stretch.',
-    platform: 'TikTok',
+    platform: 'Instagram',
     length: '00:31',
     source: 'Joe Rogan Experience',
     gradient: 'from-[#3a1838] via-[#1b1522] to-[#0a0a10]',
@@ -52,7 +54,7 @@ const showcaseClips: ShowcaseClip[] = [
     title: 'Theo turns one story into a perfect hook clip',
     score: 92,
     caption: 'That one line is exactly the kind of opening that stops the scroll.',
-    platform: 'Instagram',
+    platform: 'TikTok',
     length: '00:28',
     source: 'This Past Weekend with Theo Von',
     gradient: 'from-[#40203b] via-[#1c1424] to-[#09090f]',
@@ -61,7 +63,7 @@ const showcaseClips: ShowcaseClip[] = [
     title: 'Lex asks the question that changes the whole conversation',
     score: 94,
     caption: 'Strong clips often come from one clean question followed by a pause.',
-    platform: 'YouTube',
+    platform: 'Facebook',
     length: '00:43',
     source: 'Lex Fridman Podcast',
     gradient: 'from-[#241d42] via-[#141528] to-[#09090f]',
@@ -70,7 +72,7 @@ const showcaseClips: ShowcaseClip[] = [
     title: 'Diary of a CEO moment with instant repost potential',
     score: 89,
     caption: 'People share clips that make them feel understood in one sentence.',
-    platform: 'Facebook',
+    platform: 'X',
     length: '00:36',
     source: 'Diary of a CEO',
     gradient: 'from-[#3c2030] via-[#1b1622] to-[#09090f]',
@@ -79,7 +81,7 @@ const showcaseClips: ShowcaseClip[] = [
     title: 'Huberman segment that lands as a clean educational short',
     score: 91,
     caption: 'Specific insight + simple framing = very strong educational clip.',
-    platform: 'Podcast',
+    platform: 'YouTube',
     length: '00:45',
     source: 'Huberman Lab',
     gradient: 'from-[#252d46] via-[#151928] to-[#09090f]',
@@ -88,7 +90,7 @@ const showcaseClips: ShowcaseClip[] = [
     title: 'All-In hot take trimmed into a strong vertical cut',
     score: 87,
     caption: 'The disagreement is the hook — the edit just brings it forward.',
-    platform: 'TikTok',
+    platform: 'Snapchat',
     length: '00:24',
     source: 'All-In Podcast',
     gradient: 'from-[#43211b] via-[#20141a] to-[#09090f]',
@@ -187,6 +189,74 @@ function getPlatformBadge(platform: ShowcaseClip['platform']) {
   }
 }
 
+function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
+  if (platform === 'Instagram') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[radial-gradient(circle_at_30%_105%,#feda75_0%,#fa7e1e_28%,#d62976_52%,#962fbf_74%,#4f5bd5_100%)] shadow-[0_10px_24px_rgba(214,41,118,0.32)]" aria-label="Instagram">
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" aria-hidden="true" fill="none">
+          <rect x="5.2" y="5.2" width="13.6" height="13.6" rx="4" stroke="currentColor" strokeWidth="2" />
+          <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="2" />
+          <circle cx="16.7" cy="7.4" r="1.1" fill="currentColor" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (platform === 'TikTok') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#050505] shadow-[0_10px_24px_rgba(37,244,238,0.18)]" aria-label="TikTok">
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none">
+          <path d="M10.4 10.1v5.4a3.2 3.2 0 1 1-2.5-3.1" stroke="#fe2c55" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M12.7 5.2v10.3a3.2 3.2 0 1 1-2.5-3.1" stroke="#25f4ee" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M12.7 5.2c.7 2.5 2.2 4 4.7 4.4" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (platform === 'Facebook') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#1877f2] shadow-[0_10px_24px_rgba(24,119,242,0.32)]" aria-label="Facebook">
+        <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" aria-hidden="true" fill="currentColor">
+          <path d="M14.1 8.2h2.1V4.8c-.4-.1-1.7-.2-3.1-.2-3.1 0-5.2 1.9-5.2 5.4v3H4.6v3.8h3.3v7.1h4.1v-7.1h3.2l.5-3.8H12v-2.6c0-1.1.3-2.2 2.1-2.2Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (platform === 'X') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#111111] shadow-[0_10px_24px_rgba(255,255,255,0.12)]" aria-label="X">
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" aria-hidden="true" fill="currentColor">
+          <path d="M15.4 4h3.1l-5.1 5.8 6 10.2h-4.7l-3.7-6.2L5.6 20H2.5l5.5-6.3L2.3 4h4.8l3.3 5.6L15.4 4Zm-1.1 14.2h1.7L6.2 5.7H4.4l9.9 12.5Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (platform === 'YouTube') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#ff0033] shadow-[0_10px_24px_rgba(255,0,51,0.32)]" aria-label="YouTube">
+        <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" aria-hidden="true" fill="currentColor">
+          <path d="M21 8.2a3 3 0 0 0-2.1-2.1C17 5.6 12 5.6 12 5.6s-5 0-6.9.5A3 3 0 0 0 3 8.2 31.8 31.8 0 0 0 2.5 12c0 1.3.2 2.6.5 3.8a3 3 0 0 0 2.1 2.1c1.9.5 6.9.5 6.9.5s5 0 6.9-.5a3 3 0 0 0 2.1-2.1c.3-1.2.5-2.5.5-3.8s-.2-2.6-.5-3.8ZM10.1 15.3V8.7l5.8 3.3-5.8 3.3Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (platform === 'Snapchat') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#fffc00] shadow-[0_10px_24px_rgba(255,252,0,0.24)]" aria-label="Snapchat">
+        <svg viewBox="0 0 24 24" className="h-6 w-6 text-black" aria-hidden="true" fill="currentColor">
+          <path d="M12 3.2c2.7 0 4.6 2 4.6 4.9v2.4c0 .5.6.9 1.3 1.1.6.2 1 .4 1 .8 0 .5-.7.9-1.8 1.1-.3.1-.5.3-.3.6.5.8 1.3 1.5 2.4 1.8.3.1.5.4.4.7-.1.4-.7.7-1.7.8-.5 0-.8.2-1 .6-.4.8-1.1 1.2-2 1-.7-.2-1.3-.3-1.8.2-.5.4-.8.7-1.1.7s-.6-.3-1.1-.7c-.5-.5-1.1-.4-1.8-.2-.9.2-1.6-.2-2-1-.2-.4-.5-.6-1-.6-1-.1-1.6-.4-1.7-.8-.1-.3.1-.6.4-.7 1.1-.3 1.9-1 2.4-1.8.2-.3 0-.5-.3-.6-1.1-.2-1.8-.6-1.8-1.1 0-.4.4-.6 1-.8.7-.2 1.3-.6 1.3-1.1V8.1c0-2.9 1.9-4.9 4.6-4.9Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  return null;
+}
+
 export default function Home() {
   const router = useRouter();
   const [sourceUrl, setSourceUrl] = useState('');
@@ -200,6 +270,24 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
+  const [showcaseOrder, setShowcaseOrder] = useState(() => Array.from({ length: SHOWCASE_CARD_COUNT }, (_, index) => index));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setShowcaseOrder((previous) => {
+        const next = [...previous];
+        for (let i = next.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [next[i], next[j]] = [next[j], next[i]];
+        }
+        return next.every((value, index) => value === previous[index])
+          ? [...next.slice(1), next[0]]
+          : next;
+      });
+    }, 7000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -512,19 +600,21 @@ export default function Home() {
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
-          <div className="mx-auto grid max-w-[1760px] grid-cols-2 gap-4 px-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
-              {showcaseClips.slice(0, 8).map((clip) => (
+          <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
+              {showcaseOrder.map((clipIndex) => {
+                const clip = showcaseClips[clipIndex];
+                return (
                 <div
                   key={clip.title}
-                  className="min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)]"
+                  className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-700 ease-out hover:-translate-y-1 hover:border-white/18"
                 >
+                  <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
+                    <PlatformLogo platform={clip.platform} />
+                  </div>
                   <div className={`aspect-[9/16] rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
                     <div className="flex h-full flex-col justify-start rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-start gap-2">
                         <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea]">🔥 {clip.score}</span>
-                        <span className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${getPlatformBadge(clip.platform)} ${getPlatformTone(clip.platform)}`}>
-                          {clip.platform}
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -533,7 +623,8 @@ export default function Home() {
                     <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
                   </div>
                 </div>
-              ))}
+                );
+              })}
           </div>
         </section>
 
