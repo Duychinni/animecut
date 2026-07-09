@@ -38,6 +38,13 @@ function shortenWords(text: string, maxWords = 6, maxChars = 28) {
   return kept.join(' ');
 }
 
+function removeWeakHookPrefix(text: string) {
+  return text
+    .replace(/^(the\s+)?(hook|moment|clip|short|reel)\s+(that|where|when|about)\s+/i, '')
+    .replace(/^(why|how)\s+this\s+moment\s+/i, '')
+    .trim();
+}
+
 function pickOpeningTranscript(segments: TranscriptSegment[], startSec: number, endSec: number) {
   const text = segments
     .filter((seg) => Number(seg.end ?? 0) >= startSec && Number(seg.start ?? 0) <= Math.min(endSec, startSec + 8))
@@ -66,13 +73,13 @@ export function generateHookText(params: {
     .replace(/^(so|and|but|because|then|like|you know)\s+/i, '')
     .trim();
 
-  const candidates = [titleCandidate, transcriptCandidate].filter(Boolean);
+  const candidates = [transcriptCandidate, titleCandidate].map(removeWeakHookPrefix).filter(Boolean);
 
   for (const candidate of candidates) {
-    const shortened = shortenWords(candidate, 6, 28);
+    const shortened = shortenWords(candidate, 7, 34);
     if (!shortened) continue;
     return toTitleCaseHook(shortened);
   }
 
-  return null;
+  return 'Top Moment';
 }

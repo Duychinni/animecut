@@ -689,41 +689,32 @@ function resolveOutputWidth(outputHeight: number) {
 
 function wrapHookTextForDrawtext(hookText: string) {
   const words = hookText.trim().split(/\s+/).filter(Boolean);
-  if (words.length <= 3) return hookText.trim();
-
-  const lines: string[] = [];
-  let current = '';
+  const kept: string[] = [];
   for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length > 16 && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = next;
-    }
+    const next = [...kept, word].join(' ');
+    if (kept.length >= 7 || next.length > 34) break;
+    kept.push(word);
   }
-  if (current) lines.push(current);
-  return lines.slice(0, 2).join('\n');
+  return kept.join(' ') || 'Top Moment';
 }
 
 function buildHookDrawtextFilter(hookText: string) {
   const wrapped = wrapHookTextForDrawtext(hookText);
-  const escaped = escapeDrawtextText(wrapped).replace(/\n/g, '\\n');
+  const escaped = escapeDrawtextText(wrapped);
   return [
     `drawtext=text='${escaped}'`,
     'fontcolor=black',
-    'fontsize=44',
-    'line_spacing=10',
+    'fontsize=48',
     "font='DejaVu Sans Bold'",
     'box=1',
     'boxcolor=white@0.98',
-    'boxborderw=18',
+    'boxborderw=16',
     'borderw=0',
     'shadowx=0',
     'shadowy=0',
     'text_align=C',
     'x=(w-text_w)/2',
-    'y=96',
+    'y=82',
     "enable='between(t,0,4.5)'",
   ].join(':');
 }

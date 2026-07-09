@@ -58,7 +58,9 @@ function formatClock(totalSeconds: number) {
 }
 
 function toDisplayScore(score: number) {
-  const normalized = Number.isFinite(score) ? Math.max(0, Math.min(10, score)) / 10 : 0;
+  if (!Number.isFinite(score)) return 70;
+  if (score > 10) return Math.max(70, Math.min(100, Math.round(score)));
+  const normalized = Math.max(0, Math.min(10, score)) / 10;
   return Math.round(70 + normalized * 30);
 }
 

@@ -60,7 +60,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       type: 'export',
       payload: {
         export_id: exportId,
-        captions_enabled: true,
+        captions_enabled: false,
         motion_tracking: false,
         auto_reframe: true,
         reframe_mode: 'smart',

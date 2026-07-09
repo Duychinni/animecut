@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     } = await req.json();
     const supabase = createAdminClient();
 
-    const captionsEnabled = captions_enabled !== false;
+    const captionsEnabled = captions_enabled === true;
     const captionTemplate = (caption_template ?? 'capcut') as
       | 'clean'
       | 'bold'

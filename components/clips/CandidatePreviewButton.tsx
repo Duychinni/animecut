@@ -21,7 +21,7 @@ export function CandidatePreviewButton({ projectId, candidateId }: { projectId: 
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const [captionsEnabled, setCaptionsEnabled] = useState(true);
+  const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [captionTemplate, setCaptionTemplate] = useState<'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut'>('capcut');
   const [captionFont, setCaptionFont] = useState<'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins'>('montserrat');
   const [motionTracking, setMotionTracking] = useState(true);
