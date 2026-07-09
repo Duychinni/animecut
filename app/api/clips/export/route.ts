@@ -100,7 +100,6 @@ export async function POST(req: Request) {
           .from('clip_candidates')
           .select('id, overall_score, title, start_sec, end_sec')
           .eq('project_id', project_id)
-          .gte('overall_score', 7.0)
           .order('overall_score', { ascending: false })
           .limit(100),
       ]);
@@ -135,7 +134,10 @@ export async function POST(req: Request) {
       );
       blockedCount = blockedCandidateIds.size;
 
-      const durationFiltered = (topCandidates ?? []).filter((row) => {
+      const strongCandidates = (topCandidates ?? []).filter((row) => Number(row.overall_score ?? 0) >= 7.0);
+      const candidatePool = strongCandidates.length ? strongCandidates : (topCandidates ?? []);
+
+      const durationFiltered = candidatePool.filter((row) => {
         const duration = Math.max(0, Number(row.end_sec ?? 0) - Number(row.start_sec ?? 0));
         return duration >= 20;
       });
@@ -143,6 +145,8 @@ export async function POST(req: Request) {
       console.log('[clips/export] candidate-pool', {
         project_id,
         fetched_count: (topCandidates ?? []).length,
+        strong_count: strongCandidates.length,
+        using_score_fallback: strongCandidates.length === 0 && (topCandidates ?? []).length > 0,
         duration_filtered_count: durationFiltered.length,
         blocked_count: blockedCount,
       });

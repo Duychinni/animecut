@@ -73,6 +73,24 @@ async function updateProjectProgress(projectId: string, step: string, label: str
   await supabase.from('projects').update(payload).eq('id', projectId);
 }
 
+async function getExportCounts(projectId: string) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('exports')
+    .select('status')
+    .eq('project_id', projectId);
+
+  if (error) throw error;
+
+  const rows = data ?? [];
+  return {
+    total: rows.length,
+    done: rows.filter((row) => row.status === 'done').length,
+    active: rows.filter((row) => row.status === 'queued' || row.status === 'processing').length,
+    failed: rows.filter((row) => row.status === 'error').length,
+  };
+}
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return await Promise.race([
     promise,
@@ -173,6 +191,12 @@ export async function POST() {
         queueData = { queued: 0, recovered: true };
       }
       const queued = Number(queueData?.queued ?? 0);
+      if (queued === 0 && queueData?.reason === 'no_valid_clips') {
+        const exportCounts = await getExportCounts(projectId);
+        if (exportCounts.done === 0 && exportCounts.active === 0) {
+          throw new Error('Analysis completed, but no exportable clips were queued for rendering.');
+        }
+      }
 
       let idlePasses = 0;
       for (let i = 0; i < 10; i += 1) {
@@ -215,6 +239,22 @@ export async function POST() {
     }
 
     await updateProjectProgress(projectId, 'uploading_outputs', 'Uploading final clips');
+
+    const finalExportCounts = await getExportCounts(projectId);
+    if (finalExportCounts.active > 0) {
+      await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id);
+      return NextResponse.json({
+        ok: true,
+        processed: 1,
+        project_id: projectId,
+        waiting_for_exports: true,
+        export_counts: finalExportCounts,
+      });
+    }
+
+    if (finalExportCounts.done === 0) {
+      throw new Error('Rendering finished with no playable clips. No completed exports were found.');
+    }
 
     await supabase
       .from('projects')

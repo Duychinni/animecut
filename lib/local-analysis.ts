@@ -155,6 +155,7 @@ export function analyzeTranscriptLocally(
       adjusted_start: start,
       adjusted_end: end,
       duration_seconds: duration,
+      analysis_provider: 'local',
       reason_selected:
         'Selected from the real transcript by local analysis so the render pipeline can be tested without OpenAI usage.',
       reason_rejected: null,
@@ -182,7 +183,7 @@ export function analyzeTranscriptLocally(
       seen.add(key);
       return candidate.duration_seconds >= Math.min(policy.minSec, windowSeconds);
     })
-    .slice(0, Math.max(policy.targetMin, targetCount));
+    .slice(0, Math.max(policy.candidateCount, targetCount * 4, policy.targetMin));
 
   return { candidates };
 }

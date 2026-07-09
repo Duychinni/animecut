@@ -10,7 +10,7 @@ const GLOBAL_MAX_CLIP_SEC = 120;
 const GLOBAL_MIN_CLIP_SEC = 30;
 const EXPAND_SEC = 15;
 const SELF_CONTAINED_MIN_CONFIDENCE = 0.55;
-const MIN_TOP_CLIP_SCORE = 7.0;
+const MIN_TOP_CLIP_SCORE = 70;
 
 type TranscriptSegment = {
   start?: number;
@@ -200,6 +200,11 @@ function hookContextSignature(opening: string, closing: string) {
   return `${normalizeLooseText(opening).slice(0, 80)}__${normalizeLooseText(closing).slice(0, 80)}`;
 }
 
+function isLocalAnalysisCandidate(candidate: RawCandidate) {
+  return String(candidate.analysis_provider ?? '').toLowerCase() === 'local'
+    || String(candidate.reason_selected ?? candidate.reason ?? '').toLowerCase().includes('local analysis');
+}
+
 function expandWindowAroundMoment(startSec: number, endSec: number, segments: TranscriptSegment[], contextLeadSec: number, payoffTailSec: number) {
   const start = Math.max(0, startSec - contextLeadSec);
   const end = endSec + payoffTailSec;
@@ -342,6 +347,7 @@ export async function POST(req: Request) {
     const scoredCandidates: RankedCandidate[] = (parsed.candidates ?? [])
       .slice(0, candidateLimit)
       .map((c: RawCandidate, idx: number) => {
+        const localAnalysisCandidate = isLocalAnalysisCandidate(c);
         const rawStart = num(c.raw_start ?? c.start_sec ?? c.adjusted_start);
         const rawEnd = num(c.raw_end ?? c.end_sec ?? c.adjusted_end);
         const modelAdjustedStart = num(c.adjusted_start ?? rawStart);
@@ -352,7 +358,10 @@ export async function POST(req: Request) {
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
-        const passesQuality = passesStandaloneQualityChecks(openingLine, closingLine) && payoffStrong;
+        const strictQualityPass = passesStandaloneQualityChecks(openingLine, closingLine) && payoffStrong;
+        const passesQuality = localAnalysisCandidate
+          ? Boolean(openingLine && closingLine && transcriptWordCount >= Math.min(minimumWordCount, 35))
+          : strictQualityPass;
 
         const hookStrength = clamp100(num(c.hook_strength) || 0);
         const retentionPotential = clamp100(num(c.retention_potential ?? c.rewatch_potential) || 0);
@@ -370,7 +379,7 @@ export async function POST(req: Request) {
           speakerEnergy * 0.10
         );
 
-        const qualityPenalty = passesQuality ? 0 : 22;
+        const qualityPenalty = passesQuality ? 0 : (localAnalysisCandidate ? 6 : 22);
         const duration = cleaned.end_sec - cleaned.start_sec;
         const durationPenalty =
           duration < policy.minSec ? 24 :
@@ -380,7 +389,9 @@ export async function POST(req: Request) {
           0;
         const confidenceBoost = cleaned.confidence >= 0.9 ? 2 : cleaned.confidence >= 0.8 ? 1 : 0;
         const baseOverall = num(c.overall_score) || weightedOverall;
-        const calibratedOverall = Math.round((baseOverall * 0.94) - 4 + confidenceBoost - qualityPenalty - durationPenalty);
+        const calibratedOverall = localAnalysisCandidate
+          ? Math.max(70, Math.round(baseOverall - qualityPenalty - Math.round(durationPenalty * 0.35)))
+          : Math.round((baseOverall * 0.94) - 4 + confidenceBoost - qualityPenalty - durationPenalty);
 
         return {
           project_id,
@@ -402,14 +413,14 @@ export async function POST(req: Request) {
           educational_value: educationalValue,
           speaker_energy: speakerEnergy,
           overall_score: clamp100(calibratedOverall),
-          reject_reason: !passesQuality
-            ? 'failed_quality_checks'
-            : duration < effectiveGlobalMinClipSec
+          reject_reason: duration < effectiveGlobalMinClipSec
               ? 'duration_below_minimum'
               : transcriptWordCount < minimumWordCount
                 ? 'word_count_below_minimum'
-                : calibratedOverall < 60
+                : calibratedOverall < MIN_TOP_CLIP_SCORE
                   ? 'score_below_minimum'
+                  : !passesQuality
+                    ? 'failed_quality_checks'
                   : null,
           rank: idx + 1,
           passes_quality: passesQuality,
