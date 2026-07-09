@@ -106,7 +106,8 @@ export default async function ProjectDetailPage({
   const exportItems = await Promise.all(
     ((exportsRows ?? []) as ExportRow[]).map(async (row) => {
       let signedUrl: string | null = null;
-      if (row.output_storage_path && !row.output_storage_path.startsWith('/')) {
+      const isMockExport = Boolean(row.output_storage_path?.startsWith('mock://'));
+      if (row.output_storage_path && !row.output_storage_path.startsWith('/') && !isMockExport) {
         try {
           signedUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
         } catch {
@@ -191,8 +192,9 @@ export default async function ProjectDetailPage({
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
   const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
   const hasRenderableResults = filteredExportItems.some((row) => row.status === 'done' && Boolean(row.signedUrl));
+  const hasMockResults = filteredExportItems.some((row) => row.status === 'done' && row.output_storage_path?.startsWith('mock://'));
   const shouldShowCompletedState = effectiveStatus === 'completed' || progressPercent >= 100;
-  const showProcessingHero = !hasRenderableResults && !shouldShowCompletedState;
+  const showProcessingHero = !hasRenderableResults && !hasMockResults && !shouldShowCompletedState;
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -213,7 +215,7 @@ export default async function ProjectDetailPage({
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
           />
-        ) : filteredExportItems.length ? (
+        ) : filteredExportItems.length && (hasRenderableResults || hasMockResults) ? (
           <TopClipsBoard
             projectId={projectId}
             clips={filteredExportItems.map((row) => ({

@@ -21,7 +21,7 @@ function getFriendlyStatus(status: string) {
   if (status === 'queued') return 'Queued';
   if (status === 'processing') return 'Rendering';
   if (status === 'error') return 'Render failed';
-  if (status === 'done') return 'Video unavailable';
+  if (status === 'done') return 'Mock preview';
   return 'Unavailable';
 }
 
@@ -446,6 +446,27 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                               <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
                             </svg>
                           </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : clip.status === 'done' ? (
+                    <div className="flex justify-center bg-transparent px-1.5">
+                      <div className="relative flex aspect-[9/16] w-full max-w-[230px] flex-col justify-between overflow-hidden rounded-[8px] border border-white/10 bg-[radial-gradient(circle_at_50%_18%,rgba(255,123,216,0.22),transparent_32%),linear-gradient(180deg,#17101f,#08080d)] p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
+                          <span>Mock Reel</span>
+                          <span>{durationLabel ?? '0:00'}</span>
+                        </div>
+                        <div className="space-y-3 text-center">
+                          <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.06] text-xl font-black">
+                            {formatDisplayScore(clip.score)}
+                          </div>
+                          <p className="text-sm font-extrabold leading-tight">{clip.title}</p>
+                          <p className="text-xs leading-5 text-white/58">
+                            MOCK_AI is on, so AnimaCut generated the clip candidate and skipped the real FFmpeg render.
+                          </p>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full w-2/3 rounded-full bg-[linear-gradient(90deg,#8B7CFF,#FF7BD8,#FFB347)]" />
                         </div>
                       </div>
                     </div>

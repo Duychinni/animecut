@@ -9,6 +9,7 @@ import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from 
 import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
+import { isMockAiEnabled } from '@/lib/dev-ai';
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
@@ -189,6 +190,7 @@ async function repairBrokenCompletedExports() {
   for (const row of rows ?? []) {
     const objectPath = typeof row.output_storage_path === 'string' ? row.output_storage_path : null;
     if (!objectPath) continue;
+    if (objectPath.startsWith('mock://')) continue;
 
     try {
       await validateRemoteExport(objectPath);
@@ -244,6 +246,19 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   ]);
 
   if (!project || !clip) throw new Error('Missing project/clip data');
+
+  if (isMockAiEnabled()) {
+    await supabase
+      .from('exports')
+      .update({
+        status: 'done',
+        output_storage_path: `mock://${exportId}`,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', exportId);
+    return;
+  }
 
   const bundle: ExportBundle = {
     id: String(ex.id),

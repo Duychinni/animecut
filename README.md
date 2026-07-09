@@ -1,4 +1,4 @@
-# ClipSpark v0 (MVP scaffold)
+# AnimaCut v0 (MVP scaffold)
 
 Lean MVP for podcast/talking-head clipping.
 

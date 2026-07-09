@@ -4,6 +4,7 @@ import { downloadYouTubeAudio } from '@/lib/youtube';
 import { transcribeAudioFile } from '@/lib/transcription';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { extractAudioForTranscription } from '@/lib/ffmpeg';
+import { buildMockTranscript, isMockAiEnabled } from '@/lib/dev-ai';
 
 export async function POST(req: Request) {
   try {
@@ -19,6 +20,33 @@ export async function POST(req: Request) {
       .single();
 
     if (pErr || !project) throw new Error('Project not found');
+
+    if (isMockAiEnabled()) {
+      const transcript = buildMockTranscript();
+
+      await supabase.from('transcripts').delete().eq('project_id', project_id);
+
+      const { error: tErr } = await supabase.from('transcripts').insert({
+        project_id,
+        language: transcript.language,
+        full_text: transcript.fullText,
+        segments_json: transcript.segments,
+      });
+
+      if (tErr) throw tErr;
+
+      const { error: uErr } = await supabase.from('projects').update({ status: 'transcribed' }).eq('id', project_id);
+      if (uErr) throw uErr;
+
+      return NextResponse.json({
+        ok: true,
+        project_id,
+        mocked: true,
+        language: transcript.language,
+        transcript_chars: transcript.fullText.length,
+        segment_count: transcript.segments.length,
+      });
+    }
 
     let mediaPath: string | null = null;
     let transcriptionPath: string | null = null;
