@@ -81,8 +81,7 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   const pipelineStageLabel = data?.project?.pipeline_stage_label ?? null;
   const pipelineError = data?.project?.pipeline_error ?? null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
-  const doneExports = Number(data?.progress?.done_exports ?? 0);
-  const shouldRedirectDone = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && doneExports > 0 && !isNotEnoughContent;
+  const shouldRedirectDone = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
 
   useEffect(() => {
     if (completedNavRef.current) return;

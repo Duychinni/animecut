@@ -117,7 +117,7 @@ export async function POST(req: Request) {
         const segments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
         const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
         const desired = getTargetClipCount(totalSeconds);
-        targetCount = Math.max(5, Math.min(desired, (topCandidates ?? []).length || desired));
+        targetCount = Math.max(1, Math.min(desired, (topCandidates ?? []).length || desired));
       }
 
       const doneCount = (existingExports ?? []).filter((r) => r.status === 'done').length;

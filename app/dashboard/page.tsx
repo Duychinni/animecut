@@ -267,16 +267,22 @@ export default function DashboardPage() {
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
       if (!hasProcessingRef.current) return;
+      await fetch('/api/pipeline/process', { method: 'POST' }).catch(() => null);
+      await fetch('/api/jobs/process', { method: 'POST' }).catch(() => null);
       await loadProjects();
     };
 
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
+        void fetch('/api/pipeline/process', { method: 'POST' }).catch(() => null);
+        void fetch('/api/jobs/process', { method: 'POST' }).catch(() => null);
         void loadProjects();
       }
     };
 
     void loadProjects(true);
+    void fetch('/api/pipeline/process', { method: 'POST' }).catch(() => null);
+    void fetch('/api/jobs/process', { method: 'POST' }).catch(() => null);
 
     const timer = setInterval(() => {
       void tick();

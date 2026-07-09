@@ -341,7 +341,7 @@ export async function POST(req: Request) {
         const rawEnd = num(c.raw_end ?? c.end_sec ?? c.adjusted_end);
         const modelAdjustedStart = num(c.adjusted_start ?? rawStart);
         const modelAdjustedEnd = num(c.adjusted_end ?? rawEnd);
-        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, Math.max(policy.minSec, GLOBAL_MIN_CLIP_SEC), Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
+        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, Math.max(policy.minSec, effectiveGlobalMinClipSec), Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
 
         const openingLine = String(c.opening_line ?? openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));

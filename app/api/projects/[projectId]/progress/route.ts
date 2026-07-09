@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getTargetClipCount } from '@/lib/clip-policy';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -13,15 +14,6 @@ function parseYouTubeId(url: string): string | null {
   } catch {
     return null;
   }
-}
-
-function targetClipCountForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes <= 5) return 5;
-  if (minutes <= 15) return 7;
-  if (minutes <= 30) return 10;
-  if (minutes <= 60) return 15;
-  return 20;
 }
 
 function computeProgress(params: {
@@ -135,7 +127,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
     const sourceDurationSeconds = Number((project as { source_duration_seconds?: number | null }).source_duration_seconds ?? 0);
     const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
-    const desiredTarget = targetClipCountForDuration(totalSeconds);
+    const desiredTarget = getTargetClipCount(totalSeconds);
     const targetCount = Math.max(1, desiredTarget);
 
     const now = Date.now();

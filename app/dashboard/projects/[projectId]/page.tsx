@@ -4,6 +4,7 @@ import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
 import { readJsonSafe } from '@/lib/safe-json';
+import { getTargetClipCount } from '@/lib/clip-policy';
 
 type ExportRow = {
   id: string;
@@ -44,15 +45,6 @@ function parseYouTubeId(url: string | null | undefined): string | null {
   } catch {
     return null;
   }
-}
-
-function targetClipCountForDuration(totalSeconds: number) {
-  const minutes = totalSeconds / 60;
-  if (minutes <= 5) return 5;
-  if (minutes <= 15) return 7;
-  if (minutes <= 30) return 10;
-  if (minutes <= 60) return 15;
-  return 20;
 }
 
 function getProcessingLabel(status: string) {
@@ -167,7 +159,7 @@ export default async function ProjectDetailPage({
   const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
   const sourceDurationSeconds = Number(projectRow?.source_duration_seconds ?? 0);
   const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
-  const targetCount = Math.max(1, targetClipCountForDuration(totalSeconds));
+  const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const doneExports = filteredExportItems.filter((row) => row.status === 'done').length;
 
   let progressPercent = 0;
@@ -191,8 +183,10 @@ export default async function ProjectDetailPage({
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
   const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
-  const hasRenderableResults = filteredExportItems.some((row) => row.status === 'done' && Boolean(row.signedUrl));
-  const hasMockResults = filteredExportItems.some((row) => row.status === 'done' && row.output_storage_path?.startsWith('mock://'));
+  const doneResultItems = filteredExportItems.filter((row) => row.status === 'done');
+  const hasRenderableResults = doneResultItems.some((row) => Boolean(row.signedUrl));
+  const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
+  const hasFinishedResults = doneResultItems.length > 0;
   const shouldShowCompletedState = effectiveStatus === 'completed' || progressPercent >= 100;
   const showProcessingHero = !hasRenderableResults && !hasMockResults && !shouldShowCompletedState;
 
@@ -215,7 +209,7 @@ export default async function ProjectDetailPage({
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
           />
-        ) : filteredExportItems.length && (hasRenderableResults || hasMockResults) ? (
+        ) : filteredExportItems.length && (hasRenderableResults || hasMockResults || hasFinishedResults) ? (
           <TopClipsBoard
             projectId={projectId}
             clips={filteredExportItems.map((row) => ({
