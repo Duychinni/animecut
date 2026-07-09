@@ -148,9 +148,6 @@ export default async function ProjectDetailPage({
   const projectMarkedCompleted = projectRow?.status === 'completed' || projectRow?.pipeline_status === 'completed';
   const savedExportItems = filteredExportItems.filter((row) => row.status === 'done' && Boolean(row.signedUrl));
   const activeExportItems = filteredExportItems.filter((row) => row.status === 'queued' || row.status === 'processing');
-  const displayExportItems = !activeExportItems.length && savedExportItems.length
-    ? savedExportItems
-    : [];
 
   const pageTitle =
     typeof projectRow?.source_title === 'string' && projectRow.source_title.trim().length
@@ -168,7 +165,11 @@ export default async function ProjectDetailPage({
   const activeExports = activeExportItems.length;
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
-  const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || doneExports >= Math.min(targetCount, displayExportItems.length || targetCount));
+  const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
+  const hasPlayableExports = savedExportItems.length > 0;
+  const shouldShowResults = hasPlayableExports && (activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
+  const displayExportItems = shouldShowResults ? savedExportItems : [];
+  const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || projectHasTerminalIssue || doneExports >= targetCount);
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
   const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && activeExports === 0 && doneExports >= targetCount)
     ? 100
@@ -192,8 +193,8 @@ export default async function ProjectDetailPage({
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
   const hasActiveExports = activeExports > 0;
   const hasExportRows = displayExportItems.length > 0;
-  const shouldShowCompletedState = !hasExportRows && !hasActiveExports && (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
-  const showProcessingHero = !shouldShowCompletedState && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults);
+  const shouldShowCompletedState = !shouldShowResults && !hasExportRows && !hasActiveExports && (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
+  const showProcessingHero = !shouldShowResults && !shouldShowCompletedState && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults);
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -206,15 +207,7 @@ export default async function ProjectDetailPage({
           <PipelineRunner projectId={projectId} autoStart={autoStart} />
         </div>
 
-        {showProcessingHero ? (
-          <ProcessingHero
-            projectId={projectId}
-            pageTitle={pageTitle}
-            heroThumbnail={heroThumbnail}
-            fallbackPercent={progressPercent}
-            fallbackTargetCount={targetCount}
-          />
-        ) : hasRenderableResults ? (
+        {shouldShowResults ? (
           <TopClipsBoard
             projectId={projectId}
             clips={displayExportItems.map((row) => ({
@@ -229,6 +222,14 @@ export default async function ProjectDetailPage({
               endSec: row.endSec,
               rank: row.rank,
             }))}
+          />
+        ) : showProcessingHero ? (
+          <ProcessingHero
+            projectId={projectId}
+            pageTitle={pageTitle}
+            heroThumbnail={heroThumbnail}
+            fallbackPercent={progressPercent}
+            fallbackTargetCount={targetCount}
           />
         ) : shouldShowCompletedState ? (
           <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] px-8 py-12 text-center">

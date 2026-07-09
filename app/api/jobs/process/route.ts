@@ -39,6 +39,7 @@ async function maybeFinalizeProject(projectId: string) {
   const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const availableCandidates = Number(candidateCount ?? 0);
+  const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
 
   if (doneCount >= targetCount && activeCount === 0) {
     await supabase
@@ -54,8 +55,24 @@ async function maybeFinalizeProject(projectId: string) {
     return true;
   }
 
+  if (allAttemptsSettled && doneCount > 0) {
+    await supabase
+      .from('projects')
+      .update({
+        status: 'completed',
+        pipeline_status: 'completed',
+        pipeline_stage: 'completed',
+        pipeline_stage_label: 'Completed',
+        pipeline_progress_percent: 100,
+        pipeline_error: null,
+        pipeline_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId);
+    return true;
+  }
+
   const candidatePoolExhausted = totalCount >= availableCandidates && availableCandidates > 0;
-  const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
 
   if (allAttemptsSettled && candidatePoolExhausted) {
     const terminalStatus = doneCount > 0 ? 'completed' : 'error';

@@ -60,10 +60,14 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     try {
       const res = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
       const data = (await readJsonSafe(res)) as ProgressPayload;
-      if (res.ok) setProgress(data);
+      if (res.ok) {
+        setProgress(data);
+        return data;
+      }
     } catch {
       // ignore transient polling failures
     }
+    return null;
   }, [projectId]);
 
   const kickBackgroundProcessing = useCallback(async () => {
@@ -86,11 +90,12 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
-      await refreshProgress();
+      const latestProgress = await refreshProgress();
+      const snapshot = latestProgress ?? progress;
 
-      const pipelineStatus = progress?.project?.pipeline_status ?? 'idle';
-      const activeExports = Number(progress?.progress?.active_exports ?? 0);
-      const doneExports = Number(progress?.progress?.done_exports ?? 0);
+      const pipelineStatus = snapshot?.project?.pipeline_status ?? 'idle';
+      const activeExports = Number(snapshot?.progress?.active_exports ?? 0);
+      const doneExports = Number(snapshot?.progress?.done_exports ?? 0);
 
       if (pipelineStatus === 'queued' || pipelineStatus === 'processing' || activeExports > 0 || doneExports === 0) {
         await kickBackgroundProcessing();

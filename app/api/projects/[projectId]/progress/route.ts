@@ -162,21 +162,27 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const createdAtMs = project.created_at ? new Date(project.created_at).getTime() : now;
     const elapsedSeconds = Math.max(0, Math.round((now - createdAtMs) / 1000));
 
+    const storedPipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
+    const lastSeenRaw = (project as { worker_last_seen_at?: string | null }).worker_last_seen_at ?? null;
+    const lastSeenMs = lastSeenRaw ? new Date(lastSeenRaw).getTime() : 0;
+    const heartbeatExpired = activeExports === 0
+      && storedPipelineStatus === 'processing'
+      && lastSeenMs > 0
+      && (Date.now() - lastSeenMs) > 5 * 60 * 1000;
+    const hasSettledPlayableExports = activeExports === 0 && doneExports > 0;
     const isReallyCompleted =
-      activeExports === 0 && doneExports > 0 && (projectMarkedCompleted || doneExports >= targetCount);
+      hasSettledPlayableExports && (projectMarkedCompleted || doneExports >= targetCount || storedPipelineStatus === 'error' || heartbeatExpired);
 
     const projectNeedsExportCompletion = projectMarkedCompleted && activeExports > 0;
     const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
-    let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
+    let pipelineStatus = isReallyCompleted ? 'completed' : storedPipelineStatus;
     const pipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
     if (projectNeedsExportCompletion) {
       pipelineStatus = 'processing';
     }
     const hasTranscript = transcriptSegments.length > 0;
     const explicitPercent = Number((project as { pipeline_progress_percent?: number | null }).pipeline_progress_percent ?? NaN);
-    const lastSeenRaw = (project as { worker_last_seen_at?: string | null }).worker_last_seen_at ?? null;
-    const lastSeenMs = lastSeenRaw ? new Date(lastSeenRaw).getTime() : 0;
-    const staleWorker = !isReallyCompleted && pipelineStatus === 'processing' && lastSeenMs > 0 && (Date.now() - lastSeenMs) > 5 * 60 * 1000;
+    const staleWorker = !isReallyCompleted && heartbeatExpired;
     if (staleWorker) {
       pipelineStatus = 'error';
     }
@@ -207,8 +213,20 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       transcriptSeconds: totalSeconds,
     });
 
-    if (isReallyCompleted && project.status !== 'completed') {
-      await supabase.from('projects').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', projectId);
+    if (isReallyCompleted && (project.status !== 'completed' || storedPipelineStatus !== 'completed')) {
+      await supabase
+        .from('projects')
+        .update({
+          status: 'completed',
+          pipeline_status: 'completed',
+          pipeline_stage: 'completed',
+          pipeline_stage_label: 'Completed',
+          pipeline_progress_percent: 100,
+          pipeline_error: null,
+          pipeline_completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', projectId);
     }
 
     const sourceUrl = typeof project.source_url === 'string' ? project.source_url : null;
@@ -253,11 +271,11 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         title: project.title,
         status: effectiveStatus,
         pipeline_status: pipelineStatus,
-        pipeline_stage: pipelineStage,
-        pipeline_stage_label: staleWorker ? 'Worker heartbeat expired' : ((project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null),
+        pipeline_stage: isReallyCompleted ? 'completed' : pipelineStage,
+        pipeline_stage_label: isReallyCompleted ? 'Completed' : staleWorker ? 'Worker heartbeat expired' : ((project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null),
         worker_last_seen_at: lastSeenRaw,
         worker_last_log_message: (project as { worker_last_log_message?: string | null }).worker_last_log_message ?? null,
-        pipeline_error: staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : ((project as { pipeline_error?: string | null }).pipeline_error ?? null),
+        pipeline_error: isReallyCompleted ? null : staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : ((project as { pipeline_error?: string | null }).pipeline_error ?? null),
         source_type: project.source_type,
         source_url: sourceUrl,
         thumbnail_url: thumbnailUrl,

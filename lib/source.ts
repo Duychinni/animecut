@@ -27,5 +27,9 @@ export async function resolveProjectVideoSource(project: ProjectRow) {
     throw new Error('YouTube project missing source_url');
   }
 
+  if (project.source_storage_path) {
+    return downloadRawMediaToLocal(project.source_storage_path, project.id);
+  }
+
   return downloadYouTubeVideo(project.source_url, project.id);
 }
