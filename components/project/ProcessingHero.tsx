@@ -166,11 +166,7 @@ export function ProcessingHero({
             <div className="mt-8 space-y-4">
               <div>
                 <div className="mb-2 flex items-center justify-between text-sm text-white/70">
-                  <span className="inline-flex items-center gap-1.5">
-                    <ClockIcon className="h-3.5 w-3.5 text-emerald-300" />
-                    {percent}% complete
-                  </span>
-                  {!isFinished ? <span>ETA {fmtDuration(data?.progress?.eta_seconds ?? null)}</span> : null}
+                  <span>{percent}% complete</span>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, percent))}%` }} />

@@ -15,6 +15,9 @@ const STEP_PROGRESS: Record<string, number> = {
   completed: 100,
 };
 
+const PIPELINE_MAX_ATTEMPTS = 3;
+const STALE_PIPELINE_JOB_MS = 5 * 60 * 1000;
+
 function getInternalBaseUrls() {
   return [
     process.env.APP_URL,
@@ -104,7 +107,7 @@ export async function POST() {
 
   const { data: processingJobs, error: processingError } = await supabase
     .from('jobs')
-    .select('id, project_id, updated_at')
+    .select('id, project_id, updated_at, attempts, payload')
     .eq('type', 'pipeline')
     .eq('status', 'processing')
     .order('updated_at', { ascending: false })
@@ -112,12 +115,79 @@ export async function POST() {
 
   if (processingError) return NextResponse.json({ error: processingError.message }, { status: 400 });
   if (processingJobs?.length) {
-    return NextResponse.json({ ok: true, processed: 0, busy: true, project_id: processingJobs[0].project_id });
+    const processingJob = processingJobs[0];
+    const updatedAtMs = processingJob.updated_at ? new Date(processingJob.updated_at).getTime() : 0;
+    const isStale = updatedAtMs > 0 && Date.now() - updatedAtMs > STALE_PIPELINE_JOB_MS;
+
+    if (!isStale) {
+      return NextResponse.json({ ok: true, processed: 0, busy: true, project_id: processingJob.project_id });
+    }
+
+    await supabase
+      .from('jobs')
+      .update({
+        status: 'queued',
+        payload: { ...((processingJob.payload as Record<string, unknown> | null) ?? {}), requeued_after_stale_worker: true },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', processingJob.id);
+
+    await supabase
+      .from('projects')
+      .update({
+        pipeline_status: 'queued',
+        pipeline_stage_label: 'Reconnecting worker',
+        pipeline_error: null,
+        worker_last_log_message: 'Reconnecting worker',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', processingJob.project_id);
+  }
+
+  const { data: retryableErrorJobs, error: retryableError } = await supabase
+    .from('jobs')
+    .select('id, project_id, payload, attempts')
+    .eq('type', 'pipeline')
+    .eq('status', 'error')
+    .lt('attempts', PIPELINE_MAX_ATTEMPTS)
+    .order('updated_at', { ascending: true })
+    .limit(1);
+
+  if (retryableError) return NextResponse.json({ error: retryableError.message }, { status: 400 });
+  const retryableJob = retryableErrorJobs?.[0];
+  if (retryableJob?.id) {
+    const payload = (retryableJob.payload as Record<string, unknown> | null) ?? {};
+    const previousError = typeof payload.error === 'string' || typeof payload.retry_of_error === 'string'
+      ? String(payload.error ?? payload.retry_of_error)
+      : '';
+    const previousErrorInfo = getPipelineErrorInfo(previousError);
+
+    if (previousErrorInfo.code !== 'youtube_source_blocked') {
+      await supabase
+        .from('jobs')
+        .update({
+          status: 'queued',
+          payload: { ...payload, requeued_after_error: true },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', retryableJob.id);
+
+      await supabase
+        .from('projects')
+        .update({
+          pipeline_status: 'queued',
+          pipeline_stage_label: 'Retrying processing',
+          pipeline_error: null,
+          worker_last_log_message: 'Retrying processing',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', retryableJob.project_id);
+    }
   }
 
   const { data: jobs, error } = await supabase
     .from('jobs')
-    .select('id, project_id, payload, status')
+    .select('id, project_id, payload, status, attempts')
     .eq('type', 'pipeline')
     .eq('status', 'queued')
     .order('created_at', { ascending: true })
@@ -133,9 +203,10 @@ export async function POST() {
   }
 
   const processingTimestamp = new Date().toISOString();
+  const attemptNumber = Number(job.attempts ?? 0) + 1;
   const { data: claimedJobs, error: claimError } = await supabase
     .from('jobs')
-    .update({ status: 'processing', attempts: 1, updated_at: processingTimestamp })
+    .update({ status: 'processing', attempts: attemptNumber, updated_at: processingTimestamp })
     .eq('id', job.id)
     .eq('status', 'queued')
     .select('id')
@@ -284,9 +355,48 @@ export async function POST() {
       raw_error: rawMessage,
       public_error: message,
       code: publicError.code,
+      attempt: attemptNumber,
     });
 
     const { data: currentProject } = await supabase.from('projects').select('pipeline_progress_percent').eq('id', projectId).single();
+    const shouldRetryPipeline = publicError.code !== 'youtube_source_blocked' && attemptNumber < PIPELINE_MAX_ATTEMPTS;
+
+    if (shouldRetryPipeline) {
+      await supabase
+        .from('projects')
+        .update({
+          pipeline_status: 'queued',
+          pipeline_stage_label: 'Retrying processing',
+          pipeline_progress_percent: Number(currentProject?.pipeline_progress_percent ?? 0),
+          pipeline_error: null,
+          worker_last_seen_at: new Date().toISOString(),
+          worker_last_log_message: `Retrying processing (${attemptNumber}/${PIPELINE_MAX_ATTEMPTS})`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', projectId);
+
+      await supabase
+        .from('jobs')
+        .update({
+          status: 'queued',
+          payload: {
+            ...(job.payload ?? {}),
+            retry_of_error: message,
+            retry_attempt: attemptNumber,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      return NextResponse.json({
+        ok: true,
+        processed: 0,
+        retrying: true,
+        project_id: projectId,
+        attempt: attemptNumber,
+      });
+    }
+
     await supabase
       .from('projects')
       .update({

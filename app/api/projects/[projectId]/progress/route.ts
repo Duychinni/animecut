@@ -21,6 +21,7 @@ function parseYouTubeId(url: string): string | null {
 function computeProgress(params: {
   status: ProjectStatus;
   pipelineStatus: PipelineStatus;
+  pipelineStage: string | null;
   elapsedSeconds: number;
   hasTranscript: boolean;
   analyzedCandidates: number;
@@ -28,15 +29,39 @@ function computeProgress(params: {
   activeExports: number;
   targetCount: number;
 }) {
-  const { status, pipelineStatus, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount } = params;
+  const { status, pipelineStatus, pipelineStage, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount } = params;
   const safeTarget = Math.max(1, targetCount);
 
   if ((status === 'completed' || pipelineStatus === 'completed') && activeExports === 0 && doneExports >= safeTarget) return 100;
   if (pipelineStatus === 'error') return Math.max(5, Math.min(95, doneExports > 0 ? 70 : 12));
 
+  const stageWindows: Record<string, [number, number, number]> = {
+    queued: [3, 8, 35],
+    downloading: [8, 14, 35],
+    extracting_audio: [14, 24, 45],
+    transcribing: [24, 44, 150],
+    finding_hooks: [44, 60, 90],
+    creating_clips: [60, 70, 45],
+    face_tracking_crop: [70, 78, 45],
+    rendering: [72, 96, 240],
+    uploading_outputs: [96, 99, 35],
+  };
+
+  if (pipelineStage && stageWindows[pipelineStage]) {
+    const [start, end, expectedSeconds] = stageWindows[pipelineStage];
+    if (pipelineStage === 'rendering') {
+      const exportProgress = Math.min(1, doneExports / safeTarget);
+      const activeBoost = activeExports > 0 ? 0.08 : 0;
+      return Math.min(99, Math.round(start + Math.min(1, exportProgress + activeBoost + elapsedSeconds / 900) * (end - start)));
+    }
+
+    const stageRatio = Math.min(0.92, elapsedSeconds / expectedSeconds);
+    return Math.min(99, Math.round(start + stageRatio * (end - start)));
+  }
+
   if (!hasTranscript) {
     if (pipelineStatus === 'queued') return 8;
-    if (pipelineStatus === 'processing') return Math.min(34, 10 + Math.floor(elapsedSeconds / 3));
+    if (pipelineStatus === 'processing') return Math.min(44, 10 + Math.floor(elapsedSeconds / 4));
     return Math.min(24, 6 + Math.floor(elapsedSeconds / 4));
   }
 
@@ -143,6 +168,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const projectNeedsExportCompletion = projectMarkedCompleted && activeExports > 0;
     const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
+    const pipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
     if (projectNeedsExportCompletion) {
       pipelineStatus = 'processing';
     }
@@ -154,20 +180,20 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     if (staleWorker) {
       pipelineStatus = 'error';
     }
+    const liveProgress = computeProgress({
+      status: effectiveStatus,
+      pipelineStatus,
+      pipelineStage,
+      elapsedSeconds,
+      hasTranscript,
+      analyzedCandidates,
+      doneExports,
+      activeExports,
+      targetCount,
+    });
     const progressPercent = isReallyCompleted
       ? 100
-      : activeExports > 0 || !Number.isFinite(explicitPercent)
-        ? computeProgress({
-            status: effectiveStatus,
-            pipelineStatus,
-            elapsedSeconds,
-            hasTranscript,
-            analyzedCandidates,
-            doneExports,
-            activeExports,
-            targetCount,
-          })
-        : explicitPercent;
+      : Math.max(Number.isFinite(explicitPercent) ? explicitPercent : 0, liveProgress);
 
     const etaSeconds = estimateEtaSeconds({
       status: effectiveStatus,
@@ -227,7 +253,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         title: project.title,
         status: effectiveStatus,
         pipeline_status: pipelineStatus,
-        pipeline_stage: (project as { pipeline_stage?: string | null }).pipeline_stage ?? null,
+        pipeline_stage: pipelineStage,
         pipeline_stage_label: staleWorker ? 'Worker heartbeat expired' : ((project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null),
         worker_last_seen_at: lastSeenRaw,
         worker_last_log_message: (project as { worker_last_log_message?: string | null }).worker_last_log_message ?? null,

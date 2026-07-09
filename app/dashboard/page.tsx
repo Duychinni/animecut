@@ -501,14 +501,12 @@ export default function DashboardPage() {
 
               {showProcessing ? (
                 <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
-                  <div className="relative isolate inline-flex min-w-[150px] items-center justify-center gap-1.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-[11px] font-extrabold text-emerald-200 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
+                  <div className="relative isolate inline-flex min-w-[86px] items-center justify-center overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-[12px] font-extrabold text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
                     <div
                       className="absolute inset-y-0 left-0 -z-10 bg-emerald-400/35 shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-[width] duration-500 ease-out"
                       style={{ width: `${Math.max(6, Math.min(100, percent))}%` }}
                     />
-                    <ClockIcon className="h-3.5 w-3.5" />
                     <span>{percent}%</span>
-                    <span className="font-bold text-emerald-100/85">(ETA {typeof p.eta_seconds === 'number' ? fmtDuration(p.eta_seconds) : '--'})</span>
                   </div>
                 </div>
               ) : (

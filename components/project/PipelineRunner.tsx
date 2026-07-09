@@ -174,11 +174,10 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
           <div className="absolute inset-0 grid place-items-center bg-black/45">
             <div className="w-[78%] max-w-[240px] rounded-lg border border-white/25 bg-black/60 px-4 py-3 text-center backdrop-blur-sm">
               <div className="inline-flex items-center justify-center gap-2 text-2xl font-bold text-white">
-                <ClockIcon className="h-5 w-5 text-emerald-300" />
                 {progressPct}%
               </div>
               <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-white/75">
-                {isCompleted ? 'Completed' : `Processing · ETA ${fmtDuration(progress?.progress?.eta_seconds ?? null)}`}
+                {isCompleted ? 'Completed' : 'Processing'}
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
                 <div
