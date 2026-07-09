@@ -155,6 +155,25 @@ function makeProjectTitle() {
   return 'MAIN PROJECTS';
 }
 
+function shuffleAllShowcaseCards(previous: number[]) {
+  if (previous.length <= 1) return previous;
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const next = [...previous];
+    for (let i = next.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [next[i], next[j]] = [next[j], next[i]];
+    }
+
+    if (next.every((value, index) => value !== previous[index])) {
+      return next;
+    }
+  }
+
+  const shift = 1 + Math.floor(Math.random() * (previous.length - 1));
+  return [...previous.slice(shift), ...previous.slice(0, shift)];
+}
+
 function getPlatformTone(platform: ShowcaseClip['platform']) {
   switch (platform) {
     case 'TikTok':
@@ -190,11 +209,13 @@ function getPlatformBadge(platform: ShowcaseClip['platform']) {
 }
 
 function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
+  const bubbleClass = 'grid h-11 w-11 place-items-center rounded-full border border-white/12 shadow-[0_14px_30px_rgba(0,0,0,0.35)] ring-1 ring-white/10';
+
   if (platform === 'Instagram') {
     return (
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[radial-gradient(circle_at_30%_105%,#feda75_0%,#fa7e1e_28%,#d62976_52%,#962fbf_74%,#4f5bd5_100%)] shadow-[0_10px_24px_rgba(214,41,118,0.32)]" aria-label="Instagram">
-        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" aria-hidden="true" fill="none">
-          <rect x="5.2" y="5.2" width="13.6" height="13.6" rx="4" stroke="currentColor" strokeWidth="2" />
+      <span className={`${bubbleClass} bg-[radial-gradient(circle_at_30%_105%,#feda75_0%,#fa7e1e_28%,#d62976_52%,#962fbf_74%,#4f5bd5_100%)]`} aria-label="Instagram">
+        <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] text-white" aria-hidden="true" fill="none">
+          <rect x="5.1" y="5.1" width="13.8" height="13.8" rx="4.2" stroke="currentColor" strokeWidth="2" />
           <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="2" />
           <circle cx="16.7" cy="7.4" r="1.1" fill="currentColor" />
         </svg>
@@ -204,11 +225,14 @@ function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
 
   if (platform === 'TikTok') {
     return (
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#050505] shadow-[0_10px_24px_rgba(37,244,238,0.18)]" aria-label="TikTok">
-        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none">
-          <path d="M10.4 10.1v5.4a3.2 3.2 0 1 1-2.5-3.1" stroke="#fe2c55" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M12.7 5.2v10.3a3.2 3.2 0 1 1-2.5-3.1" stroke="#25f4ee" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M12.7 5.2c.7 2.5 2.2 4 4.7 4.4" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <span className={`${bubbleClass} bg-[#050505]`} aria-label="TikTok">
+        <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" aria-hidden="true" fill="none">
+          <path d="M13.1 5.1v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="#25f4ee" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M14.3 4.6c.5 2.5 2 4 4.5 4.4" stroke="#25f4ee" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M12 5.8v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="#fe2c55" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M13.2 5.3c.5 2.5 2 4 4.5 4.4" stroke="#fe2c55" strokeWidth="3.1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M12.7 5.2v8.8a3.8 3.8 0 1 1-3.4-3.8" stroke="white" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M13.9 4.8c.5 2.5 2 4 4.5 4.4" stroke="white" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
     );
@@ -216,9 +240,9 @@ function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
 
   if (platform === 'Facebook') {
     return (
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#1877f2] shadow-[0_10px_24px_rgba(24,119,242,0.32)]" aria-label="Facebook">
-        <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" aria-hidden="true" fill="currentColor">
-          <path d="M14.1 8.2h2.1V4.8c-.4-.1-1.7-.2-3.1-.2-3.1 0-5.2 1.9-5.2 5.4v3H4.6v3.8h3.3v7.1h4.1v-7.1h3.2l.5-3.8H12v-2.6c0-1.1.3-2.2 2.1-2.2Z" />
+      <span className={`${bubbleClass} bg-[#1877f2]`} aria-label="Facebook">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" aria-hidden="true" fill="currentColor">
+          <path d="M14.8 8.4h2.3V4.5c-.4-.1-1.8-.2-3.4-.2-3.4 0-5.7 2.1-5.7 6v3.4H4.2v4.4H8V24h4.7v-5.9h3.7l.6-4.4h-4.3v-2.9c0-1.3.4-2.4 2.1-2.4Z" />
         </svg>
       </span>
     );
@@ -226,9 +250,9 @@ function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
 
   if (platform === 'X') {
     return (
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#111111] shadow-[0_10px_24px_rgba(255,255,255,0.12)]" aria-label="X">
-        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" aria-hidden="true" fill="currentColor">
-          <path d="M15.4 4h3.1l-5.1 5.8 6 10.2h-4.7l-3.7-6.2L5.6 20H2.5l5.5-6.3L2.3 4h4.8l3.3 5.6L15.4 4Zm-1.1 14.2h1.7L6.2 5.7H4.4l9.9 12.5Z" />
+      <span className={`${bubbleClass} bg-[#1f1f1f]`} aria-label="X">
+        <svg viewBox="0 0 24 24" className="h-[21px] w-[21px] text-white" aria-hidden="true" fill="currentColor">
+          <path d="M18.9 2.9h3.3l-7.3 8.3 8.5 11.2h-6.7l-5.2-6.8-6 6.8H2.2l7.8-8.9L1.8 2.9h6.9l4.7 6.2 5.5-6.2Zm-1.2 17.6h1.8L7.7 4.7h-2l12 15.8Z" />
         </svg>
       </span>
     );
@@ -236,9 +260,9 @@ function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
 
   if (platform === 'YouTube') {
     return (
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#ff0033] shadow-[0_10px_24px_rgba(255,0,51,0.32)]" aria-label="YouTube">
-        <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" aria-hidden="true" fill="currentColor">
-          <path d="M21 8.2a3 3 0 0 0-2.1-2.1C17 5.6 12 5.6 12 5.6s-5 0-6.9.5A3 3 0 0 0 3 8.2 31.8 31.8 0 0 0 2.5 12c0 1.3.2 2.6.5 3.8a3 3 0 0 0 2.1 2.1c1.9.5 6.9.5 6.9.5s5 0 6.9-.5a3 3 0 0 0 2.1-2.1c.3-1.2.5-2.5.5-3.8s-.2-2.6-.5-3.8ZM10.1 15.3V8.7l5.8 3.3-5.8 3.3Z" />
+      <span className={`${bubbleClass} bg-[#ff0033]`} aria-label="YouTube">
+        <svg viewBox="0 0 24 24" className="h-7 w-7 text-white" aria-hidden="true" fill="currentColor">
+          <path d="M9.4 7.8v8.4l7.3-4.2-7.3-4.2Z" />
         </svg>
       </span>
     );
@@ -246,9 +270,9 @@ function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
 
   if (platform === 'Snapchat') {
     return (
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#fffc00] shadow-[0_10px_24px_rgba(255,252,0,0.24)]" aria-label="Snapchat">
-        <svg viewBox="0 0 24 24" className="h-6 w-6 text-black" aria-hidden="true" fill="currentColor">
-          <path d="M12 3.2c2.7 0 4.6 2 4.6 4.9v2.4c0 .5.6.9 1.3 1.1.6.2 1 .4 1 .8 0 .5-.7.9-1.8 1.1-.3.1-.5.3-.3.6.5.8 1.3 1.5 2.4 1.8.3.1.5.4.4.7-.1.4-.7.7-1.7.8-.5 0-.8.2-1 .6-.4.8-1.1 1.2-2 1-.7-.2-1.3-.3-1.8.2-.5.4-.8.7-1.1.7s-.6-.3-1.1-.7c-.5-.5-1.1-.4-1.8-.2-.9.2-1.6-.2-2-1-.2-.4-.5-.6-1-.6-1-.1-1.6-.4-1.7-.8-.1-.3.1-.6.4-.7 1.1-.3 1.9-1 2.4-1.8.2-.3 0-.5-.3-.6-1.1-.2-1.8-.6-1.8-1.1 0-.4.4-.6 1-.8.7-.2 1.3-.6 1.3-1.1V8.1c0-2.9 1.9-4.9 4.6-4.9Z" />
+      <span className={`${bubbleClass} bg-[#fffc00]`} aria-label="Snapchat">
+        <svg viewBox="0 0 24 24" className="h-7 w-7" aria-hidden="true" fill="white">
+          <path d="M12 2.6c2.7 0 4.5 2 4.5 5.1v2.4c0 .4.2.7.6.9.4.2.9.4 1.5.6.4.1.8.4.8.8 0 .6-.9 1.1-2 1.3-.4.1-.5.3-.3.6.6.9 1.5 1.6 2.7 1.9.4.1.6.4.5.8-.1.5-.8.8-2.1 1-.6.1-.8.2-1 .6-.5.9-1.2 1.3-2.1 1.1-.9-.2-1.5-.2-2.2.4-.6.5-1 .8-1.4.8s-.8-.3-1.4-.8c-.7-.6-1.3-.6-2.2-.4-.9.2-1.6-.2-2.1-1.1-.2-.4-.4-.5-1-.6-1.3-.2-2-.5-2.1-1-.1-.4.1-.7.5-.8 1.2-.3 2.1-1 2.7-1.9.2-.3.1-.5-.3-.6-1.1-.2-2-.7-2-1.3 0-.4.4-.7.8-.8.6-.2 1.1-.4 1.5-.6.4-.2.6-.5.6-.9V7.7c0-3.1 1.8-5.1 4.5-5.1Z" stroke="black" strokeWidth="1.25" strokeLinejoin="round" />
         </svg>
       </span>
     );
@@ -285,12 +309,7 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       previousShowcaseRectsRef.current = captureShowcaseRects();
-      setShowcaseOrder((previous) => {
-        const next = [...previous];
-        const swapIndex = Math.floor(Math.random() * Math.max(1, next.length - 1));
-        [next[swapIndex], next[swapIndex + 1]] = [next[swapIndex + 1], next[swapIndex]];
-        return next;
-      });
+      setShowcaseOrder(shuffleAllShowcaseCards);
     }, 7000);
 
     return () => window.clearInterval(timer);
@@ -571,7 +590,7 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="relative py-16 lg:py-24">
+        <section className="relative pt-16 pb-10 lg:pt-24 lg:pb-12">
           <div className="mx-auto max-w-4xl text-center">
             <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI VIDEO CLIPPING TOOL</p>
             <h1 className="mt-4 text-[3.25rem] font-extrabold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
@@ -646,8 +665,8 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="demo" className="relative left-1/2 mt-8 w-screen -translate-x-1/2 py-10">
-          <div className="mx-auto mb-6 max-w-7xl px-6 text-center">
+        <section id="demo" className="relative left-1/2 -mt-4 w-screen -translate-x-1/2 py-8 lg:-mt-8">
+          <div className="mx-auto mb-5 max-w-7xl px-6 text-center">
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
