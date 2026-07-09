@@ -77,6 +77,18 @@ function hasFillerStart(text: string) {
   return /^(and|but|so|yeah|well|like|you know)\b/i.test(cleanText(text));
 }
 
+function endsSentence(text: string) {
+  return /[.!?]["']?$/.test(cleanText(text));
+}
+
+function overlapsSelected(start: number, end: number, selected: Array<{ start: number; end: number }>) {
+  return selected.some((item) => {
+    const overlap = Math.max(0, Math.min(end, item.end) - Math.max(start, item.start));
+    const minDur = Math.max(1, Math.min(end - start, item.end - item.start));
+    return overlap >= 12 && overlap / minDur >= 0.32;
+  });
+}
+
 function labelForText(text: string) {
   if (/\b(why|what|how|secret|truth|crazy|wild|never)\b/i.test(text)) return 'Hook';
   if (/\b(because|lesson|learned|reason|point|tip|advice|answer)\b/i.test(text)) return 'Educational';
@@ -188,13 +200,18 @@ export function analyzeTranscriptLocally(
   });
 
   const seen = new Set<string>();
+  const selectedWindows: Array<{ start: number; end: number }> = [];
   const candidates = rawCandidates
     .sort((a, b) => b.overall_score - a.overall_score)
     .filter((candidate) => {
       const key = `${Math.round(candidate.adjusted_start / 8)}:${candidate.title.toLowerCase()}`;
       if (seen.has(key)) return false;
+      if (!endsSentence(candidate.closing_line)) return false;
+      if (overlapsSelected(candidate.adjusted_start, candidate.adjusted_end, selectedWindows)) return false;
       seen.add(key);
-      return candidate.duration_seconds >= Math.min(policy.minSec, windowSeconds);
+      const keep = candidate.duration_seconds >= Math.min(policy.minSec, windowSeconds);
+      if (keep) selectedWindows.push({ start: candidate.adjusted_start, end: candidate.adjusted_end });
+      return keep;
     })
     .slice(0, Math.max(policy.candidateCount, targetCount * 4, policy.targetMin));
 

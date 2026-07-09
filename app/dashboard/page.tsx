@@ -12,6 +12,15 @@ function fmtDuration(totalSec: number | null | undefined) {
   return `${m}m ${String(r).padStart(2, '0')}s`;
 }
 
+function ClockIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" aria-hidden="true" fill="none">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 4.6v3.7l2.6 1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 type ProjectListItem = {
   id: string;
   title: string;
@@ -491,13 +500,17 @@ export default function DashboardPage() {
               )}
 
               {showProcessing ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/18 px-4 text-center pointer-events-none">
-                  <div className="rounded-[14px] border border-white/12 bg-black/46 px-3 py-2 text-white shadow-[0_8px_20px_rgba(0,0,0,0.24)] backdrop-blur-sm">
-                    <div className="text-[1.1rem] font-extrabold leading-none tracking-tight">{percent}%</div>
-                    <div className="mt-1 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/82">
-                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                      {processingStage}
-                    </div>
+                <div className="pointer-events-none absolute inset-0 bg-black/18">
+                  <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-300/25 bg-black/72 px-2.5 py-1.5 text-[11px] font-extrabold text-emerald-300 shadow-[0_8px_20px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+                    <ClockIcon className="h-3.5 w-3.5" />
+                    <span>{percent}%</span>
+                    <span className="font-bold text-emerald-100/85">(ETA {typeof p.eta_seconds === 'number' ? fmtDuration(p.eta_seconds) : '--'})</span>
+                  </div>
+                  <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/18">
+                    <div
+                      className="h-full rounded-r-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.75)] transition-[width] duration-500 ease-out"
+                      style={{ width: `${Math.max(4, Math.min(100, percent))}%` }}
+                    />
                   </div>
                 </div>
               ) : (
@@ -513,7 +526,11 @@ export default function DashboardPage() {
           return (
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="min-w-0">
-                <Link href={`/dashboard/projects/${p.id}`} prefetch={false}>{thumb}</Link>
+                {showProcessing ? (
+                  <div className="cursor-wait" aria-disabled="true">{thumb}</div>
+                ) : (
+                  <Link href={`/dashboard/projects/${p.id}`} prefetch={false}>{thumb}</Link>
+                )}
 
                 <div className="mt-3">
                   {renamingId === p.id ? (

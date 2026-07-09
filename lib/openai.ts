@@ -115,9 +115,12 @@ CANDIDATE GENERATION RULES:
 - For each potential hook, start 3-8 seconds before the hook when helpful for context.
 - End 5-15 seconds after payoff when needed for a clean conclusion.
 - Prefer complete thought boundaries.
-- Avoid starting or ending mid-sentence.
+- End on a completed sentence, punchline, answer, or clear speaker statement. Never end mid-sentence or mid-thought.
 - Avoid openings like "And...", "So...", "But...", "Yeah..." unless absolutely necessary.
 - Reject filler-only dialogue.
+- Build an OpusClip-style diverse set: each candidate must cover a distinct viral idea, not a slightly shifted version of another clip.
+- Avoid transcript overlap between candidates. If two candidates share the same setup, story beat, or payoff, keep only the stronger one.
+- Prefer unique hooks from different parts of the source over multiple clips from the same conversation section.
 
 REEL HOOK TEXT RULES:
 - Write a separate "hook_text" for the white title card that appears on the reel.
@@ -267,8 +270,10 @@ export async function analyzeClipCandidates(
     const merged = { candidates: allCandidates };
 
     const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
-Keep a broad candidate pool.
-Remove only clearly broken candidates.
+Keep a broad candidate pool, but remove near-duplicate or overlapping clips that use the same transcript section.
+Every remaining clip must end on a complete sentence, punchline, answer, or clear statement.
+If two clips share the same setup/payoff, keep the more viral and self-contained one.
+Remove only clearly broken candidates or duplicate/overlapping candidates.
 Return revised JSON only.`;
 
     const refineRes = await openai.responses.create({

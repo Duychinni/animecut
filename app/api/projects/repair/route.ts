@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById } from '@/lib/caption-presets';
 
 type ExportRepairRow = {
   id?: string | null;
@@ -8,17 +9,17 @@ type ExportRepairRow = {
   output_storage_path?: string | null;
   error_message?: string | null;
   updated_at?: string | null;
+  caption_font_family?: string | null;
+  caption_stroke_width?: number | null;
 };
 
 function isRetryableRenderError(message: string | null | undefined) {
   return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted/i.test(message ?? '');
 }
 
-function isStaleActiveExport(row: ExportRepairRow, maxAgeMinutes = 15) {
-  if (row.status !== 'queued' && row.status !== 'processing') return false;
-  const updatedAt = row.updated_at ? new Date(row.updated_at).getTime() : 0;
-  if (!updatedAt) return true;
-  return Date.now() - updatedAt > maxAgeMinutes * 60 * 1000;
+function usesCurrentCaptionStyle(row: ExportRepairRow, preset: ReturnType<typeof getCaptionPresetById>) {
+  return row.caption_font_family === preset.captionFontFamily
+    && Number(row.caption_stroke_width ?? 0) >= preset.captionStrokeWidth;
 }
 
 async function ensureExportJob(admin: ReturnType<typeof createAdminClient>, projectId: string, exportId: string) {
@@ -58,7 +59,7 @@ export async function POST() {
     const admin = createAdminClient();
     const { data: projects, error } = await admin
       .from('projects')
-      .select('id, user_id, status, pipeline_status, exports(id, status, output_storage_path, error_message, updated_at)')
+      .select('id, user_id, status, pipeline_status, exports(id, status, output_storage_path, error_message, updated_at, caption_font_family, caption_stroke_width)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -68,6 +69,7 @@ export async function POST() {
     let repaired = 0;
     let requeuedExports = 0;
     let ensuredJobs = 0;
+    const captionPreset = getCaptionPresetById(DEFAULT_CAPTION_PRESET_ID);
 
     for (const project of projects ?? []) {
       const rows = Array.isArray(project.exports)
@@ -76,25 +78,49 @@ export async function POST() {
       const projectAlreadyCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing'));
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
-      const frozenCompletedProject = projectAlreadyCompleted && readyExports > 0;
-      const staleActiveRows = activeRows.filter((r) => isStaleActiveExport(r));
-      const shouldRetireActiveRows = readyExports > 0 && (frozenCompletedProject || (activeRows.length > 0 && staleActiveRows.length === activeRows.length));
+      const frozenCompletedProject = projectAlreadyCompleted && readyExports > 0 && activeRows.length === 0;
+      let requeuedOldStyle = false;
 
-      if (shouldRetireActiveRows) {
-        await admin
-          .from('projects')
+      const oldStyleDoneRows = rows.filter((r) => (
+        r.id
+        && r.status === 'done'
+        && typeof r.output_storage_path === 'string'
+        && r.output_storage_path.length > 0
+        && !usesCurrentCaptionStyle(r, captionPreset)
+      ));
+
+      if (oldStyleDoneRows.length && (!projectAlreadyCompleted || activeRows.length > 0)) {
+        const ids = oldStyleDoneRows.map((r) => String(r.id));
+        const { error: staleStyleError } = await admin
+          .from('exports')
           .update({
-            status: 'completed',
-            pipeline_status: 'completed',
-            pipeline_error: null,
-            pipeline_completed_at: new Date().toISOString(),
+            status: 'queued',
+            output_storage_path: null,
+            error_message: 'Requeued to normalize caption style.',
+            caption_preset_id: captionPreset.id,
+            caption_font_family: captionPreset.captionFontFamily,
+            caption_font_size: captionPreset.captionFontSize,
+            caption_text_color: captionPreset.captionTextColor,
+            caption_highlight_color: captionPreset.captionHighlightColor,
+            caption_stroke_color: captionPreset.captionStrokeColor,
+            caption_stroke_width: captionPreset.captionStrokeWidth,
+            caption_shadow: captionPreset.captionShadow,
+            caption_background_box: captionPreset.captionBackgroundBox,
+            caption_position: captionPreset.captionPosition,
+            caption_animation: captionPreset.captionAnimation,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', project.id)
-          .eq('user_id', user.id);
+          .in('id', ids);
 
-        repaired += 1;
-        continue;
+        if (staleStyleError) throw staleStyleError;
+
+        for (const exportId of ids) {
+          const created = await ensureExportJob(admin, String(project.id), exportId);
+          if (created) ensuredJobs += 1;
+        }
+
+        requeuedExports += ids.length;
+        requeuedOldStyle = true;
       }
 
       const retryableErrors = frozenCompletedProject
@@ -131,7 +157,7 @@ export async function POST() {
 
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length + retryableErrors.length;
 
-      if (readyExports > 0 && activeExports === 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed')) {
+      if (!requeuedOldStyle && projectAlreadyCompleted && readyExports > 0 && activeExports === 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed')) {
         await admin
           .from('projects')
           .update({

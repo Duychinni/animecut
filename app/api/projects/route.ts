@@ -45,8 +45,8 @@ export async function GET() {
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-      const isCompleted = (markedCompleted && readyExports > 0) || (readyExports > 0 && activeExports === 0);
-      const needsExportCompletion = markedCompleted && readyExports === 0 && activeExports > 0;
+      const isCompleted = markedCompleted && readyExports > 0 && activeExports === 0;
+      const needsExportCompletion = markedCompleted && activeExports > 0;
 
       return {
         ...project,

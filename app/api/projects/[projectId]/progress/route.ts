@@ -120,10 +120,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const rows = exportsRows ?? [];
     const doneExports = rows.filter((r) => r.status === 'done').length;
     const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-    const hasSavedExports = doneExports > 0;
-    const activeExports = projectMarkedCompleted && hasSavedExports
-      ? 0
-      : rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
+    const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
     const failedExports = rows.filter((r) => r.status === 'error').length;
 
     const analyzedCandidates = Math.max(0, Number(candidateCount ?? 0));
@@ -141,7 +138,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const isReallyCompleted =
       activeExports === 0 && doneExports > 0 && (projectMarkedCompleted || doneExports >= targetCount);
 
-    const projectNeedsExportCompletion = projectMarkedCompleted && !hasSavedExports && activeExports > 0;
+    const projectNeedsExportCompletion = projectMarkedCompleted && activeExports > 0;
     const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
     if (projectNeedsExportCompletion) {
@@ -157,9 +154,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     }
     const progressPercent = isReallyCompleted
       ? 100
-      : Number.isFinite(explicitPercent)
-        ? explicitPercent
-        : computeProgress({
+      : activeExports > 0 || !Number.isFinite(explicitPercent)
+        ? computeProgress({
             status: effectiveStatus,
             pipelineStatus,
             elapsedSeconds,
@@ -168,7 +164,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
             doneExports,
             activeExports,
             targetCount,
-          });
+          })
+        : explicitPercent;
 
     const etaSeconds = estimateEtaSeconds({
       status: effectiveStatus,

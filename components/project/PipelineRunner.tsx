@@ -35,6 +35,15 @@ function fmtDuration(totalSec: number | null | undefined) {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
+function ClockIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" aria-hidden="true" fill="none">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 4.6v3.7l2.6 1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function PipelineRunner({ projectId, autoStart = false }: { projectId: string; autoStart?: boolean }) {
   const router = useRouter();
   const [log, setLog] = useState<string>('');
@@ -106,6 +115,10 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }, [autoStart]);
 
   useEffect(() => {
+    void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+  }, []);
+
+  useEffect(() => {
     if (autoRanRef.current || loading) return;
     if (!progress?.project) return;
 
@@ -160,7 +173,10 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
           <div className="absolute inset-0 grid place-items-center bg-black/45">
             <div className="w-[78%] max-w-[240px] rounded-lg border border-white/25 bg-black/60 px-4 py-3 text-center backdrop-blur-sm">
-              <div className="text-2xl font-bold text-white">{progressPct}%</div>
+              <div className="inline-flex items-center justify-center gap-2 text-2xl font-bold text-white">
+                <ClockIcon className="h-5 w-5 text-emerald-300" />
+                {progressPct}%
+              </div>
               <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-white/75">
                 {isCompleted ? 'Completed' : `Processing · ETA ${fmtDuration(progress?.progress?.eta_seconds ?? null)}`}
               </div>

@@ -185,10 +185,13 @@ function normalizeLooseText(t: string) {
 function isNearDuplicateWindow(aStart: number, aEnd: number, bStart: number, bEnd: number) {
   const overlap = Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
   const minDur = Math.max(1, Math.min(aEnd - aStart, bEnd - bStart));
+  const maxDur = Math.max(1, Math.max(aEnd - aStart, bEnd - bStart));
   const startDelta = Math.abs(aStart - bStart);
   const endDelta = Math.abs(aEnd - bEnd);
   const sameHookWindow = startDelta < 6 && endDelta < 6;
-  return sameHookWindow && overlap / minDur >= 0.5;
+  const heavyTranscriptOverlap = overlap >= 12 && (overlap / minDur >= 0.32 || overlap / maxDur >= 0.24);
+  const sameNeighborhood = startDelta < 14 && overlap / minDur >= 0.22;
+  return (sameHookWindow && overlap / minDur >= 0.5) || heavyTranscriptOverlap || sameNeighborhood;
 }
 
 function hasStrongPayoff(text: string) {
@@ -454,9 +457,10 @@ export async function POST(req: Request) {
         const closingLine = String(c.closing_line ?? closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments));
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
+        const completeEnding = endsSentence(closingLine) && !endsWithFiller(closingLine);
         const strictQualityPass = passesStandaloneQualityChecks(openingLine, closingLine) && payoffStrong;
         const passesQuality = localAnalysisCandidate
-          ? Boolean(openingLine && closingLine && transcriptWordCount >= Math.min(minimumWordCount, 35))
+          ? Boolean(startsLikeNaturalBoundary(openingLine) && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
           : strictQualityPass;
 
         const hookStrength = clamp100(num(c.hook_strength) || 0);
@@ -521,6 +525,8 @@ export async function POST(req: Request) {
               ? 'duration_below_minimum'
               : transcriptWordCount < minimumWordCount
                 ? 'word_count_below_minimum'
+                : !completeEnding
+                  ? 'incomplete_sentence_ending'
                 : calibratedOverall < MIN_TOP_CLIP_SCORE
                   ? 'score_below_minimum'
                   : !passesQuality

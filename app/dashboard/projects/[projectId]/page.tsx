@@ -146,9 +146,10 @@ export default async function ProjectDetailPage({
     });
   const projectMarkedCompleted = projectRow?.status === 'completed' || projectRow?.pipeline_status === 'completed';
   const savedExportItems = filteredExportItems.filter((row) => row.status === 'done' && Boolean(row.signedUrl));
-  const displayExportItems = projectMarkedCompleted && savedExportItems.length
+  const activeExportItems = filteredExportItems.filter((row) => row.status === 'queued' || row.status === 'processing');
+  const displayExportItems = !activeExportItems.length && savedExportItems.length
     ? savedExportItems
-    : filteredExportItems;
+    : [];
 
   const pageTitle =
     typeof projectRow?.source_title === 'string' && projectRow.source_title.trim().length
@@ -162,12 +163,12 @@ export default async function ProjectDetailPage({
   const sourceDurationSeconds = Number(projectRow?.source_duration_seconds ?? 0);
   const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
-  const doneExports = displayExportItems.filter((row) => row.status === 'done').length;
-  const activeExports = displayExportItems.filter((row) => row.status === 'queued' || row.status === 'processing').length;
+  const doneExports = savedExportItems.length;
+  const activeExports = activeExportItems.length;
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
   const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || doneExports >= Math.min(targetCount, displayExportItems.length || targetCount));
-  const effectiveStatus = isCompletedFromRows ? 'completed' : String(projectRow?.status ?? 'created');
+  const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
   const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && activeExports === 0 && doneExports >= targetCount)
     ? 100
     : Math.max(0, Math.min(99, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
@@ -175,13 +176,13 @@ export default async function ProjectDetailPage({
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
   const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
-  const doneResultItems = displayExportItems.filter((row) => row.status === 'done');
+  const doneResultItems = savedExportItems;
   const hasRenderableResults = doneResultItems.some((row) => Boolean(row.signedUrl));
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
+  const hasActiveExports = activeExports > 0;
   const hasExportRows = displayExportItems.length > 0;
-  const hasActiveExports = activeExports > 0 || displayExportItems.some((row) => row.status === 'queued' || row.status === 'processing');
   const shouldShowCompletedState = !hasExportRows && !hasActiveExports && (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
-  const showProcessingHero = !hasExportRows && !hasRenderableResults && !hasMockResults && !shouldShowCompletedState;
+  const showProcessingHero = !shouldShowCompletedState && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults);
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -202,7 +203,7 @@ export default async function ProjectDetailPage({
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
           />
-        ) : hasExportRows ? (
+        ) : hasRenderableResults ? (
           <TopClipsBoard
             projectId={projectId}
             clips={displayExportItems.map((row) => ({

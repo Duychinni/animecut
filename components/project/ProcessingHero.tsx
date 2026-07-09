@@ -21,6 +21,23 @@ type ProgressPayload = {
   };
 };
 
+function fmtDuration(totalSec: number | null | undefined) {
+  if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '--';
+  const s = Math.max(0, Math.round(totalSec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}m ${String(r).padStart(2, '0')}s`;
+}
+
+function ClockIcon({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" aria-hidden="true" fill="none">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 4.6v3.7l2.6 1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function getProcessingLabel(stage: string | null | undefined, fallbackStatus: string) {
   if (stage === 'downloading') return 'Preparing source video...';
   if (stage === 'extracting_audio') return 'Extracting audio...';
@@ -131,7 +148,11 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
             <div className="mt-8 space-y-4">
               <div>
                 <div className="mb-2 flex items-center justify-between text-sm text-white/70">
-                  <span>{percent}% complete</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <ClockIcon className="h-3.5 w-3.5 text-emerald-300" />
+                    {percent}% complete
+                  </span>
+                  {!isFinished ? <span>ETA {fmtDuration(data?.progress?.eta_seconds ?? null)}</span> : null}
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, percent))}%` }} />

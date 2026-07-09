@@ -87,7 +87,7 @@ async function getProjectIdForExport(exportId: string) {
 
 async function getProjectCompletionState(projectId: string) {
   const supabase = createAdminClient();
-  const [{ data: project }, { count: savedExports }] = await Promise.all([
+  const [{ data: project }, { count: savedExports }, { count: activeExports }] = await Promise.all([
     supabase
       .from('projects')
       .select('status, pipeline_status')
@@ -99,17 +99,23 @@ async function getProjectCompletionState(projectId: string) {
       .eq('project_id', projectId)
       .eq('status', 'done')
       .not('output_storage_path', 'is', null),
+    supabase
+      .from('exports')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectId)
+      .in('status', ['queued', 'processing']),
   ]);
 
   return {
     completed: project?.status === 'completed' || project?.pipeline_status === 'completed',
     hasSavedExports: Number(savedExports ?? 0) > 0,
+    activeExports: Number(activeExports ?? 0),
   };
 }
 
 async function isFrozenCompletedProject(projectId: string) {
   const state = await getProjectCompletionState(projectId);
-  return state.completed && state.hasSavedExports;
+  return state.completed && state.hasSavedExports && state.activeExports === 0;
 }
 
 async function shouldSkipExportForCompletedProject(exportId: string) {
@@ -500,9 +506,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await mkdir(exportDir, { recursive: true });
   const outPath = path.join(exportDir, `${bundle.id}.mp4`);
 
-  const captionPreset = getCaptionPresetById(options?.caption_preset_id ?? bundle.caption_preset_id);
-  const captionTemplate = options?.caption_template ?? captionPreset.caption_template;
-  const captionFont = options?.caption_font ?? captionPreset.caption_font;
+  const captionPreset = getCaptionPresetById(DEFAULT_CAPTION_PRESET_ID);
+  const captionTemplate: CaptionTemplate = 'capcut';
+  const captionFont: CaptionFont = 'arial';
   const srtPath = path.join(exportDir, `${bundle.id}.ass`);
   const transcriptSegments = bundle.transcript?.segments_json ?? [];
 

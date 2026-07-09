@@ -780,13 +780,13 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string) {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 730;
-  const cardHeight = twoLine ? 176 : 118;
+  const cardWidth = 770;
+  const cardHeight = twoLine ? 188 : 130;
   const cardX = Math.round((1080 - cardWidth) / 2);
-  const cardY = twoLine ? 70 : 86;
+  const cardY = twoLine ? 66 : 82;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 60 : 66;
+  const hookFontSize = twoLine ? 68 : 76;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -798,7 +798,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Arial Black,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,104,0,0,1,0,0,5,80,80,0,1
+Style: HookText,Arial Black,${hookFontSize},&H00000000,&H00000000,&H00111111,&H55000000,-1,0,0,0,100,106,0,0,1,1,1,5,80,80,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -816,14 +816,16 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     `drawtext=${source}`,
     "font='Arial Black'",
     'fontcolor=black',
-    'fontsize=66',
+    'fontsize=74',
     'box=1',
     'boxcolor=white@0.98',
-    'boxborderw=28',
-    'borderw=0',
-    'shadowx=0',
-    'shadowy=0',
-    'line_spacing=8',
+    'boxborderw=30',
+    'borderw=1',
+    'bordercolor=black@0.72',
+    'shadowx=1',
+    'shadowy=2',
+    'shadowcolor=black@0.28',
+    'line_spacing=9',
     'fix_bounds=1',
     'x=(w-text_w)/2',
     'y=86',
