@@ -126,6 +126,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [hookTextEnabled, setHookTextEnabled] = useState(true);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [expandedPlayback, setExpandedPlayback] = useState<ExpandedPlayback | null>(null);
+  const renderKickInFlightRef = useRef(false);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
@@ -274,9 +275,23 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     const hasActiveClip = visible.some((clip) => clip.status === 'queued' || clip.status === 'processing');
     if (!hasActiveClip) return;
 
+    const tick = async () => {
+      if (renderKickInFlightRef.current) return;
+      renderKickInFlightRef.current = true;
+      try {
+        await fetch('/api/jobs/process', { method: 'POST', cache: 'no-store' });
+      } catch {
+        // Best effort: the next tick or manual refresh can retry.
+      } finally {
+        renderKickInFlightRef.current = false;
+        router.refresh();
+      }
+    };
+
+    void tick();
     const timer = setInterval(() => {
-      router.refresh();
-    }, 4000);
+      void tick();
+    }, 5000);
 
     return () => clearInterval(timer);
   }, [router, visible]);

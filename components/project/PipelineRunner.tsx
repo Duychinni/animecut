@@ -44,6 +44,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const processingKickInFlightRef = useRef(false);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
+  const activeExportCount = useMemo(() => Number(progress?.progress?.active_exports ?? 0), [progress]);
   const isCompleted = progress?.project?.status === 'completed';
 
   const refreshProgress = useCallback(async () => {
@@ -70,7 +71,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }, []);
 
   useEffect(() => {
-    if (progressPct >= 100) return;
+    if (progressPct >= 100 && activeExportCount <= 0) return;
 
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -95,7 +96,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [kickBackgroundProcessing, refreshProgress, progressPct, progress]);
+  }, [activeExportCount, kickBackgroundProcessing, refreshProgress, progressPct, progress]);
 
   useEffect(() => {
     if (!autoStart || autoRanRef.current || loading) return;
