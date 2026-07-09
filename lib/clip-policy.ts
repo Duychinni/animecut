@@ -44,5 +44,5 @@ export function getClipPolicy(totalSeconds: number): ClipPolicy {
 
 export function getTargetClipCount(totalSeconds: number) {
   const policy = getClipPolicy(totalSeconds);
-  return policy.targetMax;
+  return Math.min(20, policy.targetMax);
 }

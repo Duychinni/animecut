@@ -438,11 +438,13 @@ export async function POST(req: Request) {
     const policy = getClipPolicy(transcriptMaxEnd);
     const targetClipCount = getTargetClipCount(transcriptMaxEnd);
     const minimumCandidatePool = Math.max(policy.candidateCount, targetClipCount * 4);
+    const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
 
     const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
 
     const scoredCandidates: RankedCandidate[] = (parsed.candidates ?? [])
+      .slice(0, candidateLimit)
       .map((c: RawCandidate, idx: number) => {
         const localAnalysisCandidate = isLocalAnalysisCandidate(c);
         const rawStart = num(c.raw_start ?? c.start_sec ?? c.adjusted_start);
@@ -564,7 +566,8 @@ export async function POST(req: Request) {
         return acc;
       }, []);
 
-    const ranked = deduped.map((item, idx) => ({ ...item, rank: idx + 1 }));
+    const targetReturnCount = Math.min(deduped.length, targetClipCount);
+    const ranked = deduped.slice(0, targetReturnCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
     console.log('[analyze] counts', {
       project_id,
