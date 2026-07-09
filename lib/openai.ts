@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
+import { getClipPolicy } from '@/lib/clip-policy';
 import { buildMockCandidates, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
+import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 
-export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'local-analysis-disabled-key' });
 
 function stripCodeFences(text: string) {
   const trimmed = text.trim();
@@ -51,10 +53,26 @@ async function parseJsonWithRepair(rawText: string) {
   }
 }
 
-import { getClipPolicy } from '@/lib/clip-policy';
-
 function minCandidatePoolForDuration(totalSeconds: number) {
   return getClipPolicy(totalSeconds).candidateCount;
+}
+
+function analysisProvider() {
+  const raw = (process.env.ANALYSIS_PROVIDER || 'auto').trim().toLowerCase();
+  return raw === 'local' || raw === 'openai' ? raw : 'auto';
+}
+
+function hasOpenAiKey() {
+  return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+function isOpenAiQuotaLikeError(error: unknown) {
+  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /429|quota|insufficient_quota|rate limit|billing/i.test(text);
+}
+
+function shouldUseLocalFallback(error: unknown) {
+  return analysisProvider() !== 'openai' && process.env.LOCAL_ANALYSIS_FALLBACK !== 'false' && isOpenAiQuotaLikeError(error);
 }
 
 function buildPrompt(targetCandidates: number, totalSeconds: number) {
@@ -187,21 +205,43 @@ export async function analyzeClipCandidates(
   if (isMockClipAnalysisEnabled()) {
     return buildMockCandidates(segments);
   }
-  const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
-  const targetCandidates = minCandidatePoolForDuration(totalSeconds);
-  const prompt = buildPrompt(targetCandidates, totalSeconds);
 
-  const chunked = segments.length ? chunkSegments(segments) : [];
-  const allCandidates: unknown[] = [];
+  const provider = analysisProvider();
+  if (provider === 'local' || !hasOpenAiKey()) {
+    return analyzeTranscriptLocally(transcript, segments);
+  }
 
-  if (chunked.length) {
-    for (const chunk of chunked) {
-      const timeline = buildTimeline(chunk);
+  try {
+    const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
+    const targetCandidates = minCandidatePoolForDuration(totalSeconds);
+    const prompt = buildPrompt(targetCandidates, totalSeconds);
+
+    const chunked = segments.length ? chunkSegments(segments) : [];
+    const allCandidates: unknown[] = [];
+
+    if (chunked.length) {
+      for (const chunk of chunked) {
+        const timeline = buildTimeline(chunk);
+        const res = await openai.responses.create({
+          model: 'gpt-4.1-mini',
+          input: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: `TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
+          ],
+        });
+
+        const parsed = await parseJsonWithRepair(res.output_text);
+        if (Array.isArray(parsed?.candidates)) {
+          allCandidates.push(...parsed.candidates);
+        }
+      }
+    } else {
+      const userInput = transcript.slice(0, 100000);
       const res = await openai.responses.create({
         model: 'gpt-4.1-mini',
         input: [
           { role: 'system', content: prompt },
-          { role: 'user', content: `TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
+          { role: 'user', content: userInput },
         ],
       });
 
@@ -210,42 +250,34 @@ export async function analyzeClipCandidates(
         allCandidates.push(...parsed.candidates);
       }
     }
-  } else {
-    const userInput = transcript.slice(0, 100000);
-    const res = await openai.responses.create({
-      model: 'gpt-4.1-mini',
-      input: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: userInput },
-      ],
-    });
 
-    const parsed = await parseJsonWithRepair(res.output_text);
-    if (Array.isArray(parsed?.candidates)) {
-      allCandidates.push(...parsed.candidates);
-    }
-  }
+    const merged = { candidates: allCandidates };
 
-  const merged = { candidates: allCandidates };
-
-  const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
+    const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
 Keep a broad candidate pool.
 Remove only clearly broken candidates.
 Return revised JSON only.`;
 
-  const refineRes = await openai.responses.create({
-    model: 'gpt-4.1-mini',
-    input: [
-      { role: 'system', content: prompt },
-      { role: 'assistant', content: JSON.stringify(merged) },
-      { role: 'user', content: refinePrompt },
-    ],
-  });
+    const refineRes = await openai.responses.create({
+      model: 'gpt-4.1-mini',
+      input: [
+        { role: 'system', content: prompt },
+        { role: 'assistant', content: JSON.stringify(merged) },
+        { role: 'user', content: refinePrompt },
+      ],
+    });
 
-  const refined = await parseJsonWithRepair(refineRes.output_text);
-  if (Array.isArray(refined?.candidates)) {
-    return refined;
+    const refined = await parseJsonWithRepair(refineRes.output_text);
+    if (Array.isArray(refined?.candidates)) {
+      return refined;
+    }
+
+    return merged;
+  } catch (error) {
+    if (shouldUseLocalFallback(error)) {
+      console.warn('[analysis] OpenAI analysis unavailable; using local transcript analysis.', error);
+      return analyzeTranscriptLocally(transcript, segments);
+    }
+    throw error;
   }
-
-  return merged;
 }
