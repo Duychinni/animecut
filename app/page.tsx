@@ -402,6 +402,24 @@ export default function Home() {
     return data.project.id as string;
   }
 
+  async function startProjectProcessing(projectId: string) {
+    let lastError = 'Could not start processing';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const res = await fetch(`/api/projects/${projectId}/start`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) return;
+
+      lastError = typeof data?.error === 'string' ? data.error : lastError;
+      if (res.status !== 409) break;
+
+      await new Promise((resolve) => window.setTimeout(resolve, 900 + attempt * 500));
+    }
+
+    throw new Error(lastError);
+  }
+
   async function onAnalyzeLink(e: React.FormEvent) {
     e.preventDefault();
     if (!sourceUrl.trim()) {
@@ -418,7 +436,7 @@ export default function Home() {
         source_url: sourceUrl.trim(),
       });
 
-      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
+      await startProjectProcessing(projectId);
       router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
@@ -482,7 +500,7 @@ export default function Home() {
         setUploadProgress(100);
       }
       setMsg('Upload complete. Starting processing...');
-      await fetch(`/api/projects/${projectId}/start`, { method: 'POST' }).catch(() => null);
+      await startProjectProcessing(projectId);
       router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not upload file';

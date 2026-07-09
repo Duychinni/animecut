@@ -18,13 +18,13 @@ export function getClipPolicy(totalSeconds: number): ClipPolicy {
     return { targetMin: 2, targetMax: 3, candidateCount: 14, expectedMinSec: 20, expectedMaxSec: 40, minSec: 18, maxSec: 60 };
   }
   if (minutes <= 10) {
-    return { targetMin: 3, targetMax: 4, candidateCount: 18, expectedMinSec: 22, expectedMaxSec: 45, minSec: 20, maxSec: 75 };
+    return { targetMin: 4, targetMax: 6, candidateCount: 30, expectedMinSec: 22, expectedMaxSec: 45, minSec: 20, maxSec: 75 };
   }
   if (minutes <= 20) {
-    return { targetMin: 4, targetMax: 6, candidateCount: 28, expectedMinSec: 25, expectedMaxSec: 55, minSec: 22, maxSec: 90 };
+    return { targetMin: 6, targetMax: 8, candidateCount: 40, expectedMinSec: 25, expectedMaxSec: 55, minSec: 22, maxSec: 90 };
   }
   if (minutes <= 30) {
-    return { targetMin: 6, targetMax: 8, candidateCount: 40, expectedMinSec: 30, expectedMaxSec: 60, minSec: 25, maxSec: 90 };
+    return { targetMin: 8, targetMax: 10, candidateCount: 55, expectedMinSec: 30, expectedMaxSec: 60, minSec: 25, maxSec: 90 };
   }
   if (minutes <= 45) {
     return { targetMin: 8, targetMax: 10, candidateCount: 55, expectedMinSec: 30, expectedMaxSec: 65, minSec: 28, maxSec: 90 };
