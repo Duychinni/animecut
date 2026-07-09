@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type MeResponse = {
@@ -271,23 +271,74 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
   const [showcaseOrder, setShowcaseOrder] = useState(() => Array.from({ length: SHOWCASE_CARD_COUNT }, (_, index) => index));
+  const showcaseCardRefs = useRef(new Map<string, HTMLDivElement>());
+  const previousShowcaseRectsRef = useRef<Map<string, DOMRect> | null>(null);
+
+  function captureShowcaseRects() {
+    const rects = new Map<string, DOMRect>();
+    showcaseCardRefs.current.forEach((element, key) => {
+      rects.set(key, element.getBoundingClientRect());
+    });
+    return rects;
+  }
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      previousShowcaseRectsRef.current = captureShowcaseRects();
       setShowcaseOrder((previous) => {
         const next = [...previous];
-        for (let i = next.length - 1; i > 0; i -= 1) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [next[i], next[j]] = [next[j], next[i]];
-        }
-        return next.every((value, index) => value === previous[index])
-          ? [...next.slice(1), next[0]]
-          : next;
+        const swapIndex = Math.floor(Math.random() * Math.max(1, next.length - 1));
+        [next[swapIndex], next[swapIndex + 1]] = [next[swapIndex + 1], next[swapIndex]];
+        return next;
       });
     }, 7000);
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useLayoutEffect(() => {
+    const previousRects = previousShowcaseRectsRef.current;
+    if (!previousRects) return;
+    previousShowcaseRectsRef.current = null;
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const frameIds: number[] = [];
+    const timeoutIds: number[] = [];
+
+    showcaseCardRefs.current.forEach((element, key) => {
+      const previousRect = previousRects.get(key);
+      if (!previousRect) return;
+
+      const nextRect = element.getBoundingClientRect();
+      const deltaX = previousRect.left - nextRect.left;
+      const deltaY = previousRect.top - nextRect.top;
+      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+      element.style.transition = 'none';
+      element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+      element.style.zIndex = '20';
+      element.getBoundingClientRect();
+
+      const frameId = window.requestAnimationFrame(() => {
+        element.style.transition = 'transform 900ms cubic-bezier(0.22, 1, 0.36, 1), border-color 240ms ease, box-shadow 240ms ease';
+        element.style.transform = 'translate(0, 0)';
+
+        const timeoutId = window.setTimeout(() => {
+          element.style.transition = '';
+          element.style.transform = '';
+          element.style.zIndex = '';
+        }, 950);
+        timeoutIds.push(timeoutId);
+      });
+      frameIds.push(frameId);
+    });
+
+    return () => {
+      frameIds.forEach((id) => window.cancelAnimationFrame(id));
+      timeoutIds.forEach((id) => window.clearTimeout(id));
+    };
+  }, [showcaseOrder]);
 
   useEffect(() => {
     let isMounted = true;
@@ -606,6 +657,13 @@ export default function Home() {
                 return (
                 <div
                   key={clip.title}
+                  ref={(element) => {
+                    if (element) {
+                      showcaseCardRefs.current.set(clip.title, element);
+                    } else {
+                      showcaseCardRefs.current.delete(clip.title);
+                    }
+                  }}
                   className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-700 ease-out hover:-translate-y-1 hover:border-white/18"
                 >
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">

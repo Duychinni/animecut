@@ -8,6 +8,9 @@ type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'be
 type ReframeMode = 'off' | 'basic' | 'smart';
 type LayoutMode = 'single' | 'split_stack';
 
+const VERTICAL_EXPORT_WIDTH = 1080;
+const VERTICAL_EXPORT_HEIGHT = 1920;
+
 type RenderOpts = {
   inputPath: string;
   outputPath: string;
@@ -89,6 +92,10 @@ export async function validateRenderedVideo(outputPath: string) {
 
   if (!video || !video.width || !video.height) {
     throw new Error('Rendered export is missing a valid video stream');
+  }
+
+  if (video.width !== VERTICAL_EXPORT_WIDTH || video.height !== VERTICAL_EXPORT_HEIGHT) {
+    throw new Error(`Rendered export must be ${VERTICAL_EXPORT_WIDTH}x${VERTICAL_EXPORT_HEIGHT}; got ${video.width}x${video.height}`);
   }
 
   if (!audio) {
@@ -416,8 +423,8 @@ function maybeBuildSplitStackLayout(raw: {
     topBox,
     bottomBox,
     cropWidth: Math.round(sourceH * 9 / 16),
-    outputWidth: 1080,
-    outputHeight: 1920,
+    outputWidth: VERTICAL_EXPORT_WIDTH,
+    outputHeight: VERTICAL_EXPORT_HEIGHT,
   };
 }
 
@@ -612,7 +619,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     const xExpr = escapeFfmpegExpr(xExprRaw);
     const yExpr = escapeFfmpegExpr(yExprRaw);
 
-    return { cropExpr: `crop=1080:1920:${xExpr}:${yExpr}` };
+    return { cropExpr: `crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:${xExpr}:${yExpr}` };
   } catch (error) {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -721,13 +728,11 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
 }
 
 function resolveOutputHeight() {
-  const raw = Number(process.env.EXPORT_MAX_HEIGHT ?? 1920);
-  if (!Number.isFinite(raw) || raw < 1280) return 1920;
-  return Math.round(raw);
+  return VERTICAL_EXPORT_HEIGHT;
 }
 
-function resolveOutputWidth(outputHeight: number) {
-  return Math.round((outputHeight * 9) / 16);
+function resolveOutputWidth(_outputHeight: number) {
+  return VERTICAL_EXPORT_WIDTH;
 }
 
 function wrapHookTextForDrawtext(hookText: string) {
@@ -782,7 +787,7 @@ function buildHookAss(hookText: string) {
   const twoLine = lines.length > 1;
   const cardWidth = 770;
   const cardHeight = twoLine ? 188 : 130;
-  const cardX = Math.round((1080 - cardWidth) / 2);
+  const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const cardY = twoLine ? 66 : 82;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
@@ -791,8 +796,8 @@ function buildHookAss(hookText: string) {
 
   return `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: ${VERTICAL_EXPORT_WIDTH}
+PlayResY: ${VERTICAL_EXPORT_HEIGHT}
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
@@ -859,6 +864,7 @@ function buildFilter(
   }
 
   filterParts.push(buildCropFilter(opts, smartCropExpr));
+  filterParts.push(`scale=${outputWidth}:${outputHeight},setsar=1`);
 
   if (opts.debugReframeOverlay) {
     filterParts.push(
@@ -1183,6 +1189,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
         );
       }
       baseFilter.push(buildCropFilter(effectiveOpts, smartCropExpr));
+      baseFilter.push(`scale=${outputWidth}:${outputHeight},setsar=1`);
       if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
         baseFilter.push(buildHookDrawtextFilter(effectiveOpts.hookText.trim(), effectiveOpts.hookTextFilePath));
       }

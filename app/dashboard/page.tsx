@@ -78,6 +78,7 @@ function isActiveProject(project: ProjectListItem) {
 }
 
 function getExpiryLabel(project: ProjectListItem) {
+  if (!isCompletedProject(project)) return null;
   const days = Number(project.days_until_expiring);
   if (!Number.isFinite(days)) return null;
   return `${Math.max(0, days)} ${days === 1 ? 'day' : 'days'} before expiring`;

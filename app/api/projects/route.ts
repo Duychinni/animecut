@@ -12,8 +12,12 @@ const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env
 const PROJECT_RETENTION_DAYS = 7;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-function getExpiryInfo(completedAt: string | null | undefined, createdAt: string) {
-  const baseMs = new Date(completedAt || createdAt).getTime();
+function getExpiryInfo(completedAt: string | null | undefined) {
+  if (!completedAt) {
+    return { expires_at: null, days_until_expiring: null };
+  }
+
+  const baseMs = new Date(completedAt).getTime();
   if (!Number.isFinite(baseMs)) {
     return { expires_at: null, days_until_expiring: null };
   }
@@ -63,7 +67,6 @@ export async function GET() {
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const isCompleted = readyExports > 0 && (markedCompleted || activeExports === 0);
       const needsExportCompletion = markedCompleted && activeExports > 0;
-      const expiryInfo = getExpiryInfo(project.pipeline_completed_at, project.created_at);
       const uploadThumbnailUrl = project.source_type === 'upload'
         ? await ensureProjectUploadThumbnail({
             id: String(project.id),
@@ -72,6 +75,7 @@ export async function GET() {
             source_storage_path: typeof project.source_storage_path === 'string' ? project.source_storage_path : null,
           }, { generateIfMissing: false }).catch(() => null)
         : null;
+      const expiryInfo = getExpiryInfo(isCompleted ? (project.pipeline_completed_at || project.created_at) : null);
 
       return {
         ...project,
