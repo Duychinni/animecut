@@ -256,7 +256,7 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
       if (!text) continue;
 
       filters.push(
-        `drawtext=text='${text}':fontcolor=white:fontsize=108:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h-620:${drawtextBetween(start, end)}`,
+        `drawtext=text='${text}':font='Arial Black':fontcolor=white:fontsize=114:borderw=11:bordercolor=black:shadowx=2:shadowy=2:shadowcolor=black@0.85:x=(w-text_w)/2:y=h-620:${drawtextBetween(start, end)}`,
       );
     }
 
@@ -278,7 +278,7 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
     if (!text) continue;
 
     filters.push(
-      `drawtext=text='${text}':fontcolor=white:fontsize=108:borderw=8:bordercolor=black:x=(w-text_w)/2:y=h-620:${drawtextBetween(start, end)}`,
+      `drawtext=text='${text}':font='Arial Black':fontcolor=white:fontsize=114:borderw=11:bordercolor=black:shadowx=2:shadowy=2:shadowcolor=black@0.85:x=(w-text_w)/2:y=h-620:${drawtextBetween(start, end)}`,
     );
   }
 
@@ -672,14 +672,17 @@ function buildSplitStackFilter(
       filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}'[outv]`);
     } else {
       const style = escapeForceStyleForFilter([
-        'FontName=Arial',
-        'FontSize=12',
+        'FontName=Arial Black',
+        'FontSize=118',
         'PrimaryColour=&H00FFFFFF',
-        'OutlineColour=&H00101010',
+        'SecondaryColour=&H005AF421',
+        'OutlineColour=&H00000000',
         'BorderStyle=1',
-        'Outline=5',
-        'Shadow=0',
+        'Outline=11',
+        'Shadow=2',
         'Bold=1',
+        'ScaleX=106',
+        'ScaleY=110',
         `MarginV=${Math.round(layout.outputHeight * 0.42)}`,
         'Alignment=2',
       ].join(','));
@@ -777,12 +780,13 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string) {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 700;
-  const cardHeight = twoLine ? 168 : 112;
+  const cardWidth = 730;
+  const cardHeight = twoLine ? 176 : 118;
   const cardX = Math.round((1080 - cardWidth) / 2);
-  const cardY = twoLine ? 74 : 88;
+  const cardY = twoLine ? 70 : 86;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
+  const hookFontSize = twoLine ? 60 : 66;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -794,7 +798,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Arial,58,&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
+Style: HookText,Arial Black,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,104,0,0,1,0,0,5,80,80,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -812,17 +816,17 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     `drawtext=${source}`,
     "font='Arial Black'",
     'fontcolor=black',
-    'fontsize=60',
+    'fontsize=66',
     'box=1',
     'boxcolor=white@0.98',
-    'boxborderw=24',
+    'boxborderw=28',
     'borderw=0',
     'shadowx=0',
     'shadowy=0',
-    'line_spacing=6',
+    'line_spacing=8',
     'fix_bounds=1',
     'x=(w-text_w)/2',
-    'y=92',
+    'y=86',
     drawtextBetween(0, 4.5),
   ].join(':');
 }
@@ -962,19 +966,19 @@ function buildFilter(
         'Alignment=2',
       ],
       capcut: [
-        `FontName=${fontMap[captionFont]}`,
-        'FontSize=96',
+        'FontName=Arial Black',
+        'FontSize=118',
         'PrimaryColour=&H00FFFFFF',
-        'SecondaryColour=&H0000FFFF',
-        'OutlineColour=&H00101010',
+        'SecondaryColour=&H005AF421',
+        'OutlineColour=&H00000000',
         'BorderStyle=1',
-        'Outline=10',
-        'Shadow=0',
+        'Outline=11',
+        'Shadow=2',
         'Bold=1',
         'Spacing=0',
-        'ScaleX=130',
-        'ScaleY=112',
-        'MarginV=360',
+        'ScaleX=106',
+        'ScaleY=110',
+        'MarginV=380',
         'Alignment=2',
       ],
     };

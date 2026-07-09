@@ -58,7 +58,7 @@ function hookTextFromTranscript(text: string, fallback: string) {
   const question = cleaned.match(/\b(why|what|how|who|when|where|can|did|does|is|are)\b[^.!?]{8,42}[?!]?/i)?.[0];
   const tension = cleaned.match(/\b(secret|truth|mistake|problem|crazy|wild|never|always|wrong|fight|shocking|realized)\b[^.!?]{0,36}/i)?.[0];
   const personal = cleaned.match(/\b(my|your|his|her|their|daughter|son|mom|dad|brother|friend)\b[^.!?]{6,42}/i)?.[0];
-  return phraseFromText(question || tension || personal || fallback || cleaned, 7, 38) || 'Top Moment';
+  return phraseFromText(question || tension || personal || cleaned || fallback, 7, 38) || 'Top Moment';
 }
 
 function hasTension(text: string) {

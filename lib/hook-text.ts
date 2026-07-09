@@ -13,7 +13,7 @@ function cleanText(text: string) {
 }
 
 function stripTrailingPunctuation(text: string) {
-  return text.replace(/[\s.!?,;:]+$/g, '').trim();
+  return text.replace(/[\s.,;:]+$/g, '').trim();
 }
 
 function toTitleCaseHook(text: string) {
@@ -54,6 +54,28 @@ function pickOpeningTranscript(segments: TranscriptSegment[], startSec: number, 
   return text;
 }
 
+function pickTranscriptHookPhrase(text: string) {
+  const cleaned = cleanText(text)
+    .replace(/^["'\-:\s]+/, '')
+    .replace(/^(and|but|so|yeah|well|like|you know|i mean)\s+/i, '')
+    .trim();
+
+  const patterns = [
+    /\b(what|why|how|who|when|where|can|did|does|is|are|should|would|could)\b[^.!?]{6,54}[?!]?/i,
+    /\b(i|you|we|he|she|they|my|your|his|her|their)\b[^.!?]{4,54}\b(fight|hit|lost|remember|woke|broke|wrong|real|never|can't|cannot|right|okay)\b[^.!?]{0,20}/i,
+    /\b(fight|hit|knockout|hospital|memory|lost|secret|truth|problem|crazy|wild|wrong|never|can't|cannot|broke|shocking)\b[^.!?]{0,52}/i,
+    /\b(my|your|his|her|their|daughter|son|mom|dad|brother|friend)\b[^.!?]{6,54}/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern)?.[0];
+    const shortened = shortenWords(match ?? '', 8, 38);
+    if (shortened) return shortened;
+  }
+
+  return shortenWords(cleaned, 8, 38);
+}
+
 export function generateHookText(params: {
   clipTitle?: string | null;
   transcriptSegments?: TranscriptSegment[] | null;
@@ -69,11 +91,11 @@ export function generateHookText(params: {
     .split(/[:|—-]/)[0]
     ?.trim() ?? '';
 
-  const transcriptCandidate = stripTrailingPunctuation(openingTranscript)
-    .replace(/^(so|and|but|because|then|like|you know)\s+/i, '')
-    .trim();
+  const transcriptCandidate = stripTrailingPunctuation(pickTranscriptHookPhrase(openingTranscript));
 
-  const candidates = [titleCandidate, transcriptCandidate].map(removeWeakHookPrefix).filter(Boolean);
+  const candidates = [transcriptCandidate, transcriptCandidate ? '' : titleCandidate]
+    .map(removeWeakHookPrefix)
+    .filter(Boolean);
 
   for (const candidate of candidates) {
     const shortened = shortenWords(candidate, 8, 38);

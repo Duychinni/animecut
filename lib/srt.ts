@@ -145,12 +145,19 @@ function hexToAssColor(hex: string | undefined, fallback: string) {
   return `&H00${bb}${gg}${rr}`;
 }
 
+function resolveAssFontName(preset: StyledCaptionPreset | undefined, template: CaptionTemplate) {
+  if (template === 'capcut') return 'Arial Black';
+  const family = preset?.captionFontFamily?.trim();
+  if (!family) return 'Arial';
+  return family.replace(/\s+(ExtraBold|Black|Bold|SemiBold)$/i, '') || family;
+}
+
 function resolveAssStyle(preset?: StyledCaptionPreset) {
   const template = preset?.caption_template ?? 'capcut';
-  const fontScale = template === 'minimal' ? 7.4 : template === 'capcut' ? 9.1 : 8.6;
+  const fontScale = template === 'minimal' ? 7.4 : template === 'capcut' ? 9.8 : 8.6;
   const fontSize = Math.round((preset?.captionFontSize ?? 11) * fontScale);
-  const outlineScale = template === 'minimal' ? 1 : template === 'capcut' ? 1.12 : 1;
-  const outline = Math.max(1, Math.round((preset?.captionStrokeWidth ?? 4) * outlineScale));
+  const outlineScale = template === 'minimal' ? 1 : template === 'capcut' ? 1.7 : 1;
+  const outline = Math.max(template === 'capcut' ? 8 : 1, Math.round((preset?.captionStrokeWidth ?? 4) * outlineScale));
   const marginV = preset?.captionPosition === 'middle'
     ? 720
     : preset?.captionPosition === 'upper'
@@ -161,17 +168,18 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
 
   return {
     template,
-    fontName: preset?.captionFontFamily?.replace(/\s+(ExtraBold|Black|Bold|SemiBold)$/i, '') || 'Montserrat',
+    fontName: resolveAssFontName(preset, template),
     fontSize,
     primary: hexToAssColor(preset?.captionTextColor, '#FFFFFF'),
     secondary: hexToAssColor(preset?.captionHighlightColor, '#21F45A'),
     outlineColor: hexToAssColor(preset?.captionStrokeColor, '#000000'),
     outline,
+    shadow: template === 'capcut' ? 2 : 0,
     borderStyle: preset?.captionBackgroundBox ? 3 : 1,
     backColor: preset?.captionBackgroundBox ? '&HCC000000' : '&H00000000',
     marginV,
-    scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : template === 'capcut' ? 128 : 122,
-    scaleY: template === 'minimal' ? 100 : template === 'capcut' ? 112 : 108,
+    scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : template === 'capcut' ? 106 : 122,
+    scaleY: template === 'minimal' ? 100 : template === 'capcut' ? 110 : 108,
     windowSize: template === 'minimal' || template === 'clean' || template === 'cinematic' ? 4 : 2,
   };
 }
@@ -271,7 +279,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
     }
   }
 
-  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${style.fontName},${style.fontSize},${style.primary},${style.secondary},${style.outlineColor},${style.backColor},-1,0,0,0,${style.scaleX},${style.scaleY},0,0,${style.borderStyle},${style.outline},0,2,30,30,${style.marginV},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
+  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${style.fontName},${style.fontSize},${style.primary},${style.secondary},${style.outlineColor},${style.backColor},-1,0,0,0,${style.scaleX},${style.scaleY},0,0,${style.borderStyle},${style.outline},${style.shadow},2,30,30,${style.marginV},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
 
   const body = events
     .map((e) => `Dialogue: 0,${toAssTime(e.start)},${toAssTime(e.end)},Default,,0,0,0,,${e.text}`)

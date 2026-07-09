@@ -59,7 +59,7 @@ function normalizeHookText(raw: unknown) {
     .replace(/\s+/g, ' ')
     .replace(/^["'\-:\s]+/, '')
     .replace(/["']+$/g, '')
-    .replace(/[.!?,;:\s]+$/g, '')
+    .replace(/[.,;:\s]+$/g, '')
     .trim();
   return cleaned || null;
 }

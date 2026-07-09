@@ -121,11 +121,14 @@ CANDIDATE GENERATION RULES:
 
 REEL HOOK TEXT RULES:
 - Write a separate "hook_text" for the white title card that appears on the reel.
-- The hook_text should be the most viral framing of the moment, not a random transcript snippet.
-- Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question.
+- Choose the hook_text from the transcript window: a short spoken phrase, lightly trimmed spoken phrase, or question that captures the viral moment.
+- It must not simply repeat the clip title.
+- Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question from the actual dialogue.
 - Keep it grounded in the transcript. Do not invent facts, names, outcomes, or drama.
 - Keep it short enough for a 9:16 title card: 2-8 words, max 38 characters.
-- Make it punchier than the title. Avoid bland labels like "Top Moment" unless there is truly no better hook.
+- Make it punchier than the title and suitable for a rounded white reel hook card.
+- Preserve question marks or exclamation marks when they make the spoken hook stronger.
+- Avoid bland labels like "Top Moment" unless there is truly no better hook.
 - Do not use hashtags, emojis, quotation marks, or all-caps.
 
 VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:

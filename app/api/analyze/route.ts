@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { analyzeClipCandidates } from '@/lib/openai';
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
+import { generateHookText } from '@/lib/hook-text';
 
 type RawCandidate = Record<string, string | number | null | undefined>;
 
@@ -206,7 +207,7 @@ function normalizeHookText(raw: unknown, fallback: string) {
     .replace(/\s+/g, ' ')
     .replace(/^["'\-:\s]+/, '')
     .replace(/["']+$/g, '')
-    .replace(/[.!?,;:\s]+$/g, '')
+    .replace(/[.,;:\s]+$/g, '')
     .trim();
   const words = cleaned.split(/\s+/).filter(Boolean);
   const kept: string[] = [];
@@ -219,6 +220,57 @@ function normalizeHookText(raw: unknown, fallback: string) {
 
   const text = kept.join(' ');
   return text || 'Top Moment';
+}
+
+function normalizeOptionalHookText(raw: unknown) {
+  if (!String(raw ?? '').trim()) return null;
+  return normalizeHookText(raw, '');
+}
+
+function isGenericHookText(text: string) {
+  return /^(top moment|viral moment|best moment|clip|short|reel)$/i.test(text.trim());
+}
+
+function isTitleLikeHook(hookText: string, title: string) {
+  const hookLoose = normalizeLooseText(hookText);
+  const titleLoose = normalizeLooseText(title);
+  if (!hookLoose || !titleLoose) return false;
+  if (hookLoose === titleLoose) return true;
+  if (hookLoose.length >= 10 && titleLoose.includes(hookLoose)) return true;
+  if (titleLoose.length >= 10 && hookLoose.includes(titleLoose)) return true;
+
+  const hookWords = hookLoose.split(/\s+/).filter((word) => word.length > 2);
+  const titleWords = new Set(titleLoose.split(/\s+/).filter((word) => word.length > 2));
+  if (!hookWords.length || !titleWords.size) return false;
+  const overlap = hookWords.filter((word) => titleWords.has(word)).length / hookWords.length;
+  return hookWords.length >= 3 && overlap >= 0.8;
+}
+
+function resolveCandidateHookText(params: {
+  rawHookText: unknown;
+  title: unknown;
+  openingLine: string;
+  segments: TranscriptSegment[];
+  startSec: number;
+  endSec: number;
+}) {
+  const rawHook = normalizeOptionalHookText(params.rawHookText);
+  const title = String(params.title ?? '');
+
+  if (rawHook) {
+    if (!isTitleLikeHook(rawHook, title) && !isGenericHookText(rawHook)) return rawHook;
+  }
+
+  const transcriptHook = normalizeOptionalHookText(generateHookText({
+    clipTitle: title,
+    transcriptSegments: params.segments,
+    startSec: params.startSec,
+    endSec: params.endSec,
+  }));
+
+  if (transcriptHook && !isGenericHookText(transcriptHook)) return transcriptHook;
+
+  return normalizeHookText(params.openingLine, title || 'Top Moment');
 }
 
 function errorText(error: unknown) {
@@ -445,7 +497,14 @@ export async function POST(req: Request) {
           end_sec: cleaned.end_sec,
           duration_seconds: Number(duration.toFixed(2)),
           title: String(c.title ?? `Clip ${idx + 1}`),
-          hook_text: normalizeHookText(c.hook_text, String(c.title ?? openingLine ?? `Clip ${idx + 1}`)),
+          hook_text: resolveCandidateHookText({
+            rawHookText: c.hook_text,
+            title: c.title ?? `Clip ${idx + 1}`,
+            openingLine,
+            segments,
+            startSec: cleaned.start_sec,
+            endSec: cleaned.end_sec,
+          }),
           reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${String(c.boundary_adjustment_reason ?? cleaned.reason)} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
           self_contained_confidence: Math.max(0, Math.min(1, num(c.standalone_confidence) || cleaned.confidence)),
           boundary_adjustment_reason: String(c.boundary_adjustment_reason ?? cleaned.reason),

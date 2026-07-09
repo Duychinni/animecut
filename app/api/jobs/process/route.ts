@@ -183,6 +183,50 @@ function getFallbackReframeMode() {
   return normalizeReframeMode(process.env.EXPORT_FALLBACK_REFRAME_MODE, 'smart');
 }
 
+function normalizeLooseText(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeHookCandidate(raw: unknown) {
+  const cleaned = String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^["'\-:\s]+/, '')
+    .replace(/["']+$/g, '')
+    .replace(/[.,;:\s]+$/g, '')
+    .trim();
+  return cleaned || null;
+}
+
+function isGenericHookText(text: string) {
+  return /^(top moment|viral moment|best moment|clip|short|reel)$/i.test(text.trim());
+}
+
+function isTitleLikeHook(hookText: string, title: string | null | undefined) {
+  const hookLoose = normalizeLooseText(hookText);
+  const titleLoose = normalizeLooseText(String(title ?? ''));
+  if (!hookLoose || !titleLoose) return false;
+  if (hookLoose === titleLoose) return true;
+  if (hookLoose.length >= 10 && titleLoose.includes(hookLoose)) return true;
+  if (titleLoose.length >= 10 && hookLoose.includes(titleLoose)) return true;
+
+  const hookWords = hookLoose.split(/\s+/).filter((word) => word.length > 2);
+  const titleWords = new Set(titleLoose.split(/\s+/).filter((word) => word.length > 2));
+  if (!hookWords.length || !titleWords.size) return false;
+  const overlap = hookWords.filter((word) => titleWords.has(word)).length / hookWords.length;
+  return hookWords.length >= 3 && overlap >= 0.8;
+}
+
+function usableHookText(raw: unknown, clipTitle: string | null | undefined) {
+  const cleaned = normalizeHookCandidate(raw);
+  if (!cleaned || isGenericHookText(cleaned)) return null;
+  if (isTitleLikeHook(cleaned, clipTitle)) return null;
+  return cleaned;
+}
+
 function buildFallbackExportPayload(exportId: string, extra: Record<string, unknown> = {}) {
   const captionPreset = getCaptionPresetById(DEFAULT_CAPTION_PRESET_ID);
   return {
@@ -471,18 +515,19 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     caption_template: captionTemplate,
   });
 
-  const fallbackCaption = '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Montserrat,88,&H00FFFFFF,&H0000FFFF,&H00141414,&H00000000,-1,0,0,0,120,108,0,0,1,4,0,2,40,40,380,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n';
+  const fallbackCaption = '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial Black,127,&H00FFFFFF,&H005AF421,&H00000000,&H00000000,-1,0,0,0,106,110,0,0,1,12,2,2,40,40,380,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n';
   await writeFile(srtPath, captionText || fallbackCaption);
 
+  const generatedHookText = generateHookText({
+    clipTitle: bundle.clip.title ?? null,
+    transcriptSegments,
+    startSec: bundle.clip.start_sec,
+    endSec: bundle.clip.end_sec,
+  });
   const hookTextEnabled = bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
-  const hookText = (typeof options?.hook_text === 'string' && options.hook_text.trim())
-    || (bundle.hook_text?.trim())
-    || generateHookText({
-      clipTitle: bundle.clip.title ?? null,
-      transcriptSegments,
-      startSec: bundle.clip.start_sec,
-      endSec: bundle.clip.end_sec,
-    })
+  const hookText = usableHookText(options?.hook_text, bundle.clip.title)
+    || usableHookText(bundle.hook_text, bundle.clip.title)
+    || normalizeHookCandidate(generatedHookText)
     || null;
 
   await renderVerticalClip({
