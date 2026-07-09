@@ -5,11 +5,11 @@ import { getCaptionPresetById } from '@/lib/caption-presets';
 export async function POST(req: Request, context: { params: Promise<{ exportId: string }> }) {
   try {
     const { exportId } = await context.params;
-    const { preset } = await req.json();
+    const { preset: requestedPreset } = await req.json();
     const supabase = createAdminClient();
 
     const allowed = new Set(['auto', 'tight', 'left', 'center', 'right']);
-    const chosen = typeof preset === 'string' && allowed.has(preset) ? preset : 'auto';
+    const chosen = typeof requestedPreset === 'string' && allowed.has(requestedPreset) ? requestedPreset : 'auto';
 
     const { data: existing, error: existingError } = await supabase
       .from('exports')
@@ -20,7 +20,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
     if (existingError || !existing) {
       return NextResponse.json({ error: 'Export not found' }, { status: 404 });
     }
-    const preset = getCaptionPresetById(typeof existing.caption_preset_id === 'string' ? existing.caption_preset_id : undefined);
+    const captionPreset = getCaptionPresetById(typeof existing.caption_preset_id === 'string' ? existing.caption_preset_id : undefined);
 
     const { error: updateError } = await supabase
       .from('exports')
@@ -39,9 +39,9 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       payload: {
         export_id: exportId,
         captions_enabled: true,
-        caption_preset_id: preset.id,
-        caption_template: preset.caption_template,
-        caption_font: preset.caption_font,
+        caption_preset_id: captionPreset.id,
+        caption_template: captionPreset.caption_template,
+        caption_font: captionPreset.caption_font,
         motion_tracking: false,
         auto_reframe: true,
         reframe_mode: 'smart',
