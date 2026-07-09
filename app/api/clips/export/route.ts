@@ -64,6 +64,11 @@ function normalizeHookText(raw: unknown) {
   return cleaned || null;
 }
 
+function readOptionalField(row: unknown, key: string) {
+  if (!row || typeof row !== 'object') return undefined;
+  return (row as Record<string, unknown>)[key];
+}
+
 function isMissingHookTextColumnError(error: unknown) {
   const serialized = serializeUnknownError(error);
   const details = 'details' in serialized ? serialized.details : null;
@@ -251,7 +256,7 @@ export async function POST(req: Request) {
       candidateHookText = new Map(
         (existingCandidates ?? []).map((row) => [
           String(row.id),
-          normalizeHookText(row.hook_text) ?? normalizeHookText(row.title) ?? 'Top Moment',
+          normalizeHookText(readOptionalField(row, 'hook_text')) ?? normalizeHookText(row.title) ?? 'Top Moment',
         ]),
       );
       selectedIds = selectedIds.filter((id) => validIds.has(id));
