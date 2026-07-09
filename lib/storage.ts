@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createSignedR2GetUrl, getUploadProvider, isR2Configured, r2ObjectExists } from '@/lib/r2';
 
@@ -52,27 +52,47 @@ export async function downloadRawMediaToLocal(objectPath: string, projectId: str
   await mkdir(dir, { recursive: true });
   const localPath = path.join(dir, `source${ext}`);
 
-  let bytes: Buffer;
-
-  if (getUploadProvider() === 'r2' && isR2Configured()) {
-    const signedUrl = await createSignedR2GetUrl(objectPath, 60 * 60);
-    const res = await fetch(signedUrl);
-    if (!res.ok) {
-      const bodyPreview = await res.text().catch(() => '');
-      throw new Error(
-        `Failed to download raw media from R2: status=${res.status} key=${objectPath} url=${signedUrl.split('?')[0]} body=${bodyPreview.slice(0, 200)}`,
-      );
-    }
-    bytes = Buffer.from(await res.arrayBuffer());
-  } else {
-    const admin = createAdminClient();
-    const { data, error } = await admin.storage.from(RAW_BUCKET).download(objectPath);
-    if (error || !data) throw error || new Error('Failed to download raw media');
-    bytes = Buffer.from(await data.arrayBuffer());
+  try {
+    const existing = await stat(localPath);
+    if (existing.size > 0) return localPath;
+  } catch {
+    // no cached source yet
   }
 
-  await writeFile(localPath, bytes);
-  return localPath;
+  let bytes: Buffer;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      if (getUploadProvider() === 'r2' && isR2Configured()) {
+        const signedUrl = await createSignedR2GetUrl(objectPath, 60 * 60);
+        const res = await fetch(signedUrl);
+        if (!res.ok) {
+          const bodyPreview = await res.text().catch(() => '');
+          throw new Error(
+            `Failed to download raw media from R2: status=${res.status} key=${objectPath} url=${signedUrl.split('?')[0]} body=${bodyPreview.slice(0, 200)}`,
+          );
+        }
+        bytes = Buffer.from(await res.arrayBuffer());
+      } else {
+        const admin = createAdminClient();
+        const { data, error } = await admin.storage.from(RAW_BUCKET).download(objectPath);
+        if (error || !data) throw error || new Error('Failed to download raw media');
+        bytes = Buffer.from(await data.arrayBuffer());
+      }
+
+      await writeFile(localPath, bytes);
+      return localPath;
+    } catch (error) {
+      if (attempt >= 3) {
+        const message = error instanceof Error ? error.message : 'Unknown storage error';
+        throw new Error(`Upload source file could not be read from storage after retries. ${message}`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+    }
+  }
+
+  throw new Error('Upload source file could not be read from storage.');
 }
 
 export async function rawMediaObjectExists(objectPath: string) {
@@ -82,6 +102,16 @@ export async function rawMediaObjectExists(objectPath: string) {
 
   const admin = createAdminClient();
   const { data } = await admin.storage.from(RAW_BUCKET).list(objectPath.split('/').slice(0, -1).join('/'), {
+    search: objectPath.split('/').pop(),
+    limit: 1,
+  });
+
+  return Boolean(data?.some((item) => item.name === objectPath.split('/').pop()));
+}
+
+export async function projectThumbnailObjectExists(objectPath: string) {
+  const admin = createAdminClient();
+  const { data } = await admin.storage.from(PROJECT_THUMBNAIL_BUCKET).list(objectPath.split('/').slice(0, -1).join('/'), {
     search: objectPath.split('/').pop(),
     limit: 1,
   });

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 
 const STEP_PROGRESS: Record<string, number> = {
   queued: 0,
@@ -275,15 +276,23 @@ export async function POST() {
 
     return NextResponse.json({ ok: true, processed: 1, project_id: projectId });
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Pipeline failed';
+    const rawMessage = e instanceof Error ? e.message : 'Pipeline failed';
+    const publicError = getPipelineErrorInfo(rawMessage);
+    const message = publicError.message;
+    console.error('[pipeline] failed', {
+      projectId,
+      raw_error: rawMessage,
+      public_error: message,
+      code: publicError.code,
+    });
 
     const { data: currentProject } = await supabase.from('projects').select('pipeline_progress_percent').eq('id', projectId).single();
     await supabase
       .from('projects')
       .update({
         pipeline_status: 'error',
-        pipeline_stage: 'failed',
-        pipeline_stage_label: 'Failed',
+        pipeline_stage: publicError.code === 'youtube_source_blocked' ? 'source_blocked' : 'failed',
+        pipeline_stage_label: publicError.stageLabel,
         pipeline_progress_percent: Number(currentProject?.pipeline_progress_percent ?? 0),
         pipeline_error: message,
         worker_last_seen_at: new Date().toISOString(),

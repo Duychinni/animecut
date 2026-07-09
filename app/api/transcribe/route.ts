@@ -5,6 +5,7 @@ import { transcribeAudioFile } from '@/lib/transcription';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { extractAudioForTranscription } from '@/lib/ffmpeg';
 import { buildMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
+import { getPublicPipelineError } from '@/lib/pipeline-errors';
 
 export async function POST(req: Request) {
   try {
@@ -98,6 +99,6 @@ export async function POST(req: Request) {
           ? e
           : JSON.stringify(e);
 
-    return NextResponse.json({ error: message || 'Transcription failed' }, { status: 400 });
+    return NextResponse.json({ error: getPublicPipelineError(message || 'Transcription failed') }, { status: 400 });
   }
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getTargetClipCount } from '@/lib/clip-policy';
+import { getPublicPipelineError } from '@/lib/pipeline-errors';
+import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -93,7 +95,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
-        .select('id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, worker_last_seen_at, worker_last_log_message, pipeline_error, source_type, source_url, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
+        .select('id, user_id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, worker_last_seen_at, worker_last_log_message, pipeline_error, source_type, source_url, source_storage_path, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
         .eq('id', projectId)
         .single(),
       supabase
@@ -188,7 +190,25 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       ? (project as { source_thumbnail_url?: string | null }).source_thumbnail_url
       : null;
     const youtubeId = sourceUrl ? parseYouTubeId(sourceUrl) : null;
-    const thumbnailUrl = storedThumbnailUrl || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null);
+    let thumbnailUrl = storedThumbnailUrl || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null);
+
+    if (project.source_type === 'upload') {
+      const uploadThumbnailUrl = await ensureProjectUploadThumbnail({
+        id: String(project.id),
+        user_id: String((project as { user_id?: string }).user_id ?? ''),
+        source_type: 'upload',
+        source_storage_path: typeof (project as { source_storage_path?: string | null }).source_storage_path === 'string'
+          ? (project as { source_storage_path?: string | null }).source_storage_path
+          : null,
+      }).catch((thumbnailError) => {
+        console.warn('[projects/progress] upload-thumbnail failed', {
+          project_id: projectId,
+          error: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
+        });
+        return null;
+      });
+      thumbnailUrl = uploadThumbnailUrl || thumbnailUrl;
+    }
 
     console.log('[projects/progress] counts', {
       project_id: projectId,
@@ -211,7 +231,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         pipeline_stage_label: staleWorker ? 'Worker heartbeat expired' : ((project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null),
         worker_last_seen_at: lastSeenRaw,
         worker_last_log_message: (project as { worker_last_log_message?: string | null }).worker_last_log_message ?? null,
-        pipeline_error: staleWorker ? 'Worker heartbeat expired after 5 minutes without progress update.' : ((project as { pipeline_error?: string | null }).pipeline_error ?? null),
+        pipeline_error: staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : ((project as { pipeline_error?: string | null }).pipeline_error ?? null),
         source_type: project.source_type,
         source_url: sourceUrl,
         thumbnail_url: thumbnailUrl,

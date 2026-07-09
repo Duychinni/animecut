@@ -151,17 +151,15 @@ export default function ProjectsPage() {
                 )}
 
                 {showProcessing ? (
-                  <div className="pointer-events-none absolute inset-0 bg-black/18">
-                    <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-300/25 bg-black/72 px-2.5 py-1.5 text-[11px] font-extrabold text-emerald-300 shadow-[0_8px_20px_rgba(0,0,0,0.24)] backdrop-blur-sm">
+                  <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
+                    <div className="relative isolate inline-flex min-w-[150px] items-center justify-center gap-1.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-[11px] font-extrabold text-emerald-200 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
+                      <div
+                        className="absolute inset-y-0 left-0 -z-10 bg-emerald-400/35 shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-[width] duration-500 ease-out"
+                        style={{ width: `${Math.max(6, Math.min(100, percent))}%` }}
+                      />
                       <ClockIcon className="h-3.5 w-3.5" />
                       <span>{percent}%</span>
                       <span className="font-bold text-emerald-100/85">(ETA {typeof p.eta_seconds === 'number' ? fmtDuration(p.eta_seconds) : '--'})</span>
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/18">
-                      <div
-                        className="h-full rounded-r-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.75)] transition-[width] duration-500 ease-out"
-                        style={{ width: `${Math.max(4, Math.min(100, percent))}%` }}
-                      />
                     </div>
                   </div>
                 ) : null}

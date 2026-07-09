@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
 import { isMockAiEnabled } from '@/lib/dev-ai';
+import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -34,28 +35,39 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('projects')
-      .select('id, title, status, pipeline_status, source_type, source_url, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
+      .select('id, user_id, title, status, pipeline_status, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    const projects = (data ?? []).map((project) => {
+    const projects = await Promise.all((data ?? []).map(async (project) => {
       const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const isCompleted = markedCompleted && readyExports > 0 && activeExports === 0;
       const needsExportCompletion = markedCompleted && activeExports > 0;
+      const uploadThumbnailUrl = project.source_type === 'upload'
+        ? await ensureProjectUploadThumbnail({
+            id: String(project.id),
+            user_id: String(project.user_id),
+            source_type: 'upload',
+            source_storage_path: typeof project.source_storage_path === 'string' ? project.source_storage_path : null,
+          }, { generateIfMissing: false }).catch(() => null)
+        : null;
 
       return {
         ...project,
         status: isCompleted ? 'completed' : needsExportCompletion ? 'analyzed' : project.status,
         pipeline_status: isCompleted ? 'completed' : needsExportCompletion ? 'processing' : project.pipeline_status,
+        source_thumbnail_url: uploadThumbnailUrl || project.source_thumbnail_url,
         progress_percent: isCompleted ? 100 : undefined,
+        user_id: undefined,
+        source_storage_path: undefined,
         exports: undefined,
       };
-    });
+    }));
 
     return NextResponse.json({ projects });
   } catch (error: unknown) {

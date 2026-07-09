@@ -4,6 +4,7 @@ import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
+import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 type ExportRow = {
   id: string;
@@ -68,7 +69,7 @@ export default async function ProjectDetailPage({
   const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }, { data: transcriptRow }] = await Promise.all([
     supabase
       .from('projects')
-      .select('title, status, pipeline_status, pipeline_error, pipeline_progress_percent, source_type, source_url, source_title, source_thumbnail_url, source_duration_seconds, created_at')
+      .select('id, user_id, title, status, pipeline_status, pipeline_error, pipeline_progress_percent, source_type, source_url, source_storage_path, source_title, source_thumbnail_url, source_duration_seconds, created_at')
       .eq('id', projectId)
       .single(),
     supabase
@@ -175,7 +176,17 @@ export default async function ProjectDetailPage({
 
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
-  const heroThumbnail = projectRow?.source_thumbnail_url || fallbackThumbnail;
+  const refreshedUploadThumbnail = projectRow?.source_type === 'upload'
+    ? await ensureProjectUploadThumbnail({
+        id: String(projectRow?.id ?? projectId),
+        user_id: String((projectRow as { user_id?: string | null } | null)?.user_id ?? ''),
+        source_type: 'upload',
+        source_storage_path: typeof (projectRow as { source_storage_path?: string | null } | null)?.source_storage_path === 'string'
+          ? (projectRow as { source_storage_path?: string | null }).source_storage_path
+          : null,
+      }, { generateIfMissing: false }).catch(() => null)
+    : null;
+  const heroThumbnail = refreshedUploadThumbnail || projectRow?.source_thumbnail_url || fallbackThumbnail;
   const doneResultItems = savedExportItems;
   const hasRenderableResults = doneResultItems.some((row) => Boolean(row.signedUrl));
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));

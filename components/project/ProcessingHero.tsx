@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 import { readJsonSafe } from '@/lib/safe-json';
 
 type ProgressPayload = {
@@ -12,6 +13,7 @@ type ProgressPayload = {
     pipeline_stage?: string | null;
     pipeline_stage_label?: string | null;
     pipeline_error?: string | null;
+    thumbnail_url?: string | null;
   };
   progress?: {
     percent: number;
@@ -46,6 +48,7 @@ function getProcessingLabel(stage: string | null | undefined, fallbackStatus: st
   if (stage === 'creating_clips') return 'Creating top clip candidates...';
   if (stage === 'rendering') return 'Rendering clips...';
   if (stage === 'uploading_outputs') return 'Uploading final clips...';
+  if (stage === 'source_blocked') return 'Upload the video file to continue';
   if (stage === 'completed') return 'Completed';
 
   if (fallbackStatus === 'created') return 'Preparing source video...';
@@ -55,7 +58,12 @@ function getProcessingLabel(stage: string | null | undefined, fallbackStatus: st
   return 'Processing your video';
 }
 
-export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPercent, fallbackTargetCount }: {
+export function ProcessingHero({
+  projectId,
+  pageTitle,
+  heroThumbnail,
+  fallbackPercent,
+}: {
   projectId: string;
   pageTitle: string;
   heroThumbnail: string | null;
@@ -98,7 +106,9 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   const pipelineStageLabel = data?.project?.pipeline_stage_label ?? null;
   const pipelineError = data?.project?.pipeline_error ?? null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
+  const publicError = pipelineError && !isNotEnoughContent ? getPipelineErrorInfo(pipelineError) : null;
   const isFinished = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
+  const liveHeroThumbnail = data?.project?.thumbnail_url || heroThumbnail;
 
   useEffect(() => {
     if (completedRefreshRef.current) return;
@@ -113,9 +123,9 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
       <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/10 bg-[#0d0f14] shadow-[0_30px_120px_rgba(0,0,0,0.45)]">
         <div className="grid min-h-[560px] lg:grid-cols-[1.2fr_0.8fr]">
           <div className="relative bg-black">
-            {heroThumbnail ? (
+            {liveHeroThumbnail ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={heroThumbnail} alt={pageTitle} className="h-full w-full object-cover brightness-110" loading="eager" referrerPolicy="no-referrer" />
+              <img src={liveHeroThumbnail} alt={pageTitle} className="h-full w-full object-cover brightness-110" loading="eager" referrerPolicy="no-referrer" />
             ) : (
               <div className="grid h-full min-h-[320px] place-items-center bg-white/5 text-sm text-white/50">Preparing preview...</div>
             )}
@@ -124,17 +134,25 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
 
           <div className="flex flex-col justify-center px-8 py-10 lg:px-10">
             <p className="text-sm uppercase tracking-[0.22em] text-white/45">Processing project</p>
-            <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">{isNotEnoughContent ? 'Not enough standalone clip material' : getProcessingLabel(pipelineStage, status)}</h2>
+            <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">
+              {isNotEnoughContent ? 'Not enough standalone clip material' : publicError ? publicError.title : getProcessingLabel(pipelineStage, status)}
+            </h2>
             <p className="mt-3 max-w-md text-sm leading-6 text-white/60">
               {isNotEnoughContent
                 ? 'This upload finished analysis, but it did not contain enough complete standalone moments to turn into good reels under the current clip rules.'
-                : `Current stage: ${pipelineStageLabel || getProcessingLabel(pipelineStage, status)}. Keep this page open if you want to watch progress, or come back when it’s done.`}
+                : publicError
+                  ? publicError.message
+                  : `Current stage: ${pipelineStageLabel || getProcessingLabel(pipelineStage, status)}. Keep this page open if you want to watch progress, or come back when it's done.`}
             </p>
 
-            {pipelineError && !isNotEnoughContent ? (
-              <div className="mt-5 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                <p className="font-semibold">Pipeline error</p>
-                <p className="mt-1 text-red-100/80">{pipelineError}</p>
+            {publicError ? (
+              <div className={`mt-5 rounded-2xl border px-4 py-3 text-sm ${
+                publicError.tone === 'amber'
+                  ? 'border-amber-400/25 bg-amber-500/10 text-amber-50'
+                  : 'border-red-400/25 bg-red-500/10 text-red-100'
+              }`}>
+                <p className="font-semibold">{publicError.stageLabel}</p>
+                <p className={publicError.tone === 'amber' ? 'mt-1 text-amber-50/80' : 'mt-1 text-red-100/80'}>{publicError.message}</p>
               </div>
             ) : null}
 

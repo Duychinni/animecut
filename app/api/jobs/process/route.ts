@@ -251,6 +251,10 @@ function buildFallbackExportPayload(exportId: string, extra: Record<string, unkn
 }
 
 function normalizeRenderErrorMessage(message: string) {
+  if (/Upload source file could not be read|Failed to download raw media|source_storage_path|raw media/i.test(message)) {
+    return 'Upload source file could not be read yet. The render was retried automatically.';
+  }
+
   if (/Invalid NAL unit|missing picture|Error splitting the input into NAL units|Missing reference picture|mmco:|Rendered export is corrupted/i.test(message)) {
     return 'Render failed because the source video stream was corrupted or unreadable in this segment. Please retry the export.';
   }

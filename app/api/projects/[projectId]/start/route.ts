@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import { readFile } from 'node:fs/promises';
 import { createClient } from '@/lib/supabase/server';
 import { ensurePipelineJob } from '@/lib/pipeline';
-import { resolveProjectVideoSource } from '@/lib/source';
-import { extractVideoThumbnail } from '@/lib/ffmpeg';
-import { createProjectThumbnailSignedUrl, makeProjectThumbnailObjectPath, rawMediaObjectExists, uploadProjectThumbnailObject } from '@/lib/storage';
+import { rawMediaObjectExists } from '@/lib/storage';
+import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 export async function POST(_: Request, context: { params: Promise<{ projectId: string }> }) {
   try {
@@ -47,29 +45,17 @@ export async function POST(_: Request, context: { params: Promise<{ projectId: s
     console.log('[projects/start] queued-pipeline-job', { projectId, jobId: job.id, status: job.status, sourceType: project.source_type });
 
     if (project.source_type === 'upload') {
-      void (async () => {
-        try {
-          const localPath = await resolveProjectVideoSource({
-            id: project.id,
-            source_type: 'upload',
-            source_storage_path: project.source_storage_path,
-          });
-          const thumbPath = `${localPath}.thumb.jpg`;
-          await extractVideoThumbnail(localPath, thumbPath, 5);
-          const thumbBytes = Buffer.from(await readFile(thumbPath));
-          const objectPath = makeProjectThumbnailObjectPath(user.id, project.id);
-          await uploadProjectThumbnailObject(objectPath, thumbBytes);
-          const signedThumbUrl = await createProjectThumbnailSignedUrl(objectPath);
-
-          await supabase
-            .from('projects')
-            .update({ source_thumbnail_url: signedThumbUrl, updated_at: new Date().toISOString() })
-            .eq('id', project.id)
-            .eq('user_id', user.id);
-        } catch {
-          // best-effort thumbnail generation; pipeline should still proceed
-        }
-      })();
+      void ensureProjectUploadThumbnail({
+        id: project.id,
+        user_id: user.id,
+        source_type: 'upload',
+        source_storage_path: project.source_storage_path,
+      }).catch((thumbnailError) => {
+        console.warn('[projects/start] upload-thumbnail failed', {
+          projectId,
+          error: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
+        });
+      });
     }
 
     return NextResponse.json({ ok: true, job });
