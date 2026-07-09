@@ -68,9 +68,10 @@ export async function cleanupTmpRootOlderThan(hours: number) {
 
   for (const bucket of buckets) {
     const bucketPath = path.join(tmpRoot, bucket);
-    let entries: Awaited<ReturnType<typeof readdir>> = [];
+    let entries = [] as Array<{ name: string }>;
     try {
-      entries = await readdir(bucketPath, { withFileTypes: true });
+      const dirEntries = await readdir(bucketPath, { withFileTypes: true });
+      entries = dirEntries.map((entry) => ({ name: entry.name }));
     } catch {
       continue;
     }
