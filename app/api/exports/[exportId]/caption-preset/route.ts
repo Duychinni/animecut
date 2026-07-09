@@ -46,7 +46,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       type: 'export',
       payload: {
         export_id: exportId,
-        captions_enabled: false,
+        captions_enabled: true,
         caption_template: preset.caption_template,
         caption_font: preset.caption_font,
         motion_tracking: false,

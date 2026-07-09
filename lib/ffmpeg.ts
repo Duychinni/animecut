@@ -714,7 +714,7 @@ function buildHookDrawtextFilter(hookText: string) {
     'fontcolor=black',
     'fontsize=44',
     'line_spacing=10',
-    'fontfile=/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+    "font='DejaVu Sans Bold'",
     'box=1',
     'boxcolor=white@0.98',
     'boxborderw=18',

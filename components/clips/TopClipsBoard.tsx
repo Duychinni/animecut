@@ -92,6 +92,25 @@ function getClipTags(clip: ClipItem) {
   return tags.slice(0, 3);
 }
 
+function formatMockHook(title: string) {
+  const words = title
+    .replace(/[|:]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 7);
+  return words.length ? words.join(' ') : 'Top Moment';
+}
+
+function getMockCaption(title: string) {
+  const words = title
+    .replace(/[|:]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const first = words[0]?.toUpperCase() ?? 'THIS';
+  const rest = words.slice(1, 4).join(' ').toUpperCase() || 'MOMENT HITS';
+  return { first, rest };
+}
+
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
@@ -451,21 +470,39 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     </div>
                   ) : clip.status === 'done' ? (
                     <div className="flex justify-center bg-transparent px-1.5">
-                      <div className="relative flex aspect-[9/16] w-full max-w-[230px] flex-col justify-between overflow-hidden rounded-[8px] border border-white/10 bg-[radial-gradient(circle_at_50%_18%,rgba(255,123,216,0.22),transparent_32%),linear-gradient(180deg,#17101f,#08080d)] p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
-                        <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
-                          <span>Mock Reel</span>
+                      <div className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#4b2c1d_0%,#17101f_48%,#06070b_100%)] text-white shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+                        <div className="absolute inset-x-0 top-0 h-7 bg-[linear-gradient(90deg,rgba(255,255,255,0.14)_50%,transparent_50%)] bg-[length:18px_100%] opacity-45" />
+                        <div className="absolute inset-x-4 top-9 rounded-md bg-white px-3 py-2 text-center text-[13px] font-black leading-tight text-black shadow-[0_4px_18px_rgba(0,0,0,0.35)]">
+                          {formatMockHook(clip.title)}
+                        </div>
+
+                        <div className="absolute inset-x-0 top-0 flex items-center justify-between px-3 py-2 text-[9px] font-black uppercase tracking-[0.12em] text-white/70">
+                          <span>Mock preview</span>
                           <span>{durationLabel ?? '0:00'}</span>
                         </div>
-                        <div className="space-y-3 text-center">
-                          <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-white/[0.06] text-xl font-black">
+
+                        <div className="absolute inset-x-5 top-[35%] rounded-2xl border border-white/10 bg-black/20 px-3 py-5 text-center backdrop-blur-[2px]">
+                          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-white/20 bg-black/35 text-lg font-black">
                             {formatDisplayScore(clip.score)}
                           </div>
-                          <p className="text-sm font-extrabold leading-tight">{clip.title}</p>
-                          <p className="text-xs leading-5 text-white/58">
-                            MOCK_AI is on, so AnimaCut generated the clip candidate and skipped the real FFmpeg render.
+                          <p className="mt-3 text-[11px] font-semibold leading-4 text-white/68">
+                            Old mock placeholder. The worker will requeue this for a real FFmpeg render.
                           </p>
                         </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+
+                        <div className="absolute inset-x-4 bottom-16 text-center text-xl font-black uppercase leading-[1.05] tracking-tight [text-shadow:0_3px_0_#000,0_0_12px_rgba(0,0,0,0.75)]">
+                          {(() => {
+                            const caption = getMockCaption(clip.title);
+                            return (
+                              <>
+                                <span className="text-[#21f45a]">{caption.first}</span>
+                                <span className="text-white"> {caption.rest}</span>
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        <div className="absolute inset-x-4 bottom-4 h-1.5 overflow-hidden rounded-full bg-white/12">
                           <div className="h-full w-2/3 rounded-full bg-[linear-gradient(90deg,#8B7CFF,#FF7BD8,#FFB347)]" />
                         </div>
                       </div>
