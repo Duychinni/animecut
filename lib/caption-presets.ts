@@ -1,8 +1,11 @@
+export type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
+export type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
+
 export type CaptionPreset = {
   id: string;
   name: string;
-  caption_template: 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
-  caption_font: 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
+  caption_template: CaptionTemplate;
+  caption_font: CaptionFont;
   captionFontFamily: string;
   captionFontSize: number;
   captionTextColor: string;
@@ -15,7 +18,25 @@ export type CaptionPreset = {
   captionAnimation: string;
 };
 
+export const DEFAULT_CAPTION_PRESET_ID = 'opus-clean';
+
 export const CAPTION_PRESETS: CaptionPreset[] = [
+  {
+    id: DEFAULT_CAPTION_PRESET_ID,
+    name: 'Auto Hook Clean',
+    caption_template: 'capcut',
+    caption_font: 'montserrat',
+    captionFontFamily: 'Montserrat ExtraBold',
+    captionFontSize: 11,
+    captionTextColor: '#FFFFFF',
+    captionHighlightColor: '#21F45A',
+    captionStrokeColor: '#000000',
+    captionStrokeWidth: 4,
+    captionShadow: 'black-heavy',
+    captionBackgroundBox: false,
+    captionPosition: 'lower-third',
+    captionAnimation: 'word-highlight',
+  },
   {
     id: 'viral-bold',
     name: 'Viral Bold',

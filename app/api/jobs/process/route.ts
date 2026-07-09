@@ -4,11 +4,12 @@ import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
-import { segmentsToCapcutAss, segmentsToSrt } from '@/lib/srt';
+import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
 import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
+import { getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
@@ -81,6 +82,7 @@ type ExportBundle = {
   id: string;
   project_id: string;
   clip_candidate_id: string;
+  caption_preset_id?: string | null;
   hook_text_enabled?: boolean | null;
   hook_text?: string | null;
   project: {
@@ -96,14 +98,15 @@ type ExportBundle = {
     title?: string | null;
   };
   transcript: {
-    segments_json: Array<{ start?: number; end?: number; text?: string }> | null;
+    segments_json: Array<{ start?: number; end?: number; text?: string; words?: Array<{ start?: number; end?: number; word?: string }> }> | null;
   } | null;
 };
 
 type ExportRenderOptions = {
   captions_enabled?: boolean;
-  caption_template?: 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
-  caption_font?: 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
+  caption_preset_id?: string;
+  caption_template?: CaptionTemplate;
+  caption_font?: CaptionFont;
   hook_text_enabled?: boolean;
   hook_text?: string;
   motion_tracking?: boolean;
@@ -233,7 +236,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const { data: ex, error } = await supabase
     .from('exports')
-    .select('id, project_id, clip_candidate_id, hook_text_enabled, hook_text')
+    .select('id, project_id, clip_candidate_id, caption_preset_id, hook_text_enabled, hook_text')
     .eq('id', exportId)
     .single();
   if (error || !ex) throw new Error('Export row not found');
@@ -264,6 +267,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     id: String(ex.id),
     project_id: String(ex.project_id),
     clip_candidate_id: String(ex.clip_candidate_id),
+    caption_preset_id: typeof ex.caption_preset_id === 'string' ? ex.caption_preset_id : null,
     hook_text_enabled: ex.hook_text_enabled !== false,
     hook_text: typeof ex.hook_text === 'string' ? ex.hook_text : null,
     project: {
@@ -280,7 +284,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     },
     transcript: transcript
       ? {
-          segments_json: (transcript.segments_json as Array<{ start?: number; end?: number; text?: string }> | null) ?? null,
+          segments_json: (transcript.segments_json as Array<{ start?: number; end?: number; text?: string; words?: Array<{ start?: number; end?: number; word?: string }> }> | null) ?? null,
         }
       : null,
   };
@@ -291,19 +295,17 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await mkdir(exportDir, { recursive: true });
   const outPath = path.join(exportDir, `${bundle.id}.mp4`);
 
-  const captionTemplate = options?.caption_template ?? 'capcut';
-  const useAssCaptions = captionTemplate === 'capcut';
-  const srtPath = path.join(exportDir, `${bundle.id}.${useAssCaptions ? 'ass' : 'srt'}`);
+  const captionPreset = getCaptionPresetById(options?.caption_preset_id ?? bundle.caption_preset_id);
+  const captionTemplate = options?.caption_template ?? captionPreset.caption_template;
+  const captionFont = options?.caption_font ?? captionPreset.caption_font;
+  const srtPath = path.join(exportDir, `${bundle.id}.ass`);
 
-  const captionText = useAssCaptions
-    ? segmentsToCapcutAss(bundle.transcript?.segments_json ?? [], bundle.clip.start_sec, bundle.clip.end_sec)
-    : segmentsToSrt(bundle.transcript?.segments_json ?? [], bundle.clip.start_sec, bundle.clip.end_sec, {
-        captionTemplate,
-      });
+  const captionText = segmentsToCapcutAss(bundle.transcript?.segments_json ?? [], bundle.clip.start_sec, bundle.clip.end_sec, {
+    ...captionPreset,
+    caption_template: captionTemplate,
+  });
 
-  const fallbackCaption = useAssCaptions
-    ? '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Montserrat,22,&H00FFFFFF,&H0000FFFF,&H00141414,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,72,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n'
-    : '1\n00:00:00,000 --> 00:00:00,500\n\n';
+  const fallbackCaption = '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Montserrat,88,&H00FFFFFF,&H0000FFFF,&H00141414,&H00000000,-1,0,0,0,120,108,0,0,1,4,0,2,40,40,380,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n';
   await writeFile(srtPath, captionText || fallbackCaption);
 
   const hookTextEnabled = bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
@@ -323,9 +325,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     startSec: bundle.clip.start_sec,
     endSec: bundle.clip.end_sec,
     srtPath,
-    captionsEnabled: options?.captions_enabled === true,
+    captionsEnabled: options?.captions_enabled !== false,
     captionTemplate,
-    captionFont: options?.caption_font ?? 'arial',
+    captionFont,
     hookTextEnabled,
     hookText,
     motionTracking: options?.motion_tracking !== false,
@@ -430,6 +432,7 @@ export async function POST() {
 
       await processExportJob(exportId, {
         captions_enabled: item.payload?.captions_enabled as boolean | undefined,
+        caption_preset_id: item.payload?.caption_preset_id as string | undefined,
         caption_template: item.payload?.caption_template as
           | 'clean'
           | 'bold'
@@ -454,6 +457,7 @@ export async function POST() {
         motion_tracking: item.payload?.motion_tracking as boolean | undefined,
         auto_reframe: item.payload?.auto_reframe as boolean | undefined,
         reframe_mode: item.payload?.reframe_mode as 'off' | 'basic' | 'smart' | undefined,
+        reframe_preset: item.payload?.reframe_preset as 'auto' | 'tight' | 'left' | 'center' | 'right' | undefined,
       });
 
       if (item.jobId) {

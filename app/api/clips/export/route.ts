@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getTargetClipCount } from '@/lib/clip-policy';
+import { getCaptionPresetById } from '@/lib/caption-presets';
 
 function serializeUnknownError(error: unknown) {
   if (error instanceof Error) {
@@ -48,6 +49,7 @@ export async function POST(req: Request) {
       candidate_ids,
       target_count,
       captions_enabled,
+      caption_preset_id,
       caption_template,
       caption_font,
       motion_tracking,
@@ -56,8 +58,9 @@ export async function POST(req: Request) {
     } = await req.json();
     const supabase = createAdminClient();
 
-    const captionsEnabled = captions_enabled === true;
-    const captionTemplate = (caption_template ?? 'capcut') as
+    const captionPreset = getCaptionPresetById(typeof caption_preset_id === 'string' ? caption_preset_id : undefined);
+    const captionsEnabled = captions_enabled !== false;
+    const captionTemplate = (caption_template ?? captionPreset.caption_template) as
       | 'clean'
       | 'bold'
       | 'viral'
@@ -66,7 +69,7 @@ export async function POST(req: Request) {
       | 'rage'
       | 'minimal'
       | 'capcut';
-    const captionFont = (caption_font ?? 'montserrat') as 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
+    const captionFont = (caption_font ?? captionPreset.caption_font) as 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
     // Speed-first default: motion tracking is expensive (extra ffmpeg analysis pass).
     // Enable explicitly per request when needed.
     const motionTracking = motion_tracking === true;
@@ -199,6 +202,17 @@ export async function POST(req: Request) {
     const rows = selectedIds.map((clip_candidate_id) => ({
       project_id,
       clip_candidate_id,
+      caption_preset_id: captionPreset.id,
+      caption_font_family: captionPreset.captionFontFamily,
+      caption_font_size: captionPreset.captionFontSize,
+      caption_text_color: captionPreset.captionTextColor,
+      caption_highlight_color: captionPreset.captionHighlightColor,
+      caption_stroke_color: captionPreset.captionStrokeColor,
+      caption_stroke_width: captionPreset.captionStrokeWidth,
+      caption_shadow: captionPreset.captionShadow,
+      caption_background_box: captionPreset.captionBackgroundBox,
+      caption_position: captionPreset.captionPosition,
+      caption_animation: captionPreset.captionAnimation,
       status: 'queued',
     }));
 
@@ -214,6 +228,7 @@ export async function POST(req: Request) {
       payload: {
         export_id: row.id,
         captions_enabled: captionsEnabled,
+        caption_preset_id: captionPreset.id,
         caption_template: captionTemplate,
         caption_font: captionFont,
         motion_tracking: motionTracking,

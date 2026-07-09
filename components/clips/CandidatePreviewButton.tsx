@@ -21,12 +21,12 @@ export function CandidatePreviewButton({ projectId, candidateId }: { projectId: 
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const [captionsEnabled, setCaptionsEnabled] = useState(false);
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
   const [captionTemplate, setCaptionTemplate] = useState<'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut'>('capcut');
   const [captionFont, setCaptionFont] = useState<'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins'>('montserrat');
-  const [motionTracking, setMotionTracking] = useState(true);
+  const [motionTracking, setMotionTracking] = useState(false);
   const [autoReframe, setAutoReframe] = useState(true);
-  const [reframeMode, setReframeMode] = useState<'off' | 'basic' | 'smart'>('basic');
+  const [reframeMode, setReframeMode] = useState<'off' | 'basic' | 'smart'>('smart');
 
   async function previewCandidate() {
     setLoading(true);

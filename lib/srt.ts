@@ -12,6 +12,17 @@ type Segment = {
 };
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
+type StyledCaptionPreset = {
+  caption_template?: CaptionTemplate;
+  captionFontFamily?: string;
+  captionFontSize?: number;
+  captionTextColor?: string;
+  captionHighlightColor?: string;
+  captionStrokeColor?: string;
+  captionStrokeWidth?: number;
+  captionBackgroundBox?: boolean;
+  captionPosition?: string;
+};
 
 function toSrtTime(sec: number) {
   const s = Math.max(0, sec);
@@ -125,13 +136,56 @@ function tokenizeCapcutWords(text: string) {
     .map((w) => assEscape(w));
 }
 
-function buildHighlightedLine(words: string[], activeWordIdx: number) {
+function hexToAssColor(hex: string | undefined, fallback: string) {
+  const normalized = (hex || fallback).replace('#', '').trim();
+  const safe = /^[0-9a-fA-F]{6}$/.test(normalized) ? normalized : fallback.replace('#', '');
+  const rr = safe.slice(0, 2);
+  const gg = safe.slice(2, 4);
+  const bb = safe.slice(4, 6);
+  return `&H00${bb}${gg}${rr}`;
+}
+
+function resolveAssStyle(preset?: StyledCaptionPreset) {
+  const template = preset?.caption_template ?? 'capcut';
+  const fontSize = Math.round((preset?.captionFontSize ?? 11) * (template === 'minimal' ? 7.4 : 8.6));
+  const outline = Math.max(1, Math.round(preset?.captionStrokeWidth ?? 4));
+  const marginV = preset?.captionPosition === 'middle'
+    ? 720
+    : preset?.captionPosition === 'upper'
+      ? 1120
+      : template === 'minimal'
+        ? 300
+        : 380;
+
+  return {
+    template,
+    fontName: preset?.captionFontFamily?.replace(/\s+(ExtraBold|Black|Bold|SemiBold)$/i, '') || 'Montserrat',
+    fontSize,
+    primary: hexToAssColor(preset?.captionTextColor, '#FFFFFF'),
+    secondary: hexToAssColor(preset?.captionHighlightColor, '#21F45A'),
+    outlineColor: hexToAssColor(preset?.captionStrokeColor, '#000000'),
+    outline,
+    borderStyle: preset?.captionBackgroundBox ? 3 : 1,
+    backColor: preset?.captionBackgroundBox ? '&HCC000000' : '&H00000000',
+    marginV,
+    scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : 122,
+    scaleY: template === 'minimal' ? 100 : 108,
+    windowSize: template === 'minimal' || template === 'clean' || template === 'cinematic' ? 4 : 2,
+  };
+}
+
+function buildHighlightedLine(words: string[], activeWordIdx: number, colors?: { primary: string; secondary: string }) {
+  const primary = colors?.primary ?? '&H00FFFFFF';
+  const secondary = colors?.secondary ?? '&H0000FFFF';
+  const primaryOverride = primary.endsWith('&') ? primary : `${primary}&`;
+  const secondaryOverride = secondary.endsWith('&') ? secondary : `${secondary}&`;
   return words
-    .map((w, idx) => (idx === activeWordIdx ? `{\\c&H00FFFF&}${w}{\\c&H00FFFFFF&}` : w))
+    .map((w, idx) => (idx === activeWordIdx ? `{\\c${secondaryOverride}}${w}{\\c${primaryOverride}}` : w))
     .join(' ');
 }
 
-export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSec: number) {
+export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSec: number, preset?: StyledCaptionPreset) {
+  const style = resolveAssStyle(preset);
   const sliced = segments
     .map((seg) => ({
       start: Number(seg.start ?? 0),
@@ -188,7 +242,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
     }
 
     const lineWordsAll = intervals.map((it) => it.word);
-    const windowSize = 2;
+    const windowSize = style.windowSize;
     for (let windowStart = 0; windowStart < lineWordsAll.length; windowStart += windowSize) {
       const windowEnd = Math.min(lineWordsAll.length, windowStart + windowSize);
       const lineWords = lineWordsAll.slice(windowStart, windowEnd);
@@ -207,7 +261,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
         if (e - s < 0.05) continue;
 
         const activeInLine = i - windowStart;
-        const text = buildHighlightedLine(lineWords, activeInLine);
+        const text = buildHighlightedLine(lineWords, activeInLine, { primary: style.primary, secondary: style.secondary });
         if (!text) continue;
 
         events.push({ start: s, end: e, text });
@@ -215,7 +269,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
     }
   }
 
-  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Impact,108,&H00FFFFFF,&H0000FFFF,&H00101010,&H00000000,-1,0,0,0,126,108,0,0,1,8,0,2,30,30,450,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
+  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${style.fontName},${style.fontSize},${style.primary},${style.secondary},${style.outlineColor},${style.backColor},-1,0,0,0,${style.scaleX},${style.scaleY},0,0,${style.borderStyle},${style.outline},0,2,30,30,${style.marginV},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
 
   const body = events
     .map((e) => `Dialogue: 0,${toAssTime(e.start)},${toAssTime(e.end)},Default,,0,0,0,,${e.text}`)

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getCaptionPresetById } from '@/lib/caption-presets';
 
 export async function POST(req: Request, context: { params: Promise<{ exportId: string }> }) {
   try {
@@ -12,13 +13,14 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
 
     const { data: existing, error: existingError } = await supabase
       .from('exports')
-      .select('id, project_id, clip_candidate_id')
+      .select('id, project_id, clip_candidate_id, caption_preset_id')
       .eq('id', exportId)
       .single();
 
     if (existingError || !existing) {
       return NextResponse.json({ error: 'Export not found' }, { status: 404 });
     }
+    const preset = getCaptionPresetById(typeof existing.caption_preset_id === 'string' ? existing.caption_preset_id : undefined);
 
     const { error: updateError } = await supabase
       .from('exports')
@@ -36,7 +38,10 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       type: 'export',
       payload: {
         export_id: exportId,
-        captions_enabled: false,
+        captions_enabled: true,
+        caption_preset_id: preset.id,
+        caption_template: preset.caption_template,
+        caption_font: preset.caption_font,
         motion_tracking: false,
         auto_reframe: true,
         reframe_mode: 'smart',

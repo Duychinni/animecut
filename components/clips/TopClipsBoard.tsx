@@ -221,29 +221,17 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     if (!editingClip) return;
     try {
       setApplyingPreset(true);
-      const [presetRes, reframeRes, hookRes] = await Promise.all([
-        fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ presetId: selectedPresetId }),
+      const presetRes = await fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          presetId: selectedPresetId,
+          reframePreset: selectedReframePreset,
+          hookTextEnabled,
         }),
-        fetch(`/api/exports/${editingClip.exportId}/reframe`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ preset: selectedReframePreset }),
-        }),
-        fetch(`/api/exports/${editingClip.exportId}/hook-text`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ enabled: hookTextEnabled }),
-        }),
-      ]);
+      });
       const presetData = await readJsonSafe(presetRes);
-      const reframeData = await readJsonSafe(reframeRes);
-      const hookData = await readJsonSafe(hookRes);
       if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
-      if (!reframeRes.ok) throw new Error(String(reframeData?.error || 'Could not apply reframe preset'));
-      if (!hookRes.ok) throw new Error(String(hookData?.error || 'Could not update hook text'));
       setEditingClip(null);
       window.location.reload();
     } catch (error) {
