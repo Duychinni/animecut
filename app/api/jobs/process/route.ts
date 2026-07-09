@@ -135,7 +135,7 @@ async function getProjectCompletionState(projectId: string) {
 
 async function isFrozenCompletedProject(projectId: string) {
   const state = await getProjectCompletionState(projectId);
-  return state.completed && state.hasSavedExports && state.activeExports === 0;
+  return state.completed && state.hasSavedExports;
 }
 
 async function shouldSkipExportForCompletedProject(exportId: string) {
@@ -700,6 +700,16 @@ export async function POST() {
 
       const completedGate = await shouldSkipExportForCompletedProject(exportId);
       if (completedGate.skip) {
+        await supabase
+          .from('exports')
+          .update({
+            status: 'error',
+            error_message: 'Skipped because this project is already completed.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', exportId)
+          .in('status', ['queued', 'processing']);
+
         if (item.jobId) {
           await supabase
             .from('jobs')

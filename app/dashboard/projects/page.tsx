@@ -24,6 +24,8 @@ type ProjectListItem = {
   pipeline_status?: string | null;
   pipeline_stage?: string | null;
   pipeline_stage_label?: string | null;
+  expires_at?: string | null;
+  days_until_expiring?: number | null;
 };
 
 function ClockIcon({ className = '' }: { className?: string }) {
@@ -35,16 +37,37 @@ function ClockIcon({ className = '' }: { className?: string }) {
   );
 }
 
+function isCompletedProject(project: ProjectListItem) {
+  return project.status === 'completed' || project.pipeline_status === 'completed' || Number(project.progress_percent ?? 0) >= 100;
+}
+
+function isActiveProject(project: ProjectListItem) {
+  if (isCompletedProject(project)) return false;
+  return project.pipeline_status === 'queued' || project.pipeline_status === 'processing';
+}
+
+function getExpiryLabel(project: ProjectListItem) {
+  const days = Number(project.days_until_expiring);
+  if (!Number.isFinite(days)) return null;
+  return `${Math.max(0, days)} ${days === 1 ? 'day' : 'days'} before expiring`;
+}
+
 export default function ProjectsPage() {
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
+  const repairRanRef = useRef(false);
 
   async function loadProjects() {
     setLoadingProjects(true);
     try {
+      if (!repairRanRef.current) {
+        repairRanRef.current = true;
+        await fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+      }
+
       const res = await fetch('/api/projects');
       const data = await res.json();
       if (!res.ok) {
@@ -76,8 +99,8 @@ export default function ProjectsPage() {
       );
 
       hasProcessingRef.current = enriched.some((p) => {
-        const pct = Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0));
-        return pct < 100;
+        const pct = Number(p.progress_percent ?? (isCompletedProject(p) ? 100 : 0));
+        return isActiveProject(p) && pct < 100;
       });
 
       setRecentProjects(enriched);
@@ -143,8 +166,10 @@ export default function ProjectsPage() {
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {recentProjects.map((p) => {
-          const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
-          const showProcessing = p.status !== 'completed';
+          const completed = isCompletedProject(p);
+          const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (completed ? 100 : 0))));
+          const showProcessing = isActiveProject(p) && percent < 100;
+          const expiryLabel = getExpiryLabel(p);
           const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
             : p.pipeline_stage === 'downloading' ? 'Preparing source video'
@@ -166,6 +191,12 @@ export default function ProjectsPage() {
                 ) : (
                   <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
                 )}
+
+                {expiryLabel ? (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-black/55 px-3 py-1.5 text-center text-[12px] font-medium text-white/85 backdrop-blur-sm">
+                    {expiryLabel}
+                  </div>
+                ) : null}
 
                 {showProcessing ? (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">

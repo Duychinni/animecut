@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById } from '@/lib/caption-presets';
 
+const STALE_ACTIVE_EXPORT_MS = 10 * 60 * 1000;
+
 type ExportRepairRow = {
   id?: string | null;
   status?: string | null;
@@ -78,8 +80,57 @@ export async function POST() {
       const projectAlreadyCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing'));
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
-      const frozenCompletedProject = projectAlreadyCompleted && readyExports > 0 && activeRows.length === 0;
+      const hasSavedReels = readyExports > 0;
+      const activeRowsAreStale = activeRows.length > 0 && activeRows.every((row) => {
+        const updatedAtMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+        return updatedAtMs <= 0 || Date.now() - updatedAtMs > STALE_ACTIVE_EXPORT_MS;
+      });
+      const frozenCompletedProject = hasSavedReels && (projectAlreadyCompleted || activeRows.length === 0 || activeRowsAreStale);
       let requeuedOldStyle = false;
+
+      if (frozenCompletedProject) {
+        if (activeRows.length > 0) {
+          await admin
+            .from('exports')
+            .update({
+              status: 'error',
+              error_message: 'Skipped because this project is already completed.',
+              updated_at: new Date().toISOString(),
+            })
+            .in('id', activeRows.map((row) => String(row.id)));
+
+          await admin
+            .from('jobs')
+            .update({
+              status: 'done',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('project_id', project.id)
+            .eq('type', 'export')
+            .in('status', ['queued', 'processing']);
+        }
+
+        if (project.status !== 'completed' || project.pipeline_status !== 'completed') {
+          await admin
+            .from('projects')
+            .update({
+              status: 'completed',
+              pipeline_status: 'completed',
+              pipeline_stage: 'completed',
+              pipeline_stage_label: 'Completed',
+              pipeline_progress_percent: 100,
+              pipeline_error: null,
+              pipeline_completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', project.id)
+            .eq('user_id', user.id);
+
+          repaired += 1;
+        }
+
+        continue;
+      }
 
       const oldStyleDoneRows = rows.filter((r) => (
         r.id

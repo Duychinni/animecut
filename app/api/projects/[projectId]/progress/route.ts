@@ -264,11 +264,14 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'processing'
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
-    const hasSettledPlayableExports = activeExports === 0 && doneExports > 0;
+    const hasPlayableExports = doneExports > 0;
+    const frozenCompletedProject = projectMarkedCompleted && hasPlayableExports;
+    const hasSettledPlayableExports = activeExports === 0 && hasPlayableExports;
     const isReallyCompleted =
-      hasSettledPlayableExports && (projectMarkedCompleted || doneExports >= targetCount || storedPipelineStatus === 'error' || heartbeatExpired);
+      frozenCompletedProject
+      || (hasSettledPlayableExports && (projectMarkedCompleted || doneExports >= targetCount || storedPipelineStatus === 'error' || heartbeatExpired));
 
-    const projectNeedsExportCompletion = projectMarkedCompleted && activeExports > 0;
+    const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && activeExports > 0;
     const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = isReallyCompleted ? 'completed' : storedPipelineStatus;
     const storedPipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
@@ -439,7 +442,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       progress: {
         percent: Math.max(0, Math.min(100, progressPercent)),
         done_exports: doneExports,
-        active_exports: activeExports,
+        active_exports: isReallyCompleted ? 0 : activeExports,
         target_exports: targetCount,
         elapsed_seconds: elapsedSeconds,
         eta_seconds: etaSeconds,

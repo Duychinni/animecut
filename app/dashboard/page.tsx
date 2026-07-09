@@ -41,6 +41,8 @@ type ProjectListItem = {
   pipeline_stage_label?: string | null;
   pipeline_error?: string | null;
   worker_last_seen_at?: string | null;
+  expires_at?: string | null;
+  days_until_expiring?: number | null;
 };
 
 async function fetchProjectProgress(projectId: string) {
@@ -64,6 +66,23 @@ async function fetchProjectProgress(projectId: string) {
   }
 }
 
+function isCompletedProject(project: ProjectListItem) {
+  return project.status === 'completed' || project.pipeline_status === 'completed' || Number(project.progress_percent ?? 0) >= 100;
+}
+
+function isActiveProject(project: ProjectListItem) {
+  if (isCompletedProject(project)) return false;
+  if (project.pipeline_error === 'not_enough_content') return false;
+  if (project.pipeline_status === 'error' || project.status === 'failed') return false;
+  return Boolean(project.optimistic || project.pipeline_status === 'queued' || project.pipeline_status === 'processing');
+}
+
+function getExpiryLabel(project: ProjectListItem) {
+  const days = Number(project.days_until_expiring);
+  if (!Number.isFinite(days)) return null;
+  return `${Math.max(0, days)} ${days === 1 ? 'day' : 'days'} before expiring`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -81,6 +100,7 @@ export default function DashboardPage() {
   const hasProcessingRef = useRef(true);
   const progressFloorRef = useRef<Map<string, number>>(new Map());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
+  const repairRanRef = useRef(false);
 
   function persistProgressFloor() {
     try {
@@ -102,10 +122,10 @@ export default function DashboardPage() {
   }
 
   function getFlooredProgress(project: ProjectListItem) {
-    const direct = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
+    const direct = Number(project.progress_percent ?? (isCompletedProject(project) ? 100 : 0));
     const previous = Math.min(98, progressFloorRef.current.get(project.id) ?? 0);
-    const active = project.pipeline_status === 'queued' || project.pipeline_status === 'processing';
-    if (project.status === 'completed' || project.pipeline_status === 'completed') return 100;
+    const active = isActiveProject(project);
+    if (isCompletedProject(project)) return 100;
     if (active && previous > 0 && (!Number.isFinite(direct) || direct <= 0)) return previous;
     return Math.min(98, Math.max(previous, Math.max(0, Math.min(100, Number.isFinite(direct) ? direct : 0))));
   }
@@ -121,12 +141,16 @@ export default function DashboardPage() {
       // ignore restore errors
     }
 
-    void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
   }, []);
 
   async function loadProjects(initial = false) {
     if (initial) setLoadingProjects(true);
     try {
+      if (initial && !repairRanRef.current) {
+        repairRanRef.current = true;
+        await fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+      }
+
       const res = await fetch('/api/projects');
       const data = await res.json();
       if (!res.ok) {
@@ -140,8 +164,8 @@ export default function DashboardPage() {
         return [...items].sort((a, b) => {
           const aPercent = getFlooredProgress(a);
           const bPercent = getFlooredProgress(b);
-          const aProcessing = (a.pipeline_status === 'queued' || a.pipeline_status === 'processing') && aPercent < 100;
-          const bProcessing = (b.pipeline_status === 'queued' || b.pipeline_status === 'processing') && bPercent < 100;
+          const aProcessing = isActiveProject(a) && aPercent < 100;
+          const bProcessing = isActiveProject(b) && bPercent < 100;
 
           if (aProcessing !== bProcessing) return aProcessing ? -1 : 1;
 
@@ -155,7 +179,7 @@ export default function DashboardPage() {
         ? (projects.map((p) => ({
             ...p,
             thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
-            progress_percent: p.status === 'completed' ? 100 : Math.min(98, Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0))),
+            progress_percent: isCompletedProject(p) ? 100 : Math.min(98, Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0))),
           })) as ProjectListItem[])
         : recentProjects;
 
@@ -165,7 +189,7 @@ export default function DashboardPage() {
       }
 
       const processingIds = (baseProjects.length ? baseProjects : projects)
-        .filter((p) => p.pipeline_status === 'queued' || p.pipeline_status === 'processing')
+        .filter((p) => isActiveProject(p))
         .slice(0, 3)
         .map((p) => p.id);
 
@@ -188,7 +212,7 @@ export default function DashboardPage() {
         const merged = projects.map((project) => {
           const previous = prev.find((p) => p.id === project.id);
           const update = progressUpdates.find((u) => u?.id === project.id);
-          const activeLive = previous && (previous.pipeline_status === 'queued' || previous.pipeline_status === 'processing');
+          const activeLive = previous && isActiveProject(previous);
 
           if (activeLive && !update) {
             return {
@@ -201,7 +225,7 @@ export default function DashboardPage() {
           if (update) {
             const previousProgress = previous ? getFlooredProgress(previous) : 0;
             const incomingProgress = Number(update.progress_percent ?? 0);
-            const activeIncoming = update.pipeline_status === 'queued' || update.pipeline_status === 'processing';
+            const activeIncoming = isActiveProject({ ...project, ...previous, ...update } as ProjectListItem);
             return {
               ...project,
               ...previous,
@@ -223,7 +247,7 @@ export default function DashboardPage() {
 
         hasProcessingRef.current = sortedMerged.some((p) => {
           const pct = getFlooredProgress(p);
-          return pct < 100;
+          return isActiveProject(p) && pct < 100;
         });
 
         return sortedMerged;
@@ -283,15 +307,11 @@ export default function DashboardPage() {
 
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        void fetch('/api/pipeline/process', { method: 'POST' }).catch(() => null);
-        void fetch('/api/jobs/process', { method: 'POST' }).catch(() => null);
         void loadProjects();
       }
     };
 
     void loadProjects(true);
-    void fetch('/api/pipeline/process', { method: 'POST' }).catch(() => null);
-    void fetch('/api/jobs/process', { method: 'POST' }).catch(() => null);
 
     const timer = setInterval(() => {
       void tick();
@@ -391,7 +411,7 @@ export default function DashboardPage() {
       const matchesSearch = searchQuery.trim() ? (p.source_title || p.title).toLowerCase().includes(searchQuery.trim().toLowerCase()) : true;
 
       const percent = getFlooredProgress(p);
-      const active = p.pipeline_status === 'queued' || p.pipeline_status === 'processing';
+      const active = isActiveProject(p);
       const matchesStatus =
         statusFilter === 'all'
           ? true
@@ -472,11 +492,12 @@ export default function DashboardPage() {
 
       <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
         {orderedProjects.map((p) => {
-          const isCompleted = p.status === 'completed' || p.pipeline_status === 'completed';
+          const isCompleted = isCompletedProject(p);
           const isNotEnoughContent = p.pipeline_error === 'not_enough_content';
           const isFailed = (p.pipeline_status === 'error' || p.status === 'failed') && !isNotEnoughContent;
           const percent = isCompleted ? 100 : getFlooredProgress(p);
-          const showProcessing = !isCompleted && !isFailed && !isNotEnoughContent && percent < 100;
+          const showProcessing = isActiveProject(p) && !isFailed && !isNotEnoughContent && percent < 100;
+          const expiryLabel = getExpiryLabel(p);
           const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
             : p.pipeline_status === 'processing'
@@ -500,6 +521,12 @@ export default function DashboardPage() {
                 <div className="grid aspect-video place-items-center bg-white/5 text-xs text-white/55">No thumbnail</div>
               )}
 
+              {expiryLabel ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-black/55 px-3 py-1.5 text-center text-[12px] font-medium text-white/85 backdrop-blur-sm">
+                  {expiryLabel}
+                </div>
+              ) : null}
+
               {showProcessing ? (
                 <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
                   <div className="relative isolate flex min-w-[150px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
@@ -515,7 +542,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ) : (
-                <div className="pointer-events-none absolute inset-0 flex items-end justify-start opacity-0 transition duration-300 group-hover:opacity-100">
+                <div className="pointer-events-none absolute inset-0 flex items-start justify-start opacity-0 transition duration-300 group-hover:opacity-100">
                   <div className="m-3 rounded-full border border-[#9b6bff]/35 bg-black/55 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/95 backdrop-blur-sm">
                     Open Project
                   </div>

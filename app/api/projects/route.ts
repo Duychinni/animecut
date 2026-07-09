@@ -9,6 +9,21 @@ import { isMockAiEnabled } from '@/lib/dev-ai';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
+const PROJECT_RETENTION_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function getExpiryInfo(completedAt: string | null | undefined, createdAt: string) {
+  const baseMs = new Date(completedAt || createdAt).getTime();
+  if (!Number.isFinite(baseMs)) {
+    return { expires_at: null, days_until_expiring: null };
+  }
+
+  const expiresMs = baseMs + PROJECT_RETENTION_DAYS * MS_PER_DAY;
+  return {
+    expires_at: new Date(expiresMs).toISOString(),
+    days_until_expiring: Math.max(0, Math.ceil((expiresMs - Date.now()) / MS_PER_DAY)),
+  };
+}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -35,7 +50,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('projects')
-      .select('id, user_id, title, status, pipeline_status, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
+      .select('id, user_id, title, status, pipeline_status, pipeline_completed_at, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -46,8 +61,9 @@ export async function GET() {
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-      const isCompleted = markedCompleted && readyExports > 0 && activeExports === 0;
+      const isCompleted = readyExports > 0 && (markedCompleted || activeExports === 0);
       const needsExportCompletion = markedCompleted && activeExports > 0;
+      const expiryInfo = getExpiryInfo(project.pipeline_completed_at, project.created_at);
       const uploadThumbnailUrl = project.source_type === 'upload'
         ? await ensureProjectUploadThumbnail({
             id: String(project.id),
@@ -63,7 +79,10 @@ export async function GET() {
         pipeline_status: isCompleted ? 'completed' : needsExportCompletion ? 'processing' : project.pipeline_status,
         source_thumbnail_url: uploadThumbnailUrl || project.source_thumbnail_url,
         progress_percent: isCompleted ? 100 : undefined,
+        expires_at: expiryInfo.expires_at,
+        days_until_expiring: expiryInfo.days_until_expiring,
         user_id: undefined,
+        pipeline_completed_at: undefined,
         source_storage_path: undefined,
         exports: undefined,
       };
