@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { getTargetClipCount } from '@/lib/clip-policy';
-import { getPublicPipelineError } from '@/lib/pipeline-errors';
+import { getPipelineErrorInfo, getPublicPipelineError } from '@/lib/pipeline-errors';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
+const PIPELINE_RECOVERY_STALE_MS = 5 * 60 * 1000;
+const EXPORT_RECOVERY_STALE_MS = 4 * 60 * 1000;
 
 function parseYouTubeId(url: string): string | null {
   try {
@@ -44,7 +47,7 @@ function computeProgress(params: {
     creating_clips: [60, 70, 45],
     face_tracking_crop: [70, 78, 45],
     rendering: [72, 96, 240],
-    uploading_outputs: [96, 99, 35],
+    uploading_outputs: [96, 98, 35],
   };
 
   if (pipelineStage && stageWindows[pipelineStage]) {
@@ -71,7 +74,7 @@ function computeProgress(params: {
 
   const exportProgress = doneExports / safeTarget;
   const activeBoost = activeExports > 0 ? 4 : 0;
-  return Math.min(99, Math.round(68 + exportProgress * 28 + activeBoost));
+  return Math.min(98, Math.round(68 + exportProgress * 28 + activeBoost));
 }
 
 function estimateEtaSeconds(params: {
@@ -110,6 +113,98 @@ function estimateEtaSeconds(params: {
   const boundedPerExport = throughputPerExport > 0 ? Math.max(12, Math.min(55, throughputPerExport)) : 28;
   const parallelism = Math.max(1, activeExports || 1);
   return Math.max(8, Math.round((remainingExports * boundedPerExport) / parallelism));
+}
+
+function isRecoverablePipelineError(error: unknown, stage: string | null) {
+  if (stage === 'source_blocked') return false;
+  const info = getPipelineErrorInfo(error);
+  return info.code !== 'youtube_source_blocked' && info.code !== 'not_enough_content';
+}
+
+async function recoverPipeline(projectId: string) {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+
+  const { data: activeJob } = await admin
+    .from('jobs')
+    .select('id, status, payload')
+    .eq('project_id', projectId)
+    .eq('type', 'pipeline')
+    .in('status', ['queued', 'processing'])
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (activeJob?.id) {
+    await admin
+      .from('jobs')
+      .update({
+        status: 'queued',
+        payload: { ...((activeJob.payload as Record<string, unknown> | null) ?? {}), recovered_from_progress_poll: true },
+        updated_at: now,
+      })
+      .eq('id', activeJob.id);
+  } else {
+    await admin.from('jobs').insert({
+      project_id: projectId,
+      type: 'pipeline',
+      payload: { project_id: projectId, recovered_from_progress_poll: true },
+      status: 'queued',
+    });
+  }
+
+  await admin
+    .from('projects')
+    .update({
+      pipeline_status: 'queued',
+      pipeline_stage: 'queued',
+      pipeline_stage_label: 'Reconnecting worker',
+      pipeline_error: null,
+      worker_last_seen_at: now,
+      worker_last_log_message: 'Reconnecting worker',
+      updated_at: now,
+    })
+    .eq('id', projectId);
+}
+
+async function recoverStaleProjectExports(projectId: string, cutoffIso: string) {
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+
+  const { data: staleExports } = await admin
+    .from('exports')
+    .select('id')
+    .eq('project_id', projectId)
+    .eq('status', 'processing')
+    .lt('updated_at', cutoffIso)
+    .limit(20);
+
+  const exportIds = (staleExports ?? []).map((row) => String(row.id)).filter(Boolean);
+  if (!exportIds.length) return 0;
+
+  await admin
+    .from('exports')
+    .update({
+      status: 'queued',
+      error_message: 'Requeued after stalled render worker.',
+      updated_at: now,
+    })
+    .in('id', exportIds);
+
+  await admin
+    .from('projects')
+    .update({
+      pipeline_status: 'processing',
+      pipeline_stage: 'rendering',
+      pipeline_stage_label: 'Reconnecting render worker',
+      pipeline_error: null,
+      worker_last_seen_at: now,
+      worker_last_log_message: 'Reconnecting render worker',
+      updated_at: now,
+    })
+    .eq('id', projectId);
+
+  return exportIds.length;
 }
 
 export async function GET(_: Request, context: { params: Promise<{ projectId: string }> }) {
@@ -168,7 +263,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const heartbeatExpired = activeExports === 0
       && storedPipelineStatus === 'processing'
       && lastSeenMs > 0
-      && (Date.now() - lastSeenMs) > 5 * 60 * 1000;
+      && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasSettledPlayableExports = activeExports === 0 && doneExports > 0;
     const isReallyCompleted =
       hasSettledPlayableExports && (projectMarkedCompleted || doneExports >= targetCount || storedPipelineStatus === 'error' || heartbeatExpired);
@@ -176,15 +271,56 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const projectNeedsExportCompletion = projectMarkedCompleted && activeExports > 0;
     const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = isReallyCompleted ? 'completed' : storedPipelineStatus;
-    const pipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
+    const storedPipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
+    const inFinalRenderPhase = !isReallyCompleted && (storedPipelineStage === 'uploading_outputs' || (activeExports > 0 && doneExports > 0));
+    const pipelineStage = inFinalRenderPhase ? 'uploading_outputs' : storedPipelineStage;
     if (projectNeedsExportCompletion) {
       pipelineStatus = 'processing';
     }
     const hasTranscript = transcriptSegments.length > 0;
     const explicitPercent = Number((project as { pipeline_progress_percent?: number | null }).pipeline_progress_percent ?? NaN);
+    const pipelineErrorRaw = (project as { pipeline_error?: string | null }).pipeline_error ?? null;
+    const recoverableErrorState = !isReallyCompleted
+      && activeExports === 0
+      && doneExports === 0
+      && storedPipelineStatus === 'error'
+      && isRecoverablePipelineError(pipelineErrorRaw, storedPipelineStage);
     const staleWorker = !isReallyCompleted && heartbeatExpired;
-    if (staleWorker) {
-      pipelineStatus = 'error';
+    const shouldRecoverPipeline = staleWorker || recoverableErrorState;
+    let recoveryQueued = false;
+    if (shouldRecoverPipeline) {
+      try {
+        await recoverPipeline(projectId);
+        recoveryQueued = true;
+      } catch (recoveryError) {
+        console.warn('[projects/progress] pipeline recovery failed', {
+          project_id: projectId,
+          error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+        });
+      }
+    }
+    if (recoveryQueued) {
+      pipelineStatus = 'queued';
+    }
+    let renderRecoveryQueued = false;
+    const staleExportCutoffMs = Date.now() - EXPORT_RECOVERY_STALE_MS;
+    const hasStaleRenderExport = !isReallyCompleted
+      && activeExports > 0
+      && rows.some((row) => {
+        if (row.status !== 'processing') return false;
+        const updatedAtMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+        return updatedAtMs > 0 && updatedAtMs < staleExportCutoffMs;
+      });
+    if (hasStaleRenderExport) {
+      try {
+        const recoveredExports = await recoverStaleProjectExports(projectId, new Date(staleExportCutoffMs).toISOString());
+        renderRecoveryQueued = recoveredExports > 0;
+      } catch (renderRecoveryError) {
+        console.warn('[projects/progress] render recovery failed', {
+          project_id: projectId,
+          error: renderRecoveryError instanceof Error ? renderRecoveryError.message : String(renderRecoveryError),
+        });
+      }
     }
     const liveProgress = computeProgress({
       status: effectiveStatus,
@@ -197,9 +333,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       activeExports,
       targetCount,
     });
-    const progressPercent = isReallyCompleted
+    let progressPercent = isReallyCompleted
       ? 100
       : Math.max(Number.isFinite(explicitPercent) ? explicitPercent : 0, liveProgress);
+    if (!isReallyCompleted) {
+      progressPercent = Math.min(98, progressPercent);
+    }
 
     const etaSeconds = estimateEtaSeconds({
       status: effectiveStatus,
@@ -264,6 +403,21 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       target_exports: targetCount,
     });
 
+    const storedPipelineStageLabel = (project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null;
+    const displayPipelineStageLabel = isReallyCompleted
+      ? 'Completed'
+      : recoveryQueued
+        ? 'Reconnecting worker'
+      : renderRecoveryQueued
+        ? 'Reconnecting render worker'
+      : staleWorker
+        ? 'Worker heartbeat expired'
+        : inFinalRenderPhase
+          ? 'Finalizing reels'
+          : storedPipelineStage === 'uploading_outputs'
+            ? 'Finalizing reels'
+            : storedPipelineStageLabel;
+
     return NextResponse.json({
       ok: true,
       project: {
@@ -271,11 +425,11 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         title: project.title,
         status: effectiveStatus,
         pipeline_status: pipelineStatus,
-        pipeline_stage: isReallyCompleted ? 'completed' : pipelineStage,
-        pipeline_stage_label: isReallyCompleted ? 'Completed' : staleWorker ? 'Worker heartbeat expired' : ((project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null),
+        pipeline_stage: isReallyCompleted ? 'completed' : renderRecoveryQueued ? 'rendering' : pipelineStage,
+        pipeline_stage_label: displayPipelineStageLabel,
         worker_last_seen_at: lastSeenRaw,
         worker_last_log_message: (project as { worker_last_log_message?: string | null }).worker_last_log_message ?? null,
-        pipeline_error: isReallyCompleted ? null : staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : ((project as { pipeline_error?: string | null }).pipeline_error ?? null),
+        pipeline_error: isReallyCompleted || recoveryQueued || renderRecoveryQueued ? null : staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : pipelineErrorRaw,
         source_type: project.source_type,
         source_url: sourceUrl,
         thumbnail_url: thumbnailUrl,

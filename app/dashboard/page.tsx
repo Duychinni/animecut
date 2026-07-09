@@ -93,9 +93,9 @@ export default function DashboardPage() {
 
   function applyProgressFloor(projectId: string, nextPercent: number, status?: string | null) {
     const normalized = Math.max(0, Math.min(100, Number.isFinite(nextPercent) ? nextPercent : 0));
-    const previous = progressFloorRef.current.get(projectId) ?? 0;
-    const floored = Math.max(previous, normalized);
-    const isCompleted = status === 'completed' || floored >= 100;
+    const isCompleted = status === 'completed' || normalized >= 100;
+    const previous = isCompleted ? (progressFloorRef.current.get(projectId) ?? 0) : Math.min(98, progressFloorRef.current.get(projectId) ?? 0);
+    const floored = isCompleted ? 100 : Math.min(98, Math.max(previous, normalized));
     progressFloorRef.current.set(projectId, isCompleted ? 100 : floored);
     persistProgressFloor();
     return isCompleted ? 100 : floored;
@@ -103,11 +103,11 @@ export default function DashboardPage() {
 
   function getFlooredProgress(project: ProjectListItem) {
     const direct = Number(project.progress_percent ?? (project.status === 'completed' ? 100 : 0));
-    const previous = progressFloorRef.current.get(project.id) ?? 0;
+    const previous = Math.min(98, progressFloorRef.current.get(project.id) ?? 0);
     const active = project.pipeline_status === 'queued' || project.pipeline_status === 'processing';
     if (project.status === 'completed' || project.pipeline_status === 'completed') return 100;
     if (active && previous > 0 && (!Number.isFinite(direct) || direct <= 0)) return previous;
-    return Math.max(previous, Math.max(0, Math.min(100, Number.isFinite(direct) ? direct : 0)));
+    return Math.min(98, Math.max(previous, Math.max(0, Math.min(100, Number.isFinite(direct) ? direct : 0))));
   }
 
   useEffect(() => {
@@ -155,7 +155,7 @@ export default function DashboardPage() {
         ? (projects.map((p) => ({
             ...p,
             thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
-            progress_percent: p.status === 'completed' ? 100 : Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0)),
+            progress_percent: p.status === 'completed' ? 100 : Math.min(98, Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0))),
           })) as ProjectListItem[])
         : recentProjects;
 
@@ -477,7 +477,7 @@ export default function DashboardPage() {
           const isFailed = (p.pipeline_status === 'error' || p.status === 'failed') && !isNotEnoughContent;
           const percent = isCompleted ? 100 : getFlooredProgress(p);
           const showProcessing = !isCompleted && !isFailed && !isNotEnoughContent && percent < 100;
-          const processingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
+          const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
             : p.pipeline_status === 'processing'
               ? (p.pipeline_stage === 'downloading' ? 'Preparing source video'
@@ -486,9 +486,10 @@ export default function DashboardPage() {
                 : p.pipeline_stage === 'finding_hooks' ? 'Finding hooks'
                 : p.pipeline_stage === 'creating_clips' ? 'Creating top clip candidates'
                 : p.pipeline_stage === 'rendering' ? 'Rendering clips'
-                : p.pipeline_stage === 'uploading_outputs' ? 'Uploading outputs'
+                : p.pipeline_stage === 'uploading_outputs' ? 'Finalizing reels'
                 : 'Processing')
               : 'Processing');
+          const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
 
           const thumb = (
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black transition duration-300 group-hover:scale-[1.015] group-hover:border-[#9b6bff]/35 group-hover:shadow-[0_0_0_1px_rgba(155,107,255,0.18),0_18px_55px_rgba(102,51,153,0.24)]">

@@ -145,7 +145,7 @@ export default function ProjectsPage() {
         {recentProjects.map((p) => {
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (p.status === 'completed' ? 100 : 0))));
           const showProcessing = p.status !== 'completed';
-          const processingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
+          const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
             : p.pipeline_stage === 'downloading' ? 'Preparing source video'
             : p.pipeline_stage === 'extracting_audio' ? 'Extracting audio'
@@ -153,8 +153,9 @@ export default function ProjectsPage() {
             : p.pipeline_stage === 'finding_hooks' ? 'Finding hooks'
             : p.pipeline_stage === 'creating_clips' ? 'Creating top clip candidates'
             : p.pipeline_stage === 'rendering' ? 'Rendering clips'
-            : p.pipeline_stage === 'uploading_outputs' ? 'Uploading outputs'
+            : p.pipeline_stage === 'uploading_outputs' ? 'Finalizing reels'
             : 'Processing');
+          const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
 
           const cardBody = (
             <>

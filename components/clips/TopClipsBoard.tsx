@@ -123,7 +123,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
-  const [hookTextEnabled, setHookTextEnabled] = useState(true);
+  const [hookTextEnabled, setHookTextEnabled] = useState(false);
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [expandedPlayback, setExpandedPlayback] = useState<ExpandedPlayback | null>(null);
   const renderKickInFlightRef = useRef(false);
@@ -285,6 +285,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   }, [router, visible]);
 
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0];
+  const showHookTextControls = false;
 
   return (
     <>
@@ -330,11 +331,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         <div className="group/edit relative">
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingClip(clip);
-                              setSelectedPresetId(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
-                              setHookTextEnabled(true);
-                            }}
                             className="inline-flex items-center justify-center text-white transition hover:text-white/90"
                             aria-label="Edit clip"
                           >
@@ -644,13 +640,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   >
                     Framing
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditorTab('effects')}
-                    className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'effects' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
-                  >
-                    Effects
-                  </button>
+                  {showHookTextControls ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab('effects')}
+                      className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'effects' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
+                    >
+                      Effects
+                    </button>
+                  ) : null}
                 </div>
 
                 {editorTab === 'presets' ? (
@@ -708,7 +706,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   </div>
                 ) : null}
 
-                {editorTab === 'effects' ? (
+                {showHookTextControls && editorTab === 'effects' ? (
                   <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
                     <div className="flex items-center justify-between gap-4">
                       <div>

@@ -47,6 +47,9 @@ async function maybeFinalizeProject(projectId: string) {
       .update({
         status: 'completed',
         pipeline_status: 'completed',
+        pipeline_stage: 'completed',
+        pipeline_stage_label: 'Completed',
+        pipeline_progress_percent: 100,
         pipeline_error: failedCount > 0 ? 'Some exports failed, but target reel count was reached.' : null,
         pipeline_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -187,7 +190,8 @@ type ExportRenderOptions = {
 
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
 const REPAIR_SCAN_LIMIT = 6;
-const STALE_PROCESSING_MINUTES = 10;
+const STALE_PROCESSING_MINUTES = 4;
+const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY === 'true';
 
 function getWorkerBatchLimit() {
   const defaultLimit = process.env.VERCEL ? 1 : 2;
@@ -258,7 +262,7 @@ function buildFallbackExportPayload(exportId: string, extra: Record<string, unkn
     caption_preset_id: captionPreset.id,
     caption_template: captionPreset.caption_template,
     caption_font: captionPreset.caption_font,
-    hook_text_enabled: true,
+    hook_text_enabled: HOOK_TEXT_OVERLAY_ENABLED,
     motion_tracking: false,
     auto_reframe: true,
     reframe_mode: getFallbackReframeMode(),
@@ -551,7 +555,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     startSec: bundle.clip.start_sec,
     endSec: bundle.clip.end_sec,
   });
-  const hookTextEnabled = bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
+  const hookTextEnabled = HOOK_TEXT_OVERLAY_ENABLED && bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
   const hookText = usableHookText(options?.hook_text, bundle.clip.title)
     || usableHookText(bundle.hook_text, bundle.clip.title)
     || normalizeHookCandidate(generatedHookText)

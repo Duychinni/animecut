@@ -3,11 +3,13 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { generateHookText } from '@/lib/hook-text';
 import { getCaptionPresetById } from '@/lib/caption-presets';
 
+const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY === 'true';
+
 export async function POST(req: Request, context: { params: Promise<{ exportId: string }> }) {
   try {
     const { exportId } = await context.params;
     const body = await req.json().catch(() => ({}));
-    const enabled = body?.enabled !== false;
+    const enabled = HOOK_TEXT_OVERLAY_ENABLED && body?.enabled !== false;
     const manualText = typeof body?.hookText === 'string' ? body.hookText.trim() : '';
     const supabase = createAdminClient();
 

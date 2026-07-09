@@ -274,7 +274,7 @@ export async function POST(req: Request) {
     const rows = selectedIds.map((clip_candidate_id) => ({
       project_id,
       clip_candidate_id,
-      hook_text_enabled: true,
+      hook_text_enabled: false,
       hook_text: candidateHookText.get(clip_candidate_id) ?? null,
       caption_preset_id: captionPreset.id,
       caption_font_family: captionPreset.captionFontFamily,
@@ -305,7 +305,7 @@ export async function POST(req: Request) {
         caption_preset_id: captionPreset.id,
         caption_template: captionTemplate,
         caption_font: captionFont,
-        hook_text_enabled: true,
+        hook_text_enabled: false,
         hook_text: typeof row.hook_text === 'string' ? row.hook_text : undefined,
         motion_tracking: motionTracking,
         auto_reframe: autoReframe,

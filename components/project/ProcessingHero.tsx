@@ -47,7 +47,7 @@ function getProcessingLabel(stage: string | null | undefined, fallbackStatus: st
   if (stage === 'finding_hooks') return 'Finding hooks...';
   if (stage === 'creating_clips') return 'Creating top clip candidates...';
   if (stage === 'rendering') return 'Rendering clips...';
-  if (stage === 'uploading_outputs') return 'Uploading final clips...';
+  if (stage === 'uploading_outputs') return 'Finalizing reels...';
   if (stage === 'source_blocked') return 'Upload the video file to continue';
   if (stage === 'completed') return 'Completed';
 
@@ -109,6 +109,7 @@ export function ProcessingHero({
   const publicError = pipelineError && !isNotEnoughContent ? getPipelineErrorInfo(pipelineError) : null;
   const isFinished = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
   const liveHeroThumbnail = data?.project?.thumbnail_url || heroThumbnail;
+  const stageDisplayLabel = pipelineStageLabel || getProcessingLabel(pipelineStage, status);
 
   useEffect(() => {
     if (completedRefreshRef.current) return;
@@ -135,14 +136,14 @@ export function ProcessingHero({
           <div className="flex flex-col justify-center px-8 py-10 lg:px-10">
             <p className="text-sm uppercase tracking-[0.22em] text-white/45">Processing project</p>
             <h2 className="mt-4 text-3xl font-semibold leading-tight text-white">
-              {isNotEnoughContent ? 'Not enough standalone clip material' : publicError ? publicError.title : getProcessingLabel(pipelineStage, status)}
+              {isNotEnoughContent ? 'Not enough standalone clip material' : publicError ? publicError.title : stageDisplayLabel}
             </h2>
             <p className="mt-3 max-w-md text-sm leading-6 text-white/60">
               {isNotEnoughContent
                 ? 'This upload finished analysis, but it did not contain enough complete standalone moments to turn into good reels under the current clip rules.'
                 : publicError
                   ? publicError.message
-                  : `Current stage: ${pipelineStageLabel || getProcessingLabel(pipelineStage, status)}. Keep this page open if you want to watch progress, or come back when it's done.`}
+                  : `Current stage: ${stageDisplayLabel}. Keep this page open if you want to watch progress, or come back when it's done.`}
             </p>
 
             {publicError ? (

@@ -173,7 +173,7 @@ export default async function ProjectDetailPage({
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
   const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && activeExports === 0 && doneExports >= targetCount)
     ? 100
-    : Math.max(0, Math.min(99, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
+    : Math.max(0, Math.min(98, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
 
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;

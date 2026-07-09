@@ -54,8 +54,19 @@ export async function POST(req: Request) {
 
     if (project.source_type === 'youtube') {
       if (!project.source_url) throw new Error('Missing source_url for youtube project');
-      mediaPath = await downloadYouTubeAudio(project.source_url as string, project_id as string);
-      transcriptionPath = mediaPath;
+      if (project.source_storage_path) {
+        mediaPath = await resolveProjectVideoSource({
+          id: String(project.id),
+          source_type: 'youtube',
+          source_url: String(project.source_url),
+          source_storage_path: String(project.source_storage_path),
+        });
+        transcriptionPath = `${mediaPath}.transcribe.mp3`;
+        await extractAudioForTranscription(mediaPath, transcriptionPath);
+      } else {
+        mediaPath = await downloadYouTubeAudio(project.source_url as string, project_id as string);
+        transcriptionPath = mediaPath;
+      }
     } else if (project.source_type === 'upload') {
       mediaPath = await resolveProjectVideoSource({
         id: String(project.id),

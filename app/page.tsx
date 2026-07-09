@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type MeResponse = {
@@ -196,12 +196,10 @@ export default function Home() {
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
-  const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
-
-  const carouselItems = useMemo(() => [...showcaseClips, ...showcaseClips, ...showcaseClips, ...showcaseClips], []);
+  const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -361,16 +359,6 @@ export default function Home() {
           0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
           50% { transform: translate3d(10px, -8px, 0) scale(1.03); }
         }
-        @keyframes marqueeLeft {
-          0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(-25%, 0, 0); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .hero-marquee {
-            animation: none !important;
-            transform: translate3d(0, 0, 0) !important;
-          }
-        }
         @keyframes glowSweep {
           0% { transform: translateX(-10%); opacity: .45; }
           50% { opacity: .85; }
@@ -524,12 +512,11 @@ export default function Home() {
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
 
-          <div className="overflow-hidden">
-            <div className="hero-marquee flex w-max flex-nowrap gap-4 px-4 [will-change:transform]" style={{ animation: 'marqueeLeft 88s linear infinite' }}>
-              {carouselItems.map((clip, index) => (
+          <div className="mx-auto grid max-w-[1760px] grid-cols-2 gap-4 px-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+              {showcaseClips.slice(0, 8).map((clip) => (
                 <div
-                  key={`${clip.title}-${index}`}
-                  className="w-[248px] shrink-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)]"
+                  key={clip.title}
+                  className="min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)]"
                 >
                   <div className={`aspect-[9/16] rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
                     <div className="flex h-full flex-col justify-start rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
@@ -547,7 +534,6 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-            </div>
           </div>
         </section>
 

@@ -136,6 +136,7 @@ export async function POST() {
       .from('projects')
       .update({
         pipeline_status: 'queued',
+        pipeline_stage: 'queued',
         pipeline_stage_label: 'Reconnecting worker',
         pipeline_error: null,
         worker_last_log_message: 'Reconnecting worker',
@@ -176,6 +177,7 @@ export async function POST() {
         .from('projects')
         .update({
           pipeline_status: 'queued',
+          pipeline_stage: 'queued',
           pipeline_stage_label: 'Retrying processing',
           pipeline_error: null,
           worker_last_log_message: 'Retrying processing',
@@ -310,7 +312,7 @@ export async function POST() {
       if (queued === 0) break;
     }
 
-    await updateProjectProgress(projectId, 'uploading_outputs', 'Uploading final clips');
+    await updateProjectProgress(projectId, 'uploading_outputs', 'Finalizing reels');
 
     const finalExportCounts = await getExportCounts(projectId);
     if (finalExportCounts.active > 0) {
@@ -366,6 +368,7 @@ export async function POST() {
         .from('projects')
         .update({
           pipeline_status: 'queued',
+          pipeline_stage: 'queued',
           pipeline_stage_label: 'Retrying processing',
           pipeline_progress_percent: Number(currentProject?.pipeline_progress_percent ?? 0),
           pipeline_error: null,

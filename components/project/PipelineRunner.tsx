@@ -10,6 +10,8 @@ type ProgressPayload = {
     title: string;
     status: string;
     pipeline_status?: string | null;
+    pipeline_stage?: string | null;
+    pipeline_stage_label?: string | null;
     pipeline_error?: string | null;
     source_type: 'youtube' | 'upload' | string;
     source_url: string | null;
@@ -42,6 +44,31 @@ function ClockIcon({ className = '' }: { className?: string }) {
       <path d="M8 4.6v3.7l2.6 1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+function getProcessingLabel(stage?: string | null) {
+  switch (stage) {
+    case 'queued':
+      return 'Queued';
+    case 'downloading':
+      return 'Preparing source';
+    case 'extracting_audio':
+      return 'Extracting audio';
+    case 'transcribing':
+      return 'Transcribing audio';
+    case 'finding_hooks':
+      return 'Finding hooks';
+    case 'creating_clips':
+      return 'Creating clips';
+    case 'face_tracking_crop':
+      return 'Framing clips';
+    case 'rendering':
+      return 'Rendering reels';
+    case 'uploading_outputs':
+      return 'Finalizing reels';
+    default:
+      return 'Processing';
+  }
 }
 
 export function PipelineRunner({ projectId, autoStart = false }: { projectId: string; autoStart?: boolean }) {
@@ -159,6 +186,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }
 
   const thumbnailUrl = progress?.project?.thumbnail_url;
+  const processingLabel = progress?.project?.pipeline_stage_label || getProcessingLabel(progress?.project?.pipeline_stage);
 
   if (isCompleted) {
     return null;
@@ -183,7 +211,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
                 {progressPct}%
               </div>
               <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-white/75">
-                {isCompleted ? 'Completed' : 'Processing'}
+                {isCompleted ? 'Completed' : processingLabel}
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
                 <div

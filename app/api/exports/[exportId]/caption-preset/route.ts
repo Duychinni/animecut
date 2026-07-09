@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getCaptionPresetById } from '@/lib/caption-presets';
 import { generateHookText } from '@/lib/hook-text';
 
+const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY === 'true';
+
 export async function POST(req: Request, context: { params: Promise<{ exportId: string }> }) {
   try {
     const { exportId } = await context.params;
@@ -11,7 +13,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
     const supabase = createAdminClient();
     const allowedReframePresets = new Set(['auto', 'tight', 'left', 'center', 'right']);
     const chosenReframePreset = typeof reframePreset === 'string' && allowedReframePresets.has(reframePreset) ? reframePreset : 'auto';
-    const hookEnabled = hookTextEnabled !== false;
+    const hookEnabled = HOOK_TEXT_OVERLAY_ENABLED && hookTextEnabled !== false;
 
     const { data: existing, error: existingError } = await supabase
       .from('exports')
