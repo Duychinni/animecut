@@ -60,6 +60,23 @@ export async function cleanupProjectTempFiles(projectId: string) {
   return log;
 }
 
+export async function cleanupExportTempFiles(projectId: string, exportId: string) {
+  const log = createLog();
+  const exportDir = path.join(process.cwd(), 'tmp', 'exports', projectId);
+  const paths = [
+    path.join(exportDir, `${exportId}.mp4`),
+    path.join(exportDir, `${exportId}.ass`),
+    path.join(exportDir, `${exportId}.srt`),
+    path.join(exportDir, `${exportId}.mp4.trf`),
+  ];
+
+  for (const targetPath of paths) {
+    await deletePathIfExists(targetPath, log);
+  }
+
+  return log;
+}
+
 export async function cleanupTmpRootOlderThan(hours: number) {
   const log = createLog();
   const cutoffMs = Date.now() - hours * 60 * 60 * 1000;

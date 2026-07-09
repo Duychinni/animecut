@@ -6,7 +6,7 @@ import { resolveProjectVideoSource } from '@/lib/source';
 import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
-import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
+import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
@@ -19,12 +19,14 @@ async function maybeFinalizeProject(projectId: string) {
     { count: total },
     { count: done },
     { count: failed },
+    { count: active },
     { data: transcriptRow },
     { count: candidateCount },
   ] = await Promise.all([
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'done'),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'error'),
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('status', ['queued', 'processing']),
     supabase.from('transcripts').select('segments_json').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('clip_candidates').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
   ]);
@@ -32,12 +34,13 @@ async function maybeFinalizeProject(projectId: string) {
   const totalCount = Number(total ?? 0);
   const doneCount = Number(done ?? 0);
   const failedCount = Number(failed ?? 0);
+  const activeCount = Number(active ?? 0);
   const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow.segments_json as { end?: number }[]) : [];
   const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const availableCandidates = Number(candidateCount ?? 0);
 
-  if (doneCount >= targetCount) {
+  if (doneCount >= targetCount && activeCount === 0) {
     await supabase
       .from('projects')
       .update({
@@ -48,11 +51,11 @@ async function maybeFinalizeProject(projectId: string) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
-    return;
+    return true;
   }
 
   const candidatePoolExhausted = totalCount >= availableCandidates && availableCandidates > 0;
-  const allAttemptsSettled = totalCount > 0 && doneCount + failedCount >= totalCount;
+  const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
 
   if (allAttemptsSettled && candidatePoolExhausted) {
     const terminalStatus = doneCount > 0 ? 'completed' : 'error';
@@ -68,7 +71,10 @@ async function maybeFinalizeProject(projectId: string) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
+    return true;
   }
+
+  return false;
 }
 
 type JobRow = { id: string; payload: { export_id?: string } };
@@ -528,9 +534,13 @@ export async function POST() {
         await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', item.jobId);
       }
       const projectId = await getProjectIdForExport(exportId);
-      const cleanupLog = await cleanupProjectTempFiles(projectId);
-      console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'completed', ...summarizeCleanup(cleanupLog) });
-      await maybeFinalizeProject(projectId);
+      const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
+      console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'completed', ...summarizeCleanup(exportCleanupLog) });
+      const terminal = await maybeFinalizeProject(projectId);
+      if (terminal) {
+        const cleanupLog = await cleanupProjectTempFiles(projectId);
+        console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+      }
       processed += 1;
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : 'Job failed';
@@ -593,8 +603,8 @@ export async function POST() {
           .update({ status: 'error', error_message: message, updated_at: new Date().toISOString() })
           .eq('id', exportId);
         const projectId = await getProjectIdForExport(exportId);
-        const cleanupLog = await cleanupProjectTempFiles(projectId);
-        console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'failed', ...summarizeCleanup(cleanupLog) });
+        const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
+        console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'failed', ...summarizeCleanup(exportCleanupLog) });
 
         try {
           const refillRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/clips/export`, {
@@ -609,7 +619,11 @@ export async function POST() {
           console.warn('[jobs/process] refill-failed', { project_id: projectId, export_id: exportId, refillError });
         }
 
-        await maybeFinalizeProject(projectId);
+        const terminal = await maybeFinalizeProject(projectId);
+        if (terminal) {
+          const cleanupLog = await cleanupProjectTempFiles(projectId);
+          console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+        }
       }
     }
   }

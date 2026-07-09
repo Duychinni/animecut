@@ -705,7 +705,6 @@ function buildHookDrawtextFilter(hookText: string) {
     `drawtext=text='${escaped}'`,
     'fontcolor=black',
     'fontsize=48',
-    "font='DejaVu Sans Bold'",
     'box=1',
     'boxcolor=white@0.98',
     'boxborderw=16',
@@ -1012,12 +1011,22 @@ export async function renderVerticalClip(opts: RenderOpts) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     const subtitlesUnavailable = /No such filter: 'subtitles'|Filter not found/i.test(msg);
+    const textOverlayFailed = /drawtext|Cannot find a valid font|Error initializing filter/i.test(msg);
     const encoderUnavailable = /Unknown encoder|Error while opening encoder|Encoder .* not found|Invalid argument/i.test(msg);
 
     if (configuredEncoder !== 'libx264' && encoderUnavailable) {
       // Server-safe fallback: if requested hardware encoder is unavailable on this host,
       // transparently retry with libx264 so customer renders still succeed.
       await runFfmpeg(buildArgs(canUseCaptions, 'libx264'), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
+      return;
+    }
+
+    if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText && textOverlayFailed) {
+      console.warn('[render] hook-overlay-fallback', { clipId: debugClipId, reason: msg.split('\n').slice(-4).join(' | ') });
+      await renderVerticalClip({
+        ...effectiveOpts,
+        hookTextEnabled: false,
+      });
       return;
     }
 
