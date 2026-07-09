@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CAPTION_PRESETS } from '@/lib/caption-presets';
 import { readJsonSafe } from '@/lib/safe-json';
 
@@ -114,6 +115,7 @@ function getMockCaption(title: string) {
 }
 
 export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
+  const router = useRouter();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
@@ -267,6 +269,17 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const visible = useMemo(() => {
     return [...clips].sort((a, b) => b.score - a.score);
   }, [clips]);
+
+  useEffect(() => {
+    const hasActiveClip = visible.some((clip) => clip.status === 'queued' || clip.status === 'processing');
+    if (!hasActiveClip) return;
+
+    const timer = setInterval(() => {
+      router.refresh();
+    }, 4000);
+
+    return () => clearInterval(timer);
+  }, [router, visible]);
 
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0];
 

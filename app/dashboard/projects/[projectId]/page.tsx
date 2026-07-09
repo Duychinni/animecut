@@ -173,9 +173,10 @@ export default async function ProjectDetailPage({
   const doneResultItems = filteredExportItems.filter((row) => row.status === 'done');
   const hasRenderableResults = doneResultItems.some((row) => Boolean(row.signedUrl));
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
-  const hasFinishedResults = doneResultItems.length > 0;
-  const shouldShowCompletedState = effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100;
-  const showProcessingHero = !hasRenderableResults && !hasMockResults && !shouldShowCompletedState;
+  const hasExportRows = filteredExportItems.length > 0;
+  const hasActiveExports = activeExports > 0 || filteredExportItems.some((row) => row.status === 'queued' || row.status === 'processing');
+  const shouldShowCompletedState = !hasExportRows && !hasActiveExports && (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
+  const showProcessingHero = !hasExportRows && !hasRenderableResults && !hasMockResults && !shouldShowCompletedState;
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -196,7 +197,7 @@ export default async function ProjectDetailPage({
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
           />
-        ) : filteredExportItems.length && (hasRenderableResults || hasMockResults || hasFinishedResults) ? (
+        ) : hasExportRows ? (
           <TopClipsBoard
             projectId={projectId}
             clips={filteredExportItems.map((row) => ({
