@@ -185,7 +185,7 @@ export async function analyzeClipCandidates(
   segments: Array<{ start?: number; end?: number; text?: string }> = [],
 ) {
   if (isMockAiEnabled()) {
-    return buildMockCandidates();
+    return buildMockCandidates(segments);
   }
   const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
   const targetCandidates = minCandidatePoolForDuration(totalSeconds);

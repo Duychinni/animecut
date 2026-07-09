@@ -3,7 +3,6 @@ import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
-import { readJsonSafe } from '@/lib/safe-json';
 import { getTargetClipCount } from '@/lib/clip-policy';
 
 type ExportRow = {
@@ -21,7 +20,6 @@ type CandidateRow = {
   overall_score: number;
   start_sec: number;
   end_sec: number;
-  duration_seconds?: number;
   reason: string;
   hook_strength: number;
   rank: number | null;
@@ -70,7 +68,7 @@ export default async function ProjectDetailPage({
   const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }, { data: transcriptRow }] = await Promise.all([
     supabase
       .from('projects')
-      .select('title, status, source_type, source_url, source_title, source_thumbnail_url, source_duration_seconds, created_at')
+      .select('title, status, pipeline_status, pipeline_error, pipeline_progress_percent, source_type, source_url, source_title, source_thumbnail_url, source_duration_seconds, created_at')
       .eq('id', projectId)
       .single(),
     supabase
@@ -81,7 +79,7 @@ export default async function ProjectDetailPage({
       .limit(10),
     supabase
       .from('clip_candidates')
-      .select('id, title, overall_score, start_sec, end_sec, duration_seconds, reason, hook_strength, rank')
+      .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')
       .eq('project_id', projectId)
       .limit(50),
     supabase
@@ -112,7 +110,7 @@ export default async function ProjectDetailPage({
       const startSec = candidate ? Number(candidate.start_sec) : null;
       const endSec = candidate ? Number(candidate.end_sec) : null;
       const derivedDuration = startSec != null && endSec != null ? Math.max(0, endSec - startSec) : 0;
-      const durationSeconds = Number(candidate?.duration_seconds ?? derivedDuration ?? 0);
+      const durationSeconds = Number(derivedDuration ?? 0);
       const rawScore = Number(candidate?.overall_score ?? 0);
       const score = Math.max(70, Math.min(100, Math.round(rawScore <= 10 ? rawScore * 10 : rawScore)));
 
@@ -132,7 +130,6 @@ export default async function ProjectDetailPage({
   );
 
   const filteredExportItems = exportItems
-    .filter((row) => row.status !== 'done' || ((row.durationSeconds ?? 0) >= 20 && (row.score ?? 0) >= 70))
     .filter((row, index, arr) => {
       const title = String(row.title ?? '').trim().toLowerCase();
       const duration = Number(row.durationSeconds ?? 0);
@@ -161,24 +158,14 @@ export default async function ProjectDetailPage({
   const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const doneExports = filteredExportItems.filter((row) => row.status === 'done').length;
-
-  let progressPercent = 0;
-  let effectiveStatus = String(projectRow?.status ?? 'created');
-  let etaSeconds: number | null = null;
-  try {
-    const progressRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/projects/${projectId}/progress`, { cache: 'no-store' });
-    const progressJson = await readJsonSafe(progressRes) as {
-      project?: { status?: string | null; pipeline_status?: string | null; pipeline_error?: string | null };
-      progress?: { percent?: number | null; eta_seconds?: number | null; done_exports?: number | null; active_exports?: number | null };
-    };
-    if (progressRes.ok) {
-      progressPercent = Math.max(0, Math.min(100, Number(progressJson?.progress?.percent ?? 0)));
-      effectiveStatus = String(progressJson?.project?.status ?? effectiveStatus);
-      etaSeconds = typeof progressJson?.progress?.eta_seconds === 'number' ? progressJson.progress.eta_seconds : null;
-    }
-  } catch {
-    progressPercent = 0;
-  }
+  const activeExports = filteredExportItems.filter((row) => row.status === 'queued' || row.status === 'processing').length;
+  const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
+  const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
+  const isCompletedFromRows = doneExports > 0 && activeExports === 0 && doneExports >= Math.min(targetCount, filteredExportItems.length || targetCount);
+  const effectiveStatus = isCompletedFromRows ? 'completed' : String(projectRow?.status ?? 'created');
+  const progressPercent = effectiveStatus === 'completed' || pipelineStatus === 'completed'
+    ? 100
+    : Math.max(0, Math.min(99, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
 
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
   const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
@@ -187,7 +174,7 @@ export default async function ProjectDetailPage({
   const hasRenderableResults = doneResultItems.some((row) => Boolean(row.signedUrl));
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
   const hasFinishedResults = doneResultItems.length > 0;
-  const shouldShowCompletedState = effectiveStatus === 'completed' || progressPercent >= 100;
+  const shouldShowCompletedState = effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100;
   const showProcessingHero = !hasRenderableResults && !hasMockResults && !shouldShowCompletedState;
 
   return (

@@ -47,7 +47,7 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
 }) {
   const router = useRouter();
   const [data, setData] = useState<ProgressPayload | null>(null);
-  const completedNavRef = useRef(false);
+  const completedRefreshRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -81,19 +81,15 @@ export function ProcessingHero({ projectId, pageTitle, heroThumbnail, fallbackPe
   const pipelineStageLabel = data?.project?.pipeline_stage_label ?? null;
   const pipelineError = data?.project?.pipeline_error ?? null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
-  const shouldRedirectDone = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
+  const isFinished = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
 
   useEffect(() => {
-    if (completedNavRef.current) return;
-    if (shouldRedirectDone) {
-      completedNavRef.current = true;
-      const nextUrl = `/dashboard/projects/${projectId}?done=${Date.now()}`;
-      router.replace(nextUrl);
-      setTimeout(() => {
-        window.location.href = nextUrl;
-      }, 250);
+    if (completedRefreshRef.current) return;
+    if (isFinished) {
+      completedRefreshRef.current = true;
+      router.refresh();
     }
-  }, [projectId, router, shouldRedirectDone]);
+  }, [router, isFinished]);
 
   return (
     <div className="flex min-h-[68vh] w-full items-start justify-center">
