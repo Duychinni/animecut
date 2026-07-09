@@ -52,6 +52,16 @@ function getDefaultReframeMode() {
   return normalizeReframeMode(process.env.EXPORT_DEFAULT_REFRAME_MODE, 'smart');
 }
 
+function normalizeHookText(raw: unknown) {
+  const cleaned = String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^["'\-:\s]+/, '')
+    .replace(/["']+$/g, '')
+    .replace(/[.!?,;:\s]+$/g, '')
+    .trim();
+  return cleaned || null;
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -89,6 +99,7 @@ export async function POST(req: Request) {
     let targetCount = Math.max(1, Math.min(20, Number(target_count ?? 0)));
     let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];
     let blockedCount = 0;
+    let candidateHookText = new Map<string, string>();
 
     const { data: projectRow } = await supabase
       .from('projects')
@@ -108,7 +119,7 @@ export async function POST(req: Request) {
           .eq('project_id', project_id),
         supabase
           .from('clip_candidates')
-          .select('id, overall_score, title, start_sec, end_sec')
+          .select('id, overall_score, title, hook_text, start_sec, end_sec')
           .eq('project_id', project_id)
           .order('overall_score', { ascending: false })
           .limit(100),
@@ -195,12 +206,18 @@ export async function POST(req: Request) {
     if (selectedIds.length) {
       const { data: existingCandidates, error: candidateCheckError } = await supabase
         .from('clip_candidates')
-        .select('id')
+        .select('id, title, hook_text')
         .eq('project_id', project_id)
         .in('id', selectedIds);
 
       if (candidateCheckError) throw candidateCheckError;
       const validIds = new Set((existingCandidates ?? []).map((row) => String(row.id)));
+      candidateHookText = new Map(
+        (existingCandidates ?? []).map((row) => [
+          String(row.id),
+          normalizeHookText(row.hook_text) ?? normalizeHookText(row.title) ?? 'Top Moment',
+        ]),
+      );
       selectedIds = selectedIds.filter((id) => validIds.has(id));
     }
 
@@ -216,6 +233,8 @@ export async function POST(req: Request) {
     const rows = selectedIds.map((clip_candidate_id) => ({
       project_id,
       clip_candidate_id,
+      hook_text_enabled: true,
+      hook_text: candidateHookText.get(clip_candidate_id) ?? null,
       caption_preset_id: captionPreset.id,
       caption_font_family: captionPreset.captionFontFamily,
       caption_font_size: captionPreset.captionFontSize,
@@ -245,6 +264,8 @@ export async function POST(req: Request) {
         caption_preset_id: captionPreset.id,
         caption_template: captionTemplate,
         caption_font: captionFont,
+        hook_text_enabled: true,
+        hook_text: typeof row.hook_text === 'string' ? row.hook_text : undefined,
         motion_tracking: motionTracking,
         auto_reframe: autoReframe,
         reframe_mode: reframeMode,

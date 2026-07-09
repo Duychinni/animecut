@@ -19,7 +19,9 @@ type RenderOpts = {
   captionFont?: CaptionFont;
   hookTextEnabled?: boolean;
   hookText?: string | null;
+  hookRenderMode?: 'ass' | 'drawtext';
   hookTextFilePath?: string;
+  hookAssPath?: string;
   motionTracking?: boolean;
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
@@ -657,10 +659,17 @@ function buildSplitStackFilter(
     `[tmp2]drawbox=x=0:y=${paneHeight}:w=${layout.outputWidth}:h=${seamHeight}:color=black@0.88:t=fill[tmp3]`,
   ];
 
+  let videoLabel = 'tmp3';
+
+  if (opts.hookTextEnabled !== false && opts.hookText && opts.hookText.trim()) {
+    filterParts.push(`[${videoLabel}]${buildHookFilter(opts)}[tmpHook]`);
+    videoLabel = 'tmpHook';
+  }
+
   if (includeCaptions && escapedPath) {
     const isAssInput = (captionPath ?? '').toLowerCase().endsWith('.ass');
     if (isAssInput) {
-      filterParts.push(`[tmp3]subtitles=filename='${escapedPath}'[outv]`);
+      filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}'[outv]`);
     } else {
       const style = escapeForceStyleForFilter([
         'FontName=Arial',
@@ -674,10 +683,10 @@ function buildSplitStackFilter(
         `MarginV=${Math.round(layout.outputHeight * 0.42)}`,
         'Alignment=2',
       ].join(','));
-      filterParts.push(`[tmp3]subtitles=filename='${escapedPath}':force_style='${style}'[outv]`);
+      filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}':force_style='${style}'[outv]`);
     }
   } else {
-    filterParts.push('[tmp3]copy[outv]');
+    filterParts.push(`[${videoLabel}]copy[outv]`);
   }
 
   return filterParts.join(';');
@@ -720,13 +729,78 @@ function resolveOutputWidth(outputHeight: number) {
 
 function wrapHookTextForDrawtext(hookText: string) {
   const words = hookText.trim().split(/\s+/).filter(Boolean);
-  const kept: string[] = [];
+  const lines: string[] = [];
+  let current: string[] = [];
+
   for (const word of words) {
-    const next = [...kept, word].join(' ');
-    if (kept.length >= 7 || next.length > 34) break;
-    kept.push(word);
+    const next = [...current, word].join(' ');
+    const shouldWrap = current.length > 0 && (next.length > 21 || current.length >= 4);
+
+    if (shouldWrap) {
+      lines.push(current.join(' '));
+      current = [];
+    }
+
+    if (lines.length >= 2) break;
+    current.push(word);
   }
-  return kept.join(' ') || 'Top Moment';
+
+  if (current.length && lines.length < 2) lines.push(current.join(' '));
+  return lines.join('\n') || 'Top Moment';
+}
+
+function escapeHookAssText(text: string) {
+  return text
+    .replace(/[{}]/g, '')
+    .replace(/\\/g, '')
+    .replace(/\r?\n/g, '\\N')
+    .trim();
+}
+
+function buildRoundedHookShape(x: number, y: number, width: number, height: number, radius: number) {
+  const right = x + width;
+  const bottom = y + height;
+  const k = Math.round(radius * 0.55);
+  return [
+    `m ${x + radius} ${y}`,
+    `l ${right - radius} ${y}`,
+    `b ${right - k} ${y} ${right} ${y + k} ${right} ${y + radius}`,
+    `l ${right} ${bottom - radius}`,
+    `b ${right} ${bottom - k} ${right - k} ${bottom} ${right - radius} ${bottom}`,
+    `l ${x + radius} ${bottom}`,
+    `b ${x + k} ${bottom} ${x} ${bottom - k} ${x} ${bottom - radius}`,
+    `l ${x} ${y + radius}`,
+    `b ${x} ${y + k} ${x + k} ${y} ${x + radius} ${y}`,
+  ].join(' ');
+}
+
+function buildHookAss(hookText: string) {
+  const lines = hookText.split('\n').filter(Boolean);
+  const twoLine = lines.length > 1;
+  const cardWidth = 700;
+  const cardHeight = twoLine ? 168 : 112;
+  const cardX = Math.round((1080 - cardWidth) / 2);
+  const cardY = twoLine ? 74 : 88;
+  const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
+  const text = escapeHookAssText(hookText);
+
+  return `[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+Style: HookText,Arial,58,&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:04.50,HookCard,,0,0,0,,{\\an7\\pos(0,0)\\p1\\c&HFFFFFF&}${cardShape}
+Dialogue: 1,0:00:00.00,0:00:04.50,HookText,,0,0,0,,{\\an5\\pos(540,${textY})}${text}
+`;
 }
 
 function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
@@ -736,18 +810,28 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     : `text='${escapeDrawtextText(wrapped)}'`;
   return [
     `drawtext=${source}`,
+    "font='Arial Black'",
     'fontcolor=black',
-    'fontsize=48',
+    'fontsize=60',
     'box=1',
     'boxcolor=white@0.98',
-    'boxborderw=16',
+    'boxborderw=24',
     'borderw=0',
     'shadowx=0',
     'shadowy=0',
+    'line_spacing=6',
+    'fix_bounds=1',
     'x=(w-text_w)/2',
-    'y=82',
+    'y=92',
     drawtextBetween(0, 4.5),
   ].join(':');
+}
+
+function buildHookFilter(opts: RenderOpts) {
+  if (opts.hookRenderMode !== 'drawtext' && opts.hookAssPath) {
+    return `subtitles=filename='${escapeSubtitlesPathForFilter(opts.hookAssPath)}'`;
+  }
+  return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath);
 }
 
 function buildFilter(
@@ -779,7 +863,7 @@ function buildFilter(
   }
 
   if (opts.hookTextEnabled !== false && opts.hookText && opts.hookText.trim()) {
-    filterParts.push(buildHookDrawtextFilter(opts.hookText.trim(), opts.hookTextFilePath));
+    filterParts.push(buildHookFilter(opts));
   }
 
   if (includeCaptions && escapedPath) {
@@ -879,17 +963,17 @@ function buildFilter(
       ],
       capcut: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=86',
+        'FontSize=96',
         'PrimaryColour=&H00FFFFFF',
         'SecondaryColour=&H0000FFFF',
         'OutlineColour=&H00101010',
         'BorderStyle=1',
-        'Outline=8',
+        'Outline=10',
         'Shadow=0',
         'Bold=1',
         'Spacing=0',
-        'ScaleX=126',
-        'ScaleY=108',
+        'ScaleX=130',
+        'ScaleY=112',
         'MarginV=360',
         'Alignment=2',
       ],
@@ -983,9 +1067,15 @@ export async function renderVerticalClip(opts: RenderOpts) {
 
   const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
   if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
+    const wrappedHookText = wrapHookTextForDrawtext(effectiveOpts.hookText);
     const hookFilePath = `${effectiveOpts.outputPath}.hook.txt`;
-    await writeFile(hookFilePath, wrapHookTextForDrawtext(effectiveOpts.hookText), 'utf8');
+    await writeFile(hookFilePath, wrappedHookText, 'utf8');
     effectiveOpts.hookTextFilePath = hookFilePath;
+    if ((effectiveOpts.hookRenderMode ?? 'ass') === 'ass') {
+      const hookAssPath = `${effectiveOpts.outputPath}.hook.ass`;
+      await writeFile(hookAssPath, buildHookAss(wrappedHookText), 'utf8');
+      effectiveOpts.hookAssPath = hookAssPath;
+    }
   }
 
   const buildArgs = (includeCaptions: boolean, encoder = configuredEncoder) => {
@@ -1058,6 +1148,16 @@ export async function renderVerticalClip(opts: RenderOpts) {
       return;
     }
 
+    if (subtitlesUnavailable && effectiveOpts.hookAssPath && effectiveOpts.hookRenderMode !== 'drawtext') {
+      console.warn('[render] hook-ass-fallback', { clipId: debugClipId, reason: msg.split('\n').slice(-4).join(' | ') });
+      await renderVerticalClip({
+        ...effectiveOpts,
+        hookRenderMode: 'drawtext',
+        hookAssPath: undefined,
+      });
+      return;
+    }
+
     if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText && textOverlayFailed) {
       console.warn('[render] hook-overlay-fallback', { clipId: debugClipId, reason: msg.split('\n').slice(-4).join(' | ') });
       await renderVerticalClip({
@@ -1077,6 +1177,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
         );
       }
       baseFilter.push(buildCropFilter(effectiveOpts, smartCropExpr));
+      if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
+        baseFilter.push(buildHookDrawtextFilter(effectiveOpts.hookText.trim(), effectiveOpts.hookTextFilePath));
+      }
       const vf = [...baseFilter, ...drawtextFilters].join(',');
 
       try {

@@ -326,7 +326,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           <span title="Viral clip" aria-label="Viral clip" className="cursor-help text-xl leading-none">🔥</span>
                         ) : null}
                       </div>
-                      <div className="flex items-center gap-5">
+                      <div className="flex items-center gap-4">
                         <div className="group/edit relative">
                           <button
                             type="button"
@@ -345,6 +345,25 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           </button>
                           <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/edit:opacity-100">
                             Edit clip
+                          </span>
+                        </div>
+
+                        <div className="group/captions relative">
+                          <button
+                            type="button"
+                            className="inline-flex items-center justify-center text-white transition hover:text-white/90"
+                            aria-label="Captions"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+                              <path d="M7.5 10.5h3" />
+                              <path d="M13.5 10.5h3" />
+                              <path d="M7.5 14h5" />
+                              <path d="M14.5 14h2" />
+                            </svg>
+                          </button>
+                          <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
+                            Captions
                           </span>
                         </div>
 

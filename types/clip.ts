@@ -3,6 +3,7 @@ export type ClipCandidate = {
   start_sec: number;
   end_sec: number;
   title: string;
+  hook_text?: string | null;
   reason: string;
   hook_strength: number;
   emotional_intensity: number;

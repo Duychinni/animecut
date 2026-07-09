@@ -50,6 +50,17 @@ function titleFromTranscript(text: string, index: number) {
   return phraseFromText(text) || `Transcript moment ${index + 1}`;
 }
 
+function hookTextFromTranscript(text: string, fallback: string) {
+  const cleaned = cleanText(text)
+    .replace(/^["'\-\u2013\u2014\s]+/, '')
+    .replace(/^(and|but|so|yeah|well|like|you know|i mean)\s+/i, '');
+
+  const question = cleaned.match(/\b(why|what|how|who|when|where|can|did|does|is|are)\b[^.!?]{8,42}[?!]?/i)?.[0];
+  const tension = cleaned.match(/\b(secret|truth|mistake|problem|crazy|wild|never|always|wrong|fight|shocking|realized)\b[^.!?]{0,36}/i)?.[0];
+  const personal = cleaned.match(/\b(my|your|his|her|their|daughter|son|mom|dad|brother|friend)\b[^.!?]{6,42}/i)?.[0];
+  return phraseFromText(question || tension || personal || fallback || cleaned, 7, 38) || 'Top Moment';
+}
+
 function hasTension(text: string) {
   return /\?|!|\b(why|how|what|when|where|who|can|should|would|could|did|does|problem|mistake|secret|truth|wrong|crazy|wild|hard|never|always)\b/i.test(
     text,
@@ -147,9 +158,11 @@ export function analyzeTranscriptLocally(
     const text = textForWindow(realSegments, start, end, transcript);
     const duration = Math.max(1, end - start);
     const score = scoreWindow(text, duration, hasFillerStart(text));
+    const title = titleFromTranscript(text, index);
 
     return {
-      title: titleFromTranscript(text, index),
+      title,
+      hook_text: hookTextFromTranscript(text, title),
       raw_start: start,
       raw_end: end,
       adjusted_start: start,

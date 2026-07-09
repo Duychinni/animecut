@@ -147,8 +147,10 @@ function hexToAssColor(hex: string | undefined, fallback: string) {
 
 function resolveAssStyle(preset?: StyledCaptionPreset) {
   const template = preset?.caption_template ?? 'capcut';
-  const fontSize = Math.round((preset?.captionFontSize ?? 11) * (template === 'minimal' ? 7.4 : 8.6));
-  const outline = Math.max(1, Math.round(preset?.captionStrokeWidth ?? 4));
+  const fontScale = template === 'minimal' ? 7.4 : template === 'capcut' ? 9.1 : 8.6;
+  const fontSize = Math.round((preset?.captionFontSize ?? 11) * fontScale);
+  const outlineScale = template === 'minimal' ? 1 : template === 'capcut' ? 1.12 : 1;
+  const outline = Math.max(1, Math.round((preset?.captionStrokeWidth ?? 4) * outlineScale));
   const marginV = preset?.captionPosition === 'middle'
     ? 720
     : preset?.captionPosition === 'upper'
@@ -168,8 +170,8 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
     borderStyle: preset?.captionBackgroundBox ? 3 : 1,
     backColor: preset?.captionBackgroundBox ? '&HCC000000' : '&H00000000',
     marginV,
-    scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : 122,
-    scaleY: template === 'minimal' ? 100 : 108,
+    scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : template === 'capcut' ? 128 : 122,
+    scaleY: template === 'minimal' ? 100 : template === 'capcut' ? 112 : 108,
     windowSize: template === 'minimal' || template === 'clean' || template === 'cinematic' ? 4 : 2,
   };
 }

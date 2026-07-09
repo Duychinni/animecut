@@ -26,6 +26,7 @@ type RankedCandidate = {
   end_sec: number;
   duration_seconds: number;
   title: string;
+  hook_text: string;
   reason: string;
   self_contained_confidence: number;
   boundary_adjustment_reason: string;
@@ -198,6 +199,26 @@ function hasStrongPayoff(text: string) {
 
 function hookContextSignature(opening: string, closing: string) {
   return `${normalizeLooseText(opening).slice(0, 80)}__${normalizeLooseText(closing).slice(0, 80)}`;
+}
+
+function normalizeHookText(raw: unknown, fallback: string) {
+  const cleaned = String(raw ?? fallback ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^["'\-:\s]+/, '')
+    .replace(/["']+$/g, '')
+    .replace(/[.!?,;:\s]+$/g, '')
+    .trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const kept: string[] = [];
+
+  for (const word of words) {
+    const next = [...kept, word].join(' ');
+    if (kept.length >= 8 || next.length > 38) break;
+    kept.push(word);
+  }
+
+  const text = kept.join(' ');
+  return text || 'Top Moment';
 }
 
 function isLocalAnalysisCandidate(candidate: RawCandidate) {
@@ -401,6 +422,7 @@ export async function POST(req: Request) {
           end_sec: cleaned.end_sec,
           duration_seconds: Number(duration.toFixed(2)),
           title: String(c.title ?? `Clip ${idx + 1}`),
+          hook_text: normalizeHookText(c.hook_text, String(c.title ?? openingLine ?? `Clip ${idx + 1}`)),
           reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${String(c.boundary_adjustment_reason ?? cleaned.reason)} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
           self_contained_confidence: Math.max(0, Math.min(1, num(c.standalone_confidence) || cleaned.confidence)),
           boundary_adjustment_reason: String(c.boundary_adjustment_reason ?? cleaned.reason),
@@ -474,6 +496,7 @@ export async function POST(req: Request) {
         duration: c.duration_seconds,
         score: Number(c.overall_score ?? 0),
         title: c.title,
+        hookText: c.hook_text,
         reasonSelected: c.reason,
       })),
       rejectedCandidates: (parsed.candidates ?? []).length - ranked.length,
@@ -490,6 +513,7 @@ export async function POST(req: Request) {
       start_sec: item.start_sec,
       end_sec: item.end_sec,
       title: item.title,
+      hook_text: item.hook_text,
       reason: item.reason,
       hook_strength: toLegacyTenPoint(Number(item.hook_strength ?? 0)),
       emotional_intensity: toLegacyTenPoint(Number(item.entertainment_or_emotion ?? 0)),

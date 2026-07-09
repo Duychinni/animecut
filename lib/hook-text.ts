@@ -73,10 +73,10 @@ export function generateHookText(params: {
     .replace(/^(so|and|but|because|then|like|you know)\s+/i, '')
     .trim();
 
-  const candidates = [transcriptCandidate, titleCandidate].map(removeWeakHookPrefix).filter(Boolean);
+  const candidates = [titleCandidate, transcriptCandidate].map(removeWeakHookPrefix).filter(Boolean);
 
   for (const candidate of candidates) {
-    const shortened = shortenWords(candidate, 7, 34);
+    const shortened = shortenWords(candidate, 8, 38);
     if (!shortened) continue;
     return toTitleCaseHook(shortened);
   }

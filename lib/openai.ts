@@ -119,6 +119,15 @@ CANDIDATE GENERATION RULES:
 - Avoid openings like "And...", "So...", "But...", "Yeah..." unless absolutely necessary.
 - Reject filler-only dialogue.
 
+REEL HOOK TEXT RULES:
+- Write a separate "hook_text" for the white title card that appears on the reel.
+- The hook_text should be the most viral framing of the moment, not a random transcript snippet.
+- Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question.
+- Keep it grounded in the transcript. Do not invent facts, names, outcomes, or drama.
+- Keep it short enough for a 9:16 title card: 2-8 words, max 38 characters.
+- Make it punchier than the title. Avoid bland labels like "Top Moment" unless there is truly no better hook.
+- Do not use hashtags, emojis, quotation marks, or all-caps.
+
 VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 - Generate at least ${targetCandidates} candidate clips.
 - Target final clip range: ${policy.targetMin}-${policy.targetMax}, but never more than 20 final clips.
@@ -160,6 +169,7 @@ Return ONLY valid JSON in this exact shape:
       "speaker_energy": number,
       "overall_score": number,
       "standalone_confidence": number,
+      "hook_text": string,
       "opening_line": string,
       "closing_line": string
     }
