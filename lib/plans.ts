@@ -50,9 +50,9 @@ export const PLAN_CONFIG: PlanConfig[] = [
   },
   {
     id: 'business',
-    name: 'Business',
+    name: 'Contact Us',
     subtitle: 'For teams, agencies, and high-volume workflows',
-    monthlyPrice: 'Custom',
+    monthlyPrice: "Let's Talk",
     processingMinutes: null,
     maxUploadLengthMinutes: null,
     maxGeneratedClips: null,
