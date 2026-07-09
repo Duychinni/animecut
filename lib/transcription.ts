@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { openai } from '@/lib/openai';
-import { buildMockTranscript, isMockAiEnabled } from '@/lib/dev-ai';
+import { buildMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 
 function getTranscriptionProvider() {
   return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
@@ -62,7 +62,7 @@ async function transcribeWithWhisperX(filePath: string) {
 }
 
 export async function transcribeAudioFile(filePath: string) {
-  if (isMockAiEnabled()) {
+  if (isMockTranscriptionEnabled()) {
     return buildMockTranscript();
   }
 

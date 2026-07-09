@@ -163,7 +163,7 @@ export default async function ProjectDetailPage({
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
   const isCompletedFromRows = doneExports > 0 && activeExports === 0 && doneExports >= Math.min(targetCount, filteredExportItems.length || targetCount);
   const effectiveStatus = isCompletedFromRows ? 'completed' : String(projectRow?.status ?? 'created');
-  const progressPercent = effectiveStatus === 'completed' || pipelineStatus === 'completed'
+  const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && activeExports === 0 && doneExports >= targetCount)
     ? 100
     : Math.max(0, Math.min(99, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
 

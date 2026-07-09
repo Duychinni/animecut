@@ -10,6 +10,7 @@ import { cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
+import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
@@ -117,6 +118,13 @@ type ExportRenderOptions = {
 
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
 const REPAIR_SCAN_LIMIT = 6;
+const STALE_PROCESSING_MINUTES = 10;
+
+function getWorkerBatchLimit() {
+  const raw = Number(process.env.EXPORT_WORKER_BATCH_SIZE ?? 6);
+  if (!Number.isFinite(raw)) return 6;
+  return Math.max(1, Math.min(10, Math.round(raw)));
+}
 
 function normalizeRenderErrorMessage(message: string) {
   if (/Invalid NAL unit|missing picture|Error splitting the input into NAL units|Missing reference picture|mmco:|Rendered export is corrupted/i.test(message)) {
@@ -231,6 +239,38 @@ async function repairBrokenCompletedExports() {
   return repaired;
 }
 
+async function requeueStaleProcessingWork() {
+  const supabase = createAdminClient();
+  const cutoff = new Date(Date.now() - STALE_PROCESSING_MINUTES * 60 * 1000).toISOString();
+
+  const { data: staleJobs } = await supabase
+    .from('jobs')
+    .update({
+      status: 'queued',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('type', 'export')
+    .eq('status', 'processing')
+    .lt('updated_at', cutoff)
+    .select('id');
+
+  const { data: staleExports } = await supabase
+    .from('exports')
+    .update({
+      status: 'queued',
+      error_message: 'Requeued after render worker heartbeat expired.',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('status', 'processing')
+    .lt('updated_at', cutoff)
+    .select('id');
+
+  return {
+    staleJobs: staleJobs?.length ?? 0,
+    staleExports: staleExports?.length ?? 0,
+  };
+}
+
 async function processExportJob(exportId: string, options?: ExportRenderOptions) {
   const supabase = createAdminClient();
 
@@ -299,8 +339,13 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const captionTemplate = options?.caption_template ?? captionPreset.caption_template;
   const captionFont = options?.caption_font ?? captionPreset.caption_font;
   const srtPath = path.join(exportDir, `${bundle.id}.ass`);
+  const transcriptSegments = bundle.transcript?.segments_json ?? [];
 
-  const captionText = segmentsToCapcutAss(bundle.transcript?.segments_json ?? [], bundle.clip.start_sec, bundle.clip.end_sec, {
+  if (!isMockTranscriptionEnabled() && isLikelyMockTranscript(transcriptSegments)) {
+    throw new Error('This export is using a mock transcript. Start a new project after disabling mock AI so captions can match the real audio.');
+  }
+
+  const captionText = segmentsToCapcutAss(transcriptSegments, bundle.clip.start_sec, bundle.clip.end_sec, {
     ...captionPreset,
     caption_template: captionTemplate,
   });
@@ -313,7 +358,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     || (bundle.hook_text?.trim())
     || generateHookText({
       clipTitle: bundle.clip.title ?? null,
-      transcriptSegments: bundle.transcript?.segments_json ?? [],
+      transcriptSegments,
       startSec: bundle.clip.start_sec,
       endSec: bundle.clip.end_sec,
     })
@@ -353,10 +398,15 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
 export async function POST() {
   const supabase = createAdminClient();
+  const stale = await requeueStaleProcessingWork().catch((error) => {
+    console.warn('[jobs/process] stale requeue failed', error);
+    return { staleJobs: 0, staleExports: 0 };
+  });
   const repaired = await repairBrokenCompletedExports().catch((error) => {
     console.warn('[jobs/process] repair scan failed', error);
     return 0;
   });
+  const batchLimit = getWorkerBatchLimit();
 
   const { data: jobs, error } = await supabase
     .from('jobs')
@@ -364,7 +414,7 @@ export async function POST() {
     .eq('status', 'queued')
     .eq('type', 'export')
     .order('created_at', { ascending: true })
-    .limit(3);
+    .limit(batchLimit);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
@@ -375,28 +425,42 @@ export async function POST() {
       payload: (job.payload as Record<string, unknown>) ?? {},
     }));
 
-  // Fallback path: if jobs table is empty but there are queued exports, process directly.
-  if (!workItems.length) {
+  const queuedExportSlots = Math.max(0, batchLimit - workItems.length);
+  if (queuedExportSlots > 0) {
+    const alreadySelectedExportIds = new Set(
+      workItems
+        .map((item) => item.exportId)
+        .filter((id): id is string => Boolean(id)),
+    );
     const { data: queuedExports, error: exErr } = await supabase
       .from('exports')
       .select('id')
       .eq('status', 'queued')
       .order('created_at', { ascending: true })
-      .limit(3);
+      .limit(batchLimit * 2);
 
     if (exErr) return NextResponse.json({ error: exErr.message }, { status: 400 });
 
-    workItems = (queuedExports ?? []).map((row) => ({
-      jobId: null,
-      exportId: String(row.id),
-      payload: { export_id: String(row.id) },
-    }));
+    for (const row of queuedExports ?? []) {
+      const exportId = String(row.id);
+      if (alreadySelectedExportIds.has(exportId)) continue;
+      workItems.push({
+        jobId: null,
+        exportId,
+        payload: { export_id: exportId },
+      });
+      alreadySelectedExportIds.add(exportId);
+      if (workItems.length >= batchLimit) break;
+    }
   }
 
   console.log('[jobs/process] queue snapshot', {
     queued_jobs_fetched: (jobs ?? []).length,
     work_items_selected: workItems.length,
     repaired_done_exports: repaired,
+    stale_jobs_requeued: stale.staleJobs,
+    stale_exports_requeued: stale.staleExports,
+    batch_limit: batchLimit,
   });
 
   if (!workItems.length) return NextResponse.json({ ok: true, processed: 0, counts: { queued_jobs_fetched: 0, work_items_selected: 0 } });

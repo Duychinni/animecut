@@ -4,7 +4,7 @@ import { downloadYouTubeAudio } from '@/lib/youtube';
 import { transcribeAudioFile } from '@/lib/transcription';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { extractAudioForTranscription } from '@/lib/ffmpeg';
-import { buildMockTranscript, isMockAiEnabled } from '@/lib/dev-ai';
+import { buildMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 
 export async function POST(req: Request) {
   try {
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
 
     if (pErr || !project) throw new Error('Project not found');
 
-    if (isMockAiEnabled()) {
+    if (isMockTranscriptionEnabled()) {
       const transcript = buildMockTranscript(Number(project.source_duration_seconds ?? 0));
 
       await supabase.from('transcripts').delete().eq('project_id', project_id);

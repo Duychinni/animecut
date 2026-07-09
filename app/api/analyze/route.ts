@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { analyzeClipCandidates } from '@/lib/openai';
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
+import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 
 type RawCandidate = Record<string, string | number | null | undefined>;
 
@@ -322,6 +323,10 @@ export async function POST(req: Request) {
       ((transcriptRow.segments_json as TranscriptSegment[] | null) ?? []).filter(
         (s) => typeof s === 'object' && s !== null,
       );
+
+    if (!isMockClipAnalysisEnabled() && isLikelyMockTranscript(segments)) {
+      throw new Error('This project still has a mock transcript. Start a new test after turning MOCK_AI/MOCK_TRANSCRIPTION/MOCK_ANALYSIS off so captions can use real faster-whisper words.');
+    }
 
     const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
     const effectiveGlobalMinClipSec = transcriptMaxEnd < 60 ? 20 : GLOBAL_MIN_CLIP_SEC;

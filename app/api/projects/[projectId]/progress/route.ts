@@ -29,7 +29,7 @@ function computeProgress(params: {
   const { status, pipelineStatus, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount } = params;
   const safeTarget = Math.max(1, targetCount);
 
-  if (status === 'completed' || pipelineStatus === 'completed') return 100;
+  if ((status === 'completed' || pipelineStatus === 'completed') && activeExports === 0 && doneExports >= safeTarget) return 100;
   if (pipelineStatus === 'error') return Math.max(5, Math.min(95, doneExports > 0 ? 70 : 12));
 
   if (!hasTranscript) {
@@ -60,7 +60,7 @@ function estimateEtaSeconds(params: {
 }) {
   const { status, pipelineStatus, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount, transcriptSeconds } = params;
 
-  if (status === 'completed' || pipelineStatus === 'completed') return 0;
+  if ((status === 'completed' || pipelineStatus === 'completed') && activeExports === 0 && doneExports >= Math.max(1, targetCount)) return 0;
   if (pipelineStatus === 'queued') return Math.max(20, Math.round(transcriptSeconds * 0.2) || 45);
 
   const safeTarget = Math.max(1, targetCount);

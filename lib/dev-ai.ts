@@ -1,7 +1,33 @@
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 
+function envFlag(name: string) {
+  return process.env[name] === 'true';
+}
+
+function transcriptionProvider() {
+  return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
+}
+
+function realLocalTranscriptionProviderEnabled() {
+  return transcriptionProvider() === 'faster-whisper' || transcriptionProvider() === 'whisperx';
+}
+
 export function isMockAiEnabled() {
-  return process.env.MOCK_AI === 'true' || process.env.NEXT_PUBLIC_MOCK_AI === 'true';
+  return isMockTranscriptionEnabled() || isMockClipAnalysisEnabled();
+}
+
+export function isMockTranscriptionEnabled() {
+  if (envFlag('MOCK_TRANSCRIPTION')) return true;
+  if (realLocalTranscriptionProviderEnabled()) return false;
+  return envFlag('MOCK_AI') || envFlag('NEXT_PUBLIC_MOCK_AI');
+}
+
+export function isMockClipAnalysisEnabled() {
+  if (envFlag('MOCK_ANALYSIS')) return true;
+  if (realLocalTranscriptionProviderEnabled() && !envFlag('ALLOW_MOCK_ANALYSIS_WITH_REAL_TRANSCRIPT')) {
+    return false;
+  }
+  return envFlag('MOCK_AI') || envFlag('NEXT_PUBLIC_MOCK_AI');
 }
 
 const MOCK_LINES = [
@@ -18,6 +44,21 @@ const MOCK_LINES = [
   'When the source is longer, there are usually more usable stories, but only the strongest ones deserve to be rendered.',
   'That is the balance for a real clipping product, generate enough options to feel valuable without wasting compute.',
 ];
+
+export function isLikelyMockTranscript(
+  input: string | Array<{ text?: string | null | undefined }> | null | undefined,
+) {
+  const text = Array.isArray(input)
+    ? input.map((segment) => String(segment?.text ?? '')).join(' ')
+    : String(input ?? '');
+  const normalized = text.toLowerCase();
+  if (!normalized.trim()) return false;
+
+  return MOCK_LINES.some((line) => {
+    const probe = line.toLowerCase().slice(0, 56);
+    return probe.length > 20 && normalized.includes(probe);
+  });
+}
 
 function safeSourceDurationSeconds(value: unknown) {
   const seconds = Number(value ?? 0);
