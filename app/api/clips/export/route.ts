@@ -146,7 +146,10 @@ export async function POST(req: Request) {
     const autoReframe = auto_reframe !== false;
     const reframeMode = normalizeReframeMode(reframe_mode, getDefaultReframeMode());
 
-    let targetCount = Math.max(1, Math.min(20, Number(target_count ?? 0)));
+    const explicitTargetCount = Number(target_count ?? 0);
+    let targetCount = Number.isFinite(explicitTargetCount) && explicitTargetCount > 0
+      ? Math.max(1, Math.floor(explicitTargetCount))
+      : 0;
     let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];
     let blockedCount = 0;
     let candidateHookText = new Map<string, string>();
@@ -173,7 +176,7 @@ export async function POST(req: Request) {
       if (exErr) throw exErr;
       if (cErr) throw cErr;
 
-      if (!(target_count > 0)) {
+      if (!(targetCount > 0)) {
         const { data: transcriptRow } = await supabase
           .from('transcripts')
           .select('segments_json')
@@ -190,7 +193,7 @@ export async function POST(req: Request) {
 
       const doneCount = (existingExports ?? []).filter((r) => r.status === 'done').length;
       const inFlightCount = (existingExports ?? []).filter((r) => r.status === 'queued' || r.status === 'processing').length;
-      const needed = Math.max(0, targetCount - doneCount - inFlightCount);
+      const needed = targetCount > 0 ? Math.max(0, targetCount - doneCount - inFlightCount) : 0;
 
       const blockedCandidateIds = new Set(
         (existingExports ?? [])
@@ -231,8 +234,11 @@ export async function POST(req: Request) {
 
       selectedIds = deduped
         .map((row) => String(row.id))
-        .filter((id) => !blockedCandidateIds.has(id))
-        .slice(0, Math.min(needed, 10));
+        .filter((id) => !blockedCandidateIds.has(id));
+
+      if (explicitTargetCount > 0) {
+        selectedIds = selectedIds.slice(0, needed);
+      }
       console.log('[clips/export] after-dedupe-selection', {
         project_id,
         deduped_count: deduped.length,

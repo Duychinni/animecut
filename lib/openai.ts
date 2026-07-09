@@ -136,7 +136,8 @@ REEL HOOK TEXT RULES:
 
 VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 - Generate at least ${targetCandidates} candidate clips.
-- Target final clip range: ${policy.targetMin}-${policy.targetMax}, but never more than 20 final clips.
+- Target final clip range: ${policy.targetMin}-${policy.targetMax} is guidance, not a hard cap.
+- Return every strong, unique, complete clip that clears the quality bar, even if that exceeds the target range.
 - Expected clip length: ${policy.expectedMinSec}-${policy.expectedMaxSec} seconds.
 - Minimum clip length: ${policy.minSec} seconds.
 - Maximum clip length: ${policy.maxSec} seconds.
