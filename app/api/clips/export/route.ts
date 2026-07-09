@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { getCaptionPresetById } from '@/lib/caption-presets';
 
+type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
+
 function serializeUnknownError(error: unknown) {
   if (error instanceof Error) {
     return {
@@ -62,6 +64,49 @@ function normalizeHookText(raw: unknown) {
   return cleaned || null;
 }
 
+function isMissingHookTextColumnError(error: unknown) {
+  const serialized = serializeUnknownError(error);
+  const details = 'details' in serialized ? serialized.details : null;
+  const text = `${serialized.type} ${serialized.message} ${JSON.stringify(details)}`;
+  return /hook_text/i.test(text) && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
+}
+
+async function selectTopCandidates(supabase: SupabaseAdminClient, projectId: string) {
+  const withHookText = await supabase
+    .from('clip_candidates')
+    .select('id, overall_score, title, hook_text, start_sec, end_sec')
+    .eq('project_id', projectId)
+    .order('overall_score', { ascending: false })
+    .limit(100);
+
+  if (!withHookText.error || !isMissingHookTextColumnError(withHookText.error)) return withHookText;
+
+  console.warn('[clips/export] hook_text column missing; selecting candidates without hook_text');
+  return supabase
+    .from('clip_candidates')
+    .select('id, overall_score, title, start_sec, end_sec')
+    .eq('project_id', projectId)
+    .order('overall_score', { ascending: false })
+    .limit(100);
+}
+
+async function selectSelectedCandidateHooks(supabase: SupabaseAdminClient, projectId: string, selectedIds: string[]) {
+  const withHookText = await supabase
+    .from('clip_candidates')
+    .select('id, title, hook_text')
+    .eq('project_id', projectId)
+    .in('id', selectedIds);
+
+  if (!withHookText.error || !isMissingHookTextColumnError(withHookText.error)) return withHookText;
+
+  console.warn('[clips/export] hook_text column missing; selecting selected candidates without hook_text');
+  return supabase
+    .from('clip_candidates')
+    .select('id, title')
+    .eq('project_id', projectId)
+    .in('id', selectedIds);
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -117,12 +162,7 @@ export async function POST(req: Request) {
           .from('exports')
           .select('clip_candidate_id, status')
           .eq('project_id', project_id),
-        supabase
-          .from('clip_candidates')
-          .select('id, overall_score, title, hook_text, start_sec, end_sec')
-          .eq('project_id', project_id)
-          .order('overall_score', { ascending: false })
-          .limit(100),
+        selectTopCandidates(supabase, project_id),
       ]);
 
       if (exErr) throw exErr;
@@ -204,11 +244,7 @@ export async function POST(req: Request) {
     });
 
     if (selectedIds.length) {
-      const { data: existingCandidates, error: candidateCheckError } = await supabase
-        .from('clip_candidates')
-        .select('id, title, hook_text')
-        .eq('project_id', project_id)
-        .in('id', selectedIds);
+      const { data: existingCandidates, error: candidateCheckError } = await selectSelectedCandidateHooks(supabase, project_id, selectedIds);
 
       if (candidateCheckError) throw candidateCheckError;
       const validIds = new Set((existingCandidates ?? []).map((row) => String(row.id)));

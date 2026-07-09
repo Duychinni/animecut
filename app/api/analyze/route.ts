@@ -221,6 +221,29 @@ function normalizeHookText(raw: unknown, fallback: string) {
   return text || 'Top Moment';
 }
 
+function errorText(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    return [
+      record.message,
+      record.details,
+      record.hint,
+      record.code,
+      JSON.stringify(record),
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  return String(error);
+}
+
+function isMissingHookTextColumnError(error: unknown) {
+  const text = errorText(error);
+  return /hook_text/i.test(text) && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
+}
+
 function isLocalAnalysisCandidate(candidate: RawCandidate) {
   return String(candidate.analysis_provider ?? '').toLowerCase() === 'local'
     || String(candidate.reason_selected ?? candidate.reason ?? '').toLowerCase().includes('local analysis');
@@ -527,7 +550,14 @@ export async function POST(req: Request) {
     await supabase.from('jobs').delete().eq('project_id', project_id).eq('type', 'export').in('status', ['queued', 'processing']);
 
     await supabase.from('clip_candidates').delete().eq('project_id', project_id);
-    const { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
+    let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
+    if (insErr && isMissingHookTextColumnError(insErr)) {
+      console.warn('[analyze] hook_text column missing; retrying clip candidate insert without hook_text');
+      const legacyRows = dbRows.map(({ hook_text: _hookText, ...row }) => row);
+      const retry = await supabase.from('clip_candidates').insert(legacyRows).select('id, start_sec, end_sec, title');
+      insertedRows = retry.data;
+      insErr = retry.error;
+    }
     if (insErr) throw insErr;
 
     if (!ranked.length) {
