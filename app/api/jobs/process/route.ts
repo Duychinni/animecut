@@ -9,7 +9,7 @@ import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from 
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
-import { getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
+import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 
 async function maybeFinalizeProject(projectId: string) {
@@ -173,6 +173,33 @@ function getWorkerBatchLimit() {
   return Math.max(1, Math.min(process.env.VERCEL ? 2 : 4, Math.round(raw)));
 }
 
+function normalizeReframeMode(raw: unknown, fallback: 'off' | 'basic' | 'smart'): 'off' | 'basic' | 'smart' {
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (value === 'off' || value === 'basic' || value === 'smart') return value;
+  return fallback;
+}
+
+function getFallbackReframeMode() {
+  return normalizeReframeMode(process.env.EXPORT_FALLBACK_REFRAME_MODE, 'smart');
+}
+
+function buildFallbackExportPayload(exportId: string, extra: Record<string, unknown> = {}) {
+  const captionPreset = getCaptionPresetById(DEFAULT_CAPTION_PRESET_ID);
+  return {
+    export_id: exportId,
+    captions_enabled: true,
+    caption_preset_id: captionPreset.id,
+    caption_template: captionPreset.caption_template,
+    caption_font: captionPreset.caption_font,
+    hook_text_enabled: true,
+    motion_tracking: false,
+    auto_reframe: true,
+    reframe_mode: getFallbackReframeMode(),
+    reframe_preset: 'auto',
+    ...extra,
+  };
+}
+
 function normalizeRenderErrorMessage(message: string) {
   if (/Invalid NAL unit|missing picture|Error splitting the input into NAL units|Missing reference picture|mmco:|Rendered export is corrupted/i.test(message)) {
     return 'Render failed because the source video stream was corrupted or unreadable in this segment. Please retry the export.';
@@ -222,7 +249,7 @@ async function enqueueRepairJob(exportId: string, projectId: string) {
   const { error } = await supabase.from('jobs').insert({
     project_id: projectId,
     type: 'export',
-    payload: { export_id: exportId, repair: true },
+    payload: buildFallbackExportPayload(exportId, { repair: true }),
     status: 'queued',
   });
 
@@ -262,7 +289,7 @@ async function ensureQueuedExportJobs(limit = REPAIR_SCAN_LIMIT) {
     const { error: insertError } = await supabase.from('jobs').insert({
       project_id: projectId,
       type: 'export',
-      payload: { export_id: exportId, repair: true },
+      payload: buildFallbackExportPayload(exportId, { repair: true }),
       status: 'queued',
     });
 
@@ -469,9 +496,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     captionFont,
     hookTextEnabled,
     hookText,
-    motionTracking: options?.motion_tracking !== false,
+    motionTracking: options?.motion_tracking === true,
     autoReframe: options?.auto_reframe !== false,
-    reframeMode: options?.reframe_mode ?? 'smart',
+    reframeMode: options?.reframe_mode ?? getFallbackReframeMode(),
     reframePreset: options?.reframe_preset ?? 'auto',
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
@@ -547,7 +574,7 @@ export async function POST() {
       workItems.push({
         jobId: null,
         exportId,
-        payload: { export_id: exportId },
+        payload: buildFallbackExportPayload(exportId, { recovered_missing_job: true }),
       });
       alreadySelectedExportIds.add(exportId);
       if (workItems.length >= batchLimit) break;

@@ -497,6 +497,19 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     }
 
     if (raw.mode === 'per_clip' && typeof raw.crop_w === 'number' && typeof raw.crop_h === 'number' && typeof raw.crop_x === 'number') {
+      const outputHeight = resolveOutputHeight();
+      const outputWidth = resolveOutputWidth(outputHeight);
+      const sourceW = Number(raw.source_w ?? 0);
+      const sourceH = Number(raw.source_h ?? 0);
+      const scale = sourceW > 0 && sourceH > 0
+        ? Math.max(outputWidth / sourceW, outputHeight / sourceH)
+        : 1;
+      const scaledW = sourceW * scale;
+      const scaledH = sourceH * scale;
+      const scaledCropX = clamp(raw.crop_x * scale, 0, Math.max(0, scaledW - outputWidth));
+      const rawCropY = Number((raw as { crop_y?: number }).crop_y ?? 0);
+      const scaledCropY = clamp(rawCropY * scale, 0, Math.max(0, scaledH - outputHeight));
+      const cropExpr = `crop=${outputWidth}:${outputHeight}:${Math.round(scaledCropX)}:${Math.round(scaledCropY)}`;
       console.log('[smart-reframe]', {
         clipId,
         candidateId,
@@ -508,12 +521,15 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         crop_y: 0,
         crop_w: raw.crop_w,
         crop_h: raw.crop_h,
+        scaled_crop_x: Math.round(scaledCropX),
+        scaled_crop_y: Math.round(scaledCropY),
+        scaled_crop_expr: cropExpr,
         detected_center_x: raw.detected_center_x ?? null,
         fallbackUsed: raw.fallback_used ?? null,
         ffmpeg_crop: raw.ffmpeg_crop ?? null,
         jsonSaved,
       });
-      return { cropExpr: `${raw.ffmpeg_crop},format=yuv420p,fps=30` };
+      return { cropExpr };
     }
 
     console.log('[smart-reframe]', {

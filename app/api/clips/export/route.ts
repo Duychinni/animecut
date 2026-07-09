@@ -42,6 +42,16 @@ function serializeUnknownError(error: unknown) {
   };
 }
 
+function normalizeReframeMode(raw: unknown, fallback: 'off' | 'basic' | 'smart'): 'off' | 'basic' | 'smart' {
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (value === 'off' || value === 'basic' || value === 'smart') return value;
+  return fallback;
+}
+
+function getDefaultReframeMode() {
+  return normalizeReframeMode(process.env.EXPORT_DEFAULT_REFRAME_MODE, 'smart');
+}
+
 export async function POST(req: Request) {
   try {
     const {
@@ -74,7 +84,7 @@ export async function POST(req: Request) {
     // Enable explicitly per request when needed.
     const motionTracking = motion_tracking === true;
     const autoReframe = auto_reframe !== false;
-    const reframeMode = (reframe_mode ?? 'smart') as 'off' | 'basic' | 'smart';
+    const reframeMode = normalizeReframeMode(reframe_mode, getDefaultReframeMode());
 
     let targetCount = Math.max(1, Math.min(20, Number(target_count ?? 0)));
     let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];
