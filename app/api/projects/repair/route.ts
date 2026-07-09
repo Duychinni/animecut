@@ -76,8 +76,9 @@ export async function POST() {
       const projectAlreadyCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing'));
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
+      const frozenCompletedProject = projectAlreadyCompleted && readyExports > 0;
       const staleActiveRows = activeRows.filter((r) => isStaleActiveExport(r));
-      const shouldRetireActiveRows = readyExports > 0 && (projectAlreadyCompleted || (activeRows.length > 0 && staleActiveRows.length === activeRows.length));
+      const shouldRetireActiveRows = readyExports > 0 && (frozenCompletedProject || (activeRows.length > 0 && staleActiveRows.length === activeRows.length));
 
       if (shouldRetireActiveRows) {
         await admin
@@ -96,7 +97,7 @@ export async function POST() {
         continue;
       }
 
-      const retryableErrors = projectAlreadyCompleted
+      const retryableErrors = frozenCompletedProject
         ? []
         : rows.filter((r) => r.id && r.status === 'error' && isRetryableRenderError(r.error_message));
 
@@ -122,7 +123,7 @@ export async function POST() {
         requeuedExports += ids.length;
       }
 
-      const queuedRows = projectAlreadyCompleted ? [] : rows.filter((r) => r.id && r.status === 'queued');
+      const queuedRows = frozenCompletedProject ? [] : rows.filter((r) => r.id && r.status === 'queued');
       for (const row of queuedRows) {
         const created = await ensureExportJob(admin, String(project.id), String(row.id));
         if (created) ensuredJobs += 1;

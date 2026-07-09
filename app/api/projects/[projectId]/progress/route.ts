@@ -141,8 +141,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const isReallyCompleted =
       activeExports === 0 && doneExports > 0 && (projectMarkedCompleted || doneExports >= targetCount);
 
-    const effectiveStatus = isReallyCompleted ? 'completed' : (project.status as string);
+    const projectNeedsExportCompletion = projectMarkedCompleted && !hasSavedExports && activeExports > 0;
+    const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
+    if (projectNeedsExportCompletion) {
+      pipelineStatus = 'processing';
+    }
     const hasTranscript = transcriptSegments.length > 0;
     const explicitPercent = Number((project as { pipeline_progress_percent?: number | null }).pipeline_progress_percent ?? NaN);
     const lastSeenRaw = (project as { worker_last_seen_at?: string | null }).worker_last_seen_at ?? null;

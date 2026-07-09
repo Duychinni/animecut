@@ -85,15 +85,31 @@ async function getProjectIdForExport(exportId: string) {
   return String(data?.project_id ?? '');
 }
 
-async function isCompletedProject(projectId: string) {
+async function getProjectCompletionState(projectId: string) {
   const supabase = createAdminClient();
-  const { data } = await supabase
-    .from('projects')
-    .select('status, pipeline_status')
-    .eq('id', projectId)
-    .maybeSingle();
+  const [{ data: project }, { count: savedExports }] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('status, pipeline_status')
+      .eq('id', projectId)
+      .maybeSingle(),
+    supabase
+      .from('exports')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectId)
+      .eq('status', 'done')
+      .not('output_storage_path', 'is', null),
+  ]);
 
-  return data?.status === 'completed' || data?.pipeline_status === 'completed';
+  return {
+    completed: project?.status === 'completed' || project?.pipeline_status === 'completed',
+    hasSavedExports: Number(savedExports ?? 0) > 0,
+  };
+}
+
+async function isFrozenCompletedProject(projectId: string) {
+  const state = await getProjectCompletionState(projectId);
+  return state.completed && state.hasSavedExports;
 }
 
 async function shouldSkipExportForCompletedProject(exportId: string) {
@@ -106,7 +122,7 @@ async function shouldSkipExportForCompletedProject(exportId: string) {
 
   const projectId = typeof data?.project_id === 'string' ? data.project_id : '';
   if (!projectId) return { skip: false, projectId: '' };
-  return { skip: await isCompletedProject(projectId), projectId };
+  return { skip: await isFrozenCompletedProject(projectId), projectId };
 }
 
 type ExportBundle = {
@@ -230,7 +246,7 @@ async function ensureQueuedExportJobs(limit = REPAIR_SCAN_LIMIT) {
   for (const row of queuedExports ?? []) {
     const exportId = String(row.id);
     const projectId = String(row.project_id);
-    if (await isCompletedProject(projectId)) continue;
+    if (await isFrozenCompletedProject(projectId)) continue;
 
     const { data: existingJob, error: jobError } = await supabase
       .from('jobs')
@@ -526,7 +542,7 @@ export async function POST() {
     for (const row of queuedExports ?? []) {
       const exportId = String(row.id);
       if (alreadySelectedExportIds.has(exportId)) continue;
-      if (await isCompletedProject(String(row.project_id))) continue;
+      if (await isFrozenCompletedProject(String(row.project_id))) continue;
 
       workItems.push({
         jobId: null,

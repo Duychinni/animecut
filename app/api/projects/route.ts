@@ -44,12 +44,14 @@ export async function GET() {
       const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
       const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
-      const isCompleted = project.status === 'completed' || project.pipeline_status === 'completed' || (readyExports > 0 && activeExports === 0);
+      const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
+      const isCompleted = (markedCompleted && readyExports > 0) || (readyExports > 0 && activeExports === 0);
+      const needsExportCompletion = markedCompleted && readyExports === 0 && activeExports > 0;
 
       return {
         ...project,
-        status: isCompleted ? 'completed' : project.status,
-        pipeline_status: isCompleted ? 'completed' : project.pipeline_status,
+        status: isCompleted ? 'completed' : needsExportCompletion ? 'analyzed' : project.status,
+        pipeline_status: isCompleted ? 'completed' : needsExportCompletion ? 'processing' : project.pipeline_status,
         progress_percent: isCompleted ? 100 : undefined,
         exports: undefined,
       };
