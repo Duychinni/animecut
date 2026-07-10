@@ -9,8 +9,16 @@ import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/clie
 type Mode = 'login' | 'signup';
 type OAuthProvider = 'google' | 'apple';
 
-const GOOGLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH === 'true';
+const GOOGLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH !== 'false';
 const APPLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_APPLE_AUTH === 'true';
+
+function getBrowserSafeOrigin() {
+  const url = new URL(window.location.origin);
+  if (url.hostname === '0.0.0.0') {
+    url.hostname = 'localhost';
+  }
+  return url.origin;
+}
 
 function GoogleIcon() {
   return (
@@ -65,7 +73,7 @@ export function AuthCard({
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next || '/dashboard')}`;
+      const redirectTo = `${getBrowserSafeOrigin()}/auth/callback?next=${encodeURIComponent(next || '/dashboard')}`;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider,
         options: { redirectTo },
