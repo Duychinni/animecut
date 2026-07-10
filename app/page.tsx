@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type MeResponse = {
@@ -19,6 +19,7 @@ type MeResponse = {
 };
 
 type ShowcaseClip = {
+  id?: string;
   title: string;
   score: number;
   caption: string;
@@ -26,6 +27,11 @@ type ShowcaseClip = {
   length: string;
   source: string;
   gradient: string;
+  mediaUrl?: string | null;
+};
+
+type ShowcaseResponse = {
+  clips?: ShowcaseClip[];
 };
 
 const SHOWCASE_CARD_COUNT = 6;
@@ -299,6 +305,7 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [tokenBalance, setTokenBalance] = useState<number>(0);
@@ -306,9 +313,24 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
+  const [liveShowcaseClips, setLiveShowcaseClips] = useState<ShowcaseClip[]>([]);
   const [showcaseOrder, setShowcaseOrder] = useState(() => Array.from({ length: SHOWCASE_CARD_COUNT }, (_, index) => index));
   const showcaseCardRefs = useRef(new Map<string, HTMLDivElement>());
   const previousShowcaseRectsRef = useRef<Map<string, DOMRect> | null>(null);
+  const activeShowcaseClips = useMemo(() => {
+    if (!liveShowcaseClips.length) return showcaseClips;
+
+    const merged = [...liveShowcaseClips.slice(0, SHOWCASE_CARD_COUNT)];
+    for (const fallback of showcaseClips) {
+      if (merged.length >= SHOWCASE_CARD_COUNT) break;
+      merged.push(fallback);
+    }
+    return merged;
+  }, [liveShowcaseClips]);
+
+  function getShowcaseKey(clip: ShowcaseClip) {
+    return clip.id ?? clip.title;
+  }
 
   function captureShowcaseRects() {
     const rects = new Map<string, DOMRect>();
@@ -379,13 +401,40 @@ export default function Home() {
         const res = await fetch('/api/me', { credentials: 'include' });
         const data = (await res.json()) as MeResponse;
         if (!isMounted) return;
-        if (data?.authenticated && data?.user?.displayName) {
-          setUserLabel(data.user.displayName);
-          setAvatarUrl(data.user.avatarUrl ?? null);
-          setTokenBalance(data.user.tokenBalance ?? 0);
+        if (data?.authenticated) {
+          setIsAuthenticated(true);
+          setUserLabel(data.user?.displayName ?? data.user?.email ?? 'User');
+          setAvatarUrl(data.user?.avatarUrl ?? null);
+          setTokenBalance(data.user?.tokenBalance ?? 0);
+        } else {
+          setIsAuthenticated(false);
+          setUserLabel(null);
+          setAvatarUrl(null);
+          setTokenBalance(0);
         }
       } catch {
         // best-effort only
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const res = await fetch('/api/showcase', { credentials: 'include', cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as ShowcaseResponse;
+        if (!isMounted) return;
+        const clips = (data.clips ?? []).filter((clip) => Boolean(clip.mediaUrl)).slice(0, SHOWCASE_CARD_COUNT);
+        setLiveShowcaseClips(clips);
+      } catch {
+        // fall back to static showcase cards
       }
     })();
 
@@ -657,7 +706,7 @@ export default function Home() {
                     disabled={loading}
                     className="h-12 shrink-0 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {loading ? 'Working...' : 'Get Clips'}
+                    {loading ? 'Working...' : isAuthenticated ? 'Get Clips' : 'Get Free Clips'}
                   </button>
                 </form>
 
@@ -705,15 +754,16 @@ export default function Home() {
 
           <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
               {showcaseOrder.map((clipIndex) => {
-                const clip = showcaseClips[clipIndex];
+                const clip = activeShowcaseClips[clipIndex] ?? showcaseClips[clipIndex];
+                const clipKey = getShowcaseKey(clip);
                 return (
                 <div
-                  key={clip.title}
+                  key={clipKey}
                   ref={(element) => {
                     if (element) {
-                      showcaseCardRefs.current.set(clip.title, element);
+                      showcaseCardRefs.current.set(clipKey, element);
                     } else {
-                      showcaseCardRefs.current.delete(clip.title);
+                      showcaseCardRefs.current.delete(clipKey);
                     }
                   }}
                   className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-700 ease-out hover:-translate-y-1 hover:border-white/18"
@@ -721,10 +771,22 @@ export default function Home() {
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
                     <PlatformLogo platform={clip.platform} />
                   </div>
-                  <div className={`aspect-[9/16] rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
-                    <div className="flex h-full flex-col justify-start rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
-                      <div className="flex items-center justify-start gap-2">
-                        <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea]">🔥 {clip.score}</span>
+                  <div className={`aspect-[9/16] overflow-hidden rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
+                    <div className="relative h-full overflow-hidden rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
+                      {clip.mediaUrl ? (
+                        <video
+                          src={clip.mediaUrl}
+                          muted
+                          loop
+                          playsInline
+                          autoPlay
+                          preload="metadata"
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      ) : null}
+                      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18),transparent_36%,rgba(0,0,0,0.34))]" />
+                      <div className="relative flex items-center justify-start gap-2">
+                        <span className="rounded-full border border-[#ff7bd8]/30 bg-[#1f111f]/80 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea] shadow-[0_8px_20px_rgba(0,0,0,0.25)] backdrop-blur">🔥 {clip.score}</span>
                       </div>
                     </div>
                   </div>

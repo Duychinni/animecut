@@ -194,7 +194,7 @@ export async function POST(req: Request) {
 
       const blockedCandidateIds = new Set(
         (existingExports ?? [])
-          .filter((r) => r.status === 'done' || r.status === 'queued' || r.status === 'processing')
+          .filter((r) => r.status === 'done' || r.status === 'queued' || r.status === 'processing' || r.status === 'error')
           .map((r) => (r.clip_candidate_id ? String(r.clip_candidate_id) : null))
           .filter((v): v is string => Boolean(v)),
       );

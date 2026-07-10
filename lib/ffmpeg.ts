@@ -506,6 +506,27 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       return { layout: splitStackLayout };
     }
 
+    const detectionPct = Number(raw.meta?.frames_with_detection_pct ?? NaN);
+    const samples = raw.samples ?? [];
+    const directFaceSamples = samples.filter((sample) => sample.detected_face && !sample.fallback_used).length;
+    const sampleConfidence = samples.length ? directFaceSamples / samples.length : 1;
+    const lowDetectionConfidence = Number.isFinite(detectionPct) && detectionPct < 0.35;
+    const lowSampleConfidence = samples.length > 0 && sampleConfidence < 0.35;
+
+    if (lowDetectionConfidence || lowSampleConfidence) {
+      console.log('[smart-reframe-fallback]', {
+        clipId,
+        candidateId,
+        reason: 'low_subject_detection_confidence',
+        framesWithDetectionPct: Number.isFinite(detectionPct) ? detectionPct : null,
+        sampleConfidence,
+        sampleCount: samples.length,
+        directFaceSamples,
+        rawMode: raw.mode ?? null,
+      });
+      return {};
+    }
+
     if (raw.mode === 'per_clip' && typeof raw.crop_w === 'number' && typeof raw.crop_h === 'number' && typeof raw.crop_x === 'number') {
       const outputHeight = resolveOutputHeight();
       const outputWidth = resolveOutputWidth(outputHeight);
@@ -724,6 +745,10 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   return `crop=${cropWidth}:${cropHeight}:${xExpr}:${yExpr}`;
 }
 
+function shouldUseSafeFitFallback(opts: RenderOpts, smartCropExpr?: string) {
+  return opts.autoReframe !== false && (opts.reframeMode ?? 'off') === 'smart' && !smartCropExpr;
+}
+
 function resolveOutputHeight() {
   return VERTICAL_EXPORT_HEIGHT;
 }
@@ -852,15 +877,33 @@ function buildFilter(
 ) {
   const outputHeight = resolveOutputHeight();
   const outputWidth = resolveOutputWidth(outputHeight);
-  const filterParts = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
+  const safeFitFallback = shouldUseSafeFitFallback(opts, smartCropExpr);
+  const filterParts = safeFitFallback
+    ? [
+        `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=lanczos`,
+        `pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2:color=black`,
+      ]
+    : [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
 
-  if (escapedMotionTransformPath) {
+  if (safeFitFallback) {
+    console.log('[smart-reframe-fallback]', {
+      clipId: opts.debugClipId ?? null,
+      candidateId: opts.debugCandidateId ?? null,
+      reason: 'smart_tracker_unavailable_safe_full_frame',
+      outputWidth,
+      outputHeight,
+    });
+  }
+
+  if (!safeFitFallback && escapedMotionTransformPath) {
     filterParts.push(
       `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,
     );
   }
 
-  filterParts.push(buildCropFilter(opts, smartCropExpr));
+  if (!safeFitFallback) {
+    filterParts.push(buildCropFilter(opts, smartCropExpr));
+  }
   filterParts.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
 
   if (opts.debugReframeOverlay) {
