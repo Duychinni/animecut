@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { getVerticalExportSize } from '@/lib/export-profile';
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
@@ -8,15 +9,16 @@ type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'be
 type ReframeMode = 'off' | 'basic' | 'smart';
 type LayoutMode = 'single' | 'split_stack';
 
-const VERTICAL_EXPORT_WIDTH = 1080;
-const VERTICAL_EXPORT_HEIGHT = 1920;
+const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
+const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
+const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
 const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v3';
-const DEFAULT_X264_CRF = '17';
-const DEFAULT_X264_MAXRATE = '18M';
-const DEFAULT_X264_BUFSIZE = '36M';
-const DEFAULT_HW_VIDEO_BITRATE = '18M';
-const DEFAULT_HW_MAXRATE = '24M';
-const DEFAULT_HW_BUFSIZE = '48M';
+const DEFAULT_X264_CRF = '15';
+const DEFAULT_X264_MAXRATE = '30M';
+const DEFAULT_X264_BUFSIZE = '60M';
+const DEFAULT_HW_VIDEO_BITRATE = '28M';
+const DEFAULT_HW_MAXRATE = '36M';
+const DEFAULT_HW_BUFSIZE = '72M';
 
 type RenderOpts = {
   inputPath: string;
@@ -36,6 +38,10 @@ type RenderOpts = {
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
   reframePreset?: 'auto' | 'tight' | 'left' | 'center' | 'right';
+  framingMode?: 'auto' | 'center' | 'fit' | 'manual';
+  cropX?: number;
+  cropY?: number;
+  zoom?: number;
   debugReframeOverlay?: boolean;
   debugClipId?: string;
   debugCandidateId?: string;
@@ -436,6 +442,17 @@ function maybeBuildSplitStackLayout(raw: {
 }
 
 async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropExpr?: string; layout?: SplitStackLayout }> {
+  if (opts.framingMode && opts.framingMode !== 'auto') {
+    console.log('[smart-reframe]', {
+      clipId: opts.debugClipId ?? null,
+      candidateId: opts.debugCandidateId ?? null,
+      enabled: false,
+      reason: 'manual_framing_override',
+      framingMode: opts.framingMode,
+    });
+    return {};
+  }
+
   if (opts.reframeMode !== 'smart' || opts.autoReframe === false) {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -740,8 +757,24 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   const mode = opts.reframeMode ?? 'off';
   const enabled = opts.autoReframe !== false && mode !== 'off';
   const preset = opts.reframePreset ?? 'auto';
+  const framingMode = opts.framingMode ?? 'auto';
+  const outputHeight = resolveOutputHeight();
+  const outputWidth = resolveOutputWidth(outputHeight);
   const cropWidth = VERTICAL_EXPORT_WIDTH;
   const cropHeight = VERTICAL_EXPORT_HEIGHT;
+
+  if (framingMode === 'manual') {
+    const zoom = clamp(Number(opts.zoom ?? 1), 1, 2.4);
+    const manualCropWidth = floorEven(clamp(Math.round(outputWidth / zoom), 360, outputWidth));
+    const manualCropHeight = floorEven(clamp(Math.round(outputHeight / zoom), 640, outputHeight));
+    const x = clamp(Number(opts.cropX ?? 0.5), 0, 1);
+    const y = clamp(Number(opts.cropY ?? 0.34), 0, 1);
+    return `crop=${manualCropWidth}:${manualCropHeight}:(iw-${manualCropWidth})*${x.toFixed(4)}:(ih-${manualCropHeight})*${y.toFixed(4)}`;
+  }
+
+  if (framingMode === 'center') {
+    return `crop=${cropWidth}:${cropHeight}:(iw-${cropWidth})/2:min(max((ih-${cropHeight})*0.34,0),ih-${cropHeight})`;
+  }
 
   if (!enabled) {
     console.log('[smart-reframe-fallback]', { reason: 'auto_reframe_disabled', mode, cropWidth, cropHeight });
@@ -828,6 +861,7 @@ function buildHookAss(hookText: string) {
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const cardY = twoLine ? 66 : 82;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
+  const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
   const hookFontSize = twoLine ? 68 : 76;
   const text = escapeHookAssText(hookText);
@@ -846,7 +880,7 @@ Style: HookText,Arial Black,${hookFontSize},&H00000000,&H00000000,&H00111111,&H5
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:00.00,0:00:04.50,HookCard,,0,0,0,,{\\an7\\pos(0,0)\\p1\\c&HFFFFFF&}${cardShape}
-Dialogue: 1,0:00:00.00,0:00:04.50,HookText,,0,0,0,,{\\an5\\pos(540,${textY})}${text}
+Dialogue: 1,0:00:00.00,0:00:04.50,HookText,,0,0,0,,{\\an5\\pos(${textX},${textY})}${text}
 `;
 }
 
@@ -883,6 +917,36 @@ function buildHookFilter(opts: RenderOpts) {
   return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath);
 }
 
+function buildBaseVideoFilters(
+  opts: RenderOpts,
+  outputWidth: number,
+  outputHeight: number,
+  escapedMotionTransformPath?: string,
+  smartCropExpr?: string,
+) {
+  const filters: string[] = [];
+  const fitMode = opts.framingMode === 'fit';
+
+  if (fitMode) {
+    filters.push(`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=lanczos`);
+    filters.push(`pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2:black`);
+    filters.push('setsar=1');
+    return filters;
+  }
+
+  filters.push(`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`);
+
+  if (escapedMotionTransformPath) {
+    filters.push(
+      `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,
+    );
+  }
+
+  filters.push(buildCropFilter(opts, smartCropExpr));
+  filters.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
+  return filters;
+}
+
 function buildFilter(
   opts: RenderOpts,
   includeCaptions: boolean,
@@ -894,7 +958,7 @@ function buildFilter(
   const outputHeight = resolveOutputHeight();
   const outputWidth = resolveOutputWidth(outputHeight);
   const safeFitFallback = shouldUseSafeFitFallback(opts, smartCropExpr);
-  const filterParts = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
+  const filterParts = buildBaseVideoFilters(opts, outputWidth, outputHeight, escapedMotionTransformPath, smartCropExpr);
 
   if (safeFitFallback) {
     console.log('[smart-reframe-fallback]', {
@@ -905,15 +969,6 @@ function buildFilter(
       outputHeight,
     });
   }
-
-  if (escapedMotionTransformPath) {
-    filterParts.push(
-      `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,
-    );
-  }
-
-  filterParts.push(buildCropFilter(opts, smartCropExpr));
-  filterParts.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
 
   if (opts.debugReframeOverlay) {
     filterParts.push(
@@ -1125,7 +1180,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   }
 
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || 'libx264').trim();
-  const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'medium').trim();
+  const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'slow').trim();
   const configuredCrf = (process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF).trim();
   const configuredX264Maxrate = (process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE).trim();
   const configuredX264Bufsize = (process.env.FFMPEG_X264_BUFSIZE || DEFAULT_X264_BUFSIZE).trim();
@@ -1188,7 +1243,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
         '-profile:v',
         'high',
         '-level',
-        '4.2',
+        '5.1',
         '-threads',
         '0',
       );
@@ -1257,14 +1312,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
     if (canUseCaptions && subtitlesUnavailable && effectiveOpts.srtPath) {
       // Fallback for ffmpeg builds without libass/subtitles filter: hard-burn with drawtext.
       const drawtextFilters = await buildDrawtextFiltersFromSrt(effectiveOpts.srtPath);
-      const baseFilter = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
-      if (escapedMotionTransformPath) {
-        baseFilter.push(
-          `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,
-        );
-      }
-      baseFilter.push(buildCropFilter(effectiveOpts, smartCropExpr));
-      baseFilter.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
+      const baseFilter = buildBaseVideoFilters(effectiveOpts, outputWidth, outputHeight, escapedMotionTransformPath, smartCropExpr);
       if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
         baseFilter.push(buildHookDrawtextFilter(effectiveOpts.hookText.trim(), effectiveOpts.hookTextFilePath));
       }
@@ -1296,7 +1344,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
           '-profile:v',
           'high',
           '-level',
-          '4.2',
+          '5.1',
           '-threads',
           '0',
           '-pix_fmt',

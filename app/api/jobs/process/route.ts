@@ -11,6 +11,13 @@ import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
+import {
+  buildDefaultClipEditSettings,
+  hasClipEditSettings,
+  normalizeClipEditSettings,
+  phrasesToSegments,
+  transcriptSegmentsToPhrases,
+} from '@/lib/clip-edit';
 
 export const maxDuration = 60;
 
@@ -158,6 +165,7 @@ type ExportBundle = {
   project_id: string;
   clip_candidate_id: string;
   caption_preset_id?: string | null;
+  clip_edit_settings?: Record<string, unknown> | null;
   hook_text_enabled?: boolean | null;
   hook_text?: string | null;
   project: {
@@ -166,6 +174,7 @@ type ExportBundle = {
     source_type: 'youtube' | 'upload';
     source_url?: string | null;
     source_storage_path?: string | null;
+    source_duration_seconds?: number | null;
   };
   clip: {
     start_sec: number;
@@ -188,6 +197,7 @@ type ExportRenderOptions = {
   auto_reframe?: boolean;
   reframe_mode?: 'off' | 'basic' | 'smart';
   reframe_preset?: 'auto' | 'tight' | 'left' | 'center' | 'right';
+  edit_rerender?: boolean;
 };
 
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
@@ -474,7 +484,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const { data: ex, error } = await supabase
     .from('exports')
-    .select('id, project_id, clip_candidate_id, caption_preset_id, hook_text_enabled, hook_text')
+    .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings, hook_text_enabled, hook_text')
     .eq('id', exportId)
     .single();
   if (error || !ex) throw new Error('Export row not found');
@@ -482,7 +492,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const [{ data: project }, { data: clip }, { data: transcript }] = await Promise.all([
     supabase
       .from('projects')
-      .select('id, user_id, source_type, source_url, source_storage_path')
+      .select('id, user_id, source_type, source_url, source_storage_path, source_duration_seconds')
       .eq('id', ex.project_id)
       .single(),
     supabase
@@ -506,6 +516,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     project_id: String(ex.project_id),
     clip_candidate_id: String(ex.clip_candidate_id),
     caption_preset_id: typeof ex.caption_preset_id === 'string' ? ex.caption_preset_id : null,
+    clip_edit_settings: typeof ex.clip_edit_settings === 'object' && ex.clip_edit_settings ? ex.clip_edit_settings as Record<string, unknown> : null,
     hook_text_enabled: ex.hook_text_enabled !== false,
     hook_text: typeof ex.hook_text === 'string' ? ex.hook_text : null,
     project: {
@@ -514,6 +525,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       source_type: project.source_type as 'youtube' | 'upload',
       source_url: (project.source_url as string | null) ?? null,
       source_storage_path: (project.source_storage_path as string | null) ?? null,
+      source_duration_seconds: Number(project.source_duration_seconds ?? 0),
     },
     clip: {
       start_sec: Number(clip.start_sec),
@@ -533,9 +545,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await mkdir(exportDir, { recursive: true });
   const outPath = path.join(exportDir, `${bundle.id}.mp4`);
 
-  const captionPreset = getCaptionPresetById(options?.caption_preset_id ?? bundle.caption_preset_id ?? DEFAULT_CAPTION_PRESET_ID);
-  const captionTemplate: CaptionTemplate = options?.caption_template ?? captionPreset.caption_template;
-  const captionFont: CaptionFont = options?.caption_font ?? captionPreset.caption_font;
   const srtPath = path.join(exportDir, `${bundle.id}.ass`);
   const transcriptSegments = bundle.transcript?.segments_json ?? [];
 
@@ -543,10 +552,49 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     throw new Error('This export is using a mock transcript. Start a new project after disabling mock AI so captions can match the real audio.');
   }
 
-  const captionText = segmentsToCapcutAss(transcriptSegments, bundle.clip.start_sec, bundle.clip.end_sec, {
-    ...captionPreset,
-    caption_template: captionTemplate,
+  const transcriptPhrases = transcriptSegmentsToPhrases(transcriptSegments);
+  const transcriptDuration = transcriptSegments.reduce((max, seg) => Math.max(max, Number(seg.end ?? 0)), 0);
+  const sourceDuration = Math.max(
+    Number(bundle.project.source_duration_seconds ?? 0),
+    transcriptDuration,
+    Number(bundle.clip.end_sec ?? 0),
+  );
+  const defaults = buildDefaultClipEditSettings({
+    aiStart: bundle.clip.start_sec,
+    aiEnd: bundle.clip.end_sec,
+    sourceDuration,
+    transcriptPhrases,
+    captionPresetId: bundle.caption_preset_id,
   });
+  const useEditSettings = options?.edit_rerender === true || hasClipEditSettings(bundle.clip_edit_settings);
+  const editSettings = normalizeClipEditSettings(bundle.clip_edit_settings, defaults, sourceDuration);
+  const renderStart = useEditSettings ? editSettings.clip_start_seconds : bundle.clip.start_sec;
+  const renderEnd = useEditSettings ? editSettings.clip_end_seconds : bundle.clip.end_sec;
+  const captionPreset = getCaptionPresetById(
+    useEditSettings
+      ? editSettings.caption_preset_id
+      : options?.caption_preset_id ?? bundle.caption_preset_id ?? DEFAULT_CAPTION_PRESET_ID,
+  );
+  const captionTemplate: CaptionTemplate = options?.caption_template ?? captionPreset.caption_template;
+  const captionFont: CaptionFont = options?.caption_font ?? captionPreset.caption_font;
+  const renderTranscriptSegments = useEditSettings ? phrasesToSegments(editSettings.edited_transcript) : transcriptSegments;
+  const captionStyle = useEditSettings
+    ? {
+        ...captionPreset,
+        captionFontSize: editSettings.caption_font_size,
+        captionTextColor: editSettings.caption_text_color,
+        captionHighlightColor: editSettings.caption_highlight_color,
+        captionPosition: editSettings.caption_position,
+        captionBackgroundBox: editSettings.caption_background,
+        captionWordHighlight: editSettings.caption_word_highlight,
+        captionMaxWords: editSettings.caption_max_words,
+      }
+    : {
+        ...captionPreset,
+        caption_template: captionTemplate,
+      };
+
+  const captionText = segmentsToCapcutAss(renderTranscriptSegments, renderStart, renderEnd, captionStyle);
 
   const fallbackCaption = '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial Black,127,&H00FFFFFF,&H005AF421,&H00000000,&H00000000,-1,0,0,0,106,110,0,0,1,12,2,2,40,40,380,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n';
   await writeFile(srtPath, captionText || fallbackCaption);
@@ -554,8 +602,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const generatedHookText = generateHookText({
     clipTitle: bundle.clip.title ?? null,
     transcriptSegments,
-    startSec: bundle.clip.start_sec,
-    endSec: bundle.clip.end_sec,
+    startSec: renderStart,
+    endSec: renderEnd,
   });
   const hookTextEnabled = HOOK_TEXT_OVERLAY_ENABLED && bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
   const hookText = usableHookText(options?.hook_text, bundle.clip.title)
@@ -566,18 +614,22 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await renderVerticalClip({
     inputPath,
     outputPath: outPath,
-    startSec: bundle.clip.start_sec,
-    endSec: bundle.clip.end_sec,
+    startSec: renderStart,
+    endSec: renderEnd,
     srtPath,
-    captionsEnabled: options?.captions_enabled !== false,
+    captionsEnabled: useEditSettings ? editSettings.captions_enabled : options?.captions_enabled !== false,
     captionTemplate,
     captionFont,
     hookTextEnabled,
     hookText,
     motionTracking: options?.motion_tracking === true,
-    autoReframe: options?.auto_reframe !== false,
+    autoReframe: useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
     reframeMode: options?.reframe_mode ?? getFallbackReframeMode(),
     reframePreset: options?.reframe_preset ?? 'auto',
+    framingMode: useEditSettings ? editSettings.framing_mode : 'auto',
+    cropX: useEditSettings ? editSettings.crop_x : undefined,
+    cropY: useEditSettings ? editSettings.crop_y : undefined,
+    zoom: useEditSettings ? editSettings.zoom : undefined,
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
   });
@@ -590,7 +642,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
-    const clipDuration = Math.max(0.25, bundle.clip.end_sec - bundle.clip.start_sec);
+    const clipDuration = Math.max(0.25, renderEnd - renderStart);
     const posterSecond = Math.min(1.5, Math.max(0.25, clipDuration * 0.18));
     await extractVideoThumbnail(outPath, posterPath, posterSecond);
     const posterBytes = await readFile(posterPath);
@@ -605,7 +657,13 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const { error: e1 } = await supabase
     .from('exports')
-    .update({ status: 'done', output_storage_path: objectPath, error_message: null, updated_at: new Date().toISOString() })
+    .update({
+      status: 'done',
+      output_storage_path: objectPath,
+      error_message: null,
+      edit_status: useEditSettings ? 'rendered' : 'idle',
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', bundle.id);
   if (e1) throw e1;
 }
@@ -714,8 +772,9 @@ export async function POST() {
 
       const exportId = item.exportId;
       if (!exportId) throw new Error('Missing export_id in payload');
+      const isEditRerender = item.payload?.edit_rerender === true;
 
-      const completedGate = await shouldSkipExportForCompletedProject(exportId);
+      const completedGate = isEditRerender ? { skip: false, projectId: '' } : await shouldSkipExportForCompletedProject(exportId);
       if (completedGate.skip) {
         await supabase
           .from('exports')
@@ -740,13 +799,20 @@ export async function POST() {
         continue;
       }
 
-      const { data: claimedExport } = await supabase
-        .from('exports')
-        .update({ status: 'processing', updated_at: new Date().toISOString() })
-        .eq('id', exportId)
-        .eq('status', 'queued')
-        .select('id')
-        .maybeSingle();
+      const { data: claimedExport } = isEditRerender
+        ? await supabase
+            .from('exports')
+            .update({ edit_status: 'rendering', error_message: null, updated_at: new Date().toISOString() })
+            .eq('id', exportId)
+            .select('id')
+            .maybeSingle()
+        : await supabase
+            .from('exports')
+            .update({ status: 'processing', updated_at: new Date().toISOString() })
+            .eq('id', exportId)
+            .eq('status', 'queued')
+            .select('id')
+            .maybeSingle();
 
       if (!claimedExport?.id) {
         if (item.jobId) {
@@ -786,6 +852,7 @@ export async function POST() {
         auto_reframe: item.payload?.auto_reframe as boolean | undefined,
         reframe_mode: item.payload?.reframe_mode as 'off' | 'basic' | 'smart' | undefined,
         reframe_preset: item.payload?.reframe_preset as 'auto' | 'tight' | 'left' | 'center' | 'right' | undefined,
+        edit_rerender: isEditRerender,
       });
 
       if (item.jobId) {
@@ -794,10 +861,12 @@ export async function POST() {
       const projectId = await getProjectIdForExport(exportId);
       const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
       console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'completed', ...summarizeCleanup(exportCleanupLog) });
-      const terminal = await maybeFinalizeProject(projectId);
-      if (terminal) {
-        const cleanupLog = await cleanupProjectTempFiles(projectId);
-        console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+      if (!isEditRerender) {
+        const terminal = await maybeFinalizeProject(projectId);
+        if (terminal) {
+          const cleanupLog = await cleanupProjectTempFiles(projectId);
+          console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+        }
       }
       processed += 1;
     } catch (e: unknown) {
@@ -808,8 +877,9 @@ export async function POST() {
         raw_error: rawMessage,
         payload: item.payload,
       });
-      const message = normalizeRenderErrorMessage(rawMessage);
       const exportId = item.exportId;
+      const isEditRerender = item.payload?.edit_rerender === true;
+      const message = isEditRerender ? rawMessage : normalizeRenderErrorMessage(rawMessage);
 
       let currentAttempts = 1;
       if (item.jobId) {
@@ -834,14 +904,25 @@ export async function POST() {
           .eq('id', item.jobId);
 
         if (exportId) {
-          await supabase
-            .from('exports')
-            .update({
-              status: 'queued',
-              error_message: `Retrying render (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', exportId);
+          if (isEditRerender) {
+            await supabase
+              .from('exports')
+              .update({
+                edit_status: 'rendering',
+                error_message: `Retrying clip update (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', exportId);
+          } else {
+            await supabase
+              .from('exports')
+              .update({
+                status: 'queued',
+                error_message: `Retrying render (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', exportId);
+          }
         }
 
         continue;
@@ -857,29 +938,33 @@ export async function POST() {
       if (exportId) {
         await supabase
           .from('exports')
-          .update({ status: 'error', error_message: message, updated_at: new Date().toISOString() })
+          .update(isEditRerender
+            ? { edit_status: 'error', error_message: message, updated_at: new Date().toISOString() }
+            : { status: 'error', error_message: message, updated_at: new Date().toISOString() })
           .eq('id', exportId);
         const projectId = await getProjectIdForExport(exportId);
         const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
         console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'failed', ...summarizeCleanup(exportCleanupLog) });
 
-        try {
-          const refillRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/clips/export`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ project_id: projectId }),
-            cache: 'no-store',
-          });
-          const refillData = await refillRes.json().catch(() => ({}));
-          console.log('[jobs/process] refill-attempt', { project_id: projectId, export_id: exportId, refillData, status: refillRes.status });
-        } catch (refillError) {
-          console.warn('[jobs/process] refill-failed', { project_id: projectId, export_id: exportId, refillError });
-        }
+        if (!isEditRerender) {
+          try {
+            const refillRes = await fetch(`${process.env.APP_URL || 'http://127.0.0.1:3000'}/api/clips/export`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ project_id: projectId }),
+              cache: 'no-store',
+            });
+            const refillData = await refillRes.json().catch(() => ({}));
+            console.log('[jobs/process] refill-attempt', { project_id: projectId, export_id: exportId, refillData, status: refillRes.status });
+          } catch (refillError) {
+            console.warn('[jobs/process] refill-failed', { project_id: projectId, export_id: exportId, refillError });
+          }
 
-        const terminal = await maybeFinalizeProject(projectId);
-        if (terminal) {
-          const cleanupLog = await cleanupProjectTempFiles(projectId);
-          console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+          const terminal = await maybeFinalizeProject(projectId);
+          if (terminal) {
+            const cleanupLog = await cleanupProjectTempFiles(projectId);
+            console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+          }
         }
       }
     }

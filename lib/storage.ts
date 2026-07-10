@@ -139,6 +139,17 @@ export async function createExportSignedUrl(objectPath: string, expiresIn = 60 *
   return data.signedUrl;
 }
 
+export async function createRawMediaSignedUrl(objectPath: string, expiresIn = 60 * 60) {
+  if (getUploadProvider() === 'r2' && isR2Configured()) {
+    return createSignedR2GetUrl(objectPath, expiresIn);
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.storage.from(RAW_BUCKET).createSignedUrl(objectPath, expiresIn);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export async function createProjectThumbnailSignedUrl(objectPath: string, expiresIn = 60 * 60 * 24 * 7) {
   const admin = createAdminClient();
   const { data, error } = await admin.storage.from(PROJECT_THUMBNAIL_BUCKET).createSignedUrl(objectPath, expiresIn);

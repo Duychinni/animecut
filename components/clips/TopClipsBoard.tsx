@@ -220,7 +220,7 @@ function getMockCaption(title: string) {
   return { first, rest };
 }
 
-export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
+export function TopClipsBoard({ projectId, clips }: Props) {
   const router = useRouter();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
@@ -332,6 +332,10 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     setHookTextEnabled(false);
     setEditorTab('presets');
     setEditingClip(clip);
+  }
+
+  function openClipEditor(clip: ClipItem) {
+    router.push(`/dashboard/projects/${projectId}/clips/${clip.exportId}/edit`);
   }
 
   function handleFullscreen(id: string) {
@@ -524,6 +528,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         <div className="group/edit relative">
                           <button
                             type="button"
+                            onClick={() => openClipEditor(clip)}
                             className="inline-flex items-center justify-center text-white/90 transition hover:text-white"
                             aria-label="Edit clip"
                           >
@@ -647,6 +652,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             <div className="group/edit relative">
                               <button
                                 type="button"
+                                onClick={() => openClipEditor(clip)}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
                                 aria-label="Edit clip"
                               >

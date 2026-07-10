@@ -15,6 +15,11 @@ type ExportRow = {
   error_message: string | null;
   created_at: string;
   caption_preset_id: string | null;
+  clip_edit_settings?: {
+    clip_start_seconds?: number;
+    clip_end_seconds?: number;
+  } | null;
+  edit_status?: string | null;
 };
 
 type CandidateRow = {
@@ -82,7 +87,7 @@ export default async function ProjectDetailPage({
       .single(),
     supabase
       .from('exports')
-      .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id')
+      .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id, clip_edit_settings, edit_status')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(10),
@@ -126,8 +131,11 @@ export default async function ProjectDetailPage({
 
       const candidate = row.clip_candidate_id ? candidatesById.get(String(row.clip_candidate_id)) : undefined;
 
-      const startSec = candidate ? Number(candidate.start_sec) : null;
-      const endSec = candidate ? Number(candidate.end_sec) : null;
+      const editedStart = Number(row.clip_edit_settings?.clip_start_seconds);
+      const editedEnd = Number(row.clip_edit_settings?.clip_end_seconds);
+      const hasEditedWindow = Number.isFinite(editedStart) && Number.isFinite(editedEnd) && editedEnd > editedStart;
+      const startSec = hasEditedWindow ? editedStart : candidate ? Number(candidate.start_sec) : null;
+      const endSec = hasEditedWindow ? editedEnd : candidate ? Number(candidate.end_sec) : null;
       const derivedDuration = startSec != null && endSec != null ? Math.max(0, endSec - startSec) : 0;
       const durationSeconds = Number(derivedDuration ?? 0);
       const rawScore = Number(candidate?.overall_score ?? 0);

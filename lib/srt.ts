@@ -1,3 +1,5 @@
+import { getVerticalExportSize } from '@/lib/export-profile';
+
 type SegmentWord = {
   start?: number;
   end?: number;
@@ -23,6 +25,8 @@ type StyledCaptionPreset = {
   captionShadow?: string;
   captionBackgroundBox?: boolean;
   captionPosition?: string;
+  captionWordHighlight?: boolean;
+  captionMaxWords?: number;
 };
 
 function toSrtTime(sec: number) {
@@ -154,6 +158,7 @@ function resolveAssFontName(preset: StyledCaptionPreset | undefined, template: C
 }
 
 function resolveAssStyle(preset?: StyledCaptionPreset) {
+  const exportSize = getVerticalExportSize();
   const template = preset?.caption_template ?? 'capcut';
   const fontScale = template === 'minimal' ? 7.4 : template === 'capcut' ? 9.8 : 8.6;
   const fontSize = Math.round((preset?.captionFontSize ?? 11) * fontScale);
@@ -161,13 +166,13 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
   const outline = preset?.captionBackgroundBox
     ? 0
     : Math.max(template === 'capcut' ? 8 : 1, Math.round((preset?.captionStrokeWidth ?? 4) * outlineScale));
-  const marginV = preset?.captionPosition === 'middle'
-    ? 720
+  const marginV = preset?.captionPosition === 'middle' || preset?.captionPosition === 'center'
+    ? Math.round(exportSize.height * 0.375)
     : preset?.captionPosition === 'upper'
-      ? 1120
+      ? Math.round(exportSize.height * 0.583)
       : template === 'minimal'
-        ? 300
-        : 380;
+        ? Math.round(exportSize.height * 0.156)
+        : Math.round(exportSize.height * 0.198);
   const boxBackColor = preset?.captionBackgroundBox && preset?.captionTextColor?.toUpperCase() === '#111111'
     ? '&H00FFFFFF'
     : '&HCC000000';
@@ -193,7 +198,10 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
     marginV,
     scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : template === 'capcut' ? 106 : 122,
     scaleY: template === 'minimal' ? 100 : template === 'capcut' ? 110 : 108,
-    windowSize: template === 'minimal' || template === 'clean' || template === 'cinematic' ? 4 : 2,
+    windowSize: Math.max(1, Math.min(6, Math.round(preset?.captionMaxWords ?? (template === 'minimal' || template === 'clean' || template === 'cinematic' ? 4 : 2)))),
+    wordHighlight: preset?.captionWordHighlight !== false,
+    playResX: exportSize.width,
+    playResY: exportSize.height,
   };
 }
 
@@ -270,6 +278,14 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
       const windowEnd = Math.min(lineWordsAll.length, windowStart + windowSize);
       const lineWords = lineWordsAll.slice(windowStart, windowEnd);
 
+      if (!style.wordHighlight) {
+        const s = Math.max(localStart, intervals[windowStart]?.start ?? localStart);
+        const e = Math.min(localEnd, intervals[windowEnd - 1]?.end ?? localEnd);
+        const text = lineWords.join(' ');
+        if (text && e - s >= 0.05) events.push({ start: s, end: e, text });
+        continue;
+      }
+
       for (let i = windowStart; i < windowEnd; i += 1) {
         const rawS = intervals[i].start;
         const rawE = intervals[i].end;
@@ -292,7 +308,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
     }
   }
 
-  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${style.fontName},${style.fontSize},${style.primary},${style.secondary},${style.outlineColor},${style.backColor},-1,0,0,0,${style.scaleX},${style.scaleY},0,0,${style.borderStyle},${style.outline},${style.shadow},2,30,30,${style.marginV},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
+  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: ${style.playResX}\nPlayResY: ${style.playResY}\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${style.fontName},${style.fontSize},${style.primary},${style.secondary},${style.outlineColor},${style.backColor},-1,0,0,0,${style.scaleX},${style.scaleY},0,0,${style.borderStyle},${style.outline},${style.shadow},2,30,30,${style.marginV},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
 
   const body = events
     .map((e) => `Dialogue: 0,${toAssTime(e.start)},${toAssTime(e.end)},Default,,0,0,0,,${e.text}`)

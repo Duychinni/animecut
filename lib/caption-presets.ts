@@ -23,7 +23,7 @@ export const DEFAULT_CAPTION_PRESET_ID = 'opus-clean';
 export const CAPTION_PRESETS: CaptionPreset[] = [
   {
     id: DEFAULT_CAPTION_PRESET_ID,
-    name: 'Opus Pop',
+    name: 'Clean Pro',
     caption_template: 'capcut',
     caption_font: 'arial',
     captionFontFamily: 'Arial Black',
@@ -39,7 +39,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   },
   {
     id: 'viral-bold',
-    name: 'Yellow Punch',
+    name: 'Viral Bold',
     caption_template: 'bold',
     caption_font: 'montserrat',
     captionFontFamily: 'Montserrat Black',
@@ -55,7 +55,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   },
   {
     id: 'creator-glow',
-    name: 'Pink Glow',
+    name: 'Creator Glow',
     caption_template: 'viral',
     caption_font: 'poppins',
     captionFontFamily: 'Poppins ExtraBold',
@@ -71,7 +71,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   },
   {
     id: 'podcast-pro',
-    name: 'Cyan Clean',
+    name: 'Podcast',
     caption_template: 'clean',
     caption_font: 'arial',
     captionFontFamily: 'Inter ExtraBold',
@@ -135,7 +135,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   },
   {
     id: 'minimal-pro',
-    name: 'Clean White',
+    name: 'Minimal',
     caption_template: 'minimal',
     caption_font: 'arial',
     captionFontFamily: 'Inter ExtraBold',
