@@ -55,6 +55,12 @@ function getProcessingLabel(status: string) {
   return 'Processing your video';
 }
 
+function getExportPosterPath(outputPath: string | null) {
+  if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return null;
+  if (!/\.mp4$/i.test(outputPath)) return null;
+  return outputPath.replace(/\.mp4$/i, '.jpg');
+}
+
 export default async function ProjectDetailPage({
   params,
   searchParams,
@@ -98,12 +104,22 @@ export default async function ProjectDetailPage({
   const exportItems = await Promise.all(
     ((exportsRows ?? []) as ExportRow[]).map(async (row) => {
       let signedUrl: string | null = null;
+      let posterUrl: string | null = null;
       const isMockExport = Boolean(row.output_storage_path?.startsWith('mock://'));
       if (row.output_storage_path && !row.output_storage_path.startsWith('/') && !isMockExport) {
         try {
           signedUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
         } catch {
           signedUrl = null;
+        }
+
+        const posterPath = getExportPosterPath(row.output_storage_path);
+        if (posterPath) {
+          try {
+            posterUrl = await createExportSignedUrl(posterPath, 60 * 60);
+          } catch {
+            posterUrl = null;
+          }
         }
       }
 
@@ -119,6 +135,7 @@ export default async function ProjectDetailPage({
       return {
         ...row,
         signedUrl,
+        posterUrl,
         title: candidate?.title ?? 'Untitled clip',
         score,
         startSec,
@@ -167,9 +184,10 @@ export default async function ProjectDetailPage({
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
   const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
-  const hasPlayableExports = savedExportItems.length > 0;
+  const playableExportItems = filteredExportItems.filter((row) => Boolean(row.signedUrl) && (row.status === 'done' || row.status === 'queued' || row.status === 'processing'));
+  const hasPlayableExports = playableExportItems.length > 0;
   const shouldShowResults = hasPlayableExports && (activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
-  const displayExportItems = shouldShowResults ? savedExportItems : [];
+  const displayExportItems = shouldShowResults ? playableExportItems : [];
   const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || projectHasTerminalIssue || doneExports >= targetCount);
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
   const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && activeExports === 0 && doneExports >= targetCount)
@@ -219,8 +237,10 @@ export default async function ProjectDetailPage({
               status: row.status,
               errorMessage: row.error_message,
               signedUrl: row.signedUrl,
+              posterUrl: row.posterUrl,
               startSec: row.startSec,
               endSec: row.endSec,
+              reason: row.reason,
               rank: row.rank,
             }))}
           />

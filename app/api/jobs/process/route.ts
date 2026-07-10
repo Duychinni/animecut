@@ -3,9 +3,9 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractVideoThumbnail, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
-import { createExportSignedUrl, makeExportObjectPath, uploadExportObject } from '@/lib/storage';
+import { createExportSignedUrl, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
@@ -587,6 +587,21 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const bytes = await readFile(outPath);
   const objectPath = makeExportObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
   await uploadExportObject(objectPath, bytes);
+
+  try {
+    const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
+    const clipDuration = Math.max(0.25, bundle.clip.end_sec - bundle.clip.start_sec);
+    const posterSecond = Math.min(1.5, Math.max(0.25, clipDuration * 0.18));
+    await extractVideoThumbnail(outPath, posterPath, posterSecond);
+    const posterBytes = await readFile(posterPath);
+    const posterObjectPath = makeExportThumbnailObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
+    await uploadExportThumbnailObject(posterObjectPath, posterBytes);
+  } catch (thumbnailError) {
+    console.warn('[jobs/process] export-thumbnail-failed', {
+      export_id: bundle.id,
+      error: thumbnailError instanceof Error ? thumbnailError.message : 'Unknown thumbnail error',
+    });
+  }
 
   const { error: e1 } = await supabase
     .from('exports')

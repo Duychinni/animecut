@@ -15,6 +15,10 @@ export function makeExportObjectPath(userId: string, projectId: string, exportId
   return `${userId}/${projectId}/${exportId}.mp4`;
 }
 
+export function makeExportThumbnailObjectPath(userId: string, projectId: string, exportId: string) {
+  return `${userId}/${projectId}/${exportId}.jpg`;
+}
+
 export function makeProjectThumbnailObjectPath(userId: string, projectId: string) {
   return `${userId}/${projectId}/project-thumbnail.jpg`;
 }
@@ -33,6 +37,15 @@ export async function uploadExportObject(objectPath: string, bytes: Buffer) {
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
     contentType: 'video/mp4',
+  });
+  if (error) throw error;
+}
+
+export async function uploadExportThumbnailObject(objectPath: string, bytes: Buffer) {
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
+    upsert: true,
+    contentType: 'image/jpeg',
   });
   if (error) throw error;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CAPTION_PRESETS } from '@/lib/caption-presets';
 import { readJsonSafe } from '@/lib/safe-json';
@@ -13,15 +13,14 @@ type ClipItem = {
   status: string;
   errorMessage: string | null;
   signedUrl: string | null;
+  posterUrl?: string | null;
   startSec: number | null;
   endSec: number | null;
+  reason?: string | null;
   rank: number | null;
 };
 
-const CAPTION_TEMPLATE_IDS = ['opus-clean', 'viral-bold', 'creator-glow', 'podcast-pro', 'clean-box'];
-const CAPTION_TEMPLATE_OPTIONS = CAPTION_TEMPLATE_IDS
-  .map((id) => CAPTION_PRESETS.find((preset) => preset.id === id))
-  .filter((preset): preset is (typeof CAPTION_PRESETS)[number] => Boolean(preset));
+const CAPTION_TEMPLATE_OPTIONS = CAPTION_PRESETS.slice(0, 9);
 
 function getFriendlyStatus(status: string) {
   if (status === 'queued') return 'Queued';
@@ -98,6 +97,101 @@ function getClipTags(clip: ClipItem) {
 
   if (!tags.length && score >= 80) tags.push('🔥 Hook');
   return tags.slice(0, 3);
+}
+
+function addUniqueTag(tags: string[], label: string) {
+  if (!tags.includes(label)) tags.push(label);
+}
+
+function getSmartClipTags(clip: ClipItem) {
+  const title = `${clip.title} ${clip.reason ?? ''}`.toLowerCase();
+  const tags: string[] = [];
+  const score = toDisplayScore(clip.score);
+
+  if (/\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title)) addUniqueTag(tags, 'Question');
+  if (/\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)) addUniqueTag(tags, 'Strong Hook');
+  if (/\b(fight|knockout|ufc|boxing|rematch|challenge|beating|beat|loss|win)\b/i.test(title)) addUniqueTag(tags, 'Fight Talk');
+  if (/\b(crazy|wild|intense|shocking|reaction|reacts|wow|heated|explodes|energy)\b/i.test(title)) addUniqueTag(tags, 'High Energy');
+  if (/\b(funny|laugh|comedy|joke|hilarious)\b/i.test(title)) addUniqueTag(tags, 'Funny');
+  if (/\b(story|journey|moment|reveal|remember|memory|confession|truth)\b/i.test(title)) addUniqueTag(tags, 'Story');
+  if (/\b(learn|explain|tips|strategy|lesson|breakdown|because|reason)\b/i.test(title)) addUniqueTag(tags, 'Insight');
+  if (/\b(emotional|daughter|family|lost|broke|heart|honest)\b/i.test(title)) addUniqueTag(tags, 'Emotional');
+
+  if (score >= 96) addUniqueTag(tags, 'Top Pick');
+  else if (score >= 92) addUniqueTag(tags, 'High Retention');
+  else if (score >= 86) addUniqueTag(tags, 'Strong Clip');
+  else if (score >= 78) addUniqueTag(tags, 'Good Clip');
+  else addUniqueTag(tags, 'Review');
+
+  return tags.slice(0, 3);
+}
+
+function getPreviewCaptionWords(title: string) {
+  const words = title
+    .replace(/[|:]+/g, ' ')
+    .split(/\s+/)
+    .filter((word) => /^[a-z0-9'?-]+$/i.test(word))
+    .slice(0, 4)
+    .map((word) => word.replace(/[^\w'?-]/g, '').toUpperCase());
+
+  if (words.length >= 2) return { highlight: words[0], rest: words.slice(1, 3).join(' ') };
+  return { highlight: 'THE', rest: 'MOMENT' };
+}
+
+function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: 'tile' | 'reel'): CSSProperties {
+  const scale = size === 'reel' ? 2.35 : 1;
+  const stroke = Math.max(1, Math.round(preset.captionStrokeWidth * (size === 'reel' ? 0.85 : 0.45)));
+  const glowColor = preset.captionHighlightColor;
+  const shadowMap: Record<string, string> = {
+    'black-heavy': `0 ${3 * scale}px 0 #000, 0 ${5 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
+    'heavy-shadow': `0 ${3 * scale}px 0 #000, 0 ${6 * scale}px ${10 * scale}px rgba(0,0,0,.78)`,
+    'clean-shadow': `0 ${2 * scale}px ${5 * scale}px rgba(0,0,0,.78)`,
+    'subtle-shadow': `0 ${1.5 * scale}px ${4 * scale}px rgba(0,0,0,.6)`,
+    'neon-glow': `0 0 ${7 * scale}px ${glowColor}, 0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
+    'purple-glow': `0 0 ${7 * scale}px #8b5cf6, 0 0 ${12 * scale}px ${glowColor}, 0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
+  };
+
+  return {
+    color: preset.captionTextColor,
+    fontFamily: preset.captionFontFamily,
+    fontSize: `${Math.round(preset.captionFontSize * scale)}px`,
+    fontWeight: 950,
+    letterSpacing: 0,
+    lineHeight: 1,
+    textTransform: 'uppercase',
+    WebkitTextStroke: `${stroke}px ${preset.captionStrokeColor}`,
+    textShadow: shadowMap[preset.captionShadow] ?? shadowMap['black-heavy'],
+  };
+}
+
+function CaptionPreviewText({
+  preset,
+  title,
+  size = 'tile',
+}: {
+  preset: (typeof CAPTION_PRESETS)[number];
+  title: string;
+  size?: 'tile' | 'reel';
+}) {
+  const words = getPreviewCaptionWords(title);
+  const baseStyle = getPresetCaptionStyle(preset, size);
+
+  if (preset.captionBackgroundBox) {
+    return (
+      <span className="inline-block rounded-md bg-white px-2.5 py-1 shadow-[0_4px_18px_rgba(0,0,0,.35)]">
+        <span style={{ ...baseStyle, WebkitTextStroke: '0px transparent', textShadow: 'none', color: '#0b0d12' }}>
+          {words.highlight} {words.rest}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-block text-center">
+      <span style={{ ...baseStyle, color: preset.captionHighlightColor }}>{words.highlight}</span>{' '}
+      <span style={baseStyle}>{words.rest}</span>
+    </span>
+  );
 }
 
 function formatMockHook(title: string) {
@@ -246,7 +340,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       const presetData = await readJsonSafe(presetRes);
       if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
       setEditingClip(null);
-      window.location.reload();
+      void fetch('/api/jobs/process', { method: 'POST', cache: 'no-store' }).catch(() => null);
+      router.refresh();
     } catch (error) {
       console.error(error);
       window.alert(error instanceof Error ? error.message : 'Could not apply preset');
@@ -297,7 +392,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     return () => clearInterval(timer);
   }, [router, visible]);
 
-  const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0];
+  const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const showHookTextControls = false;
 
   return (
@@ -320,7 +415,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
-              const clipTags = getClipTags(clip);
+              const clipTags = getSmartClipTags(clip);
 
               return (
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
@@ -418,10 +513,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload="metadata"
+                          preload="none"
                           playsInline
                           controls={false}
                           disablePictureInPicture
+                          poster={clip.posterUrl ?? undefined}
                           className="h-full w-full bg-black object-cover [&:fullscreen]:object-contain"
                           src={clip.signedUrl}
                           onLoadedMetadata={(e) => {
@@ -653,6 +749,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                     autoPlay={!expandedPlayback?.paused}
                     playsInline
                     preload="auto"
+                    poster={expandedClip.posterUrl ?? undefined}
                     className="aspect-[9/16] h-full w-full bg-black object-cover"
                     onLoadedMetadata={(e) => {
                       if (expandedPlayback?.clipId !== expandedClip.exportId) return;
@@ -701,12 +798,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
             <div className="grid flex-1 gap-0 lg:grid-cols-[0.95fr_1.05fr]">
               <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
-                <div className="overflow-hidden rounded-[18px] border border-white/10 bg-black">
+                <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black">
                   {editingClip.signedUrl ? (
-                    <video src={editingClip.signedUrl} controls className="aspect-[9/16] w-full object-cover bg-black" />
+                    <video src={editingClip.signedUrl} poster={editingClip.posterUrl ?? undefined} controls preload="none" className="aspect-[9/16] w-full object-cover bg-black" />
                   ) : (
                     <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
                   )}
+                  <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
+                    <CaptionPreviewText preset={activePreset} title={editingClip.title} size="reel" />
+                  </div>
                 </div>
               </div>
 
@@ -731,7 +831,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                 </div>
 
                 {editorTab === 'presets' ? (
-                  <div className="grid gap-3">
+                  <div className="grid max-h-[calc(100vh-260px)] grid-cols-2 gap-3 overflow-y-auto pr-1">
                     {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
                       const active = preset.id === selectedPresetId;
                       return (
@@ -739,19 +839,19 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           key={preset.id}
                           type="button"
                           onClick={() => setSelectedPresetId(preset.id)}
-                          className={`rounded-2xl border px-4 py-4 text-left transition ${
-                            active ? 'border-white/25 bg-white/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                          className={`rounded-2xl border p-2.5 text-left transition ${
+                            active ? 'border-cyan-300/80 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{preset.name}</p>
-                              <p className="mt-1 text-xs text-white/60">{preset.captionFontFamily}</p>
+                          <div className="grid aspect-[1.22] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.45))] px-2 text-center">
+                            <CaptionPreviewText preset={preset} title={editingClip.title} />
+                          </div>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-bold text-white">{preset.name}</p>
+                              <p className="truncate text-[10px] font-semibold text-white/48">{preset.captionFontFamily}</p>
                             </div>
-                            <div className="flex gap-2">
-                              <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionTextColor }} />
-                              <span className="h-4 w-4 rounded-full border border-white/15" style={{ backgroundColor: preset.captionHighlightColor }} />
-                            </div>
+                            <span className={`h-3 w-3 shrink-0 rounded-full border ${active ? 'border-cyan-200 bg-cyan-300' : 'border-white/25 bg-white/10'}`} />
                           </div>
                         </button>
                       );
@@ -807,7 +907,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                 <div className="mt-auto pt-6">
                   <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
-                    Applying <span className="font-semibold text-white">{activePreset?.name}</span> with <span className="font-semibold text-white">{selectedReframePreset}</span> framing will re-render this MP4 and save the clip changes.
+                    Apply <span className="font-semibold text-white">{activePreset?.name}</span> to this reel and return to the project page while the updated clip saves.
                   </div>
                   <button
                     type="button"

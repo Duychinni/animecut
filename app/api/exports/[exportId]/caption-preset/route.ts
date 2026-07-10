@@ -67,7 +67,6 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
         hook_text: hookText,
         status: 'queued',
         error_message: null,
-        output_storage_path: null,
       })
       .eq('id', exportId);
 
