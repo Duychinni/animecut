@@ -149,7 +149,12 @@ async function getConfiguredShowcaseClips(exportIds: string[]): Promise<Showcase
     }),
   );
 
-  return signedClips.filter((clip): clip is ShowcaseApiClip => Boolean(clip)).slice(0, 6);
+  const clips: ShowcaseApiClip[] = [];
+  for (const clip of signedClips) {
+    if (clip) clips.push(clip);
+  }
+
+  return clips.slice(0, 6);
 }
 
 export async function GET() {
