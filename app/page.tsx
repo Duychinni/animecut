@@ -677,10 +677,13 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/90">
-              <span>⭐⭐⭐⭐⭐ Trusted by 2,000+ creators</span>
-              <span className="hidden h-1 w-1 rounded-full bg-white/25 md:inline-block" />
-              <span>Over 1,000 hours of video clipped</span>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm font-semibold text-white/95">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-[15px] text-[#FFD84D] drop-shadow-[0_0_8px_rgba(255,216,77,0.55)]">⭐⭐⭐⭐⭐</span>
+                <span>Trusted by 2,000+ creators</span>
+              </span>
+              <span className="hidden h-1 w-1 rounded-full bg-white/45 md:inline-block" />
+              <span className="text-white/90">Over 1,000 hours of video clipped</span>
             </div>
 
             {file ? <p className="mt-2 text-xs text-white/50">Selected: {file.name}</p> : null}
