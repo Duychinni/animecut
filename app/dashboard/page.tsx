@@ -43,6 +43,37 @@ type ProjectListItem = {
   worker_last_seen_at?: string | null;
   expires_at?: string | null;
   days_until_expiring?: number | null;
+  diagnostics?: ProjectDiagnostics | null;
+};
+
+type ProjectDiagnostics = {
+  message?: string | null;
+  source_type?: string | null;
+  transcript_segments?: number | null;
+  transcript_seconds?: number | null;
+  analyzed_candidates?: number | null;
+  done_exports?: number | null;
+  active_exports?: number | null;
+  failed_exports?: number | null;
+  target_exports?: number | null;
+  recovery_queued?: boolean | null;
+  render_recovery_queued?: boolean | null;
+  stale_worker?: boolean | null;
+  seconds_since_worker_heartbeat?: number | null;
+  latest_pipeline_job?: {
+    status?: string | null;
+    attempts?: number | null;
+    seconds_since_update?: number | null;
+    retry_attempt?: number | null;
+    retry_of_error?: string | null;
+  } | null;
+  recent_jobs?: Array<{
+    type?: string | null;
+    status?: string | null;
+    attempts?: number | null;
+    seconds_since_update?: number | null;
+  }> | null;
+  active_export_jobs?: number | null;
 };
 
 async function fetchProjectProgress(projectId: string) {
@@ -59,7 +90,9 @@ async function fetchProjectProgress(projectId: string) {
       pipeline_stage: typeof prData?.project?.pipeline_stage === 'string' ? prData.project.pipeline_stage : null,
       pipeline_stage_label: typeof prData?.project?.pipeline_stage_label === 'string' ? prData.project.pipeline_stage_label : null,
       pipeline_error: typeof prData?.project?.pipeline_error === 'string' ? prData.project.pipeline_error : null,
+      worker_last_seen_at: typeof prData?.project?.worker_last_seen_at === 'string' ? prData.project.worker_last_seen_at : null,
       status: typeof prData?.project?.status === 'string' ? prData.project.status : null,
+      diagnostics: prData?.diagnostics ?? null,
     };
   } catch {
     return null;
@@ -82,6 +115,11 @@ function getExpiryLabel(project: ProjectListItem) {
   const days = Number(project.days_until_expiring);
   if (!Number.isFinite(days)) return null;
   return `${Math.max(0, days)} ${days === 1 ? 'day' : 'days'} before expiring`;
+}
+
+function fmtDebugDuration(totalSec: number | null | undefined) {
+  if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return 'unknown';
+  return fmtDuration(totalSec);
 }
 
 export default function DashboardPage() {
@@ -191,7 +229,7 @@ export default function DashboardPage() {
 
       const processingIds = (baseProjects.length ? baseProjects : projects)
         .filter((p) => isActiveProject(p))
-        .slice(0, 3)
+        .slice(0, 6)
         .map((p) => p.id);
 
       const progressUpdates = await Promise.all(
@@ -407,6 +445,43 @@ export default function DashboardPage() {
     }
   }
 
+  function buildProjectDebugText(project: ProjectListItem) {
+    const d = project.diagnostics;
+    const job = d?.latest_pipeline_job;
+    const recentJobs = (d?.recent_jobs ?? [])
+      .map((item) => `${item.type || 'job'}:${item.status || 'unknown'}:${fmtDebugDuration(item.seconds_since_update)} ago:a${item.attempts ?? 0}`)
+      .join(', ');
+
+    return [
+      `Project: ${project.id}`,
+      `Title: ${project.source_title || project.title}`,
+      `Source: ${project.source_type}`,
+      `Status: ${project.status}`,
+      `Pipeline: ${project.pipeline_status || 'unknown'} / ${project.pipeline_stage || 'unknown'} / ${project.pipeline_stage_label || 'no label'}`,
+      `Progress: ${getFlooredProgress(project)}%`,
+      `Error: ${project.pipeline_error || 'none'}`,
+      `Message: ${d?.message || 'none'}`,
+      `Worker heartbeat: ${fmtDebugDuration(d?.seconds_since_worker_heartbeat)} ago`,
+      `Pipeline job: ${job?.status || 'none'}, attempts ${job?.attempts ?? 0}, updated ${fmtDebugDuration(job?.seconds_since_update)} ago`,
+      `Retry: ${job?.retry_attempt ?? 'none'} ${job?.retry_of_error || ''}`.trim(),
+      `Transcript: ${d?.transcript_segments ?? 'unknown'} segments, ${fmtDebugDuration(d?.transcript_seconds)} duration`,
+      `Candidates: ${d?.analyzed_candidates ?? 'unknown'}`,
+      `Exports: done ${d?.done_exports ?? 0}, active ${d?.active_exports ?? 0}, failed ${d?.failed_exports ?? 0}, target ${d?.target_exports ?? 'unknown'}`,
+      `Recovery: pipeline ${d?.recovery_queued ? 'yes' : 'no'}, render ${d?.render_recovery_queued ? 'yes' : 'no'}, stale ${d?.stale_worker ? 'yes' : 'no'}`,
+      `Recent jobs: ${recentJobs || 'none'}`,
+    ].join('\n');
+  }
+
+  async function copyProjectDebug(project: ProjectListItem) {
+    const debugText = buildProjectDebugText(project);
+    try {
+      await navigator.clipboard.writeText(debugText);
+      setMsg('Copied project debug details.');
+    } catch {
+      setMsg(debugText);
+    }
+  }
+
   const orderedProjects = [...recentProjects]
     .filter((p) => {
       const matchesSearch = searchQuery.trim() ? (p.source_title || p.title).toLowerCase().includes(searchQuery.trim().toLowerCase()) : true;
@@ -512,6 +587,12 @@ export default function DashboardPage() {
                 : 'Processing')
               : 'Processing');
           const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
+          const diagnostics = p.diagnostics;
+          const pipelineJob = diagnostics?.latest_pipeline_job ?? null;
+          const showDebug = Boolean(showProcessing && diagnostics);
+          const debugLine = diagnostics
+            ? `${diagnostics.message || 'Waiting for backend update'} Last worker ${fmtDebugDuration(diagnostics.seconds_since_worker_heartbeat)} ago. Job ${pipelineJob?.status || 'none'}${pipelineJob?.attempts ? ` a${pipelineJob.attempts}` : ''}.`
+            : null;
 
           const thumb = (
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black transition duration-300 group-hover:scale-[1.015] group-hover:border-[#9b6bff]/35 group-hover:shadow-[0_0_0_1px_rgba(155,107,255,0.18),0_18px_55px_rgba(102,51,153,0.24)]">
@@ -580,6 +661,23 @@ export default function DashboardPage() {
                   {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
                   {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found</p> : null}
                   {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%</p> : null}
+                  {showDebug ? (
+                    <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.035] p-2 text-[11px] leading-4 text-white/55">
+                      <p className="line-clamp-2">{debugLine}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-white/45">
+                        <span>Candidates {diagnostics?.analyzed_candidates ?? 0}</span>
+                        <span>Exports {diagnostics?.done_exports ?? 0}/{diagnostics?.target_exports ?? 0}</span>
+                        <span>Active {diagnostics?.active_exports ?? 0}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void copyProjectDebug(p)}
+                        className="mt-1 text-[11px] font-semibold text-emerald-300 transition hover:text-emerald-200"
+                      >
+                        Copy debug
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="mt-1 flex items-end justify-between gap-3">
                     <p className="text-xs text-white/50">
                       {p.source_channel_name ? `${p.source_channel_name} · ` : ''}{p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}

@@ -5,6 +5,8 @@ import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 import { generateHookText } from '@/lib/hook-text';
 
+export const maxDuration = 60;
+
 type RawCandidate = Record<string, string | number | null | undefined>;
 
 const GLOBAL_MAX_CLIP_SEC = 120;

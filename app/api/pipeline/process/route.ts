@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 
+export const maxDuration = 60;
+
 const STEP_PROGRESS: Record<string, number> = {
   queued: 0,
   downloading: 5,
@@ -16,7 +18,7 @@ const STEP_PROGRESS: Record<string, number> = {
 };
 
 const PIPELINE_MAX_ATTEMPTS = 3;
-const STALE_PIPELINE_JOB_MS = 5 * 60 * 1000;
+const STALE_PIPELINE_JOB_MS = 90 * 1000;
 
 function getInternalBaseUrls() {
   return [

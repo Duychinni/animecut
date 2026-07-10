@@ -7,7 +7,7 @@ import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
-const PIPELINE_RECOVERY_STALE_MS = 5 * 60 * 1000;
+const PIPELINE_RECOVERY_STALE_MS = 90 * 1000;
 const EXPORT_RECOVERY_STALE_MS = 4 * 60 * 1000;
 
 function parseYouTubeId(url: string): string | null {
@@ -119,6 +119,13 @@ function isRecoverablePipelineError(error: unknown, stage: string | null) {
   if (stage === 'source_blocked') return false;
   const info = getPipelineErrorInfo(error);
   return info.code !== 'youtube_source_blocked' && info.code !== 'not_enough_content';
+}
+
+function secondsSince(value: string | null | undefined, now = Date.now()) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return Math.max(0, Math.round((now - ms) / 1000));
 }
 
 async function recoverPipeline(projectId: string) {
@@ -238,6 +245,14 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     if (pErr || !project) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     if (eErr) return NextResponse.json({ error: eErr.message }, { status: 400 });
     if (cErr) return NextResponse.json({ error: cErr.message }, { status: 400 });
+
+    const admin = createAdminClient();
+    const { data: jobRows } = await admin
+      .from('jobs')
+      .select('id, type, status, attempts, created_at, updated_at, payload')
+      .eq('project_id', projectId)
+      .order('updated_at', { ascending: false })
+      .limit(8);
 
     const rows = exportsRows ?? [];
     const doneExports = rows.filter((r) => r.status === 'done').length;
@@ -420,6 +435,27 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
           : storedPipelineStage === 'uploading_outputs'
             ? 'Finalizing reels'
             : storedPipelineStageLabel;
+    const pipelineJobs = (jobRows ?? []).filter((row) => row.type === 'pipeline');
+    const exportJobs = (jobRows ?? []).filter((row) => row.type === 'export');
+    const latestPipelineJob = pipelineJobs[0] ?? null;
+    const latestPipelinePayload = latestPipelineJob?.payload && typeof latestPipelineJob.payload === 'object'
+      ? latestPipelineJob.payload as Record<string, unknown>
+      : null;
+    const secondsSinceHeartbeat = secondsSince(lastSeenRaw, now);
+    const secondsSincePipelineJobUpdate = latestPipelineJob ? secondsSince(latestPipelineJob.updated_at as string | null, now) : null;
+    const diagnosticMessage = isReallyCompleted
+      ? 'Project has completed exports.'
+      : recoveryQueued
+        ? 'Pipeline job was stale and has been requeued by the progress check.'
+      : renderRecoveryQueued
+        ? 'A stale render export was requeued by the progress check.'
+      : staleWorker
+        ? 'Worker heartbeat expired while this project was processing.'
+      : analyzedCandidates === 0 && hasTranscript && pipelineStage === 'finding_hooks'
+        ? 'Transcript exists, but no clip candidates have been saved yet. The analysis step is still running or was interrupted.'
+      : activeExports > 0
+        ? 'Clip exports are queued or rendering.'
+      : 'No obvious stall detected from saved progress state.';
 
     return NextResponse.json({
       ok: true,
@@ -446,6 +482,39 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         target_exports: targetCount,
         elapsed_seconds: elapsedSeconds,
         eta_seconds: etaSeconds,
+      },
+      diagnostics: {
+        message: diagnosticMessage,
+        source_type: project.source_type,
+        transcript_segments: transcriptSegments.length,
+        transcript_seconds: totalSeconds,
+        analyzed_candidates: analyzedCandidates,
+        done_exports: doneExports,
+        active_exports: activeExports,
+        failed_exports: failedExports,
+        target_exports: targetCount,
+        recovery_queued: recoveryQueued,
+        render_recovery_queued: renderRecoveryQueued,
+        stale_worker: staleWorker,
+        seconds_since_worker_heartbeat: secondsSinceHeartbeat,
+        latest_pipeline_job: latestPipelineJob ? {
+          status: latestPipelineJob.status,
+          attempts: Number(latestPipelineJob.attempts ?? 0),
+          seconds_since_update: secondsSincePipelineJobUpdate,
+          created_at: latestPipelineJob.created_at,
+          updated_at: latestPipelineJob.updated_at,
+          retry_attempt: Number(latestPipelinePayload?.retry_attempt ?? 0) || null,
+          retry_of_error: typeof latestPipelinePayload?.retry_of_error === 'string'
+            ? String(latestPipelinePayload.retry_of_error)
+            : null,
+        } : null,
+        recent_jobs: (jobRows ?? []).slice(0, 5).map((job) => ({
+          type: job.type,
+          status: job.status,
+          attempts: Number(job.attempts ?? 0),
+          seconds_since_update: secondsSince(job.updated_at as string | null, now),
+        })),
+        active_export_jobs: exportJobs.filter((job) => job.status === 'queued' || job.status === 'processing').length,
       },
     });
   } catch (error: unknown) {

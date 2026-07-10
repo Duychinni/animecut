@@ -5,8 +5,8 @@ import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'local-analysis-disabled-key' });
 
-const OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS ?? 45000);
-const OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS ?? 90000);
+const OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS ?? 12000);
+const OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS ?? 25000);
 
 type AnalysisResponse = {
   output_text: string;
