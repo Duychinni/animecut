@@ -307,29 +307,41 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
+              const clipTags = getClipTags(clip);
 
               return (
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
                   <div className="min-h-[78px] px-0.5 pb-1.5">
                     <p className="line-clamp-3 min-h-[52px] text-[15px] font-extrabold leading-[1.15rem] text-white">{clip.title}</p>
 
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {getClipTags(clip).map((tag) => (
-                        <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="mx-auto mt-2 flex w-full max-w-[230px] items-center justify-between gap-2 px-1">
-                      <div className="rounded-md border border-white/10 bg-white/[0.05] px-2.5 py-1 shadow-[0_5px_16px_rgba(0,0,0,0.25)]">
-                        <span className="text-[17px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>{displayScore}</span>
+                    <div className="mx-auto mt-2 flex w-full max-w-[230px] items-center justify-between gap-3 px-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        {clipTags.length ? (
+                          <>
+                            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
+                              {clipTags[0]}
+                            </span>
+                            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[12px] font-black leading-none" style={{ color: getScoreColor(clip.score) }}>
+                              {displayScore}
+                            </span>
+                            {clipTags.slice(1).map((tag) => (
+                              <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
+                                {tag}
+                              </span>
+                            ))}
+                          </>
+                        ) : (
+                          <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[12px] font-black leading-none" style={{ color: getScoreColor(clip.score) }}>
+                            {displayScore}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-2 py-1 text-white shadow-[0_5px_18px_rgba(0,0,0,0.25)]">
+
+                      <div className="flex shrink-0 items-center gap-3 text-white">
                         <div className="group/edit relative">
                           <button
                             type="button"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
+                            className="inline-flex items-center justify-center text-white/90 transition hover:text-white"
                             aria-label="Edit clip"
                           >
                             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -345,7 +357,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         <div className="group/captions relative">
                           <button
                             type="button"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
+                            className="inline-flex items-center justify-center text-white/90 transition hover:text-white"
                             aria-label="Captions"
                           >
                             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -367,7 +379,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                               type="button"
                               onClick={() => handleDownload(clip)}
                               disabled={downloadingId === clip.exportId}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex items-center justify-center text-white/90 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                               aria-label="Download clip"
                             >
                               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
