@@ -20,6 +20,7 @@ type StyledCaptionPreset = {
   captionHighlightColor?: string;
   captionStrokeColor?: string;
   captionStrokeWidth?: number;
+  captionShadow?: string;
   captionBackgroundBox?: boolean;
   captionPosition?: string;
 };
@@ -157,7 +158,9 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
   const fontScale = template === 'minimal' ? 7.4 : template === 'capcut' ? 9.8 : 8.6;
   const fontSize = Math.round((preset?.captionFontSize ?? 11) * fontScale);
   const outlineScale = template === 'minimal' ? 1 : template === 'capcut' ? 1.7 : 1;
-  const outline = Math.max(template === 'capcut' ? 8 : 1, Math.round((preset?.captionStrokeWidth ?? 4) * outlineScale));
+  const outline = preset?.captionBackgroundBox
+    ? 0
+    : Math.max(template === 'capcut' ? 8 : 1, Math.round((preset?.captionStrokeWidth ?? 4) * outlineScale));
   const marginV = preset?.captionPosition === 'middle'
     ? 720
     : preset?.captionPosition === 'upper'
@@ -165,6 +168,16 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
       : template === 'minimal'
         ? 300
         : 380;
+  const boxBackColor = preset?.captionBackgroundBox && preset?.captionTextColor?.toUpperCase() === '#111111'
+    ? '&H00FFFFFF'
+    : '&HCC000000';
+  const shadow =
+    preset?.captionShadow === 'subtle-shadow' ? 1 :
+    preset?.captionShadow === 'clean-shadow' ? 1 :
+    preset?.captionShadow === 'bubble-shadow' ? 1 :
+    preset?.captionShadow ? 2 :
+    template === 'capcut' ? 2 :
+    0;
 
   return {
     template,
@@ -174,9 +187,9 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
     secondary: hexToAssColor(preset?.captionHighlightColor, '#21F45A'),
     outlineColor: hexToAssColor(preset?.captionStrokeColor, '#000000'),
     outline,
-    shadow: template === 'capcut' ? 2 : 0,
+    shadow,
     borderStyle: preset?.captionBackgroundBox ? 3 : 1,
-    backColor: preset?.captionBackgroundBox ? '&HCC000000' : '&H00000000',
+    backColor: preset?.captionBackgroundBox ? boxBackColor : '&H00000000',
     marginV,
     scaleX: template === 'minimal' ? 100 : template === 'clean' ? 106 : template === 'capcut' ? 106 : 122,
     scaleY: template === 'minimal' ? 100 : template === 'capcut' ? 110 : 108,

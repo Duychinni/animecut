@@ -14,6 +14,7 @@ type ExportRow = {
   output_storage_path: string | null;
   error_message: string | null;
   created_at: string;
+  caption_preset_id: string | null;
 };
 
 type CandidateRow = {
@@ -81,7 +82,7 @@ export default async function ProjectDetailPage({
       .single(),
     supabase
       .from('exports')
-      .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at')
+      .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(10),
@@ -242,6 +243,7 @@ export default async function ProjectDetailPage({
               endSec: row.endSec,
               reason: row.reason,
               rank: row.rank,
+              captionPresetId: row.caption_preset_id,
             }))}
           />
         ) : showProcessingHero ? (

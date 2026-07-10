@@ -160,6 +160,15 @@ CANDIDATE GENERATION RULES:
 - Avoid transcript overlap between candidates. If two candidates share the same setup, story beat, or payoff, keep only the stronger one.
 - Prefer unique hooks from different parts of the source over multiple clips from the same conversation section.
 
+REEL TITLE RULES:
+- The "title" appears above each reel in the project page.
+- Do not use the first words of the transcript as the title.
+- Summarize the subject and payoff like a strong short-form title.
+- Make it specific, human-readable, and grounded in the clip.
+- Use 5-12 words in title case or sentence case.
+- Avoid invented drama, hashtags, emojis, quotation marks, and all-caps.
+- Good examples: "Steve-O Challenges The Flat Earth Argument", "Why This Rematch Still Matters", "The Interview Moment That Changed The Story".
+
 REEL HOOK TEXT RULES:
 - Write a separate "hook_text" for the white title card that appears on the reel.
 - Choose the hook_text from the transcript window: a short spoken phrase, lightly trimmed spoken phrase, or question that captures the viral moment.

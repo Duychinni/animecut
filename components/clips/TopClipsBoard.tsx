@@ -18,9 +18,11 @@ type ClipItem = {
   endSec: number | null;
   reason?: string | null;
   rank: number | null;
+  captionPresetId?: string | null;
 };
 
 const CAPTION_TEMPLATE_OPTIONS = CAPTION_PRESETS.slice(0, 9);
+const CAPTION_STYLE_SAMPLE = 'The quick hook';
 
 function getFriendlyStatus(status: string) {
   if (status === 'queued') return 'Queued';
@@ -105,25 +107,22 @@ function addUniqueTag(tags: string[], label: string) {
 
 function getSmartClipTags(clip: ClipItem) {
   const title = `${clip.title} ${clip.reason ?? ''}`.toLowerCase();
-  const tags: string[] = [];
   const score = toDisplayScore(clip.score);
 
-  if (/\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title)) addUniqueTag(tags, 'Question');
-  if (/\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)) addUniqueTag(tags, 'Strong Hook');
-  if (/\b(fight|knockout|ufc|boxing|rematch|challenge|beating|beat|loss|win)\b/i.test(title)) addUniqueTag(tags, 'Fight Talk');
-  if (/\b(crazy|wild|intense|shocking|reaction|reacts|wow|heated|explodes|energy)\b/i.test(title)) addUniqueTag(tags, 'High Energy');
-  if (/\b(funny|laugh|comedy|joke|hilarious)\b/i.test(title)) addUniqueTag(tags, 'Funny');
-  if (/\b(story|journey|moment|reveal|remember|memory|confession|truth)\b/i.test(title)) addUniqueTag(tags, 'Story');
-  if (/\b(learn|explain|tips|strategy|lesson|breakdown|because|reason)\b/i.test(title)) addUniqueTag(tags, 'Insight');
-  if (/\b(emotional|daughter|family|lost|broke|heart|honest)\b/i.test(title)) addUniqueTag(tags, 'Emotional');
+  if (/\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title)) return ['❓ Question'];
+  if (/\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)) return ['⚡ Strong Hook'];
+  if (/\b(crazy|wild|intense|shocking|reaction|reacts|wow|heated|explodes|energy)\b/i.test(title)) return ['⚡ High Energy'];
+  if (/\b(fight|knockout|ufc|boxing|rematch|challenge|beating|beat|loss|win)\b/i.test(title)) return ['🥊 Fight Talk'];
+  if (/\b(funny|laugh|comedy|joke|hilarious)\b/i.test(title)) return ['😂 Funny'];
+  if (/\b(emotional|daughter|family|lost|broke|heart|honest)\b/i.test(title)) return ['❤️ Emotional'];
+  if (/\b(story|journey|moment|reveal|remember|memory|confession|truth)\b/i.test(title)) return ['🎬 Story'];
+  if (/\b(learn|explain|tips|strategy|lesson|breakdown|because|reason)\b/i.test(title)) return ['💡 Insight'];
 
-  if (score >= 96) addUniqueTag(tags, 'Top Pick');
-  else if (score >= 92) addUniqueTag(tags, 'High Retention');
-  else if (score >= 86) addUniqueTag(tags, 'Strong Clip');
-  else if (score >= 78) addUniqueTag(tags, 'Good Clip');
-  else addUniqueTag(tags, 'Review');
-
-  return tags.slice(0, 3);
+  if (score >= 96) return ['⭐ Top Pick'];
+  if (score >= 92) return ['📈 High Retention'];
+  if (score >= 86) return ['✅ Strong Clip'];
+  if (score >= 78) return ['👍 Good Clip'];
+  return ['🔎 Review'];
 }
 
 function getPreviewCaptionWords(title: string) {
@@ -139,8 +138,8 @@ function getPreviewCaptionWords(title: string) {
 }
 
 function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: 'tile' | 'reel'): CSSProperties {
-  const scale = size === 'reel' ? 2.35 : 1;
-  const stroke = Math.max(1, Math.round(preset.captionStrokeWidth * (size === 'reel' ? 0.85 : 0.45)));
+  const scale = size === 'reel' ? 2.25 : 1.65;
+  const stroke = Math.max(0, Math.round(preset.captionStrokeWidth * (size === 'reel' ? 0.78 : 0.42)));
   const glowColor = preset.captionHighlightColor;
   const shadowMap: Record<string, string> = {
     'black-heavy': `0 ${3 * scale}px 0 #000, 0 ${5 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
@@ -149,6 +148,10 @@ function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: '
     'subtle-shadow': `0 ${1.5 * scale}px ${4 * scale}px rgba(0,0,0,.6)`,
     'neon-glow': `0 0 ${7 * scale}px ${glowColor}, 0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
     'purple-glow': `0 0 ${7 * scale}px #8b5cf6, 0 0 ${12 * scale}px ${glowColor}, 0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
+    'yellow-glow': `0 ${3 * scale}px 0 #000, 0 0 ${7 * scale}px rgba(250,204,21,.75), 0 ${5 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
+    'soft-glow': `0 0 ${5 * scale}px ${glowColor}, 0 ${3 * scale}px ${8 * scale}px rgba(0,0,0,.8)`,
+    'red-pop': `0 ${3 * scale}px 0 #000, ${2 * scale}px ${4 * scale}px 0 rgba(255,59,48,.7), 0 ${6 * scale}px ${9 * scale}px rgba(0,0,0,.85)`,
+    'bubble-shadow': `0 ${2 * scale}px ${6 * scale}px rgba(0,0,0,.3)`,
   };
 
   return {
@@ -159,7 +162,7 @@ function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: '
     letterSpacing: 0,
     lineHeight: 1,
     textTransform: 'uppercase',
-    WebkitTextStroke: `${stroke}px ${preset.captionStrokeColor}`,
+    WebkitTextStroke: stroke > 0 ? `${stroke}px ${preset.captionStrokeColor}` : '0px transparent',
     textShadow: shadowMap[preset.captionShadow] ?? shadowMap['black-heavy'],
   };
 }
@@ -226,6 +229,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [expandedPlayback, setExpandedPlayback] = useState<ExpandedPlayback | null>(null);
   const renderKickInFlightRef = useRef(false);
+  const playRequestsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
@@ -239,16 +243,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
         ...patch,
       },
     }));
-  }
-
-  function togglePlay(id: string) {
-    const video = videoRefs.current[id];
-    if (!video) return;
-    if (video.paused) {
-      void video.play();
-    } else {
-      video.pause();
-    }
   }
 
   function handleSeek(id: string, value: number) {
@@ -269,13 +263,67 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   function pauseOtherVideos(activeId: string) {
     for (const [id, video] of Object.entries(videoRefs.current)) {
       if (!video || id === activeId) continue;
+      playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
       video.pause();
       updatePlayback(id, { paused: true });
     }
   }
 
+  function primeVideo(id: string, preload: 'metadata' | 'auto' = 'metadata') {
+    const video = videoRefs.current[id];
+    if (!video) return;
+    if (video.preload !== preload) {
+      video.preload = preload;
+    }
+    if (video.readyState === 0) {
+      video.load();
+    }
+  }
+
+  function isInterruptedPlayError(error: unknown) {
+    const name = error instanceof Error ? error.name : '';
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    return name === 'AbortError' || /play\(\) request was interrupted/i.test(message);
+  }
+
+  async function playVideo(id: string) {
+    const video = videoRefs.current[id];
+    if (!video || !video.paused) return;
+
+    const requestId = (playRequestsRef.current[id] ?? 0) + 1;
+    playRequestsRef.current[id] = requestId;
+    primeVideo(id, 'auto');
+    pauseOtherVideos(id);
+
+    try {
+      await video.play();
+      if (playRequestsRef.current[id] === requestId) {
+        updatePlayback(id, { paused: false });
+      }
+    } catch (error) {
+      updatePlayback(id, { paused: video.paused });
+      if (!isInterruptedPlayError(error)) {
+        console.warn('[clips] video play failed', error);
+      }
+    }
+  }
+
+  function togglePlay(id: string) {
+    const video = videoRefs.current[id];
+    if (!video) return;
+
+    if (video.paused) {
+      void playVideo(id);
+      return;
+    }
+
+    playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
+    video.pause();
+    updatePlayback(id, { paused: true });
+  }
+
   function openCaptionTemplates(clip: ClipItem) {
-    setSelectedPresetId(CAPTION_TEMPLATE_OPTIONS[0]?.id ?? CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+    setSelectedPresetId(clip.captionPresetId ?? CAPTION_TEMPLATE_OPTIONS[0]?.id ?? CAPTION_PRESETS[0]?.id ?? 'viral-bold');
     setSelectedReframePreset('auto');
     setHookTextEnabled(false);
     setEditorTab('presets');
@@ -363,6 +411,19 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [expandedClipId]);
 
+  useEffect(() => {
+    if (!editingClip) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setEditingClip(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [editingClip]);
+
   const visible = useMemo(() => {
     return [...clips].sort((a, b) => b.score - a.score);
   }, [clips]);
@@ -395,6 +456,12 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const showHookTextControls = false;
 
+  useEffect(() => {
+    for (const clip of visible.slice(0, 6)) {
+      if (clip.signedUrl) primeVideo(clip.exportId, 'metadata');
+    }
+  }, [visible]);
+
   return (
     <>
       <section className="mt-6 space-y-3">
@@ -416,6 +483,10 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
               const clipTags = getSmartClipTags(clip);
+              const pendingCaptionPreset =
+                clip.signedUrl && clip.status !== 'done'
+                  ? CAPTION_PRESETS.find((preset) => preset.id === clip.captionPresetId) ?? CAPTION_PRESETS[0]
+                  : null;
 
               return (
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
@@ -508,12 +579,17 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                   {clip.signedUrl ? (
                     <div className="flex justify-center bg-transparent px-1.5">
-                      <div data-clip-frame="true" className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0">
+                      <div
+                        data-clip-frame="true"
+                        onMouseEnter={() => primeVideo(clip.exportId, 'auto')}
+                        onFocus={() => primeVideo(clip.exportId, 'auto')}
+                        className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0"
+                      >
                         <video
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload="none"
+                          preload="metadata"
                           playsInline
                           controls={false}
                           disablePictureInPicture
@@ -549,6 +625,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         >
                           Your browser does not support the video tag.
                         </video>
+
+                        {pendingCaptionPreset ? (
+                          <>
+                            <div className="pointer-events-none absolute inset-x-0 bottom-[10%] h-[24%] bg-gradient-to-t from-black/90 via-black/82 to-transparent backdrop-blur-[1.5px]" />
+                            <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
+                              <CaptionPreviewText preset={pendingCaptionPreset} title={clip.title} size="reel" />
+                            </div>
+                          </>
+                        ) : null}
 
                         <div className="hidden">
                           <div className="rounded-md border border-black/35 bg-black/54 px-2.5 py-1 text-[18px] font-black leading-none tracking-tight shadow-[0_5px_16px_rgba(0,0,0,0.35)] backdrop-blur-sm" style={{ color: getScoreColor(clip.score) }}>
@@ -746,7 +831,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   <video
                     src={expandedClip.signedUrl}
                     controls
-                    autoPlay={!expandedPlayback?.paused}
                     playsInline
                     preload="auto"
                     poster={expandedClip.posterUrl ?? undefined}
@@ -800,10 +884,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
                 <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black">
                   {editingClip.signedUrl ? (
-                    <video src={editingClip.signedUrl} poster={editingClip.posterUrl ?? undefined} controls preload="none" className="aspect-[9/16] w-full object-cover bg-black" />
+                    <video src={editingClip.signedUrl} poster={editingClip.posterUrl ?? undefined} controls preload="metadata" className="aspect-[9/16] w-full object-cover bg-black" />
                   ) : (
                     <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
                   )}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-[10%] h-[24%] bg-gradient-to-t from-black/90 via-black/82 to-transparent backdrop-blur-[1.5px]" />
                   <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
                     <CaptionPreviewText preset={activePreset} title={editingClip.title} size="reel" />
                   </div>
@@ -843,8 +928,8 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             active ? 'border-cyan-300/80 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
                           }`}
                         >
-                          <div className="grid aspect-[1.22] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.45))] px-2 text-center">
-                            <CaptionPreviewText preset={preset} title={editingClip.title} />
+                          <div className="grid aspect-[1.22] place-items-center overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,.13),rgba(255,255,255,.035)_42%,rgba(0,0,0,.55))] px-2 text-center">
+                            <CaptionPreviewText preset={preset} title={CAPTION_STYLE_SAMPLE} />
                           </div>
                           <div className="mt-2 flex items-center justify-between gap-2">
                             <div className="min-w-0">

@@ -46,8 +46,91 @@ function phraseFromText(text: string, maxWords = 7, maxChars = 48) {
   return phrase ? phrase[0].toUpperCase() + phrase.slice(1) : '';
 }
 
+const TITLE_STOPWORDS = new Set([
+  'about',
+  'actually',
+  'again',
+  'because',
+  'before',
+  'being',
+  'could',
+  'every',
+  'from',
+  'going',
+  'gonna',
+  'have',
+  'here',
+  'just',
+  'know',
+  'like',
+  'look',
+  'maybe',
+  'really',
+  'right',
+  'said',
+  'should',
+  'something',
+  'that',
+  'their',
+  'there',
+  'thing',
+  'think',
+  'this',
+  'those',
+  'through',
+  'want',
+  'what',
+  'when',
+  'where',
+  'which',
+  'with',
+  'would',
+  'yeah',
+  'your',
+]);
+
+function titleCasePhrase(text: string) {
+  return cleanText(text)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function keywordTitle(text: string, index: number) {
+  const cleaned = cleanText(text);
+  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(cleaned)) return 'Flat Earth Debate Moment';
+  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent)\b/i.test(cleaned)) return 'Fight Talk Turning Point';
+  if (/\b(song|music|producer|album|record|studio)\b/i.test(cleaned)) return 'Music Story Breakthrough';
+  if (/\b(podcast|interview|question|answer)\b/i.test(cleaned)) return 'Interview Moment That Stands Out';
+  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(cleaned)) return 'The Truth Behind The Moment';
+
+  const words = cleaned
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s-]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 3 && !TITLE_STOPWORDS.has(word));
+  const counts = new Map<string, number>();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  const keywords = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 3)
+    .map(([word]) => word);
+
+  if (keywords.length >= 2) return `${titleCasePhrase(keywords.join(' '))} Moment`;
+  return `Standout Clip ${index + 1}`;
+}
+
 function titleFromTranscript(text: string, index: number) {
-  return phraseFromText(text) || `Transcript moment ${index + 1}`;
+  const cleaned = cleanText(text);
+  const question = cleaned.match(/\b(why|what|how|who|when|where|can|did|does|is|are)\b[^.!?]{12,70}[?!]?/i)?.[0];
+  if (question) {
+    const phrase = phraseFromText(question, 8, 70);
+    if (phrase) return titleCasePhrase(phrase);
+  }
+
+  return keywordTitle(cleaned, index);
 }
 
 function hookTextFromTranscript(text: string, fallback: string) {

@@ -254,6 +254,111 @@ function normalizeTitle(t: string) {
     .trim();
 }
 
+const TITLE_STOPWORDS = new Set([
+  'about',
+  'actually',
+  'again',
+  'because',
+  'before',
+  'being',
+  'could',
+  'every',
+  'from',
+  'going',
+  'gonna',
+  'have',
+  'here',
+  'just',
+  'know',
+  'like',
+  'look',
+  'maybe',
+  'really',
+  'right',
+  'said',
+  'should',
+  'something',
+  'that',
+  'their',
+  'there',
+  'thing',
+  'think',
+  'this',
+  'those',
+  'through',
+  'want',
+  'what',
+  'when',
+  'where',
+  'which',
+  'with',
+  'would',
+  'yeah',
+  'your',
+]);
+
+function normalizeDisplayTitle(raw: unknown) {
+  return String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^["'\-:\s]+/, '')
+    .replace(/["']+$/g, '')
+    .trim();
+}
+
+function titleCasePhrase(text: string) {
+  return normalizeDisplayTitle(text)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function looksLikeTranscriptTitle(title: string, openingLine: string) {
+  const normalizedTitle = normalizeTitle(title);
+  const normalizedOpening = normalizeTitle(openingLine);
+  if (!normalizedTitle) return true;
+  if (normalizedTitle.split(/\s+/).length > 12) return true;
+  if (/^(and|but|so|yeah|well|like|you know|i mean)\b/i.test(title.trim())) return true;
+  if (normalizedOpening && normalizedOpening.startsWith(normalizedTitle)) return true;
+  if (normalizedTitle.length > 14 && normalizedOpening.includes(normalizedTitle)) return true;
+  return false;
+}
+
+function keywordDisplayTitle(openingLine: string, closingLine: string, reason: unknown, index: number) {
+  const source = normalizeDisplayTitle(`${openingLine} ${closingLine} ${String(reason ?? '')}`);
+  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(source)) return 'Flat Earth Debate Moment';
+  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent|challenge)\b/i.test(source)) return 'Fight Talk Turning Point';
+  if (/\b(song|music|producer|album|record|studio)\b/i.test(source)) return 'Music Story Breakthrough';
+  if (/\b(podcast|interview|question|answer)\b/i.test(source)) return 'Interview Moment That Stands Out';
+  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(source)) return 'The Truth Behind The Moment';
+  if (/\b(funny|laugh|joke|hilarious)\b/i.test(source)) return 'Funny Moment With A Payoff';
+  if (/\b(emotional|daughter|family|memory|lost|honest)\b/i.test(source)) return 'Honest Story That Hits';
+
+  const words = source
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s-]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 3 && !TITLE_STOPWORDS.has(word));
+  const counts = new Map<string, number>();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  const keywords = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 3)
+    .map(([word]) => word);
+
+  if (keywords.length >= 2) return `${titleCasePhrase(keywords.join(' '))} Moment`;
+  return `Standout Clip ${index + 1}`;
+}
+
+function buildDisplayTitle(rawTitle: unknown, openingLine: string, closingLine: string, reason: unknown, index: number) {
+  const title = normalizeDisplayTitle(rawTitle);
+  if (title && !looksLikeTranscriptTitle(title, openingLine)) {
+    return title.length > 82 ? `${title.slice(0, 79).trim()}...` : title;
+  }
+  return keywordDisplayTitle(openingLine, closingLine, reason, index);
+}
+
 function normalizeLooseText(t: string) {
   return t
     .toLowerCase()
@@ -600,6 +705,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
         const openingLine = openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.opening_line ?? '');
         const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.closing_line ?? '');
+        const displayTitle = buildDisplayTitle(c.title, openingLine, closingLine, c.reason_selected ?? c.reason, idx);
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
         const cleanEnding = !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
@@ -646,10 +752,10 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           start_sec: cleaned.start_sec,
           end_sec: cleaned.end_sec,
           duration_seconds: Number(duration.toFixed(2)),
-          title: String(c.title ?? `Clip ${idx + 1}`),
+          title: displayTitle,
           hook_text: resolveCandidateHookText({
             rawHookText: c.hook_text,
-            title: c.title ?? `Clip ${idx + 1}`,
+            title: displayTitle,
             openingLine,
             segments,
             startSec: cleaned.start_sec,

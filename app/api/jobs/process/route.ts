@@ -533,9 +533,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await mkdir(exportDir, { recursive: true });
   const outPath = path.join(exportDir, `${bundle.id}.mp4`);
 
-  const captionPreset = getCaptionPresetById(DEFAULT_CAPTION_PRESET_ID);
-  const captionTemplate: CaptionTemplate = 'capcut';
-  const captionFont: CaptionFont = 'arial';
+  const captionPreset = getCaptionPresetById(options?.caption_preset_id ?? bundle.caption_preset_id ?? DEFAULT_CAPTION_PRESET_ID);
+  const captionTemplate: CaptionTemplate = options?.caption_template ?? captionPreset.caption_template;
+  const captionFont: CaptionFont = options?.caption_font ?? captionPreset.caption_font;
   const srtPath = path.join(exportDir, `${bundle.id}.ass`);
   const transcriptSegments = bundle.transcript?.segments_json ?? [];
 
@@ -839,7 +839,6 @@ export async function POST() {
             .update({
               status: 'queued',
               error_message: `Retrying render (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
-              output_storage_path: null,
               updated_at: new Date().toISOString(),
             })
             .eq('id', exportId);
