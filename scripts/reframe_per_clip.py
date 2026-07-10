@@ -115,7 +115,7 @@ def main():
     crop_h = int(source_h)
 
     duration = max(0.01, end_sec - start_sec)
-    sample_count = 10
+    sample_count = min(42, max(12, int(math.ceil(duration * 1.15))))
     sample_times = [start_sec + (duration * i / max(1, sample_count - 1)) for i in range(sample_count)]
 
     mp_face = mp.solutions.face_detection
@@ -123,6 +123,7 @@ def main():
     body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_upperbody.xml')
 
     centers_x = []
+    points = []
     detected_faces = []
     first_debug_frame = None
     first_box = None
@@ -184,8 +185,35 @@ def main():
         else:
             chosen_center_y = source_h / 2.0
 
+        if selected_box is not None:
+            subject_w = selected_box[2]
+            subject_h = selected_box[3]
+            mode = 'face'
+            framing = 'single'
+            normalized_x = (chosen_center_x / max(source_w, 1.0)) * 0.82 + 0.5 * 0.18
+            face_top = selected_box[1] / max(source_h, 1.0)
+            normalized_y = face_top + 0.08
+        elif motion_box is not None:
+            subject_w = motion_box[2]
+            subject_h = motion_box[3]
+            mode = 'motion'
+            framing = 'single'
+            normalized_x = chosen_center_x / max(source_w, 1.0)
+            normalized_y = chosen_center_y / max(source_h, 1.0)
+        else:
+            subject_w = crop_w
+            subject_h = crop_h
+            mode = 'fallback'
+            framing = 'single'
+            normalized_x = 0.5
+            normalized_y = 0.42
+
+        normalized_x = clamp(normalized_x, 0.0, 1.0)
+        normalized_y = clamp(normalized_y, 0.0, 1.0)
+        rel_t = round(sample_t - start_sec, 3)
+
         centers_x.append({
-            'timestamp': round(sample_t - start_sec, 3),
+            'timestamp': rel_t,
             'detected_face': None if selected_box is None else {
                 'x': selected_box[0],
                 'y': selected_box[1],
@@ -201,6 +229,17 @@ def main():
             'chosen_center_x': chosen_center_x,
             'chosen_center_y': chosen_center_y,
             'fallback_used': fallback_used,
+        })
+        points.append({
+            't': rel_t,
+            'cx': chosen_center_x,
+            'cy': chosen_center_y,
+            'nx': normalized_x,
+            'ny': normalized_y,
+            'w': subject_w,
+            'h': subject_h,
+            'framing': framing,
+            'mode': mode,
         })
 
         if first_debug_frame is None:
@@ -238,7 +277,7 @@ def main():
 
     result = {
         'ok': True,
-        'mode': 'split_stack' if split_stack else 'per_clip',
+        'mode': 'split_stack' if split_stack else 'timeline',
         'source_w': source_w,
         'source_h': source_h,
         'crop_w': crop_w,
@@ -248,6 +287,16 @@ def main():
         'fallback_used': fallback_used,
         'motion_enabled': True,
         'samples': centers_x,
+        'points': points,
+        'meta': {
+            'points': len(points),
+            'sample_count': sample_count,
+            'average_face_center': {
+                'x': clamp(avg_center_x / max(source_w, 1.0), 0.0, 1.0),
+                'y': 0.42,
+            },
+            'fallback_used': fallback_used,
+        },
         'detected_faces': detected_faces,
         'ffmpeg_crop': f'crop={crop_w}:{crop_h}:{int(round(crop_x))}:0,scale=1080:1920',
     }

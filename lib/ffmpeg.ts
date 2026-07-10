@@ -588,17 +588,13 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     const xExprRaw = buildTimelineExpr(
       stabilized,
       (p) => {
-        const faceWidthNorm = p.w && Number.isFinite(p.w) ? p.w / 1920 : 0;
         const baseBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
         const presetBias = preset === 'left' ? 0.38 : preset === 'right' ? 0.62 : preset === 'center' ? 0.5 : baseBias;
         const pairBias = preset === 'center' ? 0.5 : presetBias;
-        const stableBias = preset === 'tight' ? 0.32 : p.framing === 'single_stable' ? 0.3 : 0.22;
-        const edgeGuard = preset === 'tight' ? 0.02 : faceWidthNorm > 0.22 ? 0.05 : faceWidthNorm > 0.18 ? 0.03 : 0.005;
-        const centeredBias = preset === 'tight' || preset === 'center'
-          ? 0.5 + (pairBias - 0.5) * 1.5
-          : 0.5 + (pairBias - 0.5) * 1.32;
-        const target = clamp01(edgeGuard + centeredBias * (1 - edgeGuard * 2) + (centeredBias - 0.5) * stableBias);
-        return `min(max((iw-${cropWidth})*${target.toFixed(4)},0),iw-${cropWidth})`;
+        const centerDamp = preset === 'tight' ? 0.04 : p.framing === 'wide_pair' ? 0 : p.framing === 'single_stable' ? 0.1 : 0.14;
+        const subjectX = clamp01(0.5 + (pairBias - 0.5) * (1 - centerDamp));
+        const screenX = preset === 'left' ? 0.46 : preset === 'right' ? 0.54 : 0.5;
+        return `min(max(iw*${subjectX.toFixed(4)}-${cropWidth}*${screenX.toFixed(4)},0),iw-${cropWidth})`;
       },
       `(iw-${cropWidth})/2`,
     );
