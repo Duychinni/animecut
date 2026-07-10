@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { getPipelineErrorInfo, getPublicPipelineError } from '@/lib/pipeline-errors';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
+import { stableYouTubeThumbnail } from '@/lib/source-metadata';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -80,39 +81,83 @@ function computeProgress(params: {
 function estimateEtaSeconds(params: {
   status: ProjectStatus;
   pipelineStatus: PipelineStatus;
+  pipelineStage: string | null;
   elapsedSeconds: number;
+  stageElapsedSeconds: number;
   hasTranscript: boolean;
   analyzedCandidates: number;
   doneExports: number;
   activeExports: number;
   targetCount: number;
   transcriptSeconds: number;
+  renderSecondsPerClip: number;
 }) {
-  const { status, pipelineStatus, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount, transcriptSeconds } = params;
+  const {
+    status,
+    pipelineStatus,
+    pipelineStage,
+    elapsedSeconds,
+    stageElapsedSeconds,
+    hasTranscript,
+    analyzedCandidates,
+    doneExports,
+    activeExports,
+    targetCount,
+    transcriptSeconds,
+    renderSecondsPerClip,
+  } = params;
 
   if ((status === 'completed' || pipelineStatus === 'completed') && activeExports === 0 && doneExports >= Math.max(1, targetCount)) return 0;
-  if (pipelineStatus === 'queued') return Math.max(20, Math.round(transcriptSeconds * 0.2) || 45);
+  if (pipelineStatus === 'error') return null;
 
   const safeTarget = Math.max(1, targetCount);
   const remainingExports = Math.max(0, safeTarget - doneExports);
+  const sourceSeconds = Math.max(60, transcriptSeconds || 0);
+  const stageBudgets: Record<string, number> = {
+    queued: 20,
+    downloading: Math.max(25, Math.min(90, Math.round(sourceSeconds * 0.06))),
+    extracting_audio: Math.max(20, Math.min(80, Math.round(sourceSeconds * 0.08))),
+    transcribing: Math.max(45, Math.min(240, Math.round(sourceSeconds * 0.22))),
+    finding_hooks: Math.max(30, Math.min(120, Math.round(sourceSeconds * 0.1))),
+    creating_clips: 18,
+    face_tracking_crop: Math.max(15, Math.min(70, remainingExports * 8)),
+    rendering: Math.max(25, Math.round((Math.max(1, remainingExports || activeExports) * renderSecondsPerClip) / Math.max(1, Math.min(3, activeExports || 1)))),
+    uploading_outputs: 12,
+  };
 
-  if (!hasTranscript) {
-    const expected = Math.max(30, Math.round(transcriptSeconds * 0.18) || 120);
-    return Math.max(15, expected - Math.min(elapsedSeconds, expected - 15));
+  const stageOrder = ['queued', 'downloading', 'extracting_audio', 'transcribing', 'finding_hooks', 'creating_clips', 'face_tracking_crop', 'rendering', 'uploading_outputs'];
+  const effectiveStage = pipelineStage && stageBudgets[pipelineStage]
+    ? pipelineStage
+    : !hasTranscript
+      ? 'transcribing'
+      : analyzedCandidates === 0
+        ? 'finding_hooks'
+        : remainingExports > 0 || activeExports > 0
+          ? 'rendering'
+          : 'uploading_outputs';
+
+  if (effectiveStage === 'rendering') {
+    if (remainingExports <= 0) return activeExports > 0 ? Math.max(8, Math.round(renderSecondsPerClip / Math.max(1, activeExports))) : 8;
+    const parallelism = Math.max(1, Math.min(3, activeExports || 1));
+    return Math.max(10, Math.round((remainingExports * renderSecondsPerClip) / parallelism) + 10);
   }
 
-  if (hasTranscript && analyzedCandidates === 0) {
-    const analyzeBudget = Math.max(20, Math.round(transcriptSeconds * 0.08) || 60);
-    const exportTail = remainingExports > 0 ? remainingExports * 28 : 0;
-    return Math.max(15, analyzeBudget + exportTail);
-  }
+  if (effectiveStage === 'uploading_outputs') return Math.max(4, stageBudgets.uploading_outputs - Math.min(stageElapsedSeconds, stageBudgets.uploading_outputs - 4));
 
-  if (remainingExports <= 0) return activeExports > 0 ? 10 : 0;
+  const currentIndex = Math.max(0, stageOrder.indexOf(effectiveStage));
+  const currentBudget = stageBudgets[effectiveStage] ?? 30;
+  const currentRemaining = Math.max(6, currentBudget - Math.min(stageElapsedSeconds, currentBudget - 6));
+  const futureStageSeconds = stageOrder
+    .slice(currentIndex + 1)
+    .filter((stage) => {
+      if (hasTranscript && (stage === 'transcribing' || stage === 'extracting_audio')) return false;
+      if (analyzedCandidates > 0 && (stage === 'finding_hooks' || stage === 'creating_clips')) return false;
+      return true;
+    })
+    .reduce((sum, stage) => sum + (stageBudgets[stage] ?? 0), 0);
 
-  const throughputPerExport = doneExports > 0 ? elapsedSeconds / doneExports : 0;
-  const boundedPerExport = throughputPerExport > 0 ? Math.max(12, Math.min(55, throughputPerExport)) : 28;
-  const parallelism = Math.max(1, activeExports || 1);
-  return Math.max(8, Math.round((remainingExports * boundedPerExport) / parallelism));
+  const elapsedCorrection = Math.min(30, Math.floor(elapsedSeconds / 12));
+  return Math.max(8, Math.round(currentRemaining + futureStageSeconds - elapsedCorrection));
 }
 
 function isRecoverablePipelineError(error: unknown, stage: string | null) {
@@ -274,6 +319,22 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const now = Date.now();
     const createdAtMs = project.created_at ? new Date(project.created_at).getTime() : now;
     const elapsedSeconds = Math.max(0, Math.round((now - createdAtMs) / 1000));
+    const updatedAtMs = project.updated_at ? new Date(project.updated_at).getTime() : now;
+    const stageElapsedSeconds = Math.max(0, Math.round((now - (Number.isFinite(updatedAtMs) ? updatedAtMs : now)) / 1000));
+    const completedRenderDurations = rows
+      .filter((row) => row.status === 'done')
+      .map((row) => {
+        const start = row.created_at ? new Date(row.created_at).getTime() : 0;
+        const end = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+        if (!start || !end || end <= start) return 0;
+        return Math.round((end - start) / 1000);
+      })
+      .filter((seconds) => seconds >= 8 && seconds <= 240);
+    const averageCompletedRenderSeconds = completedRenderDurations.length
+      ? completedRenderDurations.reduce((sum, seconds) => sum + seconds, 0) / completedRenderDurations.length
+      : 0;
+    const sourceRenderFactor = totalSeconds > 0 ? Math.max(0.8, Math.min(1.9, totalSeconds / 900)) : 1;
+    const renderSecondsPerClip = Math.round(Math.max(18, Math.min(95, averageCompletedRenderSeconds || 34 * sourceRenderFactor)));
 
     const storedPipelineStatus = ((project as { pipeline_status?: string | null }).pipeline_status ?? 'idle') as string;
     const lastSeenRaw = (project as { worker_last_seen_at?: string | null }).worker_last_seen_at ?? null;
@@ -293,8 +354,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = isReallyCompleted ? 'completed' : storedPipelineStatus;
     const storedPipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
-    const inFinalRenderPhase = !isReallyCompleted && (storedPipelineStage === 'uploading_outputs' || (activeExports > 0 && doneExports > 0));
-    const pipelineStage = inFinalRenderPhase ? 'uploading_outputs' : storedPipelineStage;
+    const inFinalRenderPhase = !isReallyCompleted && storedPipelineStage === 'uploading_outputs' && activeExports === 0 && doneExports > 0;
+    const pipelineStage = !isReallyCompleted && activeExports > 0 ? 'rendering' : inFinalRenderPhase ? 'uploading_outputs' : storedPipelineStage;
     if (projectNeedsExportCompletion) {
       pipelineStatus = 'processing';
     }
@@ -372,13 +433,16 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const etaSeconds = estimateEtaSeconds({
       status: effectiveStatus,
       pipelineStatus,
+      pipelineStage,
       elapsedSeconds,
+      stageElapsedSeconds,
       hasTranscript,
       analyzedCandidates,
       doneExports,
       activeExports,
       targetCount,
       transcriptSeconds: totalSeconds,
+      renderSecondsPerClip,
     });
 
     if (isReallyCompleted && (project.status !== 'completed' || storedPipelineStatus !== 'completed')) {
@@ -402,7 +466,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       ? (project as { source_thumbnail_url?: string | null }).source_thumbnail_url
       : null;
     const youtubeId = sourceUrl ? parseYouTubeId(sourceUrl) : null;
-    let thumbnailUrl = storedThumbnailUrl || (youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null);
+    let thumbnailUrl = stableYouTubeThumbnail(storedThumbnailUrl, youtubeId);
 
     if (project.source_type === 'upload') {
       const uploadThumbnailUrl = await ensureProjectUploadThumbnail({
@@ -441,6 +505,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         ? 'Reconnecting render worker'
       : staleWorker
         ? 'Worker heartbeat expired'
+        : activeExports > 0
+          ? 'Rendering reels'
         : inFinalRenderPhase
           ? 'Finalizing reels'
           : storedPipelineStage === 'uploading_outputs'

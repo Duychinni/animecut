@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createProjectSchema } from '@/lib/validators';
 import { createClient } from '@/lib/supabase/server';
-import { fetchYouTubeSourceMetadata } from '@/lib/source-metadata';
+import { fetchYouTubeSourceMetadata, stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
@@ -45,6 +45,18 @@ function getErrorMessage(error: unknown): string {
   return 'Unknown error';
 }
 
+function parseYouTubeId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('youtu.be')) return u.pathname.split('/').filter(Boolean)[0] ?? null;
+    if (u.hostname.includes('youtube.com')) return u.searchParams.get('v');
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -75,13 +87,16 @@ export async function GET() {
             source_storage_path: typeof project.source_storage_path === 'string' ? project.source_storage_path : null,
           }, { generateIfMissing: false }).catch(() => null)
         : null;
+      const sourceThumbnailUrl = project.source_type === 'youtube'
+        ? stableYouTubeThumbnail(project.source_thumbnail_url, parseYouTubeId(project.source_url))
+        : uploadThumbnailUrl || project.source_thumbnail_url;
       const expiryInfo = getExpiryInfo(isCompleted ? (project.pipeline_completed_at || project.created_at) : null);
 
       return {
         ...project,
         status: isCompleted ? 'completed' : needsExportCompletion ? 'analyzed' : project.status,
         pipeline_status: isCompleted ? 'completed' : needsExportCompletion ? 'processing' : project.pipeline_status,
-        source_thumbnail_url: uploadThumbnailUrl || project.source_thumbnail_url,
+        source_thumbnail_url: sourceThumbnailUrl,
         progress_percent: isCompleted ? 100 : undefined,
         expires_at: expiryInfo.expires_at,
         days_until_expiring: expiryInfo.days_until_expiring,

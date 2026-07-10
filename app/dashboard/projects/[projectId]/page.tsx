@@ -5,6 +5,7 @@ import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
+import { stableYouTubeThumbnail } from '@/lib/source-metadata';
 
 type ExportRow = {
   id: string;
@@ -176,7 +177,7 @@ export default async function ProjectDetailPage({
     : Math.max(0, Math.min(98, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
 
   const youtubeId = parseYouTubeId(projectRow?.source_url ?? null);
-  const fallbackThumbnail = youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : null;
+  const fallbackThumbnail = stableYouTubeThumbnail(null, youtubeId);
   const refreshedUploadThumbnail = projectRow?.source_type === 'upload'
     ? await ensureProjectUploadThumbnail({
         id: String(projectRow?.id ?? projectId),

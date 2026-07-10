@@ -187,6 +187,8 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
 
   const thumbnailUrl = progress?.project?.thumbnail_url;
   const processingLabel = progress?.project?.pipeline_stage_label || getProcessingLabel(progress?.project?.pipeline_stage);
+  const etaSeconds = progress?.progress?.eta_seconds ?? null;
+  const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `ETA ${fmtDuration(etaSeconds)}` : null;
 
   if (isCompleted) {
     return null;
@@ -213,6 +215,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
               <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-white/75">
                 {isCompleted ? 'Completed' : processingLabel}
               </div>
+              {etaLabel ? <div className="mb-2 text-[11px] font-semibold text-emerald-100/85">{etaLabel}</div> : null}
               <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
                 <div
                   className="h-full rounded-full bg-emerald-400 transition-[width] duration-500 ease-out"

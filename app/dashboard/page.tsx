@@ -590,6 +590,9 @@ export default function DashboardPage() {
           const diagnostics = p.diagnostics;
           const pipelineJob = diagnostics?.latest_pipeline_job ?? null;
           const showDebug = false;
+          const etaLabel = showProcessing && typeof p.eta_seconds === 'number' && Number.isFinite(p.eta_seconds) && p.eta_seconds > 0
+            ? `ETA ${fmtDuration(p.eta_seconds)}`
+            : null;
           const debugLine = diagnostics
             ? `${diagnostics.message || 'Waiting for backend update'} Last worker ${fmtDebugDuration(diagnostics.seconds_since_worker_heartbeat)} ago. Job ${pipelineJob?.status || 'none'}${pipelineJob?.attempts ? ` a${pipelineJob.attempts}` : ''}.`
             : null;
@@ -619,6 +622,7 @@ export default function DashboardPage() {
                     <span className="inline-flex items-center gap-1.5 text-[12px] font-extrabold leading-none">
                       <ClockIcon className="h-3.5 w-3.5" />
                       {percent}%
+                      {etaLabel ? <span className="font-black text-emerald-50/85">({etaLabel})</span> : null}
                     </span>
                     <span className="max-w-[132px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{processingStage}</span>
                   </div>
@@ -660,7 +664,7 @@ export default function DashboardPage() {
                   )}
                   {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
                   {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found</p> : null}
-                  {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%</p> : null}
+                  {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%{etaLabel ? ` · ${etaLabel}` : ''}</p> : null}
                   {showDebug ? (
                     <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.035] p-2 text-[11px] leading-4 text-white/55">
                       <p className="line-clamp-2">{debugLine}</p>

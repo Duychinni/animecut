@@ -105,6 +105,8 @@ export function ProcessingHero({
   const pipelineStage = data?.project?.pipeline_stage ?? null;
   const pipelineStageLabel = data?.project?.pipeline_stage_label ?? null;
   const pipelineError = data?.project?.pipeline_error ?? null;
+  const etaSeconds = data?.progress?.eta_seconds ?? null;
+  const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `ETA ${fmtDuration(etaSeconds)}` : null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
   const publicError = pipelineError && !isNotEnoughContent ? getPipelineErrorInfo(pipelineError) : null;
   const isFinished = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
@@ -171,6 +173,7 @@ export function ProcessingHero({
                     <ClockIcon className="h-3.5 w-3.5 text-emerald-300" />
                     {percent}% complete
                   </span>
+                  {etaLabel ? <span className="text-white/60">{etaLabel}</span> : null}
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, percent))}%` }} />

@@ -306,10 +306,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
               const paused = playbackState?.paused ?? true;
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
+              const displayScore = formatDisplayScore(clip.score);
 
               return (
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
-                  <div className="min-h-[96px] px-0.5 pb-1.5">
+                  <div className="min-h-[78px] px-0.5 pb-1.5">
                     <p className="line-clamp-3 min-h-[52px] text-[15px] font-extrabold leading-[1.15rem] text-white">{clip.title}</p>
 
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -320,7 +321,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       ))}
                     </div>
 
-                    <div className="mt-1.5 flex min-h-[28px] items-center justify-between gap-2">
+                    <div className="hidden">
                       <div className="flex items-center gap-2">
                         <span className="text-[1.35rem] font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
                         {toDisplayScore(clip.score) >= 90 ? (
@@ -430,6 +431,67 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           Your browser does not support the video tag.
                         </video>
 
+                        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 bg-gradient-to-b from-black/58 via-black/18 to-transparent px-2.5 pb-7 pt-2.5">
+                          <div className="rounded-md border border-black/35 bg-black/54 px-2.5 py-1 text-[18px] font-black leading-none tracking-tight shadow-[0_5px_16px_rgba(0,0,0,0.35)] backdrop-blur-sm" style={{ color: getScoreColor(clip.score) }}>
+                            {displayScore}
+                          </div>
+                          <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/12 bg-black/45 px-2 py-1 text-white shadow-[0_5px_18px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+                            <div className="group/edit relative">
+                              <button
+                                type="button"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
+                                aria-label="Edit clip"
+                              >
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M12 20h9" />
+                                  <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                                </svg>
+                              </button>
+                              <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/edit:opacity-100">
+                                Edit clip
+                              </span>
+                            </div>
+
+                            <div className="group/captions relative">
+                              <button
+                                type="button"
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
+                                aria-label="Captions"
+                              >
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+                                  <path d="M7.5 10.5h3" />
+                                  <path d="M13.5 10.5h3" />
+                                  <path d="M7.5 14h5" />
+                                  <path d="M14.5 14h2" />
+                                </svg>
+                              </button>
+                              <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
+                                Captions
+                              </span>
+                            </div>
+
+                            <div className="group/download relative">
+                              <button
+                                type="button"
+                                onClick={() => handleDownload(clip)}
+                                disabled={downloadingId === clip.exportId}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                aria-label="Download clip"
+                              >
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M12 3v10" />
+                                  <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
+                                  <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
+                                </svg>
+                              </button>
+                              <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
+                                Download clip
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
                         {paused ? (
                           <button
                             type="button"
@@ -516,7 +578,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                         <div className="absolute inset-x-5 top-[35%] rounded-2xl border border-white/10 bg-black/20 px-3 py-5 text-center backdrop-blur-[2px]">
                           <div className="mx-auto grid h-12 w-12 place-items-center rounded-full border border-white/20 bg-black/35 text-lg font-black">
-                            {formatDisplayScore(clip.score)}
+                            {displayScore}
                           </div>
                           <p className="mt-3 text-[11px] font-semibold leading-4 text-white/68">
                             Old mock placeholder. The worker will requeue this for a real FFmpeg render.

@@ -182,6 +182,9 @@ export default function ProjectsPage() {
             : p.pipeline_stage === 'uploading_outputs' ? 'Finalizing reels'
             : 'Processing');
           const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
+          const etaLabel = showProcessing && typeof p.eta_seconds === 'number' && Number.isFinite(p.eta_seconds) && p.eta_seconds > 0
+            ? `ETA ${fmtDuration(p.eta_seconds)}`
+            : null;
 
           const cardBody = (
             <>
@@ -209,6 +212,7 @@ export default function ProjectsPage() {
                       <span className="inline-flex items-center gap-1.5 text-[12px] font-extrabold leading-none">
                         <ClockIcon className="h-3.5 w-3.5" />
                         {percent}%
+                        {etaLabel ? <span className="font-black text-emerald-50/85">({etaLabel})</span> : null}
                       </span>
                       <span className="max-w-[132px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{processingStage}</span>
                     </div>
@@ -221,6 +225,7 @@ export default function ProjectsPage() {
                 <p className="mt-1 text-xs text-white/50">
                   {p.source_type.toUpperCase()} · {new Date(p.created_at).toLocaleDateString()}
                 </p>
+                {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%{etaLabel ? ` · ${etaLabel}` : ''}</p> : null}
               </div>
             </>
           );
