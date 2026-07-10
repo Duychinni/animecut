@@ -8,6 +8,10 @@ export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'local-
 const OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS ?? 45000);
 const OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS ?? 90000);
 
+type AnalysisResponse = {
+  output_text: string;
+};
+
 function stripCodeFences(text: string) {
   const trimmed = text.trim();
   if (!trimmed.startsWith('```')) return trimmed;
@@ -79,12 +83,13 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
   }
 }
 
-async function createAnalysisResponse(params: Parameters<typeof openai.responses.create>[0]) {
+async function createAnalysisResponse(params: Parameters<typeof openai.responses.create>[0]): Promise<AnalysisResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS);
 
   try {
-    return await openai.responses.create(params, { signal: controller.signal });
+    const response = await openai.responses.create(params, { signal: controller.signal });
+    return response as unknown as AnalysisResponse;
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error(`OpenAI clip analysis request timed out after ${Math.round(OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS / 1000)} seconds`);
