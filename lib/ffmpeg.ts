@@ -10,6 +10,7 @@ type LayoutMode = 'single' | 'split_stack';
 
 const VERTICAL_EXPORT_WIDTH = 1080;
 const VERTICAL_EXPORT_HEIGHT = 1920;
+const RENDER_ALIGNMENT_VERSION = 'smart-timeline-v2';
 
 type RenderOpts = {
   inputPath: string;
@@ -591,7 +592,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         const baseBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
         const presetBias = preset === 'left' ? 0.38 : preset === 'right' ? 0.62 : preset === 'center' ? 0.5 : baseBias;
         const pairBias = preset === 'center' ? 0.5 : presetBias;
-        const centerDamp = preset === 'tight' ? 0.04 : p.framing === 'wide_pair' ? 0 : p.framing === 'single_stable' ? 0.1 : 0.14;
+        const centerDamp = preset === 'tight' ? 0 : p.framing === 'wide_pair' ? 0 : p.framing === 'single_stable' ? 0.03 : 0.05;
         const subjectX = clamp01(0.5 + (pairBias - 0.5) * (1 - centerDamp));
         const screenX = preset === 'left' ? 0.46 : preset === 'right' ? 0.54 : 0.5;
         return `min(max(iw*${subjectX.toFixed(4)}-${cropWidth}*${screenX.toFixed(4)},0),iw-${cropWidth})`;
@@ -1003,9 +1004,11 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const outputHeight = resolveOutputHeight();
   const outputWidth = resolveOutputWidth(outputHeight);
   const envMode = ((process.env.AUTO_REFRAME_MODE || 'basic').trim().toLowerCase() as ReframeMode);
-  const effectiveMode: ReframeMode = opts.reframeMode ?? (envMode === 'off' || envMode === 'smart' ? envMode : 'basic');
+  const requestedMode: ReframeMode = opts.reframeMode ?? (envMode === 'off' ? 'off' : 'smart');
+  const effectiveMode: ReframeMode = opts.autoReframe === false || requestedMode === 'off' ? 'off' : 'smart';
   console.log('[render] reframe-mode', {
     clipId: opts.debugClipId ?? null,
+    alignmentVersion: RENDER_ALIGNMENT_VERSION,
     requestedMode: opts.reframeMode ?? null,
     envMode,
     effectiveMode,

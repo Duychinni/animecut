@@ -318,11 +318,11 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         {clipTags.length ? (
                           <>
+                            <span className="text-[20px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
+                              {displayScore}
+                            </span>
                             <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
                               {clipTags[0]}
-                            </span>
-                            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[12px] font-black leading-none" style={{ color: getScoreColor(clip.score) }}>
-                              {displayScore}
                             </span>
                             {clipTags.slice(1).map((tag) => (
                               <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
@@ -331,7 +331,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             ))}
                           </>
                         ) : (
-                          <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[12px] font-black leading-none" style={{ color: getScoreColor(clip.score) }}>
+                          <span className="text-[20px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
                             {displayScore}
                           </span>
                         )}

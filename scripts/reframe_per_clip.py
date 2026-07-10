@@ -190,7 +190,7 @@ def main():
             subject_h = selected_box[3]
             mode = 'face'
             framing = 'single'
-            normalized_x = (chosen_center_x / max(source_w, 1.0)) * 0.82 + 0.5 * 0.18
+            normalized_x = chosen_center_x / max(source_w, 1.0)
             face_top = selected_box[1] / max(source_h, 1.0)
             normalized_y = face_top + 0.08
         elif motion_box is not None:
