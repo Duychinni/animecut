@@ -11,6 +11,12 @@ type LayoutMode = 'single' | 'split_stack';
 const VERTICAL_EXPORT_WIDTH = 1080;
 const VERTICAL_EXPORT_HEIGHT = 1920;
 const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v3';
+const DEFAULT_X264_CRF = '17';
+const DEFAULT_X264_MAXRATE = '18M';
+const DEFAULT_X264_BUFSIZE = '36M';
+const DEFAULT_HW_VIDEO_BITRATE = '18M';
+const DEFAULT_HW_MAXRATE = '24M';
+const DEFAULT_HW_BUFSIZE = '48M';
 
 type RenderOpts = {
   inputPath: string;
@@ -1120,7 +1126,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
 
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || 'libx264').trim();
   const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'medium').trim();
-  const configuredCrf = (process.env.FFMPEG_X264_CRF || '18').trim();
+  const configuredCrf = (process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF).trim();
+  const configuredX264Maxrate = (process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE).trim();
+  const configuredX264Bufsize = (process.env.FFMPEG_X264_BUFSIZE || DEFAULT_X264_BUFSIZE).trim();
 
   const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
   if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
@@ -1168,10 +1176,32 @@ export async function renderVerticalClip(opts: RenderOpts) {
     );
 
     if (encoder === 'libx264') {
-      common.push('-preset', configuredPreset, '-crf', configuredCrf, '-threads', '0');
+      common.push(
+        '-preset',
+        configuredPreset,
+        '-crf',
+        configuredCrf,
+        '-maxrate',
+        configuredX264Maxrate,
+        '-bufsize',
+        configuredX264Bufsize,
+        '-profile:v',
+        'high',
+        '-level',
+        '4.2',
+        '-threads',
+        '0',
+      );
     } else {
       // Hardware encoders (nvenc/qsv/videotoolbox) usually ignore CRF/preset semantics.
-      common.push('-b:v', process.env.FFMPEG_HW_VIDEO_BITRATE || '12M', '-maxrate', process.env.FFMPEG_HW_MAXRATE || '16M');
+      common.push(
+        '-b:v',
+        process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE,
+        '-maxrate',
+        process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE,
+        '-bufsize',
+        process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE,
+      );
     }
 
     common.push(
@@ -1259,6 +1289,14 @@ export async function renderVerticalClip(opts: RenderOpts) {
           configuredPreset,
           '-crf',
           configuredCrf,
+          '-maxrate',
+          configuredX264Maxrate,
+          '-bufsize',
+          configuredX264Bufsize,
+          '-profile:v',
+          'high',
+          '-level',
+          '4.2',
           '-threads',
           '0',
           '-pix_fmt',

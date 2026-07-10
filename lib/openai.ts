@@ -121,7 +121,7 @@ function buildPrompt(targetCandidates: number, totalSeconds: number) {
 GOAL:
 Do NOT generate random transcript snippets.
 Every final clip must feel like a complete short-form video with:
-Hook → Context → Main Content → Payoff → Natural Ending.
+Hook -> Context -> Main Content -> Payoff -> Natural Ending.
 
 FULL-TRANSCRIPT REQUIREMENT:
 Analyze the ENTIRE transcript window.
@@ -162,11 +162,15 @@ CANDIDATE GENERATION RULES:
 
 REEL TITLE RULES:
 - The "title" appears above each reel in the project page.
+- Write the title like an enticing short-form headline/hook.
 - Do not use the first words of the transcript as the title.
-- Summarize the subject and payoff like a strong short-form title.
+- Do not copy the opening_line, hook_text, or any raw transcript phrase as the title.
+- Summarize the subject, tension, curiosity gap, and payoff like a strong creator would title the reel.
 - Make it specific, human-readable, and grounded in the clip.
+- Prefer hooks with stakes or curiosity, such as "Why...", "How...", "The Moment...", "When...", or "[Subject] Reveals...".
 - Use 5-12 words in title case or sentence case.
 - Avoid invented drama, hashtags, emojis, quotation marks, and all-caps.
+- Bad examples: "Yeah, I mean", "I can't back that up", "Did you get ghosts close to black".
 - Good examples: "Steve-O Challenges The Flat Earth Argument", "Why This Rematch Still Matters", "The Interview Moment That Changed The Story".
 
 REEL HOOK TEXT RULES:
@@ -326,6 +330,7 @@ Every remaining clip must end on a complete sentence, punchline, answer, or clea
 If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
+Rewrite every title as an enticing short-form headline based on the clip subject and payoff. Do not copy the opening transcript words, opening_line, or hook_text as the title.
 Return revised JSON only.`;
 
       const refineRes = await createAnalysisResponse({

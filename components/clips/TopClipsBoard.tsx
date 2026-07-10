@@ -109,16 +109,20 @@ function getSmartClipTags(clip: ClipItem) {
   const title = `${clip.title} ${clip.reason ?? ''}`.toLowerCase();
   const score = toDisplayScore(clip.score);
 
-  if (/\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title)) return ['❓ Question'];
-  if (/\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)) return ['⚡ Strong Hook'];
+  if (
+    /\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title) ||
+    /\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)
+  ) {
+    return ['⚡ Strong Hook'];
+  }
+  if (/\b(story|journey|moment|reveal|remember|memory|confession|truth|chapter|timeline|started|ended|realized)\b/i.test(title)) return ['📖 Story'];
+  if (score >= 96) return ['🔥 Viral'];
   if (/\b(crazy|wild|intense|shocking|reaction|reacts|wow|heated|explodes|energy)\b/i.test(title)) return ['⚡ High Energy'];
   if (/\b(fight|knockout|ufc|boxing|rematch|challenge|beating|beat|loss|win)\b/i.test(title)) return ['🥊 Fight Talk'];
   if (/\b(funny|laugh|comedy|joke|hilarious)\b/i.test(title)) return ['😂 Funny'];
   if (/\b(emotional|daughter|family|lost|broke|heart|honest)\b/i.test(title)) return ['❤️ Emotional'];
-  if (/\b(story|journey|moment|reveal|remember|memory|confession|truth)\b/i.test(title)) return ['🎬 Story'];
   if (/\b(learn|explain|tips|strategy|lesson|breakdown|because|reason)\b/i.test(title)) return ['💡 Insight'];
 
-  if (score >= 96) return ['⭐ Top Pick'];
   if (score >= 92) return ['📈 High Retention'];
   if (score >= 86) return ['✅ Strong Clip'];
   if (score >= 78) return ['👍 Good Clip'];
@@ -497,7 +501,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         {clipTags.length ? (
                           <>
-                            <span className="text-[20px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
+                            <span className="text-[24px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
                               {displayScore}
                             </span>
                             <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
@@ -510,7 +514,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             ))}
                           </>
                         ) : (
-                          <span className="text-[20px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
+                          <span className="text-[24px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
                             {displayScore}
                           </span>
                         )}
