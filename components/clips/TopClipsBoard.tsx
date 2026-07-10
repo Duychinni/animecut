@@ -321,18 +321,15 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                       ))}
                     </div>
 
-                    <div className="hidden">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[1.35rem] font-extrabold tracking-tight" style={{ color: getScoreColor(clip.score) }}>{formatDisplayScore(clip.score)}</span>
-                        {toDisplayScore(clip.score) >= 90 ? (
-                          <span title="Viral clip" aria-label="Viral clip" className="cursor-help text-xl leading-none">🔥</span>
-                        ) : null}
+                    <div className="mx-auto mt-2 flex w-full max-w-[230px] items-center justify-between gap-2 px-1">
+                      <div className="rounded-md border border-white/10 bg-white/[0.05] px-2.5 py-1 shadow-[0_5px_16px_rgba(0,0,0,0.25)]">
+                        <span className="text-[17px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>{displayScore}</span>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-2 py-1 text-white shadow-[0_5px_18px_rgba(0,0,0,0.25)]">
                         <div className="group/edit relative">
                           <button
                             type="button"
-                            className="inline-flex items-center justify-center text-white transition hover:text-white/90"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
                             aria-label="Edit clip"
                           >
                             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -348,7 +345,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         <div className="group/captions relative">
                           <button
                             type="button"
-                            className="inline-flex items-center justify-center text-white transition hover:text-white/90"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
                             aria-label="Captions"
                           >
                             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -370,7 +367,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                               type="button"
                               onClick={() => handleDownload(clip)}
                               disabled={downloadingId === clip.exportId}
-                              className="inline-flex items-center justify-center text-white transition hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                               aria-label="Download clip"
                             >
                               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -431,7 +428,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           Your browser does not support the video tag.
                         </video>
 
-                        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 bg-gradient-to-b from-black/58 via-black/18 to-transparent px-2.5 pb-7 pt-2.5">
+                        <div className="hidden">
                           <div className="rounded-md border border-black/35 bg-black/54 px-2.5 py-1 text-[18px] font-black leading-none tracking-tight shadow-[0_5px_16px_rgba(0,0,0,0.35)] backdrop-blur-sm" style={{ color: getScoreColor(clip.score) }}>
                             {displayScore}
                           </div>
