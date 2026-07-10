@@ -57,6 +57,26 @@ function clamp100(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function calibrateFinalScores<T extends { overall_score: number; passes_quality?: boolean }>(items: T[]) {
+  if (!items.length) return items;
+  if (items.length === 1) {
+    return items.map((item) => ({ ...item, overall_score: Math.max(78, Math.min(96, Math.round(item.overall_score))) }));
+  }
+
+  const spread = 24;
+  return items.map((item, index) => {
+    const rankRatio = index / Math.max(1, items.length - 1);
+    const rankTarget = 97 - rankRatio * spread;
+    const qualityPenalty = item.passes_quality === false ? 4 : 0;
+    const raw = Number.isFinite(item.overall_score) ? item.overall_score : rankTarget;
+    const blended = raw * 0.25 + rankTarget * 0.75 - qualityPenalty;
+    return {
+      ...item,
+      overall_score: Math.max(70, Math.min(98, Math.round(blended))),
+    };
+  });
+}
+
 function normalizeWindow(startRaw: number, endRaw: number, minClipSec: number, maxClipSec: number) {
   const start = Math.max(0, Number.isFinite(startRaw) ? startRaw : 0);
   let end = Number.isFinite(endRaw) ? endRaw : start + minClipSec;
@@ -696,7 +716,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       }
     }
 
-    const ranked = selected.slice(0, targetClipCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
+    const ranked = calibrateFinalScores(selected.slice(0, targetClipCount)).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
     console.log('[analyze] counts', {
       project_id,

@@ -18,6 +18,11 @@ type ClipItem = {
   rank: number | null;
 };
 
+const CAPTION_TEMPLATE_IDS = ['opus-clean', 'viral-bold', 'creator-glow', 'podcast-pro', 'clean-box'];
+const CAPTION_TEMPLATE_OPTIONS = CAPTION_TEMPLATE_IDS
+  .map((id) => CAPTION_PRESETS.find((preset) => preset.id === id))
+  .filter((preset): preset is (typeof CAPTION_PRESETS)[number] => Boolean(preset));
+
 function getFriendlyStatus(status: string) {
   if (status === 'queued') return 'Queued';
   if (status === 'processing') return 'Rendering';
@@ -119,7 +124,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
-  const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+  const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_TEMPLATE_OPTIONS[0]?.id ?? CAPTION_PRESETS[0]?.id ?? 'viral-bold');
   const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
@@ -173,6 +178,14 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
       video.pause();
       updatePlayback(id, { paused: true });
     }
+  }
+
+  function openCaptionTemplates(clip: ClipItem) {
+    setSelectedPresetId(CAPTION_TEMPLATE_OPTIONS[0]?.id ?? CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+    setSelectedReframePreset('auto');
+    setHookTextEnabled(false);
+    setEditorTab('presets');
+    setEditingClip(clip);
   }
 
   function handleFullscreen(id: string) {
@@ -357,6 +370,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                         <div className="group/captions relative">
                           <button
                             type="button"
+                            onClick={() => openCaptionTemplates(clip)}
                             className="inline-flex items-center justify-center text-white/90 transition hover:text-white"
                             aria-label="Captions"
                           >
@@ -464,6 +478,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                             <div className="group/captions relative">
                               <button
                                 type="button"
+                                onClick={() => openCaptionTemplates(clip)}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
                                 aria-label="Captions"
                               >
@@ -676,7 +691,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
           <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-white/10 bg-[#0d0f14] shadow-[0_0_60px_rgba(0,0,0,0.5)]">
             <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-white/40">Edit Clip</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/40">Caption Templates</p>
                 <h3 className="mt-1 text-lg font-semibold text-white">{editingClip.title}</h3>
               </div>
               <button type="button" onClick={() => setEditingClip(null)} className="text-sm text-white/65 transition hover:text-white">
@@ -704,13 +719,6 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                   >
                     Presets
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditorTab('framing')}
-                    className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'framing' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
-                  >
-                    Framing
-                  </button>
                   {showHookTextControls ? (
                     <button
                       type="button"
@@ -724,7 +732,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
 
                 {editorTab === 'presets' ? (
                   <div className="grid gap-3">
-                    {CAPTION_PRESETS.map((preset) => {
+                    {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
                       const active = preset.id === selectedPresetId;
                       return (
                         <button

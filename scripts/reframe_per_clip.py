@@ -25,6 +25,44 @@ def center(b: Tuple[float, float, float, float]) -> Tuple[float, float]:
     return x + w / 2.0, y + h / 2.0
 
 
+def average_box(boxes):
+    if not boxes:
+        return None
+    count = float(len(boxes))
+    return (
+        sum(b[0] for b in boxes) / count,
+        sum(b[1] for b in boxes) / count,
+        sum(b[2] for b in boxes) / count,
+        sum(b[3] for b in boxes) / count,
+    )
+
+
+def build_single_subject_crop(source_w: float, source_h: float, avg_center_x: float, selected_boxes):
+    avg_box = average_box(selected_boxes)
+    if avg_box is None:
+        crop_h = source_h
+        crop_w = min(source_w, round(crop_h * 9.0 / 16.0))
+        crop_x = clamp(avg_center_x - crop_w / 2.0, 0.0, max(0.0, source_w - crop_w))
+        return crop_x, 0.0, float(crop_w), float(crop_h), None
+
+    x, y, w, h = avg_box
+    face_cx, _ = center(avg_box)
+
+    # A face detector box is too small for shorts framing. Expand from the face
+    # into an upper-body crop that usually catches head, shoulders, and hands.
+    crop_h = max(source_h * 0.58, h * 6.4, w * 7.4)
+    crop_h = min(source_h * 0.92, crop_h)
+    crop_w = crop_h * 9.0 / 16.0
+
+    if crop_w > source_w:
+        crop_w = source_w
+        crop_h = min(source_h, crop_w * 16.0 / 9.0)
+
+    crop_x = clamp(face_cx - crop_w * 0.50, 0.0, max(0.0, source_w - crop_w))
+    crop_y = clamp(y - crop_h * 0.18, 0.0, max(0.0, source_h - crop_h))
+    return float(crop_x), float(crop_y), float(crop_w), float(crop_h), avg_box
+
+
 def motion_regions(cv2, prev_gray, gray, width: float, height: float):
     if prev_gray is None:
         return []
@@ -125,6 +163,7 @@ def main():
     centers_x = []
     points = []
     detected_faces = []
+    selected_subject_boxes = []
     first_debug_frame = None
     first_box = None
     first_motion_box = None
@@ -177,6 +216,7 @@ def main():
         chosen_center_x = clamp(chosen_center_x, source_w * SAFE_EDGE_MARGIN_X, source_w * (1.0 - SAFE_EDGE_MARGIN_X))
 
         if selected_box is not None:
+            selected_subject_boxes.append(selected_box)
             _, cy = center(selected_box)
             chosen_center_y = cy
         elif motion_box is not None:
@@ -257,8 +297,8 @@ def main():
         avg_center_x = sum(item['chosen_center_x'] for item in centers_x) / len(centers_x)
         fallback_used = any(item['fallback_used'] for item in centers_x)
 
-    crop_x = clamp(avg_center_x - crop_w / 2.0, 0.0, source_w - crop_w)
-    crop_box = (crop_x, 0.0, float(crop_w), float(crop_h))
+    crop_x, crop_y, crop_w, crop_h, avg_subject_box = build_single_subject_crop(source_w, source_h, avg_center_x, selected_subject_boxes)
+    crop_box = (crop_x, crop_y, float(crop_w), float(crop_h))
 
     if debug_enabled and first_debug_frame is not None:
         save_debug_frame(cv2, first_debug_frame, debug_dir / f'{clip_id}-{DEBUG_FRAME_NAME}', first_box, first_motion_box, crop_box)
@@ -277,13 +317,14 @@ def main():
 
     result = {
         'ok': True,
-        'mode': 'split_stack' if split_stack else 'timeline',
+        'mode': 'split_stack' if split_stack else 'per_clip',
         'source_w': source_w,
         'source_h': source_h,
         'crop_w': crop_w,
         'crop_h': crop_h,
         'detected_center_x': avg_center_x,
         'crop_x': crop_x,
+        'crop_y': crop_y,
         'fallback_used': fallback_used,
         'motion_enabled': True,
         'samples': centers_x,
@@ -291,14 +332,21 @@ def main():
         'meta': {
             'points': len(points),
             'sample_count': sample_count,
+            'frames_with_detection_pct': len(selected_subject_boxes) / max(1, len(sample_times)),
             'average_face_center': {
                 'x': clamp(avg_center_x / max(source_w, 1.0), 0.0, 1.0),
                 'y': 0.42,
             },
+            'average_subject_box': None if avg_subject_box is None else {
+                'x': avg_subject_box[0],
+                'y': avg_subject_box[1],
+                'w': avg_subject_box[2],
+                'h': avg_subject_box[3],
+            },
             'fallback_used': fallback_used,
         },
         'detected_faces': detected_faces,
-        'ffmpeg_crop': f'crop={crop_w}:{crop_h}:{int(round(crop_x))}:0,scale=1080:1920',
+        'ffmpeg_crop': f'crop={int(round(crop_w))}:{int(round(crop_h))}:{int(round(crop_x))}:{int(round(crop_y))},scale=1080:1920',
     }
     print(json.dumps(result))
 

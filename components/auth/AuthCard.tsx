@@ -7,6 +7,10 @@ import { readJsonSafe } from '@/lib/safe-json';
 import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type Mode = 'login' | 'signup';
+type OAuthProvider = 'google' | 'apple';
+
+const GOOGLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH === 'true';
+const APPLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_APPLE_AUTH === 'true';
 
 function GoogleIcon() {
   return (
@@ -48,7 +52,13 @@ export function AuthCard({
 
   const isLogin = mode === 'login';
 
-  async function onOAuth(provider: 'google' | 'apple') {
+  async function onOAuth(provider: OAuthProvider) {
+    const providerEnabled = provider === 'google' ? GOOGLE_AUTH_ENABLED : APPLE_AUTH_ENABLED;
+    if (!providerEnabled) {
+      setLocalError('This sign-in option is not available yet. Continue with email for now.');
+      return;
+    }
+
     setLoading(true);
     setLocalError(null);
     setLocalMsg(null);
@@ -62,7 +72,8 @@ export function AuthCard({
       });
 
       if (oauthError) {
-        setLocalError(oauthError.message);
+        const unsupportedProvider = /unsupported provider|provider is not enabled/i.test(oauthError.message);
+        setLocalError(unsupportedProvider ? 'This sign-in option is not available yet. Continue with email for now.' : oauthError.message);
       }
     } catch (err: unknown) {
       setLocalError(err instanceof Error ? err.message : `${provider} sign-in failed`);
@@ -124,34 +135,42 @@ export function AuthCard({
       {localMsg ? <p className="mt-3 text-sm text-emerald-300">{localMsg}</p> : null}
       {localError ? <p className="mt-3 text-sm text-red-300">{localError}</p> : null}
 
-      <div className="mt-6 space-y-3">
-        <button
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
-          type="button"
-          onClick={() => void onOAuth('google')}
-          disabled={loading}
-        >
-          <GoogleIcon />
-          <span>{loading ? 'Working...' : 'Continue with Google'}</span>
-        </button>
-        <button
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
-          type="button"
-          onClick={() => void onOAuth('apple')}
-          disabled={loading}
-        >
-          <AppleIcon />
-          <span>{loading ? 'Working...' : 'Continue with Apple'}</span>
-        </button>
-      </div>
+      {GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? (
+        <>
+          <div className="mt-6 space-y-3">
+            {GOOGLE_AUTH_ENABLED ? (
+              <button
+                className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={() => void onOAuth('google')}
+                disabled={loading}
+              >
+                <GoogleIcon />
+                <span>{loading ? 'Working...' : 'Continue with Google'}</span>
+              </button>
+            ) : null}
+            {APPLE_AUTH_ENABLED ? (
+              <button
+                className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                onClick={() => void onOAuth('apple')}
+                disabled={loading}
+              >
+                <AppleIcon />
+                <span>{loading ? 'Working...' : 'Continue with Apple'}</span>
+              </button>
+            ) : null}
+          </div>
 
-      <div className="mt-6 flex items-center gap-3 text-sm text-white/38">
-        <div className="h-px flex-1 bg-white/10" />
-        <span>or continue with email</span>
-        <div className="h-px flex-1 bg-white/10" />
-      </div>
+          <div className="mt-6 flex items-center gap-3 text-sm text-white/38">
+            <div className="h-px flex-1 bg-white/10" />
+            <span>or continue with email</span>
+            <div className="h-px flex-1 bg-white/10" />
+          </div>
+        </>
+      ) : null}
 
-      <form onSubmit={onSubmit} className="mt-6 space-y-3 text-left">
+      <form onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
         <input
           className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"

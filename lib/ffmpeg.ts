@@ -10,7 +10,7 @@ type LayoutMode = 'single' | 'split_stack';
 
 const VERTICAL_EXPORT_WIDTH = 1080;
 const VERTICAL_EXPORT_HEIGHT = 1920;
-const RENDER_ALIGNMENT_VERSION = 'smart-timeline-v2';
+const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v3';
 
 type RenderOpts = {
   inputPath: string;
@@ -537,10 +537,14 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         : 1;
       const scaledW = sourceW * scale;
       const scaledH = sourceH * scale;
-      const scaledCropX = clamp(raw.crop_x * scale, 0, Math.max(0, scaledW - outputWidth));
+      const rawCropW = clamp(Number(raw.crop_w), 1, sourceW || Number(raw.crop_w));
+      const rawCropH = clamp(Number(raw.crop_h), 1, sourceH || Number(raw.crop_h));
+      const scaledCropW = floorEven(clamp(Math.round(rawCropW * scale), Math.min(outputWidth, 360), scaledW));
+      const scaledCropH = floorEven(clamp(Math.round(rawCropH * scale), Math.min(outputHeight, 640), scaledH));
+      const scaledCropX = clamp(raw.crop_x * scale, 0, Math.max(0, scaledW - scaledCropW));
       const rawCropY = Number((raw as { crop_y?: number }).crop_y ?? 0);
-      const scaledCropY = clamp(rawCropY * scale, 0, Math.max(0, scaledH - outputHeight));
-      const cropExpr = `crop=${outputWidth}:${outputHeight}:${Math.round(scaledCropX)}:${Math.round(scaledCropY)}`;
+      const scaledCropY = clamp(rawCropY * scale, 0, Math.max(0, scaledH - scaledCropH));
+      const cropExpr = `crop=${Math.round(scaledCropW)}:${Math.round(scaledCropH)}:${Math.round(scaledCropX)}:${Math.round(scaledCropY)}`;
       console.log('[smart-reframe]', {
         clipId,
         candidateId,
@@ -554,6 +558,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         crop_h: raw.crop_h,
         scaled_crop_x: Math.round(scaledCropX),
         scaled_crop_y: Math.round(scaledCropY),
+        scaled_crop_w: Math.round(scaledCropW),
+        scaled_crop_h: Math.round(scaledCropH),
         scaled_crop_expr: cropExpr,
         detected_center_x: raw.detected_center_x ?? null,
         fallbackUsed: raw.fallback_used ?? null,
@@ -656,6 +662,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function floorEven(value: number) {
+  return Math.max(2, Math.floor(value / 2) * 2);
+}
+
 function buildSplitStackFilter(
   opts: RenderOpts,
   layout: SplitStackLayout,
@@ -698,7 +708,7 @@ function buildSplitStackFilter(
     } else {
       const style = escapeForceStyleForFilter([
         'FontName=Arial Black',
-        'FontSize=118',
+        'FontSize=108',
         'PrimaryColour=&H00FFFFFF',
         'SecondaryColour=&H005AF421',
         'OutlineColour=&H00000000',
@@ -745,8 +755,8 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   return `crop=${cropWidth}:${cropHeight}:${xExpr}:${yExpr}`;
 }
 
-function shouldUseSafeFitFallback(opts: RenderOpts, smartCropExpr?: string) {
-  return opts.autoReframe !== false && (opts.reframeMode ?? 'off') === 'smart' && !smartCropExpr;
+function shouldUseSafeFitFallback(_opts: RenderOpts, _smartCropExpr?: string) {
+  return false;
 }
 
 function resolveOutputHeight() {
@@ -878,12 +888,7 @@ function buildFilter(
   const outputHeight = resolveOutputHeight();
   const outputWidth = resolveOutputWidth(outputHeight);
   const safeFitFallback = shouldUseSafeFitFallback(opts, smartCropExpr);
-  const filterParts = safeFitFallback
-    ? [
-        `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=lanczos`,
-        `pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2:color=black`,
-      ]
-    : [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
+  const filterParts = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
 
   if (safeFitFallback) {
     console.log('[smart-reframe-fallback]', {
@@ -895,15 +900,13 @@ function buildFilter(
     });
   }
 
-  if (!safeFitFallback && escapedMotionTransformPath) {
+  if (escapedMotionTransformPath) {
     filterParts.push(
       `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,
     );
   }
 
-  if (!safeFitFallback) {
-    filterParts.push(buildCropFilter(opts, smartCropExpr));
-  }
+  filterParts.push(buildCropFilter(opts, smartCropExpr));
   filterParts.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
 
   if (opts.debugReframeOverlay) {
@@ -1015,7 +1018,7 @@ function buildFilter(
       ],
       capcut: [
         'FontName=Arial Black',
-        'FontSize=118',
+        'FontSize=108',
         'PrimaryColour=&H00FFFFFF',
         'SecondaryColour=&H005AF421',
         'OutlineColour=&H00000000',
