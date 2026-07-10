@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { SignOutButton } from '@/components/auth/SignOutButton';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -27,6 +28,7 @@ type ShowcaseClip = {
   length: string;
   source: string;
   gradient: string;
+  mediaType?: 'video' | 'image';
   mediaUrl?: string | null;
 };
 
@@ -650,9 +652,7 @@ export default function Home() {
                     {userLabel}
                   </span>
                 </div>
-                <a href="/auth/logout" className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40">
-                  Logout
-                </a>
+                <SignOutButton className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-60" />
               </>
             ) : (
               <button
@@ -774,15 +774,22 @@ export default function Home() {
                   <div className={`aspect-[9/16] overflow-hidden rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
                     <div className="relative h-full overflow-hidden rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
                       {clip.mediaUrl ? (
-                        <video
-                          src={clip.mediaUrl}
-                          muted
-                          loop
-                          playsInline
-                          autoPlay
-                          preload="metadata"
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
+                        (clip.mediaType ?? 'video') === 'image' ? (
+                          <div
+                            className="absolute inset-0 bg-cover bg-center"
+                            style={{ backgroundImage: `url("${clip.mediaUrl}")` }}
+                          />
+                        ) : (
+                          <video
+                            src={clip.mediaUrl}
+                            muted
+                            loop
+                            playsInline
+                            autoPlay
+                            preload="metadata"
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        )
                       ) : null}
                       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18),transparent_36%,rgba(0,0,0,0.34))]" />
                       <div className="relative flex items-center justify-start gap-2">

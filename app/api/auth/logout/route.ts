@@ -5,9 +5,12 @@ export async function POST() {
   try {
     const supabase = await createClient();
     await supabase.auth.signOut();
-    return NextResponse.json({ ok: true, next: '/auth/login?msg=Signed out' });
+    return NextResponse.json(
+      { ok: true, next: '/auth/login?msg=Signed out' },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Logout failed';
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
   }
 }
