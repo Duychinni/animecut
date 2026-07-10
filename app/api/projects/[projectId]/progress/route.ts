@@ -255,6 +255,9 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       .limit(8);
 
     const rows = exportsRows ?? [];
+    const pipelineJobs = (jobRows ?? []).filter((row) => row.type === 'pipeline');
+    const exportJobs = (jobRows ?? []).filter((row) => row.type === 'export');
+    const latestPipelineJob = pipelineJobs[0] ?? null;
     const doneExports = rows.filter((r) => r.status === 'done').length;
     const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
     const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
@@ -304,7 +307,15 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'error'
       && isRecoverablePipelineError(pipelineErrorRaw, storedPipelineStage);
     const staleWorker = !isReallyCompleted && heartbeatExpired;
-    const shouldRecoverPipeline = staleWorker || recoverableErrorState;
+    const missingAnalysisWorker = !isReallyCompleted
+      && activeExports === 0
+      && doneExports === 0
+      && hasTranscript
+      && analyzedCandidates === 0
+      && storedPipelineStatus === 'processing'
+      && storedPipelineStage === 'finding_hooks'
+      && (!latestPipelineJob || latestPipelineJob.status !== 'processing');
+    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker;
     let recoveryQueued = false;
     if (shouldRecoverPipeline) {
       try {
@@ -435,9 +446,6 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
           : storedPipelineStage === 'uploading_outputs'
             ? 'Finalizing reels'
             : storedPipelineStageLabel;
-    const pipelineJobs = (jobRows ?? []).filter((row) => row.type === 'pipeline');
-    const exportJobs = (jobRows ?? []).filter((row) => row.type === 'export');
-    const latestPipelineJob = pipelineJobs[0] ?? null;
     const latestPipelinePayload = latestPipelineJob?.payload && typeof latestPipelineJob.payload === 'object'
       ? latestPipelineJob.payload as Record<string, unknown>
       : null;

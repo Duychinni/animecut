@@ -125,7 +125,6 @@ function fmtDebugDuration(totalSec: number | null | undefined) {
 export default function DashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const debugMode = searchParams.get('debug') === '1';
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -590,7 +589,7 @@ export default function DashboardPage() {
           const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
           const diagnostics = p.diagnostics;
           const pipelineJob = diagnostics?.latest_pipeline_job ?? null;
-          const showDebug = Boolean(debugMode && showProcessing && diagnostics);
+          const showDebug = false;
           const debugLine = diagnostics
             ? `${diagnostics.message || 'Waiting for backend update'} Last worker ${fmtDebugDuration(diagnostics.seconds_since_worker_heartbeat)} ago. Job ${pipelineJob?.status || 'none'}${pipelineJob?.attempts ? ` a${pipelineJob.attempts}` : ''}.`
             : null;

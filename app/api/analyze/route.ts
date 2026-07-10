@@ -4,6 +4,7 @@ import { analyzeClipCandidates } from '@/lib/openai';
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 import { generateHookText } from '@/lib/hook-text';
+import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 
 export const maxDuration = 60;
 
@@ -254,6 +255,59 @@ function isNearDuplicateWindow(aStart: number, aEnd: number, bStart: number, bEn
   return (sameHookWindow && overlap / minDur >= 0.5) || heavyTranscriptOverlap || sameNeighborhood;
 }
 
+function hasReliableSentencePunctuation(segments: TranscriptSegment[]) {
+  const sampled = segments
+    .map((segment) => textOf(segment))
+    .filter((text) => countWords(text) >= 3)
+    .slice(0, 320);
+
+  if (sampled.length < 8) return true;
+  const punctuated = sampled.filter((text) => endsSentence(text)).length;
+  return punctuated / sampled.length >= 0.16;
+}
+
+function strictWordFloor(totalSeconds: number) {
+  if (totalSeconds < 60) return 30;
+  if (totalSeconds <= 10 * 60) return 42;
+  if (totalSeconds <= 20 * 60) return 46;
+  return 55;
+}
+
+function fallbackWordFloor(totalSeconds: number) {
+  if (totalSeconds < 60) return 22;
+  if (totalSeconds <= 10 * 60) return 32;
+  if (totalSeconds <= 20 * 60) return 36;
+  return 42;
+}
+
+function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
+  const curTitle = normalizeTitle(String(cur.title ?? ''));
+  const pickedTitle = normalizeTitle(String(picked.title ?? ''));
+  const curSignature = hookContextSignature(String(cur.opening_line ?? ''), String(cur.closing_line ?? ''));
+  const pickedSignature = hookContextSignature(String(picked.opening_line ?? ''), String(picked.closing_line ?? ''));
+  const sameTitle = curTitle.length > 10 && pickedTitle.length > 10 && curTitle === pickedTitle;
+  const sameStory = curSignature.length > 20 && pickedSignature.length > 20 && curSignature === pickedSignature;
+  const sameWindow = isNearDuplicateWindow(
+    Number(cur.start_sec ?? 0),
+    Number(cur.end_sec ?? 0),
+    Number(picked.start_sec ?? 0),
+    Number(picked.end_sec ?? 0),
+  );
+
+  return sameTitle || sameStory || sameWindow;
+}
+
+function distinctCandidates(candidates: RankedCandidate[]) {
+  return [...candidates]
+    .sort((a, b) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
+    .reduce<RankedCandidate[]>((acc, cur) => {
+      if (!acc.some((picked) => isDuplicateCandidate(cur, picked))) {
+        acc.push(cur);
+      }
+      return acc;
+    }, []);
+}
+
 function hasStrongPayoff(text: string) {
   const t = text.trim();
   if (!t) return false;
@@ -477,9 +531,7 @@ function adjustBoundaries(
   };
 }
 
-export async function POST(req: Request) {
-  try {
-    const { project_id } = await req.json();
+async function runProjectAnalysis(project_id: string, options: { forceLocal?: boolean } = {}) {
     const supabase = createAdminClient();
 
     const { data: transcriptRow, error: tErr } = await supabase
@@ -502,16 +554,21 @@ export async function POST(req: Request) {
 
     const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
     const effectiveGlobalMinClipSec = transcriptMaxEnd < 60 ? 20 : GLOBAL_MIN_CLIP_SEC;
-    const minimumWordCount = transcriptMaxEnd < 60 ? 40 : 80;
     const policy = getClipPolicy(transcriptMaxEnd);
+    const analysisMinClipSec = Math.max(policy.minSec, Math.min(effectiveGlobalMinClipSec, policy.expectedMinSec));
+    const minimumWordCount = strictWordFloor(transcriptMaxEnd);
+    const fallbackMinimumWordCount = fallbackWordFloor(transcriptMaxEnd);
+    const punctuationReliable = hasReliableSentencePunctuation(segments);
     const targetClipCount = getTargetClipCount(transcriptMaxEnd);
     const minimumCandidatePool = Math.max(policy.candidateCount, targetClipCount * 4);
     const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
 
-    const parsed = await analyzeClipCandidates(transcriptRow.full_text as string, segments);
+    const parsed = options.forceLocal
+      ? analyzeTranscriptLocally(transcriptRow.full_text as string, segments)
+      : await analyzeClipCandidates(transcriptRow.full_text as string, segments);
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
 
-    const scoredCandidates: RankedCandidate[] = (parsed.candidates ?? [])
+    const allScoredCandidates: RankedCandidate[] = (parsed.candidates ?? [])
       .slice(0, candidateLimit)
       .map((c: RawCandidate, idx: number) => {
         const localAnalysisCandidate = isLocalAnalysisCandidate(c);
@@ -519,14 +576,15 @@ export async function POST(req: Request) {
         const rawEnd = num(c.raw_end ?? c.end_sec ?? c.adjusted_end);
         const modelAdjustedStart = num(c.adjusted_start ?? rawStart);
         const modelAdjustedEnd = num(c.adjusted_end ?? rawEnd);
-        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, Math.max(policy.minSec, effectiveGlobalMinClipSec), Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
+        const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, analysisMinClipSec, Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
 
         const openingLine = openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.opening_line ?? '');
         const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.closing_line ?? '');
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
-        const completeEnding = cleaned.end_complete && !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
-        const strictQualityPass = startsLikeNaturalBoundary(openingLine) && completeEnding && payoffStrong;
+        const cleanEnding = !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
+        const completeEnding = cleanEnding && (cleaned.end_complete || !punctuationReliable || localAnalysisCandidate);
+        const strictQualityPass = startsLikeNaturalBoundary(openingLine) && completeEnding && (payoffStrong || !punctuationReliable);
         const passesQuality = localAnalysisCandidate
           ? Boolean(startsLikeNaturalBoundary(openingLine) && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
           : strictQualityPass;
@@ -589,7 +647,7 @@ export async function POST(req: Request) {
           educational_value: educationalValue,
           speaker_energy: speakerEnergy,
           overall_score: clamp100(calibratedOverall),
-          reject_reason: duration < effectiveGlobalMinClipSec
+          reject_reason: duration < analysisMinClipSec
               ? 'duration_below_minimum'
               : transcriptWordCount < minimumWordCount
                 ? 'word_count_below_minimum'
@@ -603,46 +661,52 @@ export async function POST(req: Request) {
           rank: idx + 1,
           passes_quality: passesQuality,
         };
-      })
+      });
+
+    const scoredCandidates = allScoredCandidates
       .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
-      .filter((c: RankedCandidate) => c.duration_seconds >= Math.max(policy.minSec, effectiveGlobalMinClipSec))
+      .filter((c: RankedCandidate) => c.duration_seconds >= analysisMinClipSec)
       .filter((c: RankedCandidate) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= minimumWordCount)
       .filter((c: RankedCandidate) => c.reject_reason !== 'incomplete_sentence_ending')
       .filter((c: RankedCandidate) => Number(c.overall_score ?? 0) >= MIN_TOP_CLIP_SCORE);
 
     const filteredCandidates = scoredCandidates;
 
-    const deduped = [...filteredCandidates]
-      .sort((a: RankedCandidate, b: RankedCandidate) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
-      .reduce<typeof filteredCandidates>((acc, cur: RankedCandidate) => {
-        const curTitle = normalizeTitle(String(cur.title ?? ''));
-        const curSignature = hookContextSignature(String(cur.opening_line ?? ''), String(cur.closing_line ?? ''));
-        const isDuplicate = acc.some((picked: RankedCandidate) => {
-          const pickedTitle = normalizeTitle(String(picked.title ?? ''));
-          const pickedSignature = hookContextSignature(String(picked.opening_line ?? ''), String(picked.closing_line ?? ''));
-          const sameTitle = curTitle.length > 10 && pickedTitle.length > 10 && curTitle === pickedTitle;
-          const sameStory = curSignature.length > 20 && pickedSignature.length > 20 && curSignature === pickedSignature;
-          const sameWindow = isNearDuplicateWindow(
-            Number(cur.start_sec ?? 0),
-            Number(cur.end_sec ?? 0),
-            Number(picked.start_sec ?? 0),
-            Number(picked.end_sec ?? 0),
-          );
-          return sameTitle || sameStory || sameWindow;
-        });
+    const deduped = distinctCandidates(filteredCandidates);
+    const selected = deduped.slice(0, targetClipCount);
+    const minimumFinalCount = Math.min(policy.targetMin, targetClipCount);
 
-        if (!isDuplicate) acc.push(cur);
-        return acc;
-      }, []);
+    if (selected.length < minimumFinalCount) {
+      const fallbackPool = distinctCandidates(allScoredCandidates)
+        .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked)))
+        .filter((c) => c.duration_seconds >= analysisMinClipSec)
+        .filter((c) => c.self_contained_confidence >= Math.max(0.42, SELF_CONTAINED_MIN_CONFIDENCE - 0.1))
+        .filter((c) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= fallbackMinimumWordCount)
+        .filter((c) => Number(c.overall_score ?? 0) >= MIN_TOP_CLIP_SCORE - 10)
+        .filter((c) => !endsWithFiller(c.closing_line) && !isIncompleteTrailingPhrase(c.closing_line));
 
-    const targetReturnCount = Math.min(deduped.length, targetClipCount);
-    const ranked = deduped.slice(0, targetReturnCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
+      for (const candidate of fallbackPool) {
+        if (selected.length >= minimumFinalCount) break;
+        if (!selected.some((picked) => isDuplicateCandidate(candidate, picked))) {
+          selected.push({
+            ...candidate,
+            reason: `${candidate.reason} | Added by fallback pass to reach the expected clip range for this source length.`,
+          });
+        }
+      }
+    }
+
+    const ranked = selected.slice(0, targetClipCount).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
     console.log('[analyze] counts', {
       project_id,
       videoDurationSeconds: Number(transcriptMaxEnd.toFixed(2)),
       targetClipCount: targetClipCount,
+      targetMin: policy.targetMin,
       minimumCandidatePool,
+      minimumWordCount,
+      fallbackMinimumWordCount,
+      punctuationReliable,
       candidateCountGenerated: aiReturnedCount,
       candidateCountAfterLengthFilter: filteredCandidates.length,
       candidateCountAfterOverlapRemoval: deduped.length,
@@ -657,7 +721,7 @@ export async function POST(req: Request) {
         reasonSelected: c.reason,
       })),
       rejectedCandidates: (parsed.candidates ?? []).length - ranked.length,
-      rejectedReasonsSample: scoredCandidates
+      rejectedReasonsSample: allScoredCandidates
         .filter((c) => c.reject_reason)
         .slice(0, 20)
         .map((c) => ({ title: c.title, reject_reason: c.reject_reason, start: c.start_sec, end: c.end_sec, score: c.overall_score })),
@@ -684,16 +748,6 @@ export async function POST(req: Request) {
     await supabase.from('jobs').delete().eq('project_id', project_id).eq('type', 'export').in('status', ['queued', 'processing']);
 
     await supabase.from('clip_candidates').delete().eq('project_id', project_id);
-    let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
-    if (insErr && isMissingHookTextColumnError(insErr)) {
-      console.warn('[analyze] hook_text column missing; retrying clip candidate insert without hook_text');
-      const legacyRows = dbRows.map(({ hook_text: _hookText, ...row }) => row);
-      const retry = await supabase.from('clip_candidates').insert(legacyRows).select('id, start_sec, end_sec, title');
-      insertedRows = retry.data;
-      insErr = retry.error;
-    }
-    if (insErr) throw insErr;
-
     if (!ranked.length) {
       await supabase.from('projects').update({
         status: 'completed',
@@ -706,11 +760,30 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       }).eq('id', project_id);
 
-      return NextResponse.json({ ok: true, count: 0, candidates: [], reason: 'not_enough_content' });
+      return { ok: true, count: 0, candidates: [], reason: 'not_enough_content' };
     }
 
+    let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
+    if (insErr && isMissingHookTextColumnError(insErr)) {
+      console.warn('[analyze] hook_text column missing; retrying clip candidate insert without hook_text');
+      const legacyRows = dbRows.map(({ hook_text: _hookText, ...row }) => row);
+      const retry = await supabase.from('clip_candidates').insert(legacyRows).select('id, start_sec, end_sec, title');
+      insertedRows = retry.data;
+      insErr = retry.error;
+    }
+    if (insErr) throw insErr;
+
     await supabase.from('projects').update({ status: 'analyzed', pipeline_error: null }).eq('id', project_id);
-    return NextResponse.json({ ok: true, count: ranked.length, candidates: ranked, inserted_candidate_ids: insertedRows?.map((row) => row.id) ?? [] });
+    return { ok: true, count: ranked.length, candidates: ranked, inserted_candidate_ids: insertedRows?.map((row) => row.id) ?? [] };
+}
+
+export async function POST(req: Request) {
+  try {
+    const { project_id, force_local } = await req.json();
+    if (!project_id) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
+
+    const result = await runProjectAnalysis(String(project_id), { forceLocal: Boolean(force_local) });
+    return NextResponse.json(result);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Analyze failed';
     return NextResponse.json({ error: message }, { status: 400 });

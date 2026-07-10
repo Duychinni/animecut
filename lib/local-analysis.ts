@@ -81,6 +81,17 @@ function endsSentence(text: string) {
   return /[.!?]["']?$/.test(cleanText(text));
 }
 
+function hasReliableSentencePunctuation(segments: TranscriptSegment[]) {
+  const sampled = segments
+    .map((segment) => cleanText(segment.text ?? ''))
+    .filter((text) => wordCount(text) >= 3)
+    .slice(0, 320);
+
+  if (sampled.length < 8) return true;
+  const punctuated = sampled.filter((text) => endsSentence(text)).length;
+  return punctuated / sampled.length >= 0.16;
+}
+
 function overlapsSelected(start: number, end: number, selected: Array<{ start: number; end: number }>) {
   return selected.some((item) => {
     const overlap = Math.max(0, Math.min(end, item.end) - Math.max(start, item.start));
@@ -164,6 +175,7 @@ export function analyzeTranscriptLocally(
     Math.min(policy.expectedMaxSec, Math.round((policy.expectedMinSec + policy.expectedMaxSec) / 2)),
   );
   const desiredPool = Math.max(policy.candidateCount, targetCount * 3, policy.targetMin * 3);
+  const punctuationReliable = hasReliableSentencePunctuation(realSegments);
 
   const rawCandidates = candidateStarts(totalSeconds, desiredPool, windowSeconds).map((start, index) => {
     const end = Math.min(totalSeconds, start + windowSeconds);
@@ -206,7 +218,7 @@ export function analyzeTranscriptLocally(
     .filter((candidate) => {
       const key = `${Math.round(candidate.adjusted_start / 8)}:${candidate.title.toLowerCase()}`;
       if (seen.has(key)) return false;
-      if (!endsSentence(candidate.closing_line)) return false;
+      if (punctuationReliable && !endsSentence(candidate.closing_line)) return false;
       if (overlapsSelected(candidate.adjusted_start, candidate.adjusted_end, selectedWindows)) return false;
       seen.add(key);
       const keep = candidate.duration_seconds >= Math.min(policy.minSec, windowSeconds);

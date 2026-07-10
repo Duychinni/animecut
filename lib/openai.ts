@@ -110,7 +110,7 @@ function isOpenAiTransientError(error: unknown) {
 }
 
 function shouldUseLocalFallback(error: unknown) {
-  return analysisProvider() !== 'openai' && process.env.LOCAL_ANALYSIS_FALLBACK !== 'false' && isOpenAiTransientError(error);
+  return process.env.LOCAL_ANALYSIS_FALLBACK !== 'false' && (analysisProvider() !== 'openai' || isOpenAiTransientError(error) || error instanceof Error);
 }
 
 function buildPrompt(targetCandidates: number, totalSeconds: number) {

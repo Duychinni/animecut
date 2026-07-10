@@ -97,6 +97,41 @@ async function getExportCounts(projectId: string) {
   };
 }
 
+async function getTranscriptStats(projectId: string) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('transcripts')
+    .select('segments_json')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const segments = Array.isArray(data?.segments_json)
+    ? (data?.segments_json as Array<{ end?: number }>)
+    : [];
+  const durationSeconds = segments.reduce((acc, segment) => Math.max(acc, Number(segment?.end ?? 0)), 0);
+
+  return {
+    exists: segments.length > 0,
+    segmentCount: segments.length,
+    durationSeconds,
+  };
+}
+
+async function getCandidateCount(projectId: string) {
+  const supabase = createAdminClient();
+  const { count, error } = await supabase
+    .from('clip_candidates')
+    .select('*', { count: 'exact', head: true })
+    .eq('project_id', projectId);
+
+  if (error) throw error;
+  return Math.max(0, Number(count ?? 0));
+}
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return await Promise.race([
     promise,
@@ -229,16 +264,48 @@ export async function POST() {
   await updateProjectProgress(projectId, 'downloading', 'Preparing source video');
 
   try {
-    await updateProjectProgress(projectId, 'extracting_audio', 'Extracting audio');
-    console.log('[pipeline] before transcribe', { projectId });
-    await updateProjectProgress(projectId, 'transcribing', 'Transcribing audio');
-    await callInternalJson('/api/transcribe', { project_id: projectId });
-    console.log('[pipeline] after transcribe', { projectId });
+    let transcriptStats = await getTranscriptStats(projectId);
+    if (transcriptStats.exists) {
+      console.log('[pipeline] resume-after-transcribe', { projectId, transcriptStats });
+      await updateProjectProgress(projectId, 'finding_hooks', 'Finding hooks', {
+        worker_last_log_message: 'Using saved transcript',
+      });
+    } else {
+      await updateProjectProgress(projectId, 'extracting_audio', 'Extracting audio');
+      console.log('[pipeline] before transcribe', { projectId });
+      await updateProjectProgress(projectId, 'transcribing', 'Transcribing audio');
+      await callInternalJson('/api/transcribe', { project_id: projectId });
+      console.log('[pipeline] after transcribe', { projectId });
+      transcriptStats = await getTranscriptStats(projectId);
+    }
 
-    await updateProjectProgress(projectId, 'finding_hooks', 'Finding hooks');
-    console.log('[pipeline] before analyze', { projectId });
-    const analyzeData = await withTimeout(callInternalJson('/api/analyze', { project_id: projectId }), 120000, 'finding_hooks timeout after 2 minutes');
-    console.log('[pipeline] after analyze', { projectId });
+    let candidateCount = await getCandidateCount(projectId);
+    let analyzeData: Record<string, unknown> = { ok: true, count: candidateCount, resumed: true };
+    if (candidateCount > 0) {
+      console.log('[pipeline] resume-after-analyze', { projectId, candidateCount });
+    } else {
+      await updateProjectProgress(projectId, 'finding_hooks', 'Finding hooks');
+      console.log('[pipeline] before analyze', { projectId, transcriptStats });
+      try {
+        analyzeData = await withTimeout(
+          callInternalJson('/api/analyze', { project_id: projectId }),
+          40000,
+          'finding_hooks timeout before local fallback',
+        ) as Record<string, unknown>;
+      } catch (analysisError) {
+        console.warn('[pipeline] analyze-primary-failed-using-local', {
+          projectId,
+          error: analysisError instanceof Error ? analysisError.message : String(analysisError),
+        });
+        analyzeData = await withTimeout(
+          callInternalJson('/api/analyze', { project_id: projectId, force_local: true }),
+          15000,
+          'local finding_hooks fallback timeout',
+        ) as Record<string, unknown>;
+      }
+      candidateCount = Number(analyzeData?.count ?? 0);
+      console.log('[pipeline] after analyze', { projectId, candidateCount });
+    }
 
     if (analyzeData?.reason === 'not_enough_content' || Number(analyzeData?.count ?? 0) === 0) {
       await supabase
