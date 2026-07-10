@@ -12,6 +12,8 @@ import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 
+export const maxDuration = 60;
+
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
 

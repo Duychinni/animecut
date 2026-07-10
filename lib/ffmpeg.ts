@@ -582,8 +582,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     const stabilized = downsamplePoints(smoothPoints(points, 0.62), 20);
 
     const preset = opts.reframePreset ?? 'auto';
-    const cropWidth = preset === 'tight' ? 760 : 860;
-    const cropHeight = preset === 'tight' ? 1351 : 1529;
+    const cropWidth = VERTICAL_EXPORT_WIDTH;
+    const cropHeight = VERTICAL_EXPORT_HEIGHT;
 
     const xExprRaw = buildTimelineExpr(
       stabilized,
@@ -592,8 +592,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         const baseBias = p.framing === 'wide_pair' ? 0.5 : clamp01(p.nx);
         const presetBias = preset === 'left' ? 0.38 : preset === 'right' ? 0.62 : preset === 'center' ? 0.5 : baseBias;
         const pairBias = preset === 'center' ? 0.5 : presetBias;
-        const stableBias = preset === 'tight' ? 0.36 : p.framing === 'single_stable' ? 0.3 : 0.22;
-        const edgeGuard = preset === 'tight' ? 0.0 : faceWidthNorm > 0.22 ? 0.05 : faceWidthNorm > 0.18 ? 0.03 : 0.005;
+        const stableBias = preset === 'tight' ? 0.32 : p.framing === 'single_stable' ? 0.3 : 0.22;
+        const edgeGuard = preset === 'tight' ? 0.02 : faceWidthNorm > 0.22 ? 0.05 : faceWidthNorm > 0.18 ? 0.03 : 0.005;
         const centeredBias = preset === 'tight' || preset === 'center'
           ? 0.5 + (pairBias - 0.5) * 1.5
           : 0.5 + (pairBias - 0.5) * 1.32;
@@ -609,7 +609,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       (p) => {
         const isPair = p.framing === 'wide_pair';
         const isStableSingle = p.framing === 'single_stable';
-        const headroomBias = preset === 'tight' ? 0.38 : isPair ? 0.04 : isStableSingle ? 0.34 : 0.3;
+        const headroomBias = preset === 'tight' ? 0.34 : isPair ? 0.04 : isStableSingle ? 0.34 : 0.3;
         const target = clamp01((p.ny ?? 0.42) - headroomBias);
         return `min(max((ih-${cropHeight})*${target.toFixed(4)},0),ih-${cropHeight})`;
       },
@@ -658,8 +658,8 @@ function buildSplitStackFilter(
 
   const filterParts = [
     `[0:v]split=2[topsrc][bottomsrc]`,
-    `[topsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(topCropX)}:${Math.round(topCropY)},scale=${layout.outputWidth}:${paneHeight}[topv]`,
-    `[bottomsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(bottomCropX)}:${Math.round(bottomCropY)},scale=${layout.outputWidth}:${paneHeight}[bottomv]`,
+    `[topsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(topCropX)}:${Math.round(topCropY)},scale=${layout.outputWidth}:${paneHeight}:flags=lanczos[topv]`,
+    `[bottomsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(bottomCropX)}:${Math.round(bottomCropY)},scale=${layout.outputWidth}:${paneHeight}:flags=lanczos[bottomv]`,
     `color=c=black:s=${layout.outputWidth}x${layout.outputHeight}:d=1[base]`,
     `[base][topv]overlay=0:0[tmp1]`,
     `[tmp1][bottomv]overlay=0:${paneHeight + seamHeight}[tmp2]`,
@@ -706,8 +706,8 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   const mode = opts.reframeMode ?? 'off';
   const enabled = opts.autoReframe !== false && mode !== 'off';
   const preset = opts.reframePreset ?? 'auto';
-  const cropWidth = preset === 'tight' ? 760 : 860;
-  const cropHeight = preset === 'tight' ? 1351 : 1529;
+  const cropWidth = VERTICAL_EXPORT_WIDTH;
+  const cropHeight = VERTICAL_EXPORT_HEIGHT;
 
   if (!enabled) {
     console.log('[smart-reframe-fallback]', { reason: 'auto_reframe_disabled', mode, cropWidth, cropHeight });
@@ -855,7 +855,7 @@ function buildFilter(
 ) {
   const outputHeight = resolveOutputHeight();
   const outputWidth = resolveOutputWidth(outputHeight);
-  const filterParts = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase`];
+  const filterParts = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
 
   if (escapedMotionTransformPath) {
     filterParts.push(
@@ -864,7 +864,7 @@ function buildFilter(
   }
 
   filterParts.push(buildCropFilter(opts, smartCropExpr));
-  filterParts.push(`scale=${outputWidth}:${outputHeight},setsar=1`);
+  filterParts.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
 
   if (opts.debugReframeOverlay) {
     filterParts.push(
@@ -1056,7 +1056,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
         '-i',
         opts.inputPath,
         '-vf',
-        `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase,vidstabdetect=shakiness=7:accuracy=15:result='${escapedMotionTransformPath}'`,
+        `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos,vidstabdetect=shakiness=7:accuracy=15:result='${escapedMotionTransformPath}'`,
         '-f',
         'null',
         '-',
@@ -1074,8 +1074,8 @@ export async function renderVerticalClip(opts: RenderOpts) {
   }
 
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || 'libx264').trim();
-  const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'veryfast').trim();
-  const configuredCrf = (process.env.FFMPEG_X264_CRF || '22').trim();
+  const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'medium').trim();
+  const configuredCrf = (process.env.FFMPEG_X264_CRF || '18').trim();
 
   const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
   if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
@@ -1126,7 +1126,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
       common.push('-preset', configuredPreset, '-crf', configuredCrf, '-threads', '0');
     } else {
       // Hardware encoders (nvenc/qsv/videotoolbox) usually ignore CRF/preset semantics.
-      common.push('-b:v', process.env.FFMPEG_HW_VIDEO_BITRATE || '5M', '-maxrate', process.env.FFMPEG_HW_MAXRATE || '8M');
+      common.push('-b:v', process.env.FFMPEG_HW_VIDEO_BITRATE || '12M', '-maxrate', process.env.FFMPEG_HW_MAXRATE || '16M');
     }
 
     common.push(
@@ -1135,7 +1135,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
       '-c:a',
       'aac',
       '-b:a',
-      '128k',
+      '192k',
       '-movflags',
       '+faststart',
       effectiveOpts.outputPath,
@@ -1182,14 +1182,14 @@ export async function renderVerticalClip(opts: RenderOpts) {
     if (canUseCaptions && subtitlesUnavailable && effectiveOpts.srtPath) {
       // Fallback for ffmpeg builds without libass/subtitles filter: hard-burn with drawtext.
       const drawtextFilters = await buildDrawtextFiltersFromSrt(effectiveOpts.srtPath);
-      const baseFilter = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase`];
+      const baseFilter = [`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=lanczos`];
       if (escapedMotionTransformPath) {
         baseFilter.push(
           `vidstabtransform=input='${escapedMotionTransformPath}':smoothing=28:optzoom=0:interpol=bicubic`,
         );
       }
       baseFilter.push(buildCropFilter(effectiveOpts, smartCropExpr));
-      baseFilter.push(`scale=${outputWidth}:${outputHeight},setsar=1`);
+      baseFilter.push(`scale=${outputWidth}:${outputHeight}:flags=lanczos,setsar=1`);
       if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
         baseFilter.push(buildHookDrawtextFilter(effectiveOpts.hookText.trim(), effectiveOpts.hookTextFilePath));
       }
@@ -1211,9 +1211,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
           '-c:v',
           'libx264',
           '-preset',
-          'veryfast',
+          configuredPreset,
           '-crf',
-          '22',
+          configuredCrf,
           '-threads',
           '0',
           '-pix_fmt',
@@ -1221,7 +1221,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
           '-c:a',
           'aac',
           '-b:a',
-          '128k',
+          '192k',
           '-movflags',
           '+faststart',
           effectiveOpts.outputPath,

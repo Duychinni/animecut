@@ -434,7 +434,7 @@ export function TopClipsBoard({ projectId: _projectId, clips }: Props) {
                           <button
                             type="button"
                             onClick={() => togglePlay(clip.exportId)}
-                            className="absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white backdrop-blur-sm transition hover:bg-black/45"
+                            className="pointer-events-none absolute left-1/2 top-1/2 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white opacity-0 backdrop-blur-sm transition duration-200 hover:bg-black/45 focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
                             aria-label="Play clip"
                           >
                             <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
