@@ -129,6 +129,27 @@ function getSmartClipTags(clip: ClipItem) {
   return ['🔎 Review'];
 }
 
+function getPrimaryClipBadge(clip: ClipItem) {
+  const title = `${clip.title} ${clip.reason ?? ''}`.toLowerCase();
+  const score = toDisplayScore(clip.score);
+
+  if (/\b(story|journey|moment|reveal|remember|memory|confession|truth|chapter|timeline|started|ended|realized|honest)\b/i.test(title)) return '📖 Story';
+  if (score >= 96) return '🔥 Viral';
+  if (
+    /\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title) ||
+    /\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)
+  ) return '⚡ Strong Hook';
+  if (/\b(crazy|wild|intense|shocking|reaction|reacts|wow|heated|explodes|energy)\b/i.test(title)) return '⚡ High Energy';
+  if (/\b(fight|knockout|ufc|boxing|rematch|challenge|beating|beat|loss|win)\b/i.test(title)) return '🥊 Fight Talk';
+  if (/\b(funny|laugh|comedy|joke|hilarious)\b/i.test(title)) return '😂 Funny';
+  if (/\b(emotional|daughter|family|lost|broke|heart)\b/i.test(title)) return '❤️ Emotional';
+  if (/\b(learn|explain|tips|strategy|lesson|breakdown|because|reason)\b/i.test(title)) return '💡 Insight';
+  if (score >= 92) return '📈 Retention';
+  if (score >= 86) return '✅ Strong Clip';
+  if (score >= 78) return '👍 Good Clip';
+  return '🔎 Review';
+}
+
 function getPreviewCaptionWords(title: string) {
   const words = title
     .replace(/[|:]+/g, ' ')
@@ -490,7 +511,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
-              const clipTags = getSmartClipTags(clip);
+              const primaryBadge = getPrimaryClipBadge(clip);
               const pendingCaptionPreset =
                 clip.signedUrl && clip.status !== 'done'
                   ? CAPTION_PRESETS.find((preset) => preset.id === clip.captionPresetId) ?? CAPTION_PRESETS[0]
@@ -502,26 +523,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                     <p className="line-clamp-3 min-h-[52px] text-[15px] font-extrabold leading-[1.15rem] text-white">{clip.title}</p>
 
                     <div className="mx-auto mt-2 flex w-full max-w-[230px] items-center justify-between gap-3 px-1">
-                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                        {clipTags.length ? (
-                          <>
-                            <span className="text-[24px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
-                              {displayScore}
-                            </span>
-                            <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
-                              {clipTags[0]}
-                            </span>
-                            {clipTags.slice(1).map((tag) => (
-                              <span key={`${clip.exportId}-${tag}`} className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-semibold text-white/80">
-                                {tag}
-                              </span>
-                            ))}
-                          </>
-                        ) : (
-                          <span className="text-[24px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
-                            {displayScore}
-                          </span>
-                        )}
+                      <div className="flex min-w-0 flex-nowrap items-center gap-2">
+                        <span className="text-[28px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
+                          {displayScore}
+                        </span>
+                        <span className="max-w-[118px] truncate rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">
+                          {primaryBadge}
+                        </span>
                       </div>
 
                       <div className="flex shrink-0 items-center gap-3 text-white">

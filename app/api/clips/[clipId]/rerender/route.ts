@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loadClipEditData, sanitizeClipEditPayload } from '@/lib/clip-edit-data';
+import { clipEditorErrorMessage, isMissingEditColumnError, loadClipEditData, sanitizeClipEditPayload } from '@/lib/clip-edit-data';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 
@@ -29,7 +29,16 @@ export async function POST(req: Request, context: { params: Promise<{ clipId: st
       })
       .eq('id', clipId);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      if (isMissingEditColumnError(updateError)) {
+        return NextResponse.json({
+          error: 'Clip editor storage is not ready yet',
+          code: 'clip_edit_columns_missing',
+          detail: clipEditorErrorMessage(updateError),
+        }, { status: 409 });
+      }
+      throw updateError;
+    }
 
     const { error: jobError } = await admin.from('jobs').insert({
       project_id: current.project.id,
@@ -53,7 +62,8 @@ export async function POST(req: Request, context: { params: Promise<{ clipId: st
     if (!refreshed) return NextResponse.json({ error: 'Clip not found after queueing render' }, { status: 404 });
     return NextResponse.json({ ok: true, ...refreshed });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Could not queue clip re-render';
-    return NextResponse.json({ error: message }, { status: 400 });
+    const detail = clipEditorErrorMessage(error, 'Could not queue clip re-render');
+    console.error('[clip-editor] rerender failed', { detail, error });
+    return NextResponse.json({ error: 'Could not queue clip re-render', code: 'clip_editor_rerender_failed', detail }, { status: 400 });
   }
 }

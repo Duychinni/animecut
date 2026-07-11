@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { loadClipEditData, sanitizeClipEditPayload } from '@/lib/clip-edit-data';
+import { clipEditorErrorMessage, isMissingEditColumnError, loadClipEditData, sanitizeClipEditPayload } from '@/lib/clip-edit-data';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 
@@ -19,8 +19,9 @@ export async function GET(_req: Request, context: { params: Promise<{ clipId: st
     if (!data) return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
     return NextResponse.json(data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Could not load clip editor';
-    return NextResponse.json({ error: message }, { status: 400 });
+    const detail = clipEditorErrorMessage(error);
+    console.error('[clip-editor] load failed', { detail, error });
+    return NextResponse.json({ error: 'Could not load clip editor', code: 'clip_editor_load_failed', detail }, { status: 400 });
   }
 }
 
@@ -44,13 +45,23 @@ export async function PATCH(req: Request, context: { params: Promise<{ clipId: s
       })
       .eq('id', clipId);
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingEditColumnError(error)) {
+        return NextResponse.json({
+          error: 'Clip editor storage is not ready yet',
+          code: 'clip_edit_columns_missing',
+          detail: clipEditorErrorMessage(error),
+        }, { status: 409 });
+      }
+      throw error;
+    }
 
     const refreshed = await loadClipEditData(clipId, user.id);
     if (!refreshed) return NextResponse.json({ error: 'Clip not found after saving edits' }, { status: 404 });
     return NextResponse.json(refreshed);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Could not save clip edits';
-    return NextResponse.json({ error: message }, { status: 400 });
+    const detail = clipEditorErrorMessage(error, 'Could not save clip edits');
+    console.error('[clip-editor] save failed', { detail, error });
+    return NextResponse.json({ error: 'Could not save clip edits', code: 'clip_editor_save_failed', detail }, { status: 400 });
   }
 }

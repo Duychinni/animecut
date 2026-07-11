@@ -45,6 +45,14 @@ type EditorData = {
 
 type Tab = 'clip' | 'transcript' | 'captions' | 'framing';
 type DragMode = 'start' | 'end' | 'seek' | null;
+type EditorDebugInfo = {
+  code?: string;
+  status?: number;
+  error?: string;
+  detail?: string;
+  projectId: string;
+  clipId: string;
+};
 
 const PRESET_IDS = ['viral-bold', 'opus-clean', 'creator-glow', 'podcast-pro', 'minimal-pro'];
 
@@ -117,6 +125,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [rendering, setRendering] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<EditorDebugInfo | null>(null);
   const [query, setQuery] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [paused, setPaused] = useState(true);
@@ -158,13 +167,26 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const load = useCallback(async () => {
     const res = await fetch(`/api/clips/${clipId}/edit`, { cache: 'no-store' });
     const json = await res.json();
-    if (!res.ok) throw new Error(String(json?.error || 'Could not load clip editor'));
+    if (!res.ok) {
+      const debug = {
+        code: typeof json?.code === 'string' ? json.code : undefined,
+        status: res.status,
+        error: typeof json?.error === 'string' ? json.error : 'Could not load clip editor',
+        detail: typeof json?.detail === 'string' ? json.detail : undefined,
+        projectId,
+        clipId,
+      } satisfies EditorDebugInfo;
+      const err = new Error(debug.error);
+      (err as Error & { debug?: EditorDebugInfo }).debug = debug;
+      throw err;
+    }
+    setDebugInfo(null);
     setData(json);
     setSettings(json.settings);
     setBaseline(safeJson(json.settings));
     setCurrentTime(Number(json.settings.clip_start_seconds ?? 0));
     setRendering(json.clip?.editStatus === 'rendering');
-  }, [clipId]);
+  }, [clipId, projectId]);
 
   useEffect(() => {
     let active = true;
@@ -173,6 +195,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       .catch((err) => {
         if (!active) return;
         setError(err instanceof Error ? err.message : 'Could not load clip editor');
+        setDebugInfo((err as Error & { debug?: EditorDebugInfo })?.debug ?? {
+          error: err instanceof Error ? err.message : 'Could not load clip editor',
+          projectId,
+          clipId,
+        });
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -405,9 +432,19 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         <div className="rounded-[18px] border border-red-400/20 bg-red-500/[0.07] p-8 text-center">
           <h1 className="text-xl font-bold">Clip editor unavailable</h1>
           <p className="mt-2 text-sm text-red-100/75">{error || 'Could not load this clip.'}</p>
-          <button onClick={() => router.push(`/dashboard/projects/${projectId}`)} className="mt-6 rounded-full bg-white px-5 py-2 text-sm font-bold text-black">
-            Back to project
-          </button>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <button onClick={() => router.push(`/dashboard/projects/${projectId}`)} className="rounded-full bg-white px-5 py-2 text-sm font-bold text-black">
+              Back to project
+            </button>
+            {debugInfo ? (
+              <button
+                onClick={() => void navigator.clipboard?.writeText(JSON.stringify(debugInfo, null, 2))}
+                className="rounded-full border border-white/15 px-5 py-2 text-sm font-bold text-white/80 transition hover:bg-white/[0.07] hover:text-white"
+              >
+                Copy debug
+              </button>
+            ) : null}
+          </div>
         </div>
       </main>
     );

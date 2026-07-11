@@ -51,6 +51,20 @@ function exportPosterPath(outputPath: string | null) {
   return /\.mp4$/i.test(outputPath) ? outputPath.replace(/\.mp4$/i, '.jpg') : null;
 }
 
+export function clipEditorErrorMessage(error: unknown, fallback = 'Could not load clip editor') {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string') {
+    return String((error as { message: string }).message);
+  }
+  return fallback;
+}
+
+export function isMissingEditColumnError(error: unknown) {
+  const message = clipEditorErrorMessage(error, '');
+  return /(clip_edit_settings|edit_status)/i.test(message)
+    && /(column|schema cache|could not find|PGRST204|42703)/i.test(message);
+}
+
 async function signedExportUrl(path: string | null) {
   if (!path || path.startsWith('/') || path.startsWith('mock://')) return null;
   try {
@@ -72,11 +86,24 @@ async function signedRawUrl(path: string | null) {
 export async function loadClipEditData(clipId: string, userId: string) {
   const supabase = createAdminClient();
 
-  const { data: exportRow, error: exportError } = await supabase
+  const exportLookup = await supabase
     .from('exports')
     .select('id, project_id, clip_candidate_id, status, output_storage_path, error_message, caption_preset_id, clip_edit_settings, edit_status, updated_at')
     .eq('id', clipId)
     .maybeSingle();
+
+  const fallbackExportLookup = exportLookup.error && isMissingEditColumnError(exportLookup.error)
+    ? await supabase
+        .from('exports')
+        .select('id, project_id, clip_candidate_id, status, output_storage_path, error_message, caption_preset_id, updated_at')
+        .eq('id', clipId)
+        .maybeSingle()
+    : null;
+
+  const exportError = fallbackExportLookup?.error ?? exportLookup.error;
+  const exportRow = fallbackExportLookup?.data
+    ? { ...(fallbackExportLookup.data as ExportRow), clip_edit_settings: null, edit_status: null }
+    : exportLookup.data;
 
   if (exportError) throw exportError;
   if (!exportRow) return null;
