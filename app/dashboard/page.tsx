@@ -634,7 +634,7 @@ export default function DashboardPage() {
                     Open Project
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           );
 
