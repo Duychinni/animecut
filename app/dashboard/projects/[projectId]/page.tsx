@@ -90,7 +90,7 @@ export default async function ProjectDetailPage({
       .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id, clip_edit_settings, edit_status')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(10),
+      .limit(50),
     supabase
       .from('clip_candidates')
       .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')

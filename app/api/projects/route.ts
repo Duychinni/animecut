@@ -74,10 +74,10 @@ export async function GET() {
 
     const projects = await Promise.all((data ?? []).map(async (project) => {
       const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
-      const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
+      const readyExports = rows.filter((r) => r.status === 'done' && typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-      const isCompleted = readyExports > 0 && (markedCompleted || activeExports === 0);
+      const isCompleted = readyExports > 0 && activeExports === 0;
       const needsExportCompletion = markedCompleted && activeExports > 0;
       const uploadThumbnailUrl = project.source_type === 'upload'
         ? await ensureProjectUploadThumbnail({

@@ -33,7 +33,7 @@ async function maybeFinalizeProject(projectId: string) {
     { count: candidateCount },
   ] = await Promise.all([
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
-    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'done'),
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'done').not('output_storage_path', 'is', null),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'error'),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('status', ['queued', 'processing']),
     supabase.from('transcripts').select('segments_json').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single(),
@@ -144,7 +144,7 @@ async function getProjectCompletionState(projectId: string) {
 
 async function isFrozenCompletedProject(projectId: string) {
   const state = await getProjectCompletionState(projectId);
-  return state.completed && state.hasSavedExports;
+  return state.completed && state.hasSavedExports && state.activeExports === 0;
 }
 
 async function shouldSkipExportForCompletedProject(exportId: string) {

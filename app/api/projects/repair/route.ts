@@ -3,8 +3,6 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById } from '@/lib/caption-presets';
 
-const STALE_ACTIVE_EXPORT_MS = 10 * 60 * 1000;
-
 type ExportRepairRow = {
   id?: string | null;
   status?: string | null;
@@ -16,7 +14,7 @@ type ExportRepairRow = {
 };
 
 function isRetryableRenderError(message: string | null | undefined) {
-  return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted/i.test(message ?? '');
+  return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted|skipped because this project is already completed/i.test(message ?? '');
 }
 
 function usesCurrentCaptionStyle(row: ExportRepairRow, preset: ReturnType<typeof getCaptionPresetById>) {
@@ -79,13 +77,9 @@ export async function POST() {
         : [];
       const projectAlreadyCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing'));
-      const readyExports = rows.filter((r) => typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
+      const readyExports = rows.filter((r) => r.status === 'done' && typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
       const hasSavedReels = readyExports > 0;
-      const activeRowsAreStale = activeRows.length > 0 && activeRows.every((row) => {
-        const updatedAtMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
-        return updatedAtMs <= 0 || Date.now() - updatedAtMs > STALE_ACTIVE_EXPORT_MS;
-      });
-      const frozenCompletedProject = hasSavedReels && (projectAlreadyCompleted || activeRows.length === 0 || activeRowsAreStale);
+      const frozenCompletedProject = hasSavedReels && projectAlreadyCompleted && activeRows.length === 0;
       let requeuedOldStyle = false;
 
       if (frozenCompletedProject) {

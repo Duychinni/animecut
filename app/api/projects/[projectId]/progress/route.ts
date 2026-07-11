@@ -272,7 +272,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         .single(),
       supabase
         .from('exports')
-        .select('status, updated_at, created_at')
+        .select('status, output_storage_path, updated_at, created_at')
         .eq('project_id', projectId),
       supabase
         .from('clip_candidates')
@@ -303,7 +303,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const pipelineJobs = (jobRows ?? []).filter((row) => row.type === 'pipeline');
     const exportJobs = (jobRows ?? []).filter((row) => row.type === 'export');
     const latestPipelineJob = pipelineJobs[0] ?? null;
-    const doneExports = rows.filter((r) => r.status === 'done').length;
+    const doneExports = rows.filter((r) => r.status === 'done' && typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
     const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
     const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
     const failedExports = rows.filter((r) => r.status === 'error').length;
@@ -322,7 +322,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const updatedAtMs = project.updated_at ? new Date(project.updated_at).getTime() : now;
     const stageElapsedSeconds = Math.max(0, Math.round((now - (Number.isFinite(updatedAtMs) ? updatedAtMs : now)) / 1000));
     const completedRenderDurations = rows
-      .filter((row) => row.status === 'done')
+      .filter((row) => row.status === 'done' && typeof row.output_storage_path === 'string' && row.output_storage_path.length > 0)
       .map((row) => {
         const start = row.created_at ? new Date(row.created_at).getTime() : 0;
         const end = row.updated_at ? new Date(row.updated_at).getTime() : 0;
@@ -344,7 +344,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasPlayableExports = doneExports > 0;
-    const frozenCompletedProject = projectMarkedCompleted && hasPlayableExports;
+    const frozenCompletedProject = projectMarkedCompleted && activeExports === 0 && hasPlayableExports;
     const hasSettledPlayableExports = activeExports === 0 && hasPlayableExports;
     const isReallyCompleted =
       frozenCompletedProject
