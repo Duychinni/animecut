@@ -11,7 +11,7 @@ type ExportRepairRow = {
 };
 
 function isRetryableRenderError(message: string | null | undefined) {
-  return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted|skipped because this project is already completed/i.test(message ?? '');
+  return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted|skipped because this project is already completed|clip_edit_settings|edit_status|schema cache|could not find|PGRST204|42703/i.test(message ?? '');
 }
 
 function hasPlayableOutput(row: ExportRepairRow) {
@@ -160,6 +160,24 @@ export async function POST() {
       }
 
       const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length + retryableErrors.length;
+
+      if (readyExports === 0 && activeExports > 0 && (project.status !== 'processing' || project.pipeline_status !== 'processing')) {
+        await admin
+          .from('projects')
+          .update({
+            status: 'processing',
+            pipeline_status: 'processing',
+            pipeline_stage: 'rendering',
+            pipeline_stage_label: 'Rendering reels',
+            pipeline_progress_percent: 95,
+            pipeline_error: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', project.id)
+          .eq('user_id', user.id);
+
+        repaired += 1;
+      }
 
       if (projectAlreadyCompleted && readyExports > 0 && activeExports === 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed')) {
         await admin

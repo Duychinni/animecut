@@ -173,6 +173,10 @@ function isRecoverablePipelineError(error: unknown, stage: string | null) {
   return info.code !== 'youtube_source_blocked' && info.code !== 'not_enough_content';
 }
 
+function isRetryableRenderError(message: string | null | undefined) {
+  return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted|skipped because this project is already completed|clip_edit_settings|edit_status|schema cache|could not find|PGRST204|42703/i.test(message ?? '');
+}
+
 function secondsSince(value: string | null | undefined, now = Date.now()) {
   if (!value) return null;
   const ms = new Date(value).getTime();
@@ -212,7 +216,7 @@ async function recoverPipeline(projectId: string) {
     });
   }
 
-  await admin
+  const { error: projectUpdateError } = await admin
     .from('projects')
     .update({
       pipeline_status: 'queued',
@@ -242,7 +246,7 @@ async function recoverStaleProjectExports(projectId: string, cutoffIso: string) 
   const exportIds = (staleExports ?? []).map((row) => String(row.id)).filter(Boolean);
   if (!exportIds.length) return 0;
 
-  await admin
+  const { error: exportUpdateError } = await admin
     .from('exports')
     .update({
       status: 'queued',
@@ -250,6 +254,8 @@ async function recoverStaleProjectExports(projectId: string, cutoffIso: string) 
       updated_at: now,
     })
     .in('id', exportIds);
+
+  if (exportUpdateError) throw exportUpdateError;
 
   await admin
     .from('projects')
@@ -263,6 +269,74 @@ async function recoverStaleProjectExports(projectId: string, cutoffIso: string) 
       updated_at: now,
     })
     .eq('id', projectId);
+
+  if (projectUpdateError) throw projectUpdateError;
+
+  return exportIds.length;
+}
+
+async function recoverErroredProjectExports(projectId: string, exportIds: string[]) {
+  if (!exportIds.length) return 0;
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+
+  const { error: exportUpdateError } = await admin
+    .from('exports')
+    .update({
+      status: 'queued',
+      output_storage_path: null,
+      error_message: 'Requeued after render compatibility repair.',
+      updated_at: now,
+    })
+    .in('id', exportIds);
+
+  if (exportUpdateError) throw exportUpdateError;
+
+  const { data: activeJobs, error: activeJobsError } = await admin
+    .from('jobs')
+    .select('payload')
+    .eq('project_id', projectId)
+    .eq('type', 'export')
+    .in('status', ['queued', 'processing']);
+
+  if (activeJobsError) throw activeJobsError;
+
+  const activeExportIds = new Set(
+    (activeJobs ?? [])
+      .map((job) => (job.payload as { export_id?: unknown } | null)?.export_id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+
+  const jobsToInsert = exportIds
+    .filter((exportId) => !activeExportIds.has(exportId))
+    .map((exportId) => ({
+      project_id: projectId,
+      type: 'export' as const,
+      payload: { export_id: exportId, repair: true, recovered_from_progress_poll: true },
+      status: 'queued' as const,
+    }));
+
+  if (jobsToInsert.length) {
+    const { error: insertError } = await admin.from('jobs').insert(jobsToInsert);
+    if (insertError) throw insertError;
+  }
+
+  const { error: projectUpdateError } = await admin
+    .from('projects')
+    .update({
+      status: 'processing',
+      pipeline_status: 'processing',
+      pipeline_stage: 'rendering',
+      pipeline_stage_label: 'Reconnecting render worker',
+      pipeline_error: null,
+      worker_last_seen_at: now,
+      worker_last_log_message: 'Reconnecting render worker',
+      updated_at: now,
+    })
+    .eq('id', projectId);
+
+  if (projectUpdateError) throw projectUpdateError;
 
   return exportIds.length;
 }
@@ -280,7 +354,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         .single(),
       supabase
         .from('exports')
-        .select('id, status, output_storage_path, updated_at, created_at')
+        .select('id, status, output_storage_path, error_message, updated_at, created_at')
         .eq('project_id', projectId),
       supabase
         .from('clip_candidates')
@@ -324,6 +398,9 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
     const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
     const failedExports = rows.filter((r) => r.status === 'error' && !hasPlayableOutput(r)).length;
+    const retryableErroredExportIds = rows
+      .filter((row) => row.id && row.status === 'error' && !hasPlayableOutput(row) && isRetryableRenderError((row as { error_message?: string | null }).error_message))
+      .map((row) => String(row.id));
 
     const analyzedCandidates = Math.max(0, Number(candidateCount ?? 0));
     const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
@@ -368,12 +445,15 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       || (hasSettledPlayableExports && (projectMarkedCompleted || doneExports >= targetCount || storedPipelineStatus === 'error' || heartbeatExpired));
 
     const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && activeExports > 0;
-    const effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
+    let effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = isReallyCompleted ? 'completed' : storedPipelineStatus;
     const storedPipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
     const inFinalRenderPhase = !isReallyCompleted && storedPipelineStage === 'uploading_outputs' && activeExports === 0 && doneExports > 0;
     const pipelineStage = !isReallyCompleted && activeExports > 0 ? 'rendering' : inFinalRenderPhase ? 'uploading_outputs' : storedPipelineStage;
     if (projectNeedsExportCompletion) {
+      pipelineStatus = 'processing';
+    }
+    if (!isReallyCompleted && activeExports > 0) {
       pipelineStatus = 'processing';
     }
     const hasTranscript = transcriptSegments.length > 0;
@@ -382,6 +462,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const recoverableErrorState = !isReallyCompleted
       && activeExports === 0
       && doneExports === 0
+      && retryableErroredExportIds.length === 0
       && storedPipelineStatus === 'error'
       && isRecoverablePipelineError(pipelineErrorRaw, storedPipelineStage);
     const staleWorker = !isReallyCompleted && heartbeatExpired;
@@ -397,6 +478,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && projectMarkedCompleted
       && activeExports === 0
       && doneExports === 0
+      && retryableErroredExportIds.length === 0
       && (hasTranscript || analyzedCandidates > 0);
     const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker || completedWithoutPlayableExports;
     let recoveryQueued = false;
@@ -415,6 +497,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       pipelineStatus = 'queued';
     }
     let renderRecoveryQueued = false;
+    let recoveredErrorExportCount = 0;
     const staleExportCutoffMs = Date.now() - EXPORT_RECOVERY_STALE_MS;
     const hasStaleRenderExport = !isReallyCompleted
       && activeExports > 0
@@ -434,15 +517,31 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         });
       }
     }
+    if (!isReallyCompleted && retryableErroredExportIds.length) {
+      try {
+        recoveredErrorExportCount = await recoverErroredProjectExports(projectId, retryableErroredExportIds);
+        renderRecoveryQueued = recoveredErrorExportCount > 0 || renderRecoveryQueued;
+      } catch (renderRecoveryError) {
+        console.warn('[projects/progress] errored render recovery failed', {
+          project_id: projectId,
+          error: renderRecoveryError instanceof Error ? renderRecoveryError.message : String(renderRecoveryError),
+        });
+      }
+    }
+    if (renderRecoveryQueued) {
+      pipelineStatus = 'processing';
+      effectiveStatus = 'analyzed';
+    }
+    const visibleActiveExports = activeExports + recoveredErrorExportCount;
     const liveProgress = computeProgress({
       status: effectiveStatus,
       pipelineStatus,
-      pipelineStage,
+      pipelineStage: renderRecoveryQueued ? 'rendering' : pipelineStage,
       elapsedSeconds,
       hasTranscript,
       analyzedCandidates,
       doneExports,
-      activeExports,
+      activeExports: visibleActiveExports,
       targetCount,
     });
     let progressPercent = isReallyCompleted
@@ -457,13 +556,13 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       : estimateEtaSeconds({
           status: effectiveStatus,
           pipelineStatus,
-          pipelineStage,
+          pipelineStage: renderRecoveryQueued ? 'rendering' : pipelineStage,
           elapsedSeconds,
           stageElapsedSeconds,
           hasTranscript,
           analyzedCandidates,
           doneExports,
-          activeExports,
+          activeExports: visibleActiveExports,
           targetCount,
           transcriptSeconds: totalSeconds,
           renderSecondsPerClip,
@@ -515,7 +614,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       transcript_seconds: totalSeconds,
       analyzed_candidates: analyzedCandidates,
       done_exports: doneExports,
-      active_exports: activeExports,
+      active_exports: visibleActiveExports,
       failed_exports: failedExports,
       target_exports: targetCount,
     });
@@ -529,7 +628,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         ? 'Reconnecting render worker'
       : staleWorker
         ? 'Worker heartbeat expired'
-        : activeExports > 0
+        : visibleActiveExports > 0
           ? 'Rendering reels'
         : inFinalRenderPhase
           ? 'Finalizing reels'
@@ -553,7 +652,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         ? 'Project was marked complete before playable reels were available; export recovery was queued.'
       : analyzedCandidates === 0 && hasTranscript && pipelineStage === 'finding_hooks'
         ? 'Transcript exists, but no clip candidates have been saved yet. The analysis step is still running or was interrupted.'
-      : activeExports > 0
+      : visibleActiveExports > 0
         ? 'Clip exports are queued or rendering.'
       : 'No obvious stall detected from saved progress state.';
 
@@ -568,7 +667,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         pipeline_stage_label: displayPipelineStageLabel,
         worker_last_seen_at: lastSeenRaw,
         worker_last_log_message: (project as { worker_last_log_message?: string | null }).worker_last_log_message ?? null,
-        pipeline_error: isReallyCompleted || recoveryQueued || renderRecoveryQueued ? null : staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : pipelineErrorRaw,
+        pipeline_error: isReallyCompleted || recoveryQueued || renderRecoveryQueued || visibleActiveExports > 0 ? null : staleWorker ? getPublicPipelineError('Worker heartbeat expired after 5 minutes without progress update.') : pipelineErrorRaw,
         source_type: project.source_type,
         source_url: sourceUrl,
         thumbnail_url: thumbnailUrl,
@@ -578,7 +677,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       progress: {
         percent: Math.max(0, Math.min(100, progressPercent)),
         done_exports: doneExports,
-        active_exports: isReallyCompleted ? 0 : activeExports,
+        active_exports: isReallyCompleted ? 0 : visibleActiveExports,
         target_exports: targetCount,
         elapsed_seconds: elapsedSeconds,
         eta_seconds: etaSeconds,
@@ -590,7 +689,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         transcript_seconds: totalSeconds,
         analyzed_candidates: analyzedCandidates,
         done_exports: doneExports,
-        active_exports: activeExports,
+        active_exports: visibleActiveExports,
         failed_exports: failedExports,
         target_exports: targetCount,
         recovery_queued: recoveryQueued,

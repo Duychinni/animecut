@@ -220,6 +220,16 @@ type ExportRenderOptions = {
   edit_rerender?: boolean;
 };
 
+type ExportLookupRow = {
+  id: unknown;
+  project_id: unknown;
+  clip_candidate_id: unknown;
+  caption_preset_id?: unknown;
+  clip_edit_settings?: unknown;
+  hook_text_enabled?: unknown;
+  hook_text?: unknown;
+};
+
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
 const REPAIR_SCAN_LIMIT = 6;
 const STALE_PROCESSING_MINUTES = 4;
@@ -230,6 +240,28 @@ function getWorkerBatchLimit() {
   const raw = Number(process.env.EXPORT_WORKER_BATCH_SIZE ?? defaultLimit);
   if (!Number.isFinite(raw)) return defaultLimit;
   return Math.max(1, Math.min(process.env.VERCEL ? 2 : 4, Math.round(raw)));
+}
+
+function errorText(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    return [
+      record.message,
+      record.details,
+      record.hint,
+      record.code,
+      JSON.stringify(record),
+    ].filter(Boolean).join(' ');
+  }
+  return String(error);
+}
+
+function isMissingEditColumnError(error: unknown) {
+  const text = errorText(error);
+  return /(clip_edit_settings|edit_status)/i.test(text)
+    && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
 }
 
 function normalizeReframeMode(raw: unknown, fallback: 'off' | 'basic' | 'smart'): 'off' | 'basic' | 'smart' {
@@ -514,28 +546,46 @@ async function requeueStaleProcessingWork() {
 async function processExportJob(exportId: string, options?: ExportRenderOptions) {
   const supabase = createAdminClient();
 
-  const { data: ex, error } = await supabase
+  const exportLookup = await supabase
     .from('exports')
     .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings, hook_text_enabled, hook_text')
     .eq('id', exportId)
     .single();
+
+  let ex = exportLookup.data as ExportLookupRow | null;
+  let error = exportLookup.error;
+
+  if (error && isMissingEditColumnError(error)) {
+    console.warn('[jobs/process] edit columns missing; rendering export with legacy exports schema', { export_id: exportId });
+    const fallbackLookup = await supabase
+      .from('exports')
+      .select('id, project_id, clip_candidate_id, caption_preset_id, hook_text_enabled, hook_text')
+      .eq('id', exportId)
+      .single();
+    ex = fallbackLookup.data ? { ...(fallbackLookup.data as ExportLookupRow), clip_edit_settings: null } : null;
+    error = fallbackLookup.error;
+  }
+
   if (error || !ex) throw new Error('Export row not found');
+  const exportProjectId = String(ex.project_id ?? '');
+  const exportCandidateId = String(ex.clip_candidate_id ?? '');
+  if (!exportProjectId || !exportCandidateId) throw new Error('Export row is missing project or clip candidate data');
 
   const [{ data: project }, { data: clip }, { data: transcript }] = await Promise.all([
     supabase
       .from('projects')
       .select('id, user_id, source_type, source_url, source_storage_path, source_duration_seconds')
-      .eq('id', ex.project_id)
+      .eq('id', exportProjectId)
       .single(),
     supabase
       .from('clip_candidates')
       .select('start_sec, end_sec, title')
-      .eq('id', ex.clip_candidate_id)
+      .eq('id', exportCandidateId)
       .single(),
     supabase
       .from('transcripts')
       .select('segments_json')
-      .eq('project_id', ex.project_id)
+      .eq('project_id', exportProjectId)
       .order('created_at', { ascending: false })
       .limit(1)
       .single(),
@@ -545,8 +595,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const bundle: ExportBundle = {
     id: String(ex.id),
-    project_id: String(ex.project_id),
-    clip_candidate_id: String(ex.clip_candidate_id),
+    project_id: exportProjectId,
+    clip_candidate_id: exportCandidateId,
     caption_preset_id: typeof ex.caption_preset_id === 'string' ? ex.caption_preset_id : null,
     clip_edit_settings: typeof ex.clip_edit_settings === 'object' && ex.clip_edit_settings ? ex.clip_edit_settings as Record<string, unknown> : null,
     hook_text_enabled: ex.hook_text_enabled !== false,
@@ -690,7 +740,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     });
   }
 
-  const { error: e1 } = await supabase
+  const doneUpdate = await supabase
     .from('exports')
     .update({
       status: 'done',
@@ -700,6 +750,22 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       updated_at: new Date().toISOString(),
     })
     .eq('id', bundle.id);
+
+  let e1 = doneUpdate.error;
+  if (e1 && isMissingEditColumnError(e1)) {
+    console.warn('[jobs/process] edit_status column missing; saving rendered export without edit_status', { export_id: bundle.id });
+    const fallbackDoneUpdate = await supabase
+      .from('exports')
+      .update({
+        status: 'done',
+        output_storage_path: objectPath,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', bundle.id);
+    e1 = fallbackDoneUpdate.error;
+  }
+
   if (e1) throw e1;
 }
 

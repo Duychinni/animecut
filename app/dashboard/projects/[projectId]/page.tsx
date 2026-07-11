@@ -34,6 +34,8 @@ type CandidateRow = {
   rank: number | null;
 };
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
   const s = Math.max(0, Math.round(totalSec));
@@ -76,6 +78,55 @@ function hasSavedPlayableOutput(row: { status?: string | null; output_storage_pa
     && !row.output_storage_path.startsWith('mock://');
 }
 
+function errorText(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    return [
+      record.message,
+      record.details,
+      record.hint,
+      record.code,
+      JSON.stringify(record),
+    ].filter(Boolean).join(' ');
+  }
+  return String(error);
+}
+
+function isMissingEditColumnError(error: unknown) {
+  const text = errorText(error);
+  return /(clip_edit_settings|edit_status)/i.test(text)
+    && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
+}
+
+async function loadProjectExports(supabase: SupabaseServerClient, projectId: string): Promise<ExportRow[]> {
+  const withEditFields = await supabase
+    .from('exports')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id, clip_edit_settings, edit_status')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (!withEditFields.error) return (withEditFields.data ?? []) as ExportRow[];
+  if (!isMissingEditColumnError(withEditFields.error)) throw withEditFields.error;
+
+  console.warn('[project/detail] edit columns missing; loading exports with legacy schema', { project_id: projectId });
+  const legacyExports = await supabase
+    .from('exports')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (legacyExports.error) throw legacyExports.error;
+  return ((legacyExports.data ?? []) as ExportRow[]).map((row) => ({
+    ...row,
+    clip_edit_settings: null,
+    edit_status: null,
+  }));
+}
+
 export default async function ProjectDetailPage({
   params,
   searchParams,
@@ -88,18 +139,13 @@ export default async function ProjectDetailPage({
   const autoStart = autorun === '1' || autorun === 'true';
   const supabase = await createClient();
 
-  const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }, { data: transcriptRow }] = await Promise.all([
+  const [projectResult, exportsRows, candidateResult, transcriptResult] = await Promise.all([
     supabase
       .from('projects')
       .select('id, user_id, title, status, pipeline_status, pipeline_error, pipeline_progress_percent, pipeline_completed_at, source_type, source_url, source_storage_path, source_title, source_thumbnail_url, source_duration_seconds, created_at')
       .eq('id', projectId)
       .single(),
-    supabase
-      .from('exports')
-      .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id, clip_edit_settings, edit_status')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false })
-      .limit(50),
+    loadProjectExports(supabase, projectId),
     supabase
       .from('clip_candidates')
       .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')
@@ -113,6 +159,9 @@ export default async function ProjectDetailPage({
       .limit(1)
       .single(),
   ]);
+  const projectRow = projectResult.data;
+  const candidateRows = candidateResult.data;
+  const transcriptRow = transcriptResult.data;
 
   const candidatesById = new Map<string, CandidateRow>(((candidateRows ?? []) as CandidateRow[]).map((c) => [String(c.id), c]));
 

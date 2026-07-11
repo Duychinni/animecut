@@ -170,6 +170,7 @@ export default function ProjectsPage() {
           const completed = isCompletedProject(p);
           const percent = Math.max(0, Math.min(100, Number(p.progress_percent ?? (completed ? 100 : 0))));
           const showProcessing = isActiveProject(p) && percent < 100;
+          const canOpenProject = completed && !showProcessing;
           const expiryLabel = getExpiryLabel(p);
           const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
@@ -233,7 +234,7 @@ export default function ProjectsPage() {
           return (
             <div key={p.id} className="group rounded-2xl border border-white/10 bg-white/[0.03] p-3 transition hover:border-white/25 hover:bg-white/[0.05] backdrop-blur-sm">
               <div className="flex items-start justify-between gap-3">
-                {showProcessing ? (
+                {!canOpenProject ? (
                   <div className="min-w-0 flex-1 cursor-pointer opacity-95">{cardBody}</div>
                 ) : (
                   <Link href={`/dashboard/projects/${p.id}`} className="min-w-0 flex-1">

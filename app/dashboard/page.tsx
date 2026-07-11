@@ -573,6 +573,7 @@ export default function DashboardPage() {
           const isFailed = (p.pipeline_status === 'error' || p.status === 'failed') && !isNotEnoughContent;
           const percent = isCompleted ? 100 : getFlooredProgress(p);
           const showProcessing = isActiveProject(p) && !isFailed && !isNotEnoughContent && percent < 100;
+          const canOpenProject = isCompleted && !isFailed && !isNotEnoughContent;
           const expiryLabel = getExpiryLabel(p);
           const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
@@ -627,7 +628,7 @@ export default function DashboardPage() {
                     <span className="max-w-[132px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{processingStage}</span>
                   </div>
                 </div>
-              ) : (
+              ) : canOpenProject ? (
                 <div className="pointer-events-none absolute inset-0 flex items-start justify-start opacity-0 transition duration-300 group-hover:opacity-100">
                   <div className="m-3 rounded-full border border-[#9b6bff]/35 bg-black/55 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/95 backdrop-blur-sm">
                     Open Project
@@ -640,7 +641,7 @@ export default function DashboardPage() {
           return (
             <div key={p.id} className="group rounded-2xl bg-transparent p-4 transition hover:bg-white/[0.02]">
               <div className="min-w-0">
-                {showProcessing ? (
+                {!canOpenProject ? (
                   <div className="cursor-pointer" aria-disabled="true">{thumb}</div>
                 ) : (
                   <Link href={`/dashboard/projects/${p.id}`} prefetch={false}>{thumb}</Link>
