@@ -257,7 +257,7 @@ async function recoverStaleProjectExports(projectId: string, cutoffIso: string) 
 
   if (exportUpdateError) throw exportUpdateError;
 
-  await admin
+  const { error: projectUpdateError } = await admin
     .from('projects')
     .update({
       pipeline_status: 'processing',
