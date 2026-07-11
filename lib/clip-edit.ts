@@ -93,26 +93,28 @@ function normalizeFramingMode(value: unknown): ClipEditSettings['framing_mode'] 
   return 'auto';
 }
 
-function normalizePhrases(value: unknown, fallback: TranscriptPhrase[]) {
+function normalizePhrases(value: unknown, fallback: TranscriptPhrase[]): TranscriptPhrase[] {
   if (!Array.isArray(value)) return fallback;
-  const phrases = value
-    .map((item, index) => {
-      const row = item as Record<string, unknown>;
-      const start = finiteNumber(row.start, NaN);
-      const end = finiteNumber(row.end, NaN);
-      const text = typeof row.text === 'string' ? row.text.replace(/\s+/g, ' ').trim() : '';
-      const originalText = typeof row.originalText === 'string' ? row.originalText.replace(/\s+/g, ' ').trim() : text;
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-      return {
-        id: typeof row.id === 'string' && row.id ? row.id : phraseId(index, start, end),
-        start,
-        end,
-        text,
-        originalText,
-        deleted: row.deleted === true,
-      };
-    })
-    .filter((phrase): phrase is TranscriptPhrase => Boolean(phrase));
+  const phrases: TranscriptPhrase[] = [];
+
+  value.forEach((item, index) => {
+    const row = item as Record<string, unknown>;
+    const start = finiteNumber(row.start, NaN);
+    const end = finiteNumber(row.end, NaN);
+    const text = typeof row.text === 'string' ? row.text.replace(/\s+/g, ' ').trim() : '';
+    const originalText = typeof row.originalText === 'string' ? row.originalText.replace(/\s+/g, ' ').trim() : text;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+
+    phrases.push({
+      id: typeof row.id === 'string' && row.id ? row.id : phraseId(index, start, end),
+      start,
+      end,
+      text,
+      originalText,
+      deleted: row.deleted === true,
+    });
+  });
+
   return phrases.length ? phrases : fallback;
 }
 
@@ -122,7 +124,7 @@ export function buildDefaultClipEditSettings(params: {
   sourceDuration: number;
   transcriptPhrases: TranscriptPhrase[];
   captionPresetId?: string | null;
-}) {
+}): ClipEditSettings {
   const preset = getCaptionPresetById(params.captionPresetId ?? DEFAULT_CAPTION_PRESET_ID);
   const maxEnd = Math.max(params.aiEnd, params.sourceDuration || params.aiEnd);
   return {
@@ -145,7 +147,7 @@ export function buildDefaultClipEditSettings(params: {
   } satisfies ClipEditSettings;
 }
 
-export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettings, sourceDuration: number) {
+export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettings, sourceDuration: number): ClipEditSettings {
   const row = typeof raw === 'object' && raw ? (raw as Record<string, unknown>) : {};
   const maxEnd = Math.max(10, sourceDuration || defaults.clip_end_seconds);
   const start = clamp(finiteNumber(row.clip_start_seconds, defaults.clip_start_seconds), 0, Math.max(0, maxEnd - 10));

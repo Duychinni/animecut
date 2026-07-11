@@ -63,12 +63,14 @@ export function ProcessingHero({
   pageTitle,
   heroThumbnail,
   fallbackPercent,
+  forcePreparing = false,
 }: {
   projectId: string;
   pageTitle: string;
   heroThumbnail: string | null;
   fallbackPercent: number;
   fallbackTargetCount: number;
+  forcePreparing?: boolean;
 }) {
   const router = useRouter();
   const [data, setData] = useState<ProgressPayload | null>(null);
@@ -99,7 +101,8 @@ export function ProcessingHero({
     };
   }, [projectId]);
 
-  const percent = Math.max(0, Math.min(100, Number(data?.progress?.percent ?? fallbackPercent)));
+  const rawPercent = Math.max(0, Math.min(100, Number(data?.progress?.percent ?? fallbackPercent)));
+  const percent = forcePreparing ? Math.min(99, Math.max(92, rawPercent)) : rawPercent;
   const status = String(data?.project?.status ?? 'created');
   const pipelineStatus = String(data?.project?.pipeline_status ?? 'idle');
   const pipelineStage = data?.project?.pipeline_stage ?? null;
@@ -109,9 +112,9 @@ export function ProcessingHero({
   const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `ETA ${fmtDuration(etaSeconds)}` : null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
   const publicError = pipelineError && !isNotEnoughContent ? getPipelineErrorInfo(pipelineError) : null;
-  const isFinished = (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
+  const isFinished = !forcePreparing && (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
   const liveHeroThumbnail = data?.project?.thumbnail_url || heroThumbnail;
-  const stageDisplayLabel = pipelineStageLabel || getProcessingLabel(pipelineStage, status);
+  const stageDisplayLabel = forcePreparing ? 'Preparing your reels...' : pipelineStageLabel || getProcessingLabel(pipelineStage, status);
 
   useEffect(() => {
     if (completedRefreshRef.current) return;
@@ -145,7 +148,9 @@ export function ProcessingHero({
                 ? 'This upload finished analysis, but it did not contain enough complete standalone moments to turn into good reels under the current clip rules.'
                 : publicError
                   ? publicError.message
-                  : `Current stage: ${stageDisplayLabel}. Keep this page open if you want to watch progress, or come back when it's done.`}
+                  : forcePreparing
+                    ? 'Your reels are being prepared for playback. This page will update automatically as soon as the clips are ready.'
+                    : `Current stage: ${stageDisplayLabel}. Keep this page open if you want to watch progress, or come back when it's done.`}
             </p>
 
             {publicError ? (

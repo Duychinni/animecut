@@ -221,8 +221,14 @@ export default async function ProjectDetailPage({
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
   const hasActiveExports = activeExports > 0;
   const hasExportRows = displayExportItems.length > 0;
-  const shouldShowCompletedState = !shouldShowResults && !hasExportRows && !hasActiveExports && (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
-  const showProcessingHero = !shouldShowResults && !shouldShowCompletedState && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults);
+  const waitingForPlayableReels =
+    !shouldShowResults &&
+    !hasExportRows &&
+    !hasActiveExports &&
+    !hasRenderableResults &&
+    !hasMockResults &&
+    (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
+  const showProcessingHero = !shouldShowResults && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults || waitingForPlayableReels);
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -261,12 +267,8 @@ export default async function ProjectDetailPage({
             heroThumbnail={heroThumbnail}
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
+            forcePreparing={waitingForPlayableReels}
           />
-        ) : shouldShowCompletedState ? (
-          <div className="w-full max-w-3xl rounded-3xl border border-white/10 bg-white/[0.03] px-8 py-12 text-center">
-            <h2 className="text-2xl font-semibold text-white">Processing finished</h2>
-            <p className="mt-3 text-sm text-white/60">The backend marked this project complete, but no playable reels were available in this page load yet. Refresh once and the reels should appear.</p>
-          </div>
         ) : null}
       </section>
     </main>
