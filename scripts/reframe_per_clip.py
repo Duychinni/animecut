@@ -48,10 +48,10 @@ def build_single_subject_crop(source_w: float, source_h: float, avg_center_x: fl
     x, y, w, h = avg_box
     face_cx, _ = center(avg_box)
 
-    # A face detector box is too small for shorts framing. Expand from the face
-    # into an upper-body crop that usually catches head, shoulders, and hands.
-    crop_h = max(source_h * 0.58, h * 6.4, w * 7.4)
-    crop_h = min(source_h * 0.92, crop_h)
+    # A face detector box is too small for shorts framing. Use the full source
+    # height for the default 9:16 crop so 1080p horizontal sources are not
+    # zoomed beyond the already-required vertical crop.
+    crop_h = source_h
     crop_w = crop_h * 9.0 / 16.0
 
     if crop_w > source_w:
@@ -59,7 +59,7 @@ def build_single_subject_crop(source_w: float, source_h: float, avg_center_x: fl
         crop_h = min(source_h, crop_w * 16.0 / 9.0)
 
     crop_x = clamp(face_cx - crop_w * 0.50, 0.0, max(0.0, source_w - crop_w))
-    crop_y = clamp(y - crop_h * 0.18, 0.0, max(0.0, source_h - crop_h))
+    crop_y = clamp(y - crop_h * 0.08, 0.0, max(0.0, source_h - crop_h))
     return float(crop_x), float(crop_y), float(crop_w), float(crop_h), avg_box
 
 
