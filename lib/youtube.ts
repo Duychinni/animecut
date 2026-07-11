@@ -81,6 +81,8 @@ const YOUTUBE_CLIENT_ATTEMPTS = [
   ['--extractor-args', 'youtube:player_client=web'],
 ];
 
+const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v3-2160p';
+
 function getYouTubeMaxSourceHeight() {
   const raw = Number(process.env.YOUTUBE_MAX_SOURCE_HEIGHT ?? 2160);
   if (!Number.isFinite(raw) || raw < 720) return 2160;
@@ -88,8 +90,8 @@ function getYouTubeMaxSourceHeight() {
 }
 
 function getYouTubeMinCacheHeight() {
-  const raw = Number(process.env.YOUTUBE_MIN_CACHE_HEIGHT ?? 1080);
-  if (!Number.isFinite(raw) || raw < 480) return 1080;
+  const raw = Number(process.env.YOUTUBE_MIN_CACHE_HEIGHT ?? 1440);
+  if (!Number.isFinite(raw) || raw < 480) return 1440;
   return Math.min(getYouTubeMaxSourceHeight(), Math.round(raw));
 }
 
@@ -166,6 +168,7 @@ async function getCachedQualityMarker(markerPath: string) {
     return JSON.parse(await readFile(markerPath, 'utf8')) as {
       checkedHeight?: number | null;
       refreshedLowQuality?: boolean;
+      qualityVersion?: string;
     };
   } catch {
     return null;
@@ -178,6 +181,7 @@ async function writeCachedQualityMarker(markerPath: string, info: DownloadedVide
     checkedHeight: info?.height ?? null,
     checkedWidth: info?.width ?? null,
     refreshedLowQuality,
+    qualityVersion: SOURCE_QUALITY_CACHE_VERSION,
   }), 'utf8').catch(() => undefined);
 }
 
@@ -229,9 +233,20 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
       const qualityMarker = await getCachedQualityMarker(qualityMarkerPath);
       const minHeight = getYouTubeMinCacheHeight();
       const cachedHeight = cachedInfo?.height ?? qualityMarker?.checkedHeight ?? null;
-      const alreadyRefreshedLowQuality = qualityMarker?.refreshedLowQuality === true;
+      const alreadyRefreshedLowQuality = qualityMarker?.refreshedLowQuality === true
+        && qualityMarker?.qualityVersion === SOURCE_QUALITY_CACHE_VERSION;
 
-      if (!cachedHeight || cachedHeight >= minHeight || alreadyRefreshedLowQuality) {
+      if (cachedHeight && cachedHeight >= minHeight) {
+        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo, false);
+        return outPath;
+      }
+
+      if (cachedHeight && cachedHeight < minHeight && alreadyRefreshedLowQuality) {
+        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo, true);
+        return outPath;
+      }
+
+      if (!cachedHeight && qualityMarker?.qualityVersion === SOURCE_QUALITY_CACHE_VERSION) {
         await writeCachedQualityMarker(qualityMarkerPath, cachedInfo, alreadyRefreshedLowQuality);
         return outPath;
       }
@@ -240,6 +255,8 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
         projectId,
         cachedHeight,
         minHeight,
+        qualityVersion: qualityMarker?.qualityVersion ?? null,
+        currentQualityVersion: SOURCE_QUALITY_CACHE_VERSION,
       });
       await unlink(outPath).catch(() => undefined);
       refreshedLowQualityCache = true;

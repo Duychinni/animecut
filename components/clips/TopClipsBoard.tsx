@@ -485,12 +485,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const showHookTextControls = false;
 
-  useEffect(() => {
-    for (const clip of visible.slice(0, 6)) {
-      if (clip.signedUrl) primeVideo(clip.exportId, 'metadata');
-    }
-  }, [visible]);
-
   return (
     <>
       <section className="mt-6 space-y-3">
@@ -598,7 +592,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                     <div className="flex justify-center bg-transparent px-1.5">
                       <div
                         data-clip-frame="true"
-                        onMouseEnter={() => primeVideo(clip.exportId, 'auto')}
+                        onPointerEnter={() => primeVideo(clip.exportId, 'auto')}
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
                         className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0"
                       >
@@ -606,7 +600,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload="metadata"
+                          preload="none"
                           playsInline
                           controls={false}
                           disablePictureInPicture

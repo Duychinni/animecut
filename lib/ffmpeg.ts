@@ -12,7 +12,7 @@ type LayoutMode = 'single' | 'split_stack';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v4-hd-source';
+const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v5-quality-safe-source';
 const DEFAULT_X264_CRF = '12';
 const DEFAULT_X264_MAXRATE = '50M';
 const DEFAULT_X264_BUFSIZE = '100M';
@@ -21,6 +21,7 @@ const DEFAULT_HW_MAXRATE = '60M';
 const DEFAULT_HW_BUFSIZE = '120M';
 const HIGH_QUALITY_SCALE_FLAGS = 'lanczos+accurate_rnd+full_chroma_int';
 const SHARPEN_AFTER_UPSCALE_FILTER = 'unsharp=5:5:0.55:3:3:0.25';
+const MAX_EXTRA_SMART_CROP_UPSCALE = 1.04;
 
 type RenderOpts = {
   inputPath: string;
@@ -474,6 +475,27 @@ function maybeBuildSplitStackLayout(raw: {
   };
 }
 
+function largestSourceCropForOutput(sourceW: number, sourceH: number, outputW: number, outputH: number) {
+  const targetAspect = outputW / outputH;
+  const sourceAspect = sourceW / sourceH;
+
+  if (!Number.isFinite(targetAspect) || !Number.isFinite(sourceAspect) || sourceW <= 0 || sourceH <= 0) {
+    return null;
+  }
+
+  if (sourceAspect >= targetAspect) {
+    return {
+      cropW: sourceH * targetAspect,
+      cropH: sourceH,
+    };
+  }
+
+  return {
+    cropW: sourceW,
+    cropH: sourceW / targetAspect,
+  };
+}
+
 async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropExpr?: string; layout?: SplitStackLayout }> {
   if (opts.framingMode && opts.framingMode !== 'auto') {
     console.log('[smart-reframe]', {
@@ -593,16 +615,38 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         : 1;
       const scaledW = sourceW * scale;
       const scaledH = sourceH * scale;
-      const rawCropW = clamp(Number(raw.crop_w), 1, sourceW || Number(raw.crop_w));
-      const rawCropH = clamp(Number(raw.crop_h), 1, sourceH || Number(raw.crop_h));
+      let rawCropW = clamp(Number(raw.crop_w), 1, sourceW || Number(raw.crop_w));
+      let rawCropH = clamp(Number(raw.crop_h), 1, sourceH || Number(raw.crop_h));
+      let rawCropX = clamp(Number(raw.crop_x ?? 0), 0, Math.max(0, sourceW - rawCropW));
+      let rawCropY = clamp(Number((raw as { crop_y?: number }).crop_y ?? 0), 0, Math.max(0, sourceH - rawCropH));
+      const largestSourceCrop = sourceW > 0 && sourceH > 0
+        ? largestSourceCropForOutput(sourceW, sourceH, outputWidth, outputHeight)
+        : null;
+      const extraSmartCropUpscale = largestSourceCrop
+        ? Math.max(largestSourceCrop.cropW / rawCropW, largestSourceCrop.cropH / rawCropH)
+        : null;
+      let cropWidenedForQuality = false;
+
+      if (largestSourceCrop && extraSmartCropUpscale && extraSmartCropUpscale > MAX_EXTRA_SMART_CROP_UPSCALE) {
+        const centerX = rawCropX + rawCropW / 2;
+        const centerY = rawCropY + rawCropH / 2;
+        rawCropW = clamp(largestSourceCrop.cropW, 1, sourceW);
+        rawCropH = clamp(largestSourceCrop.cropH, 1, sourceH);
+        rawCropX = clamp(centerX - rawCropW / 2, 0, Math.max(0, sourceW - rawCropW));
+        rawCropY = clamp(centerY - rawCropH / 2, 0, Math.max(0, sourceH - rawCropH));
+        cropWidenedForQuality = true;
+      }
+
       const scaledCropW = floorEven(clamp(Math.round(rawCropW * scale), Math.min(outputWidth, 360), scaledW));
       const scaledCropH = floorEven(clamp(Math.round(rawCropH * scale), Math.min(outputHeight, 640), scaledH));
-      const scaledCropX = clamp(raw.crop_x * scale, 0, Math.max(0, scaledW - scaledCropW));
-      const rawCropY = Number((raw as { crop_y?: number }).crop_y ?? 0);
+      const scaledCropX = clamp(rawCropX * scale, 0, Math.max(0, scaledW - scaledCropW));
       const scaledCropY = clamp(rawCropY * scale, 0, Math.max(0, scaledH - scaledCropH));
       const cropExpr = `crop=${Math.round(scaledCropW)}:${Math.round(scaledCropH)}:${Math.round(scaledCropX)}:${Math.round(scaledCropY)}`;
       const effectiveSourceCropW = scale > 0 ? rawCropW : null;
       const upscaleRatio = effectiveSourceCropW && effectiveSourceCropW > 0 ? outputWidth / effectiveSourceCropW : null;
+      const sourceToOutputUpscaleRatio = rawCropW > 0 && rawCropH > 0
+        ? Math.max(outputWidth / rawCropW, outputHeight / rawCropH)
+        : null;
       console.log('[smart-reframe]', {
         clipId,
         candidateId,
@@ -610,10 +654,18 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         mode: raw.mode,
         source_w: raw.source_w ?? null,
         source_h: raw.source_h ?? null,
-        crop_x: raw.crop_x,
-        crop_y: 0,
-        crop_w: raw.crop_w,
-        crop_h: raw.crop_h,
+        crop_x: rawCropX,
+        crop_y: rawCropY,
+        crop_w: rawCropW,
+        crop_h: rawCropH,
+        original_crop_x: raw.crop_x,
+        original_crop_y: (raw as { crop_y?: number }).crop_y ?? 0,
+        original_crop_w: raw.crop_w,
+        original_crop_h: raw.crop_h,
+        largest_source_crop_w: largestSourceCrop?.cropW ?? null,
+        largest_source_crop_h: largestSourceCrop?.cropH ?? null,
+        extra_smart_crop_upscale: extraSmartCropUpscale,
+        crop_widened_for_quality: cropWidenedForQuality,
         scaled_crop_x: Math.round(scaledCropX),
         scaled_crop_y: Math.round(scaledCropY),
         scaled_crop_w: Math.round(scaledCropW),
@@ -621,6 +673,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         scaled_crop_expr: cropExpr,
         effective_source_crop_w: effectiveSourceCropW,
         approximate_horizontal_upscale_ratio: upscaleRatio,
+        source_to_output_upscale_ratio: sourceToOutputUpscaleRatio,
         detected_center_x: raw.detected_center_x ?? null,
         fallbackUsed: raw.fallback_used ?? null,
         ffmpeg_crop: raw.ffmpeg_crop ?? null,
@@ -733,21 +786,23 @@ function buildSplitStackFilter(
   escapedPath?: string,
   captionPath?: string,
 ) {
-  const cropWidth = Math.min(layout.cropWidth, layout.sourceW);
   const paneHeight = 850;
   const seamHeight = layout.outputHeight - paneHeight * 2;
+  const paneAspect = layout.outputWidth / paneHeight;
+  const cropWidth = floorEven(Math.min(layout.sourceW, layout.sourceH * paneAspect));
+  const paneSourceHeight = floorEven(Math.min(layout.sourceH, cropWidth / paneAspect));
   const topCenterX = layout.topBox.cx ?? (layout.topBox.x + layout.topBox.w / 2);
   const bottomCenterX = layout.bottomBox.cx ?? (layout.bottomBox.x + layout.bottomBox.w / 2);
   const topCropX = clamp(topCenterX - cropWidth / 2, 0, layout.sourceW - cropWidth);
   const bottomCropX = clamp(bottomCenterX - cropWidth / 2, 0, layout.sourceW - cropWidth);
 
-  const topCropY = clamp((layout.topBox.y + layout.topBox.h * 0.18) - paneHeight * 0.42, 0, layout.sourceH - paneHeight);
-  const bottomCropY = clamp((layout.bottomBox.y + layout.bottomBox.h * 0.18) - paneHeight * 0.42, 0, layout.sourceH - paneHeight);
+  const topCropY = clamp((layout.topBox.y + layout.topBox.h * 0.18) - paneSourceHeight * 0.42, 0, layout.sourceH - paneSourceHeight);
+  const bottomCropY = clamp((layout.bottomBox.y + layout.bottomBox.h * 0.18) - paneSourceHeight * 0.42, 0, layout.sourceH - paneSourceHeight);
 
   const filterParts = [
     `[0:v]split=2[topsrc][bottomsrc]`,
-    `[topsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(topCropX)}:${Math.round(topCropY)},scale=${layout.outputWidth}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS}[topv]`,
-    `[bottomsrc]crop=${Math.round(cropWidth)}:${paneHeight}:${Math.round(bottomCropX)}:${Math.round(bottomCropY)},scale=${layout.outputWidth}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS}[bottomv]`,
+    `[topsrc]crop=${Math.round(cropWidth)}:${Math.round(paneSourceHeight)}:${Math.round(topCropX)}:${Math.round(topCropY)},scale=${layout.outputWidth}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS}[topv]`,
+    `[bottomsrc]crop=${Math.round(cropWidth)}:${Math.round(paneSourceHeight)}:${Math.round(bottomCropX)}:${Math.round(bottomCropY)},scale=${layout.outputWidth}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS}[bottomv]`,
     `color=c=black:s=${layout.outputWidth}x${layout.outputHeight}:d=1[base]`,
     `[base][topv]overlay=0:0[tmp1]`,
     `[tmp1][bottomv]overlay=0:${paneHeight + seamHeight}[tmp2]`,
