@@ -12,13 +12,13 @@ type LayoutMode = 'single' | 'split_stack';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v3';
-const DEFAULT_X264_CRF = '16';
-const DEFAULT_X264_MAXRATE = '24M';
-const DEFAULT_X264_BUFSIZE = '48M';
-const DEFAULT_HW_VIDEO_BITRATE = '24M';
-const DEFAULT_HW_MAXRATE = '28M';
-const DEFAULT_HW_BUFSIZE = '56M';
+const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v4-hd-source';
+const DEFAULT_X264_CRF = '12';
+const DEFAULT_X264_MAXRATE = '50M';
+const DEFAULT_X264_BUFSIZE = '100M';
+const DEFAULT_HW_VIDEO_BITRATE = '50M';
+const DEFAULT_HW_MAXRATE = '60M';
+const DEFAULT_HW_BUFSIZE = '120M';
 const HIGH_QUALITY_SCALE_FLAGS = 'lanczos+accurate_rnd+full_chroma_int';
 const SHARPEN_AFTER_UPSCALE_FILTER = 'unsharp=5:5:0.55:3:3:0.25';
 
@@ -128,6 +128,37 @@ export async function validateRenderedVideo(outputPath: string) {
   if (decodeErrors) {
     throw new Error(`Rendered export is corrupted: ${stderr.split('\n').slice(0, 4).join(' | ')}`);
   }
+}
+
+async function probeInputVideoForRender(inputPath: string) {
+  const result = await runJsonCommand('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate',
+    '-of', 'json',
+    inputPath,
+  ]);
+  const data = result.json as {
+    streams?: Array<{
+      codec_type?: string;
+      codec_name?: string;
+      width?: number;
+      height?: number;
+      avg_frame_rate?: string;
+      bit_rate?: string;
+    }>;
+    format?: { duration?: string; size?: string; bit_rate?: string };
+  };
+  const video = (data.streams ?? []).find((stream) => stream.codec_type === 'video');
+  return {
+    width: video?.width ?? null,
+    height: video?.height ?? null,
+    codec: video?.codec_name ?? null,
+    fps: video?.avg_frame_rate ?? null,
+    videoBitrate: video?.bit_rate ?? null,
+    containerBitrate: data.format?.bit_rate ?? null,
+    duration: data.format?.duration ?? null,
+    size: data.format?.size ?? null,
+  };
 }
 
 function escapeSubtitlesPathForFilter(path: string) {
@@ -1136,6 +1167,33 @@ export async function renderVerticalClip(opts: RenderOpts) {
     smartScript: resolveSmartReframeScript(),
     smartPython: resolveSmartReframePython(),
   });
+  try {
+    const sourceInfo = await probeInputVideoForRender(opts.inputPath);
+    const estimatedVerticalCropUpscale = sourceInfo.height && sourceInfo.height > 0
+      ? Number((outputHeight / sourceInfo.height).toFixed(3))
+      : null;
+    console.log('[render] source-quality', {
+      clipId: opts.debugClipId ?? null,
+      inputPath: opts.inputPath,
+      outputWidth,
+      outputHeight,
+      sourceWidth: sourceInfo.width,
+      sourceHeight: sourceInfo.height,
+      sourceCodec: sourceInfo.codec,
+      sourceFps: sourceInfo.fps,
+      sourceVideoBitrate: sourceInfo.videoBitrate,
+      sourceContainerBitrate: sourceInfo.containerBitrate,
+      sourceDuration: sourceInfo.duration,
+      sourceSize: sourceInfo.size,
+      estimatedVerticalCropUpscale,
+      sourceBelowHd: Boolean(sourceInfo.height && sourceInfo.height < 1080),
+    });
+  } catch (error) {
+    console.warn('[render] source-quality-probe-failed', {
+      clipId: opts.debugClipId ?? null,
+      error: error instanceof Error ? error.message : 'Unknown source probe error',
+    });
+  }
   const effectiveOpts: RenderOpts = {
     ...opts,
     autoReframe: opts.autoReframe ?? process.env.AUTO_REFRAME_ENABLED !== 'false',

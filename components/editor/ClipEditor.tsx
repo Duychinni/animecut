@@ -43,7 +43,6 @@ type EditorData = {
   presets: CaptionPreset[];
 };
 
-type Tab = 'clip' | 'transcript' | 'captions' | 'framing';
 type DragMode = 'start' | 'end' | 'seek' | null;
 type EditorDebugInfo = {
   code?: string;
@@ -71,17 +70,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function cleanWords(text: string) {
-  return text
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 4)
-    .map((word) => word.replace(/[^\w'?!-]/g, '').toUpperCase())
-    .filter(Boolean);
-}
-
 function safeJson(value: unknown) {
   return JSON.stringify(value);
 }
@@ -90,7 +78,7 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
   const textColor = settings.caption_text_color || preset?.captionTextColor || '#ffffff';
   const strokeColor = preset?.captionStrokeColor || '#000000';
   const fontFamily = preset?.captionFontFamily || 'Arial Black';
-  const fontSize = settings.caption_font_size * 3.3;
+  const fontSize = settings.caption_font_size * 2.2;
   return {
     color: textColor,
     fontFamily,
@@ -100,16 +88,8 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
     lineHeight: 1.02,
     textTransform: 'uppercase' as const,
     WebkitTextStroke: settings.caption_background ? '0 transparent' : `${Math.max(1, Math.round(fontSize * 0.08))}px ${strokeColor}`,
-    textShadow: settings.caption_background
-      ? 'none'
-      : `0 3px 0 #000, 0 8px 18px rgba(0,0,0,.78)`,
+    textShadow: settings.caption_background ? 'none' : '0 2px 0 #000, 0 7px 16px rgba(0,0,0,.78)',
   };
-}
-
-function positionClass(position: ClipEditSettings['caption_position']) {
-  if (position === 'upper') return 'top-[18%]';
-  if (position === 'center') return 'top-1/2 -translate-y-1/2';
-  return 'bottom-[15%]';
 }
 
 export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: string }) {
@@ -119,7 +99,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
   const [baseline, setBaseline] = useState('');
-  const [tab, setTab] = useState<Tab>('clip');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -129,12 +108,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [query, setQuery] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [paused, setPaused] = useState(true);
-  const [volume, setVolume] = useState(1);
   const [dragMode, setDragMode] = useState<DragMode>(null);
 
-  const hasSourcePreview = Boolean(data?.source.previewUrl);
-  const previewUrl = data?.source.previewUrl || data?.source.fallbackClipUrl || null;
-  const sourceDuration = data?.source.durationSeconds ?? settings?.clip_end_seconds ?? 90;
+  const previewUrl = data?.source.fallbackClipUrl || data?.source.previewUrl || null;
+  const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl);
+  const sourceDuration = Math.max(1, data?.source.durationSeconds ?? settings?.clip_end_seconds ?? 90);
   const changed = Boolean(settings && baseline && safeJson(settings) !== baseline);
   const needsRender = changed || data?.clip.editStatus === 'draft' || data?.clip.editStatus === 'error';
 
@@ -149,20 +127,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     return picked.length ? picked : data.presets.slice(0, 5);
   }, [data]);
 
-  const selectedPhrases = useMemo(() => {
+  const filteredTranscript = useMemo(() => {
     if (!settings) return [];
-    return settings.edited_transcript.filter((phrase) => phrase.end >= settings.clip_start_seconds - 15 && phrase.start <= settings.clip_end_seconds + 15);
-  }, [settings]);
-
-  const currentPhrase = useMemo(() => {
-    if (!settings) return null;
-    return settings.edited_transcript.find((phrase) => !phrase.deleted && currentTime >= phrase.start && currentTime <= phrase.end) ?? null;
-  }, [currentTime, settings]);
-
-  const previewWords = useMemo(() => {
-    const words = cleanWords(currentPhrase?.text || data?.clip.title || 'THIS CLIP');
-    return words.length ? words : ['THIS', 'CLIP'];
-  }, [currentPhrase, data?.clip.title]);
+    const q = query.trim().toLowerCase();
+    return settings.edited_transcript.filter((phrase) => !q || phrase.text.toLowerCase().includes(q));
+  }, [query, settings]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/clips/${clipId}/edit`, { cache: 'no-store' });
@@ -207,7 +176,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     return () => {
       active = false;
     };
-  }, [load]);
+  }, [clipId, load, projectId]);
+
+  function handleBack() {
+    if (changed && !window.confirm('Leave without saving your clip edits?')) return;
+    router.push(`/dashboard/projects/${projectId}`);
+  }
 
   useEffect(() => {
     if (!changed) return;
@@ -262,11 +236,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   useEffect(() => {
     if (!settings || !videoRef.current) return;
     const video = videoRef.current;
-    const target = hasSourcePreview ? settings.clip_start_seconds : 0;
+    const target = previewUsesSource ? settings.clip_start_seconds : 0;
     if (Math.abs(video.currentTime - target) > 0.5) {
       video.currentTime = target;
     }
-  }, [hasSourcePreview, settings?.clip_start_seconds]);
+  }, [previewUsesSource, settings?.clip_start_seconds]);
 
   function patchSettings(patch: Partial<ClipEditSettings>) {
     setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -278,6 +252,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const safeStart = clamp(start, 0, Math.max(0, maxEnd - 10));
     const safeEnd = clamp(end, safeStart + 10, Math.min(maxEnd, safeStart + 90));
     patchSettings({ clip_start_seconds: safeStart, clip_end_seconds: safeEnd });
+    if (currentTime < safeStart || currentTime > safeEnd) {
+      seekAbsolute(safeStart);
+    }
   }
 
   function updatePhrase(id: string, patch: Partial<TranscriptPhrase>) {
@@ -288,7 +265,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }
 
   function restoreTranscript() {
-    if (!data || !settings) return;
+    if (!data) return;
     patchSettings({
       edited_transcript: data.transcript.phrases.map((phrase) => ({ ...phrase, text: phrase.originalText, deleted: false })),
     });
@@ -299,7 +276,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const safe = clamp(seconds, 0, sourceDuration);
     setCurrentTime(safe);
     if (!video) return;
-    video.currentTime = hasSourcePreview ? safe : Math.max(0, safe - (settings?.clip_start_seconds ?? 0));
+    if (previewUsesSource) {
+      video.currentTime = safe;
+      return;
+    }
+    const relative = clamp(safe - (settings?.clip_start_seconds ?? 0), 0, Math.max(0, (settings?.clip_end_seconds ?? safe) - (settings?.clip_start_seconds ?? 0)));
+    video.currentTime = relative;
   }
 
   async function togglePlay() {
@@ -369,11 +351,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     }
   }
 
-  function handleBack() {
-    if (changed && !window.confirm('Leave without saving your clip edits?')) return;
-    router.push(`/dashboard/projects/${projectId}`);
-  }
-
   function timelineSeconds(event: PointerEvent | ReactPointerEvent<HTMLElement>) {
     const rect = timelineRef.current?.getBoundingClientRect();
     if (!rect) return 0;
@@ -383,6 +360,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   function beginTimelineDrag(mode: DragMode, event: ReactPointerEvent<HTMLElement>) {
     event.preventDefault();
+    event.stopPropagation();
     setDragMode(mode);
     const seconds = timelineSeconds(event);
     if (mode === 'start' && settings) patchTimes(seconds, settings.clip_end_seconds);
@@ -411,15 +389,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   if (loading) {
     return (
       <main className="mx-auto grid min-h-[calc(100vh-92px)] w-full max-w-7xl place-items-center px-6 py-10 text-white">
-        <div className="w-full max-w-4xl animate-pulse rounded-[20px] border border-white/10 bg-white/[0.03] p-8">
+        <div className="w-full max-w-5xl animate-pulse rounded-[20px] border border-white/10 bg-white/[0.03] p-8">
           <div className="h-6 w-64 rounded bg-white/10" />
-          <div className="mt-8 grid gap-6 lg:grid-cols-[0.85fr_1fr]">
+          <div className="mt-8 grid gap-6 xl:grid-cols-[0.9fr_0.8fr_0.65fr]">
+            <div className="h-[620px] rounded-[18px] bg-white/10" />
             <div className="aspect-[9/16] rounded-[18px] bg-white/10" />
-            <div className="space-y-4">
-              <div className="h-12 rounded bg-white/10" />
-              <div className="h-28 rounded bg-white/10" />
-              <div className="h-40 rounded bg-white/10" />
-            </div>
+            <div className="h-[620px] rounded-[18px] bg-white/10" />
           </div>
         </div>
       </main>
@@ -454,10 +429,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const selectedLeft = `${(settings.clip_start_seconds / sourceDuration) * 100}%`;
   const selectedWidth = `${(clipDuration / sourceDuration) * 100}%`;
   const playheadLeft = `${(currentTime / sourceDuration) * 100}%`;
-  const captionStyle = captionPreviewStyle(activePreset, settings);
 
   return (
-    <main className="mx-auto w-full max-w-[1800px] px-6 py-7 text-white">
+    <main className="mx-auto w-full max-w-[1840px] px-5 py-6 text-white">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/42">Clip Editor</p>
@@ -477,362 +451,233 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(360px,560px)_minmax(520px,1fr)]">
-        <div className="space-y-4">
-          <div className="relative mx-auto aspect-[9/16] w-full max-w-[520px] overflow-hidden rounded-[18px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
-            {previewUrl ? (
-              <video
-                ref={videoRef}
-                src={previewUrl}
-                poster={data.clip.posterUrl ?? undefined}
-                playsInline
-                preload="auto"
-                className="h-full w-full bg-black object-cover"
-                onLoadedMetadata={(event) => {
-                  const video = event.currentTarget;
-                  video.volume = volume;
-                  video.currentTime = hasSourcePreview ? settings.clip_start_seconds : 0;
-                }}
-                onTimeUpdate={(event) => {
-                  const video = event.currentTarget;
-                  const absolute = hasSourcePreview ? video.currentTime : settings.clip_start_seconds + video.currentTime;
-                  setCurrentTime(absolute);
-                  if (hasSourcePreview && absolute >= settings.clip_end_seconds) {
-                    video.pause();
-                    setPaused(true);
-                  }
-                }}
-                onPlay={() => setPaused(false)}
-                onPause={() => setPaused(true)}
-                onVolumeChange={(event) => setVolume(event.currentTarget.muted ? 0 : event.currentTarget.volume)}
-              />
-            ) : (
-              <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
-            )}
+      <section className="grid min-h-[calc(100vh-260px)] gap-4 xl:grid-cols-[minmax(320px,500px)_minmax(360px,560px)_minmax(280px,360px)]">
+        <aside className="flex min-h-[560px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+          <div className="border-b border-white/10 px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/40">Transcript</p>
+                <p className="mt-1 text-sm font-semibold text-white/68">Edit the caption words directly.</p>
+              </div>
+              <button onClick={restoreTranscript} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/72 hover:bg-white/[0.06]">
+                Restore
+              </button>
+            </div>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search transcript..."
+              className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
+            />
+          </div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 pr-3">
+            {filteredTranscript.map((phrase) => {
+              const active = currentTime >= phrase.start && currentTime <= phrase.end;
+              return (
+                <div key={phrase.id} className={`rounded-2xl border p-3 transition ${active ? 'border-emerald-300/45 bg-emerald-300/[0.09]' : 'border-white/10 bg-white/[0.03]'}`}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <button onClick={() => seekAbsolute(phrase.start)} className="font-mono text-xs font-bold text-white/50 hover:text-white">
+                      {formatClock(phrase.start)} - {formatClock(phrase.end)}
+                    </button>
+                    <label className="flex items-center gap-2 text-xs font-bold text-white/55">
+                      <input
+                        type="checkbox"
+                        checked={phrase.deleted === true}
+                        onChange={(event) => updatePhrase(phrase.id, { deleted: event.target.checked })}
+                        className="accent-red-400"
+                      />
+                      Hide
+                    </label>
+                  </div>
+                  <textarea
+                    value={phrase.text}
+                    onChange={(event) => updatePhrase(phrase.id, { text: event.target.value })}
+                    className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-semibold leading-5 text-white outline-none focus:border-white/30"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </aside>
 
-            {settings.captions_enabled ? (
-              <div className={`pointer-events-none absolute inset-x-5 ${positionClass(settings.caption_position)} flex justify-center text-center`}>
-                {settings.caption_background ? (
-                  <span className="rounded-lg bg-white px-4 py-2 shadow-[0_8px_26px_rgba(0,0,0,.35)]" style={{ ...captionStyle, color: '#101114', WebkitTextStroke: '0 transparent' }}>
-                    {previewWords.join(' ')}
-                  </span>
+        <section className="flex min-h-[560px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/40">Player</p>
+              <p className="text-sm font-semibold text-white/66">{formatClock(Math.max(0, currentTime - settings.clip_start_seconds))} / {formatClock(clipDuration)}</p>
+            </div>
+            {rendering ? <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200">Rendering</span> : null}
+          </div>
+          <div className="grid min-h-0 flex-1 place-items-center bg-[#242424] p-5">
+            <div className="relative aspect-[9/16] h-full max-h-[720px] min-h-[480px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+              {previewUrl ? (
+                <video
+                  ref={videoRef}
+                  src={previewUrl}
+                  poster={data.clip.posterUrl ?? undefined}
+                  controls
+                  playsInline
+                  preload="auto"
+                  className="h-full w-full bg-black object-cover"
+                  onLoadedMetadata={(event) => {
+                    const video = event.currentTarget;
+                    video.currentTime = previewUsesSource ? settings.clip_start_seconds : 0;
+                  }}
+                  onTimeUpdate={(event) => {
+                    const video = event.currentTarget;
+                    const absolute = previewUsesSource ? video.currentTime : settings.clip_start_seconds + video.currentTime;
+                    setCurrentTime(clamp(absolute, 0, sourceDuration));
+                    if (previewUsesSource && absolute >= settings.clip_end_seconds) {
+                      video.pause();
+                      setPaused(true);
+                    }
+                  }}
+                  onPlay={() => setPaused(false)}
+                  onPause={() => setPaused(true)}
+                />
+              ) : (
+                <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void togglePlay()}
+                className={`absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/45 shadow-[0_10px_26px_rgba(0,0,0,.35)] backdrop-blur transition ${paused ? 'opacity-100' : 'opacity-0 hover:opacity-100 focus:opacity-100'}`}
+                aria-label={paused ? 'Play preview' : 'Pause preview'}
+              >
+                {paused ? (
+                  <span className="ml-1 h-0 w-0 border-y-[12px] border-y-transparent border-l-[18px] border-l-white" />
                 ) : (
-                  <span style={captionStyle}>
-                    <span style={{ color: settings.caption_word_highlight ? settings.caption_highlight_color : settings.caption_text_color }}>{previewWords[0]}</span>
-                    {previewWords.length > 1 ? <span> {previewWords.slice(1).join(' ')}</span> : null}
+                  <span className="flex gap-1">
+                    <span className="h-5 w-1.5 rounded-full bg-white" />
+                    <span className="h-5 w-1.5 rounded-full bg-white" />
                   </span>
                 )}
-              </div>
-            ) : null}
-
-            {rendering ? (
-              <div className="absolute inset-x-5 top-5 rounded-2xl border border-emerald-300/20 bg-black/62 px-4 py-3 text-center text-xs font-bold uppercase tracking-[0.14em] text-emerald-200 backdrop-blur">
-                Rendering updated clip
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mx-auto flex max-w-[520px] flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-            <button onClick={() => void togglePlay()} className="rounded-full bg-white px-4 py-2 text-sm font-black text-black transition hover:bg-white/90">
-              {paused ? 'Play' : 'Pause'}
-            </button>
-            <span className="text-sm font-semibold text-white/70 tabular-nums">{formatClock(Math.max(0, currentTime - settings.clip_start_seconds))} / {formatClock(clipDuration)}</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  const video = videoRef.current;
-                  if (!video) return;
-                  video.muted = !video.muted;
-                }}
-                className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/75 hover:bg-white/[0.06]"
-              >
-                {volume === 0 ? 'Muted' : 'Mute'}
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={volume}
-                onChange={(event) => {
-                  const v = Number(event.target.value);
-                  const video = videoRef.current;
-                  setVolume(v);
-                  if (video) {
-                    video.volume = v;
-                    video.muted = v === 0;
-                  }
-                }}
-                className="w-24 accent-white"
-                aria-label="Volume"
-              />
-              <button
-                onClick={() => videoRef.current?.requestFullscreen?.()}
-                className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/75 hover:bg-white/[0.06]"
-              >
-                Fullscreen
               </button>
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-[18px] border border-white/10 bg-[#0e1117]/95 shadow-[0_24px_90px_rgba(0,0,0,.35)]">
-          <div className="flex flex-wrap gap-2 border-b border-white/10 px-4 py-3">
-            {(['clip', 'transcript', 'captions', 'framing'] as Tab[]).map((item) => (
-              <button
-                key={item}
-                onClick={() => setTab(item)}
-                className={`rounded-full px-4 py-2 text-sm font-bold capitalize transition ${tab === item ? 'bg-white text-black' : 'border border-white/10 text-white/70 hover:bg-white/[0.06] hover:text-white'}`}
-              >
-                {item}
-              </button>
-            ))}
+        <aside className="flex min-h-[560px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+          <div className="border-b border-white/10 px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Project</p>
+            <p className="mt-1 text-sm font-semibold text-white">Clip settings</p>
           </div>
 
-          <div className="min-h-[560px] p-5">
-            {tab === 'clip' ? (
-              <div className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <label className="space-y-1 text-sm font-semibold text-white/65">
-                    Start time
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={formatPrecise(settings.clip_start_seconds)}
-                      onChange={(event) => patchTimes(Number(event.target.value), settings.clip_end_seconds)}
-                      className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white outline-none focus:border-white/30"
-                    />
-                  </label>
-                  <label className="space-y-1 text-sm font-semibold text-white/65">
-                    End time
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={formatPrecise(settings.clip_end_seconds)}
-                      onChange={(event) => patchTimes(settings.clip_start_seconds, Number(event.target.value))}
-                      className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white outline-none focus:border-white/30"
-                    />
-                  </label>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-                    <p className="text-sm font-semibold text-white/55">Duration</p>
-                    <p className="mt-1 text-2xl font-black text-white">{formatClock(clipDuration)}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <button onClick={() => patchTimes(data.clip.aiStartSeconds, data.clip.aiEndSeconds)} className="rounded-xl border border-white/10 px-4 py-3 text-left text-sm font-bold text-white/80 hover:bg-white/[0.06]">
-                    Reset to AI selection
-                  </button>
-                  <button onClick={() => patchTimes(settings.clip_start_seconds - 5, settings.clip_end_seconds)} className="rounded-xl border border-white/10 px-4 py-3 text-left text-sm font-bold text-white/80 hover:bg-white/[0.06]">
-                    Add 5 seconds before
-                  </button>
-                  <button onClick={() => patchTimes(settings.clip_start_seconds, settings.clip_end_seconds + 5)} className="rounded-xl border border-white/10 px-4 py-3 text-left text-sm font-bold text-white/80 hover:bg-white/[0.06]">
-                    Add 5 seconds after
-                  </button>
-                  <button onClick={() => patchTimes(settings.clip_start_seconds + 5, settings.clip_end_seconds)} className="rounded-xl border border-white/10 px-4 py-3 text-left text-sm font-bold text-white/80 hover:bg-white/[0.06]">
-                    Remove 5 seconds from start
-                  </button>
-                  <button onClick={() => patchTimes(settings.clip_start_seconds, settings.clip_end_seconds - 5)} className="rounded-xl border border-white/10 px-4 py-3 text-left text-sm font-bold text-white/80 hover:bg-white/[0.06]">
-                    Remove 5 seconds from end
-                  </button>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-sm font-black text-white">Nearby transcript context</p>
-                  <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
-                    {selectedPhrases.map((phrase) => (
-                      <button
-                        key={phrase.id}
-                        onClick={() => seekAbsolute(phrase.start)}
-                        className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition ${phrase.start >= settings.clip_start_seconds && phrase.end <= settings.clip_end_seconds ? 'bg-emerald-400/[0.08] text-white' : 'bg-white/[0.03] text-white/58 hover:bg-white/[0.06]'}`}
-                      >
-                        <span className="mr-2 font-mono text-xs text-white/40">{formatClock(phrase.start)}</span>
-                        {phrase.text}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {tab === 'transcript' ? (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-3">
-                  <input
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search transcript..."
-                    className="min-w-[260px] flex-1 rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
-                  />
-                  <button onClick={restoreTranscript} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white/75 hover:bg-white/[0.06]">
-                    Restore original transcript
-                  </button>
-                </div>
-                <div className="max-h-[470px] space-y-3 overflow-y-auto pr-2">
-                  {settings.edited_transcript
-                    .filter((phrase) => !query.trim() || phrase.text.toLowerCase().includes(query.trim().toLowerCase()))
-                    .map((phrase) => {
-                      const active = currentTime >= phrase.start && currentTime <= phrase.end;
-                      return (
-                        <div key={phrase.id} className={`rounded-2xl border p-3 transition ${active ? 'border-emerald-300/40 bg-emerald-300/[0.08]' : 'border-white/10 bg-white/[0.03]'}`}>
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <button onClick={() => seekAbsolute(phrase.start)} className="font-mono text-xs font-bold text-white/50 hover:text-white">
-                              {formatClock(phrase.start)} - {formatClock(phrase.end)}
-                            </button>
-                            <label className="flex items-center gap-2 text-xs font-bold text-white/55">
-                              <input
-                                type="checkbox"
-                                checked={phrase.deleted === true}
-                                onChange={(event) => updatePhrase(phrase.id, { deleted: event.target.checked })}
-                                className="accent-red-400"
-                              />
-                              Hide from captions
-                            </label>
-                          </div>
-                          <textarea
-                            value={phrase.text}
-                            onChange={(event) => updatePhrase(phrase.id, { text: event.target.value })}
-                            className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-semibold leading-5 text-white outline-none focus:border-white/30"
-                          />
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            ) : null}
-
-            {tab === 'captions' ? (
-              <div className="space-y-5">
-                <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                  <span className="font-bold text-white">Captions</span>
-                  <input type="checkbox" checked={settings.captions_enabled} onChange={(event) => patchSettings({ captions_enabled: event.target.checked })} className="h-5 w-5 accent-emerald-400" />
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-black text-white">Caption style</p>
+                <label className="flex items-center gap-2 text-xs font-bold text-white/58">
+                  <input type="checkbox" checked={settings.captions_enabled} onChange={(event) => patchSettings({ captions_enabled: event.target.checked })} className="accent-emerald-400" />
+                  On
                 </label>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {presetOptions.map((preset) => {
-                    const selected = preset.id === settings.caption_preset_id;
-                    return (
-                      <button
-                        key={preset.id}
-                        onClick={() => patchSettings({
-                          caption_preset_id: preset.id,
-                          caption_font_size: preset.captionFontSize,
-                          caption_text_color: preset.captionTextColor,
-                          caption_highlight_color: preset.captionHighlightColor,
-                          caption_background: preset.captionBackgroundBox,
-                          caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
-                        })}
-                        className={`rounded-2xl border p-3 text-left transition ${selected ? 'border-cyan-300 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}
-                      >
-                        <div className="grid aspect-[1.45] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
-                          <span style={captionPreviewStyle(preset, { ...settings, caption_preset_id: preset.id, caption_text_color: preset.captionTextColor, caption_highlight_color: preset.captionHighlightColor, caption_background: preset.captionBackgroundBox })}>
-                            <span style={{ color: preset.captionHighlightColor }}>THE</span> HOOK
-                          </span>
-                        </div>
-                        <p className="mt-3 text-sm font-black text-white">{preset.name}</p>
-                        <p className="text-xs font-semibold text-white/45">{preset.captionFontFamily}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-2 text-sm font-bold text-white/65">
-                    Font size
-                    <input type="range" min={8} max={24} value={settings.caption_font_size} onChange={(event) => patchSettings({ caption_font_size: Number(event.target.value) })} className="w-full accent-white" />
-                  </label>
-                  <label className="space-y-2 text-sm font-bold text-white/65">
-                    Max words per phrase
-                    <input type="range" min={1} max={6} value={settings.caption_max_words} onChange={(event) => patchSettings({ caption_max_words: Number(event.target.value) })} className="w-full accent-white" />
-                  </label>
-                  <label className="space-y-2 text-sm font-bold text-white/65">
-                    Text color
-                    <input type="color" value={settings.caption_text_color} onChange={(event) => patchSettings({ caption_text_color: event.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-black/30" />
-                  </label>
-                  <label className="space-y-2 text-sm font-bold text-white/65">
-                    Active word color
-                    <input type="color" value={settings.caption_highlight_color} onChange={(event) => patchSettings({ caption_highlight_color: event.target.value })} className="h-11 w-full rounded-xl border border-white/10 bg-black/30" />
-                  </label>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {(['upper', 'center', 'lower-third'] as ClipEditSettings['caption_position'][]).map((pos) => (
-                    <button key={pos} onClick={() => patchSettings({ caption_position: pos })} className={`rounded-xl border px-4 py-3 text-sm font-bold capitalize ${settings.caption_position === pos ? 'border-white/25 bg-white/[0.1]' : 'border-white/10 hover:bg-white/[0.06]'}`}>
-                      {pos.replace('-', ' ')}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white/70">
-                    <input type="checkbox" checked={settings.caption_word_highlight} onChange={(event) => patchSettings({ caption_word_highlight: event.target.checked })} className="accent-emerald-400" />
-                    Word highlighting
-                  </label>
-                  <label className="flex items-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white/70">
-                    <input type="checkbox" checked={settings.caption_background} onChange={(event) => patchSettings({ caption_background: event.target.checked })} className="accent-emerald-400" />
-                    Background box
-                  </label>
-                </div>
               </div>
-            ) : null}
-
-            {tab === 'framing' ? (
-              <div className="space-y-5">
-                <div className="grid gap-3 md:grid-cols-2">
-                  {([
-                    ['auto', 'Auto Reframe'],
-                    ['center', 'Center Subject'],
-                    ['fit', 'Fit Full Frame'],
-                    ['manual', 'Manual'],
-                  ] as Array<[ClipEditSettings['framing_mode'], string]>).map(([value, label]) => (
+              <div className="grid grid-cols-2 gap-2">
+                {presetOptions.map((preset) => {
+                  const selected = preset.id === settings.caption_preset_id;
+                  return (
                     <button
-                      key={value}
-                      onClick={() => patchSettings({ framing_mode: value })}
-                      className={`rounded-2xl border px-4 py-4 text-left text-sm font-black transition ${settings.framing_mode === value ? 'border-cyan-300 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}
+                      key={preset.id}
+                      onClick={() => patchSettings({
+                        caption_preset_id: preset.id,
+                        caption_font_size: preset.captionFontSize,
+                        caption_text_color: preset.captionTextColor,
+                        caption_highlight_color: preset.captionHighlightColor,
+                        caption_background: preset.captionBackgroundBox,
+                        caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
+                      })}
+                      className={`rounded-2xl border p-2 text-left transition ${selected ? 'border-cyan-300 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}
                     >
-                      {label}
+                      <div className="grid aspect-[1.45] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
+                        <span style={captionPreviewStyle(preset, { ...settings, caption_preset_id: preset.id, caption_text_color: preset.captionTextColor, caption_highlight_color: preset.captionHighlightColor, caption_background: preset.captionBackgroundBox })}>
+                          <span style={{ color: preset.captionHighlightColor }}>THE</span> HOOK
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-xs font-black text-white">{preset.name}</p>
                     </button>
-                  ))}
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="relative mx-auto aspect-[9/16] w-full max-w-[260px] overflow-hidden rounded-xl border border-white/10 bg-black">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(34,197,94,.18),transparent_38%),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02))]" />
-                    <div
-                      className="absolute rounded-xl border-2 border-cyan-300/85 shadow-[0_0_24px_rgba(103,232,249,.35)]"
-                      style={{
-                        width: `${clamp(72 / settings.zoom, 38, 78)}%`,
-                        height: `${clamp(72 / settings.zoom, 38, 78)}%`,
-                        left: `${settings.crop_x * 100}%`,
-                        top: `${settings.crop_y * 100}%`,
-                        transform: 'translate(-50%, -50%)',
-                      }}
-                    />
-                  </div>
-                </div>
-                <label className="space-y-2 text-sm font-bold text-white/65">
-                  Horizontal position
-                  <input type="range" min={0} max={1} step={0.01} value={settings.crop_x} onChange={(event) => patchSettings({ framing_mode: 'manual', crop_x: Number(event.target.value) })} className="w-full accent-cyan-300" />
-                </label>
-                <label className="space-y-2 text-sm font-bold text-white/65">
-                  Vertical position
-                  <input type="range" min={0} max={1} step={0.01} value={settings.crop_y} onChange={(event) => patchSettings({ framing_mode: 'manual', crop_y: Number(event.target.value) })} className="w-full accent-cyan-300" />
-                </label>
-                <label className="space-y-2 text-sm font-bold text-white/65">
-                  Zoom
-                  <input type="range" min={1} max={2.4} step={0.01} value={settings.zoom} onChange={(event) => patchSettings({ framing_mode: 'manual', zoom: Number(event.target.value) })} className="w-full accent-cyan-300" />
-                </label>
-                <button onClick={() => patchSettings({ framing_mode: 'auto', crop_x: 0.5, crop_y: 0.34, zoom: 1 })} className="rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white/75 hover:bg-white/[0.06]">
-                  Reset framing
-                </button>
+                  );
+                })}
               </div>
-            ) : null}
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/55">
+                Active: <span className="text-white">{activePreset?.name ?? 'Default'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-black text-white">Caption controls</p>
+              <label className="space-y-2 text-xs font-bold text-white/62">
+                Font size
+                <input type="range" min={8} max={24} value={settings.caption_font_size} onChange={(event) => patchSettings({ caption_font_size: Number(event.target.value) })} className="w-full accent-white" />
+              </label>
+              <label className="space-y-2 text-xs font-bold text-white/62">
+                Max words
+                <input type="range" min={1} max={6} value={settings.caption_max_words} onChange={(event) => patchSettings({ caption_max_words: Number(event.target.value) })} className="w-full accent-white" />
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['upper', 'center', 'lower-third'] as ClipEditSettings['caption_position'][]).map((pos) => (
+                  <button key={pos} onClick={() => patchSettings({ caption_position: pos })} className={`rounded-xl border px-2 py-2 text-xs font-bold capitalize ${settings.caption_position === pos ? 'border-white/25 bg-white/[0.1]' : 'border-white/10 hover:bg-white/[0.06]'}`}>
+                    {pos === 'lower-third' ? 'Lower' : pos}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-black text-white">Framing</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['auto', 'Auto'],
+                  ['center', 'Center'],
+                  ['fit', 'Fit'],
+                  ['manual', 'Manual'],
+                ] as Array<[ClipEditSettings['framing_mode'], string]>).map(([value, label]) => (
+                  <button key={value} onClick={() => patchSettings({ framing_mode: value })} className={`rounded-xl border px-3 py-2 text-xs font-bold ${settings.framing_mode === value ? 'border-cyan-300 bg-cyan-300/[0.08] text-cyan-100' : 'border-white/10 text-white/70 hover:bg-white/[0.06]'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="space-y-2 text-xs font-bold text-white/62">
+                Horizontal
+                <input type="range" min={0} max={1} step={0.01} value={settings.crop_x} onChange={(event) => patchSettings({ framing_mode: 'manual', crop_x: Number(event.target.value) })} className="w-full accent-cyan-300" />
+              </label>
+              <label className="space-y-2 text-xs font-bold text-white/62">
+                Vertical
+                <input type="range" min={0} max={1} step={0.01} value={settings.crop_y} onChange={(event) => patchSettings({ framing_mode: 'manual', crop_y: Number(event.target.value) })} className="w-full accent-cyan-300" />
+              </label>
+              <label className="space-y-2 text-xs font-bold text-white/62">
+                Zoom
+                <input type="range" min={1} max={2.4} step={0.01} value={settings.zoom} onChange={(event) => patchSettings({ framing_mode: 'manual', zoom: Number(event.target.value) })} className="w-full accent-cyan-300" />
+              </label>
+            </div>
           </div>
-        </div>
+        </aside>
       </section>
 
-      <section className="mt-6 rounded-[18px] border border-white/10 bg-white/[0.035] p-5">
+      <section className="mt-4 rounded-[18px] border border-white/10 bg-[#111318]/95 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
-            <p className="text-xs font-semibold text-white/45">Selected {formatClock(settings.clip_start_seconds)} - {formatClock(settings.clip_end_seconds)}</p>
+            <p className="text-xs font-semibold text-white/45">
+              Selected {formatClock(settings.clip_start_seconds)} - {formatClock(settings.clip_end_seconds)} ({formatClock(clipDuration)})
+            </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => patchTimes(data.clip.aiStartSeconds, data.clip.aiEndSeconds)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
+              Reset AI
+            </button>
+            <button onClick={() => patchTimes(settings.clip_start_seconds - 5, settings.clip_end_seconds)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
+              +5 start
+            </button>
+            <button onClick={() => patchTimes(settings.clip_start_seconds, settings.clip_end_seconds + 5)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
+              +5 end
+            </button>
+            <button onClick={() => patchTimes(settings.clip_start_seconds + 5, settings.clip_end_seconds)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
+              -5 start
+            </button>
+            <button onClick={() => patchTimes(settings.clip_start_seconds, settings.clip_end_seconds - 5)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
+              -5 end
+            </button>
             <button onClick={() => void saveDraft()} disabled={!changed || saving} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/75 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45">
               {saving ? 'Saving...' : 'Save Draft'}
             </button>
@@ -842,10 +687,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
         </div>
 
+        <div className="grid grid-cols-[64px_1fr_64px] gap-3 text-xs font-mono font-bold text-white/36">
+          <span>{formatPrecise(0)}</span>
+          <span className="text-center">{formatClock(sourceDuration / 2)}</span>
+          <span className="text-right">{formatClock(sourceDuration)}</span>
+        </div>
         <div
           ref={timelineRef}
           onPointerDown={(event) => beginTimelineDrag('seek', event)}
-          className="relative h-28 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
+          className="relative mt-2 h-24 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
         >
           <div className="absolute inset-y-0 bg-emerald-400/18" style={{ left: selectedLeft, width: selectedWidth }} />
           {data.transcript.phrases.map((phrase) => (
