@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById } from '@/lib/caption-presets';
 
 type ExportRepairRow = {
   id?: string | null;
@@ -9,17 +8,17 @@ type ExportRepairRow = {
   output_storage_path?: string | null;
   error_message?: string | null;
   updated_at?: string | null;
-  caption_font_family?: string | null;
-  caption_stroke_width?: number | null;
 };
 
 function isRetryableRenderError(message: string | null | undefined) {
   return /render failed|ffmpeg|video filter|filter not found|required video filter|retry the export|corrupted|skipped because this project is already completed/i.test(message ?? '');
 }
 
-function usesCurrentCaptionStyle(row: ExportRepairRow, preset: ReturnType<typeof getCaptionPresetById>) {
-  return row.caption_font_family === preset.captionFontFamily
-    && Number(row.caption_stroke_width ?? 0) >= preset.captionStrokeWidth;
+function hasPlayableOutput(row: ExportRepairRow) {
+  return row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
 }
 
 async function ensureExportJob(admin: ReturnType<typeof createAdminClient>, projectId: string, exportId: string) {
@@ -59,7 +58,7 @@ export async function POST() {
     const admin = createAdminClient();
     const { data: projects, error } = await admin
       .from('projects')
-      .select('id, user_id, status, pipeline_status, exports(id, status, output_storage_path, error_message, updated_at, caption_font_family, caption_stroke_width)')
+      .select('id, user_id, status, pipeline_status, exports(id, status, output_storage_path, error_message, updated_at)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -69,39 +68,29 @@ export async function POST() {
     let repaired = 0;
     let requeuedExports = 0;
     let ensuredJobs = 0;
-    const captionPreset = getCaptionPresetById(DEFAULT_CAPTION_PRESET_ID);
 
     for (const project of projects ?? []) {
       const rows = Array.isArray(project.exports)
         ? (project.exports as ExportRepairRow[])
         : [];
       const projectAlreadyCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-      const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing'));
-      const readyExports = rows.filter((r) => r.status === 'done' && typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
+      const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r));
+      const readyExports = rows.filter(hasPlayableOutput).length;
       const hasSavedReels = readyExports > 0;
-      const frozenCompletedProject = hasSavedReels && projectAlreadyCompleted && activeRows.length === 0;
-      let requeuedOldStyle = false;
+      const frozenCompletedProject = hasSavedReels && projectAlreadyCompleted;
 
       if (frozenCompletedProject) {
-        if (activeRows.length > 0) {
+        if (activeRows.length) {
           await admin
             .from('exports')
             .update({
               status: 'error',
-              error_message: 'Skipped because this project is already completed.',
+              error_message: 'Skipped because this completed project already has saved reels.',
               updated_at: new Date().toISOString(),
             })
             .in('id', activeRows.map((row) => String(row.id)));
 
-          await admin
-            .from('jobs')
-            .update({
-              status: 'done',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('project_id', project.id)
-            .eq('type', 'export')
-            .in('status', ['queued', 'processing']);
+          repaired += 1;
         }
 
         if (project.status !== 'completed' || project.pipeline_status !== 'completed') {
@@ -126,51 +115,9 @@ export async function POST() {
         continue;
       }
 
-      const oldStyleDoneRows = rows.filter((r) => (
-        r.id
-        && r.status === 'done'
-        && typeof r.output_storage_path === 'string'
-        && r.output_storage_path.length > 0
-        && !usesCurrentCaptionStyle(r, captionPreset)
-      ));
-
-      if (oldStyleDoneRows.length && (!projectAlreadyCompleted || activeRows.length > 0)) {
-        const ids = oldStyleDoneRows.map((r) => String(r.id));
-        const { error: staleStyleError } = await admin
-          .from('exports')
-          .update({
-            status: 'queued',
-            output_storage_path: null,
-            error_message: 'Requeued to normalize caption style.',
-            caption_preset_id: captionPreset.id,
-            caption_font_family: captionPreset.captionFontFamily,
-            caption_font_size: captionPreset.captionFontSize,
-            caption_text_color: captionPreset.captionTextColor,
-            caption_highlight_color: captionPreset.captionHighlightColor,
-            caption_stroke_color: captionPreset.captionStrokeColor,
-            caption_stroke_width: captionPreset.captionStrokeWidth,
-            caption_shadow: captionPreset.captionShadow,
-            caption_background_box: captionPreset.captionBackgroundBox,
-            caption_position: captionPreset.captionPosition,
-            caption_animation: captionPreset.captionAnimation,
-            updated_at: new Date().toISOString(),
-          })
-          .in('id', ids);
-
-        if (staleStyleError) throw staleStyleError;
-
-        for (const exportId of ids) {
-          const created = await ensureExportJob(admin, String(project.id), exportId);
-          if (created) ensuredJobs += 1;
-        }
-
-        requeuedExports += ids.length;
-        requeuedOldStyle = true;
-      }
-
       const retryableErrors = frozenCompletedProject
         ? []
-        : rows.filter((r) => r.id && r.status === 'error' && isRetryableRenderError(r.error_message));
+        : rows.filter((r) => r.id && r.status === 'error' && !hasPlayableOutput(r) && isRetryableRenderError(r.error_message));
 
       if (retryableErrors.length) {
         const ids = retryableErrors.map((r) => String(r.id));
@@ -194,15 +141,27 @@ export async function POST() {
         requeuedExports += ids.length;
       }
 
-      const queuedRows = frozenCompletedProject ? [] : rows.filter((r) => r.id && r.status === 'queued');
+      const queuedRows = frozenCompletedProject ? [] : rows.filter((r) => r.id && r.status === 'queued' && !hasPlayableOutput(r));
       for (const row of queuedRows) {
         const created = await ensureExportJob(admin, String(project.id), String(row.id));
         if (created) ensuredJobs += 1;
       }
 
-      const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length + retryableErrors.length;
+      const staleProcessingWithOutput = rows.filter((r) => r.id && r.status === 'processing' && hasPlayableOutput(r));
+      if (staleProcessingWithOutput.length) {
+        const ids = staleProcessingWithOutput.map((r) => String(r.id));
+        const { error: doneError } = await admin
+          .from('exports')
+          .update({ status: 'done', error_message: null, updated_at: new Date().toISOString() })
+          .in('id', ids);
 
-      if (!requeuedOldStyle && projectAlreadyCompleted && readyExports > 0 && activeExports === 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed')) {
+        if (doneError) throw doneError;
+        repaired += 1;
+      }
+
+      const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length + retryableErrors.length;
+
+      if (projectAlreadyCompleted && readyExports > 0 && activeExports === 0 && (project.status !== 'completed' || project.pipeline_status !== 'completed')) {
         await admin
           .from('projects')
           .update({

@@ -11,6 +11,13 @@ type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' |
 const PIPELINE_RECOVERY_STALE_MS = 90 * 1000;
 const EXPORT_RECOVERY_STALE_MS = 4 * 60 * 1000;
 
+function hasPlayableOutput(row: { status?: string | null; output_storage_path?: string | null }) {
+  return row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
+}
+
 function parseYouTubeId(url: string): string | null {
   try {
     const u = new URL(url);
@@ -228,6 +235,7 @@ async function recoverStaleProjectExports(projectId: string, cutoffIso: string) 
     .select('id')
     .eq('project_id', projectId)
     .eq('status', 'processing')
+    .is('output_storage_path', null)
     .lt('updated_at', cutoffIso)
     .limit(20);
 
@@ -272,7 +280,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         .single(),
       supabase
         .from('exports')
-        .select('status, output_storage_path, updated_at, created_at')
+        .select('id, status, output_storage_path, updated_at, created_at')
         .eq('project_id', projectId),
       supabase
         .from('clip_candidates')
@@ -300,13 +308,22 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       .limit(8);
 
     const rows = exportsRows ?? [];
+    const processingRowsWithSavedOutput = rows
+      .filter((row) => row.status === 'processing' && hasPlayableOutput(row) && typeof row.id === 'string')
+      .map((row) => String(row.id));
+    if (processingRowsWithSavedOutput.length) {
+      await admin
+        .from('exports')
+        .update({ status: 'done', error_message: null, updated_at: new Date().toISOString() })
+        .in('id', processingRowsWithSavedOutput);
+    }
     const pipelineJobs = (jobRows ?? []).filter((row) => row.type === 'pipeline');
     const exportJobs = (jobRows ?? []).filter((row) => row.type === 'export');
     const latestPipelineJob = pipelineJobs[0] ?? null;
-    const doneExports = rows.filter((r) => r.status === 'done' && typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
+    const doneExports = rows.filter(hasPlayableOutput).length;
     const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-    const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
-    const failedExports = rows.filter((r) => r.status === 'error').length;
+    const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
+    const failedExports = rows.filter((r) => r.status === 'error' && !hasPlayableOutput(r)).length;
 
     const analyzedCandidates = Math.max(0, Number(candidateCount ?? 0));
     const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
@@ -322,7 +339,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const updatedAtMs = project.updated_at ? new Date(project.updated_at).getTime() : now;
     const stageElapsedSeconds = Math.max(0, Math.round((now - (Number.isFinite(updatedAtMs) ? updatedAtMs : now)) / 1000));
     const completedRenderDurations = rows
-      .filter((row) => row.status === 'done' && typeof row.output_storage_path === 'string' && row.output_storage_path.length > 0)
+      .filter(hasPlayableOutput)
       .map((row) => {
         const start = row.created_at ? new Date(row.created_at).getTime() : 0;
         const end = row.updated_at ? new Date(row.updated_at).getTime() : 0;
@@ -344,7 +361,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasPlayableExports = doneExports > 0;
-    const frozenCompletedProject = projectMarkedCompleted && activeExports === 0 && hasPlayableExports;
+    const frozenCompletedProject = projectMarkedCompleted && hasPlayableExports;
     const hasSettledPlayableExports = activeExports === 0 && hasPlayableExports;
     const isReallyCompleted =
       frozenCompletedProject
@@ -376,7 +393,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'processing'
       && storedPipelineStage === 'finding_hooks'
       && (!latestPipelineJob || latestPipelineJob.status !== 'processing');
-    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker;
+    const completedWithoutPlayableExports = !isReallyCompleted
+      && projectMarkedCompleted
+      && activeExports === 0
+      && doneExports === 0
+      && (hasTranscript || analyzedCandidates > 0);
+    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker || completedWithoutPlayableExports;
     let recoveryQueued = false;
     if (shouldRecoverPipeline) {
       try {
@@ -430,20 +452,22 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       progressPercent = Math.min(98, progressPercent);
     }
 
-    const etaSeconds = estimateEtaSeconds({
-      status: effectiveStatus,
-      pipelineStatus,
-      pipelineStage,
-      elapsedSeconds,
-      stageElapsedSeconds,
-      hasTranscript,
-      analyzedCandidates,
-      doneExports,
-      activeExports,
-      targetCount,
-      transcriptSeconds: totalSeconds,
-      renderSecondsPerClip,
-    });
+    const etaSeconds = isReallyCompleted
+      ? 0
+      : estimateEtaSeconds({
+          status: effectiveStatus,
+          pipelineStatus,
+          pipelineStage,
+          elapsedSeconds,
+          stageElapsedSeconds,
+          hasTranscript,
+          analyzedCandidates,
+          doneExports,
+          activeExports,
+          targetCount,
+          transcriptSeconds: totalSeconds,
+          renderSecondsPerClip,
+        });
 
     if (isReallyCompleted && (project.status !== 'completed' || storedPipelineStatus !== 'completed')) {
       await supabase
@@ -525,6 +549,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         ? 'A stale render export was requeued by the progress check.'
       : staleWorker
         ? 'Worker heartbeat expired while this project was processing.'
+      : completedWithoutPlayableExports
+        ? 'Project was marked complete before playable reels were available; export recovery was queued.'
       : analyzedCandidates === 0 && hasTranscript && pipelineStage === 'finding_hooks'
         ? 'Transcript exists, but no clip candidates have been saved yet. The analysis step is still running or was interrupted.'
       : activeExports > 0

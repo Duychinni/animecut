@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const STEP_PROGRESS: Record<string, number> = {
   queued: 0,
@@ -83,16 +83,21 @@ async function getExportCounts(projectId: string) {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('exports')
-    .select('status')
+    .select('status, output_storage_path')
     .eq('project_id', projectId);
 
   if (error) throw error;
 
   const rows = data ?? [];
+  const hasPlayableOutput = (row: { status?: string | null; output_storage_path?: string | null }) => row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
+
   return {
     total: rows.length,
-    done: rows.filter((row) => row.status === 'done').length,
-    active: rows.filter((row) => row.status === 'queued' || row.status === 'processing').length,
+    done: rows.filter(hasPlayableOutput).length,
+    active: rows.filter((row) => (row.status === 'queued' || row.status === 'processing') && !hasPlayableOutput(row)).length,
     failed: rows.filter((row) => row.status === 'error').length,
   };
 }

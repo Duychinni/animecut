@@ -6,6 +6,7 @@ import { createExportSignedUrl } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
+import { PROJECT_RETENTION_DAYS, getProjectExpiryInfo } from '@/lib/project-retention';
 
 type ExportRow = {
   id: string;
@@ -67,6 +68,14 @@ function getExportPosterPath(outputPath: string | null) {
   return outputPath.replace(/\.mp4$/i, '.jpg');
 }
 
+function hasSavedPlayableOutput(row: { status?: string | null; output_storage_path?: string | null; signedUrl?: string | null }) {
+  return row.status !== 'error'
+    && Boolean(row.signedUrl)
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
+}
+
 export default async function ProjectDetailPage({
   params,
   searchParams,
@@ -82,7 +91,7 @@ export default async function ProjectDetailPage({
   const [{ data: projectRow }, { data: exportsRows }, { data: candidateRows }, { data: transcriptRow }] = await Promise.all([
     supabase
       .from('projects')
-      .select('id, user_id, title, status, pipeline_status, pipeline_error, pipeline_progress_percent, source_type, source_url, source_storage_path, source_title, source_thumbnail_url, source_duration_seconds, created_at')
+      .select('id, user_id, title, status, pipeline_status, pipeline_error, pipeline_progress_percent, pipeline_completed_at, source_type, source_url, source_storage_path, source_title, source_thumbnail_url, source_duration_seconds, created_at')
       .eq('id', projectId)
       .single(),
     supabase
@@ -171,10 +180,10 @@ export default async function ProjectDetailPage({
         const similarDuration = Math.abs(duration - otherDuration) < 3;
         return similarTitle || (similarWindow && similarDuration);
       }) === index;
-    });
+  });
   const projectMarkedCompleted = projectRow?.status === 'completed' || projectRow?.pipeline_status === 'completed';
-  const savedExportItems = filteredExportItems.filter((row) => row.status === 'done' && Boolean(row.signedUrl));
-  const activeExportItems = filteredExportItems.filter((row) => row.status === 'queued' || row.status === 'processing');
+  const savedExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
+  const activeExportItems = filteredExportItems.filter((row) => (row.status === 'queued' || row.status === 'processing') && !hasSavedPlayableOutput(row));
 
   const pageTitle =
     typeof projectRow?.source_title === 'string' && projectRow.source_title.trim().length
@@ -182,6 +191,24 @@ export default async function ProjectDetailPage({
       : typeof projectRow?.title === 'string' && projectRow.title.trim().length
         ? projectRow.title.trim()
         : 'Untitled video';
+  const completedAt = projectMarkedCompleted
+    ? ((projectRow as { pipeline_completed_at?: string | null } | null)?.pipeline_completed_at || projectRow?.created_at || null)
+    : null;
+  const expiryInfo = getProjectExpiryInfo(completedAt);
+
+  if (expiryInfo.is_expired) {
+    return (
+      <main className="mx-auto w-full max-w-[1200px] px-8 py-16">
+        <section className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.035] p-8 text-center shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-white/40">Project expired</p>
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white">{pageTitle}</h1>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-white/62">
+            Finished projects are kept for {PROJECT_RETENTION_DAYS} days. This project has expired, so it is no longer available to open.
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
   const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
@@ -193,7 +220,7 @@ export default async function ProjectDetailPage({
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
   const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
-  const playableExportItems = filteredExportItems.filter((row) => Boolean(row.signedUrl) && (row.status === 'done' || row.status === 'queued' || row.status === 'processing'));
+  const playableExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
   const hasPlayableExports = playableExportItems.length > 0;
   const shouldShowResults = hasPlayableExports && (activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
   const displayExportItems = shouldShowResults ? playableExportItems : [];

@@ -1,5 +1,5 @@
-export const DEFAULT_VERTICAL_EXPORT_WIDTH = 1440;
-export const DEFAULT_VERTICAL_EXPORT_HEIGHT = 2560;
+export const DEFAULT_VERTICAL_EXPORT_WIDTH = 1080;
+export const DEFAULT_VERTICAL_EXPORT_HEIGHT = 1920;
 
 function even(value: number) {
   return Math.max(2, Math.round(value / 2) * 2);

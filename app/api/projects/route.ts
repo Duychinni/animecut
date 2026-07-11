@@ -7,26 +7,15 @@ import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
 import { isMockAiEnabled } from '@/lib/dev-ai';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
+import { getProjectExpiryInfo } from '@/lib/project-retention';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
-const PROJECT_RETENTION_DAYS = 7;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-function getExpiryInfo(completedAt: string | null | undefined) {
-  if (!completedAt) {
-    return { expires_at: null, days_until_expiring: null };
-  }
-
-  const baseMs = new Date(completedAt).getTime();
-  if (!Number.isFinite(baseMs)) {
-    return { expires_at: null, days_until_expiring: null };
-  }
-
-  const expiresMs = baseMs + PROJECT_RETENTION_DAYS * MS_PER_DAY;
-  return {
-    expires_at: new Date(expiresMs).toISOString(),
-    days_until_expiring: Math.max(0, Math.ceil((expiresMs - Date.now()) / MS_PER_DAY)),
-  };
+function hasPlayableOutput(row: { status?: string | null; output_storage_path?: string | null }) {
+  return row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
 }
 
 function getErrorMessage(error: unknown): string {
@@ -74,11 +63,11 @@ export async function GET() {
 
     const projects = await Promise.all((data ?? []).map(async (project) => {
       const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
-      const readyExports = rows.filter((r) => r.status === 'done' && typeof r.output_storage_path === 'string' && r.output_storage_path.length > 0).length;
-      const activeExports = rows.filter((r) => r.status === 'queued' || r.status === 'processing').length;
+      const readyExports = rows.filter(hasPlayableOutput).length;
+      const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-      const isCompleted = readyExports > 0 && activeExports === 0;
-      const needsExportCompletion = markedCompleted && activeExports > 0;
+      const isCompleted = readyExports > 0 && (markedCompleted || activeExports === 0);
+      const needsExportCompletion = markedCompleted && readyExports === 0;
       const uploadThumbnailUrl = project.source_type === 'upload'
         ? await ensureProjectUploadThumbnail({
             id: String(project.id),
@@ -90,7 +79,7 @@ export async function GET() {
       const sourceThumbnailUrl = project.source_type === 'youtube'
         ? stableYouTubeThumbnail(project.source_thumbnail_url, parseYouTubeId(project.source_url))
         : uploadThumbnailUrl || project.source_thumbnail_url;
-      const expiryInfo = getExpiryInfo(isCompleted ? (project.pipeline_completed_at || project.created_at) : null);
+      const expiryInfo = getProjectExpiryInfo(isCompleted ? (project.pipeline_completed_at || project.created_at) : null);
 
       return {
         ...project,
@@ -100,6 +89,7 @@ export async function GET() {
         progress_percent: isCompleted ? 100 : undefined,
         expires_at: expiryInfo.expires_at,
         days_until_expiring: expiryInfo.days_until_expiring,
+        is_expired: expiryInfo.is_expired,
         user_id: undefined,
         pipeline_completed_at: undefined,
         source_storage_path: undefined,
@@ -107,7 +97,7 @@ export async function GET() {
       };
     }));
 
-    return NextResponse.json({ projects });
+    return NextResponse.json({ projects: projects.filter((project) => !project.is_expired) });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 });
   }

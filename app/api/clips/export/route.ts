@@ -64,6 +64,13 @@ function normalizeHookText(raw: unknown) {
   return cleaned || null;
 }
 
+function hasPlayableOutput(row: { status?: string | null; output_storage_path?: string | null }) {
+  return row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
+}
+
 function readOptionalField(row: unknown, key: string) {
   if (!row || typeof row !== 'object') return undefined;
   return (row as Record<string, unknown>)[key];
@@ -165,7 +172,7 @@ export async function POST(req: Request) {
       const [{ data: existingExports, error: exErr }, { data: topCandidates, error: cErr }] = await Promise.all([
         supabase
           .from('exports')
-          .select('clip_candidate_id, status')
+          .select('clip_candidate_id, status, output_storage_path')
           .eq('project_id', project_id),
         selectTopCandidates(supabase, project_id),
       ]);
@@ -188,8 +195,8 @@ export async function POST(req: Request) {
         targetCount = Math.max(1, Math.min(desired, (topCandidates ?? []).length || desired));
       }
 
-      const doneCount = (existingExports ?? []).filter((r) => r.status === 'done').length;
-      const inFlightCount = (existingExports ?? []).filter((r) => r.status === 'queued' || r.status === 'processing').length;
+      const doneCount = (existingExports ?? []).filter(hasPlayableOutput).length;
+      const inFlightCount = (existingExports ?? []).filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
       const needed = Math.max(0, targetCount - doneCount - inFlightCount);
 
       const blockedCandidateIds = new Set(

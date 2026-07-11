@@ -16,10 +16,11 @@ import {
   hasClipEditSettings,
   normalizeClipEditSettings,
   phrasesToSegments,
+  type TranscriptPhrase,
   transcriptSegmentsToPhrases,
 } from '@/lib/clip-edit';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 async function maybeFinalizeProject(projectId: string) {
   const supabase = createAdminClient();
@@ -33,9 +34,9 @@ async function maybeFinalizeProject(projectId: string) {
     { count: candidateCount },
   ] = await Promise.all([
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
-    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'done').not('output_storage_path', 'is', null),
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).not('output_storage_path', 'is', null).neq('status', 'error'),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('status', 'error'),
-    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('status', ['queued', 'processing']),
+    supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('status', ['queued', 'processing']).is('output_storage_path', null),
     supabase.from('transcripts').select('segments_json').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('clip_candidates').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
   ]);
@@ -114,6 +115,24 @@ async function getProjectIdForExport(exportId: string) {
   return String(data?.project_id ?? '');
 }
 
+function hasPlayableOutput(row: { status?: string | null; output_storage_path?: string | null }) {
+  return row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://');
+}
+
+function isTranscriptPhraseRow(value: unknown): value is TranscriptPhrase {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as Partial<TranscriptPhrase>;
+  return typeof row.id === 'string'
+    && Number.isFinite(Number(row.start))
+    && Number.isFinite(Number(row.end))
+    && Number(row.end) > Number(row.start)
+    && typeof row.text === 'string'
+    && typeof row.originalText === 'string';
+}
+
 async function getProjectCompletionState(projectId: string) {
   const supabase = createAdminClient();
   const [{ data: project }, { count: savedExports }, { count: activeExports }] = await Promise.all([
@@ -126,13 +145,14 @@ async function getProjectCompletionState(projectId: string) {
       .from('exports')
       .select('*', { count: 'exact', head: true })
       .eq('project_id', projectId)
-      .eq('status', 'done')
-      .not('output_storage_path', 'is', null),
+      .not('output_storage_path', 'is', null)
+      .neq('status', 'error'),
     supabase
       .from('exports')
       .select('*', { count: 'exact', head: true })
       .eq('project_id', projectId)
-      .in('status', ['queued', 'processing']),
+      .in('status', ['queued', 'processing'])
+      .is('output_storage_path', null),
   ]);
 
   return {
@@ -451,6 +471,17 @@ async function requeueStaleProcessingWork() {
   const supabase = createAdminClient();
   const cutoff = new Date(Date.now() - STALE_PROCESSING_MINUTES * 60 * 1000).toISOString();
 
+  await supabase
+    .from('exports')
+    .update({
+      status: 'done',
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('status', 'processing')
+    .not('output_storage_path', 'is', null)
+    .lt('updated_at', cutoff);
+
   const { data: staleJobs } = await supabase
     .from('jobs')
     .update({
@@ -470,6 +501,7 @@ async function requeueStaleProcessingWork() {
       updated_at: new Date().toISOString(),
     })
     .eq('status', 'processing')
+    .is('output_storage_path', null)
     .lt('updated_at', cutoff)
     .select('id');
 
@@ -577,7 +609,10 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   );
   const captionTemplate: CaptionTemplate = options?.caption_template ?? captionPreset.caption_template;
   const captionFont: CaptionFont = options?.caption_font ?? captionPreset.caption_font;
-  const renderTranscriptSegments = useEditSettings ? phrasesToSegments(editSettings.edited_transcript) : transcriptSegments;
+  const editedTranscriptPhrases = Array.isArray(editSettings.edited_transcript)
+    ? editSettings.edited_transcript.filter(isTranscriptPhraseRow)
+    : [];
+  const renderTranscriptSegments = useEditSettings ? phrasesToSegments(editedTranscriptPhrases) : transcriptSegments;
   const captionStyle = useEditSettings
     ? {
         ...captionPreset,
@@ -774,6 +809,44 @@ export async function POST() {
       if (!exportId) throw new Error('Missing export_id in payload');
       const isEditRerender = item.payload?.edit_rerender === true;
 
+      const { data: currentExport } = await supabase
+        .from('exports')
+        .select('project_id, status, output_storage_path')
+        .eq('id', exportId)
+        .maybeSingle();
+
+      if (!isEditRerender && currentExport && hasPlayableOutput(currentExport)) {
+        await supabase
+          .from('exports')
+          .update({ status: 'done', error_message: null, updated_at: new Date().toISOString() })
+          .eq('id', exportId);
+
+        if (item.jobId) {
+          await supabase
+            .from('jobs')
+            .update({
+              status: 'done',
+              updated_at: new Date().toISOString(),
+              payload: { ...item.payload, skipped: 'export_already_rendered' },
+            })
+            .eq('id', item.jobId);
+        }
+
+        const projectId = String(currentExport.project_id ?? '');
+        if (projectId) {
+          await maybeFinalizeProject(projectId).catch((finalizeError) => {
+            console.warn('[jobs/process] finalize-after-existing-output failed', {
+              project_id: projectId,
+              export_id: exportId,
+              error: finalizeError instanceof Error ? finalizeError.message : String(finalizeError),
+            });
+          });
+        }
+
+        processed += 1;
+        continue;
+      }
+
       const completedGate = isEditRerender ? { skip: false, projectId: '' } : await shouldSkipExportForCompletedProject(exportId);
       if (completedGate.skip) {
         await supabase
@@ -859,13 +932,36 @@ export async function POST() {
         await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', item.jobId);
       }
       const projectId = await getProjectIdForExport(exportId);
-      const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
-      console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'completed', ...summarizeCleanup(exportCleanupLog) });
+      try {
+        const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
+        console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'completed', ...summarizeCleanup(exportCleanupLog) });
+      } catch (cleanupError) {
+        console.warn('[cleanup] export-temp-files failed after successful render', {
+          project_id: projectId,
+          export_id: exportId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
       if (!isEditRerender) {
-        const terminal = await maybeFinalizeProject(projectId);
-        if (terminal) {
-          const cleanupLog = await cleanupProjectTempFiles(projectId);
-          console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+        try {
+          const terminal = await maybeFinalizeProject(projectId);
+          if (terminal) {
+            try {
+              const cleanupLog = await cleanupProjectTempFiles(projectId);
+              console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
+            } catch (cleanupError) {
+              console.warn('[cleanup] project-temp-files failed after terminal render', {
+                project_id: projectId,
+                error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+              });
+            }
+          }
+        } catch (finalizeError) {
+          console.warn('[jobs/process] finalize failed after successful render', {
+            project_id: projectId,
+            export_id: exportId,
+            error: finalizeError instanceof Error ? finalizeError.message : String(finalizeError),
+          });
         }
       }
       processed += 1;
