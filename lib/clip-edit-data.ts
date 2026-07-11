@@ -53,8 +53,20 @@ function exportPosterPath(outputPath: string | null) {
 
 export function clipEditorErrorMessage(error: unknown, fallback = 'Could not load clip editor') {
   if (error instanceof Error && error.message) return error.message;
-  if (error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string') {
-    return String((error as { message: string }).message);
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const parts = [
+      record.message,
+      record.details,
+      record.hint,
+      record.code,
+    ].filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
+    if (parts.length) return parts.join(' ');
+    try {
+      return JSON.stringify(record);
+    } catch {
+      return fallback;
+    }
   }
   return fallback;
 }
@@ -88,7 +100,7 @@ export async function loadClipEditData(clipId: string, userId: string) {
 
   const exportLookup = await supabase
     .from('exports')
-    .select('id, project_id, clip_candidate_id, status, output_storage_path, error_message, caption_preset_id, clip_edit_settings, edit_status, updated_at')
+    .select('*')
     .eq('id', clipId)
     .maybeSingle();
 
@@ -114,13 +126,13 @@ export async function loadClipEditData(clipId: string, userId: string) {
     await Promise.all([
       supabase
         .from('projects')
-        .select('id, user_id, title, source_type, source_url, source_storage_path, source_title, source_duration_seconds')
+        .select('*')
         .eq('id', ex.project_id)
         .maybeSingle(),
       ex.clip_candidate_id
         ? supabase
             .from('clip_candidates')
-            .select('id, title, start_sec, end_sec, overall_score, reason')
+            .select('*')
             .eq('id', ex.clip_candidate_id)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
