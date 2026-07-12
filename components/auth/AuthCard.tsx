@@ -110,8 +110,7 @@ export function AuthCard({
 
       if (isLogin) {
         const nextPath = typeof data?.next === 'string' ? data.next : (next || '/dashboard');
-        router.push(nextPath);
-        router.refresh();
+        window.location.assign(nextPath);
         return;
       }
 
