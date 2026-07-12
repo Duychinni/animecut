@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getVerticalExportSize } from '@/lib/export-profile';
@@ -404,11 +405,20 @@ function escapeFfmpegExpr(expr: string) {
 }
 
 function resolveSmartReframePython() {
-  return process.env.SMART_REFRAME_PYTHON || 'python3';
+  if (process.env.SMART_REFRAME_PYTHON) return process.env.SMART_REFRAME_PYTHON;
+
+  const localCandidates = process.platform === 'win32'
+    ? [path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')]
+    : [path.join(process.cwd(), '.venv', 'bin', 'python')];
+  return localCandidates.find((candidate) => existsSync(candidate)) ?? (process.platform === 'win32' ? 'python' : 'python3');
 }
 
 function resolveSmartReframeScript() {
   return process.env.SMART_REFRAME_SCRIPT || `${process.cwd()}/scripts/reframe_per_clip.py`;
+}
+
+function resolveSmartReframeCvScript() {
+  return process.env.SMART_REFRAME_CV_SCRIPT || `${process.cwd()}/scripts/reframe_cv.py`;
 }
 
 function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox | undefined {
@@ -519,15 +529,15 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
   }
 
   try {
-    const script = resolveSmartReframeScript();
-    const probe = await runJsonCommand(resolveSmartReframePython(), [
+    let script = resolveSmartReframeScript();
+    let probe = await runJsonCommand(resolveSmartReframePython(), [
       script,
       opts.inputPath,
       String(opts.startSec),
       String(opts.endSec),
       '2.0',
     ]);
-    const raw = probe.json as {
+    let raw = probe.json as {
       ok?: boolean;
       mode?: string;
       source_w?: number;
@@ -546,18 +556,52 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         average_face_center?: { x?: number; y?: number };
         fallback_used?: boolean;
       };
+      detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number }> }>;
       error?: string;
     };
 
     if (probe.code !== 0 || !raw?.ok) {
-      console.log('[smart-reframe-fallback]', {
+      const primaryFailure = {
         clipId: opts.debugClipId ?? null,
         candidateId: opts.debugCandidateId ?? null,
         reason: probe.code !== 0 ? 'python_probe_nonzero_exit' : 'raw_not_ok',
         probeCode: probe.code,
         raw,
-      });
-      return {};
+      };
+      console.log('[smart-reframe-detector-retry]', primaryFailure);
+
+      const cvScript = resolveSmartReframeCvScript();
+      if (cvScript !== script) {
+        const cvProbe = await runJsonCommand(resolveSmartReframePython(), [
+          cvScript,
+          opts.inputPath,
+          String(opts.startSec),
+          String(opts.endSec),
+          '2.0',
+        ]);
+        const cvRaw = cvProbe.json as typeof raw;
+        if (cvProbe.code === 0 && cvRaw?.ok) {
+          script = cvScript;
+          probe = cvProbe;
+          raw = cvRaw;
+          console.log('[smart-reframe-detector-retry]', {
+            clipId: opts.debugClipId ?? null,
+            candidateId: opts.debugCandidateId ?? null,
+            recovered: true,
+            backendScript: cvScript,
+          });
+        } else {
+          console.log('[smart-reframe-fallback]', {
+            ...primaryFailure,
+            cvProbeCode: cvProbe.code,
+            cvError: cvRaw?.error ?? (cvProbe.stderr.trim() || null),
+          });
+          return {};
+        }
+      } else {
+        console.log('[smart-reframe-fallback]', primaryFailure);
+        return {};
+      }
     }
 
     const clipId = (opts.debugClipId ?? opts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
@@ -587,11 +631,15 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     const detectionPct = Number(raw.meta?.frames_with_detection_pct ?? NaN);
     const samples = raw.samples ?? [];
     const directFaceSamples = samples.filter((sample) => sample.detected_face && !sample.fallback_used).length;
+    const detectedFaceFrames = (raw.detected_faces ?? []).filter((frame) => (frame.faces?.length ?? 0) > 0).length;
+    const evidenceBase = Math.max(samples.length, raw.detected_faces?.length ?? 0);
+    const minimumFaceEvidence = Math.max(2, Math.ceil(evidenceBase * 0.12));
+    const hasReliableFaceEvidence = directFaceSamples >= minimumFaceEvidence || detectedFaceFrames >= minimumFaceEvidence;
     const sampleConfidence = samples.length ? directFaceSamples / samples.length : 1;
-    const lowDetectionConfidence = Number.isFinite(detectionPct) && detectionPct < 0.35;
-    const lowSampleConfidence = samples.length > 0 && sampleConfidence < 0.35;
+    const lowDetectionConfidence = Number.isFinite(detectionPct) && detectionPct < 0.2;
+    const lowSampleConfidence = samples.length > 0 && sampleConfidence < 0.2;
 
-    if (lowDetectionConfidence || lowSampleConfidence) {
+    if ((lowDetectionConfidence || lowSampleConfidence) && !hasReliableFaceEvidence) {
       console.log('[smart-reframe-fallback]', {
         clipId,
         candidateId,
@@ -600,6 +648,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         sampleConfidence,
         sampleCount: samples.length,
         directFaceSamples,
+        detectedFaceFrames,
+        minimumFaceEvidence,
         rawMode: raw.mode ?? null,
       });
       return {};

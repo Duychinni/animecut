@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import statistics
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -28,12 +29,19 @@ def center(b: Tuple[float, float, float, float]) -> Tuple[float, float]:
 def average_box(boxes):
     if not boxes:
         return None
-    count = float(len(boxes))
+    center_xs = [center(b)[0] for b in boxes]
+    center_ys = [center(b)[1] for b in boxes]
+    widths = [b[2] for b in boxes]
+    heights = [b[3] for b in boxes]
+    median_w = statistics.median(widths)
+    median_h = statistics.median(heights)
+    median_cx = statistics.median(center_xs)
+    median_cy = statistics.median(center_ys)
     return (
-        sum(b[0] for b in boxes) / count,
-        sum(b[1] for b in boxes) / count,
-        sum(b[2] for b in boxes) / count,
-        sum(b[3] for b in boxes) / count,
+        median_cx - median_w / 2.0,
+        median_cy - median_h / 2.0,
+        median_w,
+        median_h,
     )
 
 
