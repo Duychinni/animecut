@@ -314,7 +314,6 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
-  const [selectedClip, setSelectedClip] = useState<ShowcaseClip | null>(null);
   const [liveShowcaseClips, setLiveShowcaseClips] = useState<ShowcaseClip[]>([]);
   const [showcaseOrder, setShowcaseOrder] = useState(() => Array.from({ length: SHOWCASE_CARD_COUNT }, (_, index) => index));
   const showcaseCardRefs = useRef(new Map<string, HTMLDivElement>());
@@ -769,16 +768,6 @@ export default function Home() {
                 return (
                 <div
                   key={clipKey}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Preview ${clip.title}`}
-                  onClick={() => setSelectedClip(clip)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setSelectedClip(clip);
-                    }
-                  }}
                   ref={(element) => {
                     if (element) {
                       showcaseCardRefs.current.set(clipKey, element);
@@ -786,7 +775,7 @@ export default function Home() {
                       showcaseCardRefs.current.delete(clipKey);
                     }
                   }}
-                  className="relative min-w-0 cursor-pointer rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] outline-none transition duration-500 ease-out hover:-translate-y-3 hover:scale-[1.025] hover:border-white/28 hover:shadow-[0_26px_70px_rgba(139,124,255,0.2)] focus-visible:border-white/35 focus-visible:shadow-[0_0_0_3px_rgba(139,124,255,0.26)]"
+                  className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-500 ease-out hover:-translate-y-3 hover:scale-[1.025] hover:border-white/28 hover:shadow-[0_26px_70px_rgba(139,124,255,0.2)]"
                 >
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
                     <PlatformLogo platform={clip.platform} />
@@ -805,7 +794,15 @@ export default function Home() {
                             muted
                             loop
                             playsInline
+                            disablePictureInPicture
+                            controls={false}
+                            controlsList="nofullscreen nodownload noremoteplayback"
                             preload="metadata"
+                            onLoadedMetadata={(event) => {
+                              for (let index = 0; index < event.currentTarget.textTracks.length; index += 1) {
+                                event.currentTarget.textTracks[index].mode = 'disabled';
+                              }
+                            }}
                             onMouseEnter={(event) => {
                               void event.currentTarget.play().catch(() => undefined);
                             }}
@@ -976,83 +973,6 @@ export default function Home() {
         onSwitchMode={(mode) => setAuthMode(mode)}
       />
 
-      {selectedClip ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm" onClick={() => setSelectedClip(null)}>
-          <div
-            className="w-full max-w-3xl rounded-[30px] border border-white/10 bg-[#0b0b12] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#ff7bd8]">Generated Showcase Clip</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">{selectedClip.title}</h3>
-                <p className="mt-2 text-sm text-white/60">Source: {selectedClip.source}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedClip(null)}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-sm text-white/70 transition hover:bg-white/[0.08] hover:text-white"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-5 grid gap-5 md:grid-cols-[0.72fr_1fr]">
-              <div className={`aspect-[9/16] overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-b ${selectedClip.gradient} p-3`}>
-                <div className="h-full overflow-hidden rounded-[18px] border border-white/10 bg-black">
-                  {selectedClip.mediaUrl ? (
-                    (selectedClip.mediaType ?? 'video') === 'image' ? (
-                      <div
-                        className="h-full w-full bg-cover bg-center"
-                        style={{ backgroundImage: `url("${selectedClip.mediaUrl}")` }}
-                      />
-                    ) : (
-                      <video
-                        src={selectedClip.mediaUrl}
-                        controls
-                        autoPlay
-                        muted
-                        loop
-                        playsInline
-                        preload="auto"
-                        className="h-full w-full object-cover"
-                      />
-                    )
-                  ) : (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm font-semibold text-white/55">
-                      Preview media is loading.
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <span className="rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-xs font-semibold text-[#ffb1ea]">🔥 {selectedClip.score} AI Score</span>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getPlatformBadge(selectedClip.platform)} ${getPlatformTone(selectedClip.platform)}`}>
-                    {selectedClip.platform}
-                  </span>
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/60">{selectedClip.length}</span>
-                </div>
-                <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Generated with Animacut</p>
-                  <p className="mt-3 text-sm leading-7 text-white/68">
-                    This public showcase reel is pulled from a saved Animacut export and previews the finished vertical video without demo captions layered on top.
-                  </p>
-                </div>
-                <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Why it works</p>
-                  <ul className="mt-3 space-y-2 text-sm text-white/68">
-                    <li>• Strong hook detected in the opening seconds</li>
-                    <li>• Clear source attribution for public demo content</li>
-                    <li>• Platform-aware packaging for short-form distribution</li>
-                    <li>• Fast preview of what a finished export can look like</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }
