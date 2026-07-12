@@ -187,10 +187,10 @@ export default function DashboardPage() {
     try {
       if (initial && !repairRanRef.current) {
         repairRanRef.current = true;
-        await fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+        await fetch('/api/projects/repair', { method: 'POST', credentials: 'include', cache: 'no-store' }).catch(() => null);
       }
 
-      const res = await fetch('/api/projects');
+      const res = await fetch('/api/projects', { credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
         setMsg(`Could not load projects: ${data.error || 'unknown'}`);
@@ -318,7 +318,7 @@ export default function DashboardPage() {
     void (async () => {
       try {
         await loadProjects();
-        const res = await fetch('/api/projects');
+        const res = await fetch('/api/projects', { credentials: 'include', cache: 'no-store' });
         const data = await res.json();
         if (!res.ok) return;
         const createdProject = ((data.projects ?? []) as ProjectListItem[]).find((p) => p.id === createdId);
@@ -405,6 +405,8 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
         method: 'PATCH',
+        credentials: 'include',
+        cache: 'no-store',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ title: nextTitle }),
       });
@@ -430,7 +432,7 @@ export default function DashboardPage() {
     setMsg('Deleting project...');
 
     try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE', credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
         setMsg(`Delete failed: ${data.error || 'unknown'}`);
