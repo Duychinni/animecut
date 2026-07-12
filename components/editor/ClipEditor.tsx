@@ -220,6 +220,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }, [previewDurationSeconds, previewUsesSource, settings]);
 
   const transcriptChunks = useMemo(() => buildTranscriptChunks(clipTranscript, 5), [clipTranscript]);
+  const clipTranscriptText = useMemo(() => (
+    clipTranscript
+      .map((phrase) => (typeof phrase.text === 'string' ? phrase.text : phrase.originalText || '').trim())
+      .filter(Boolean)
+      .join(' ')
+  ), [clipTranscript]);
   const clipTranscriptHidden = clipTranscript.length > 0 && clipTranscript.every((phrase) => phrase.deleted === true);
   const activeCaptionText = useMemo(() => {
     if (!settings?.captions_enabled || clipTranscriptHidden) return '';
@@ -356,9 +362,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     }
   }
 
-  function updateTranscriptChunkText(chunk: TranscriptChunk, text: string) {
+  function updateClipTranscriptText(text: string) {
     if (!settings) return;
-    const distributed = distributeTextAcrossPhrases(text, chunk.phrases);
+    const distributed = distributeTextAcrossPhrases(text, clipTranscript);
     const updates = new Map(distributed.map((phrase) => [phrase.id, phrase]));
     patchSettings({
       edited_transcript: settings.edited_transcript.map((phrase) => updates.get(phrase.id) ?? phrase),
@@ -368,14 +374,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   function setClipTranscriptHidden(hidden: boolean) {
     if (!settings) return;
     const ids = new Set(clipTranscript.map((phrase) => phrase.id));
-    patchSettings({
-      edited_transcript: settings.edited_transcript.map((phrase) => ids.has(phrase.id) ? { ...phrase, deleted: hidden } : phrase),
-    });
-  }
-
-  function setTranscriptChunkHidden(chunk: TranscriptChunk, hidden: boolean) {
-    if (!settings) return;
-    const ids = new Set(chunk.phrases.map((phrase) => phrase.id));
     patchSettings({
       edited_transcript: settings.edited_transcript.map((phrase) => ids.has(phrase.id) ? { ...phrase, deleted: hidden } : phrase),
     });
@@ -552,12 +550,16 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const clipDuration = Math.max(0, settings.clip_end_seconds - settings.clip_start_seconds);
   const timelineDuration = Math.max(0.1, clipDuration);
   const playheadLeft = `${clamp(((currentTime - settings.clip_start_seconds) / timelineDuration) * 100, 0, 100)}%`;
-  const rulerTicks = Array.from({ length: 7 }, (_, index) => (timelineDuration / 6) * index);
-  const timelineFrameBlocks = Array.from({ length: Math.max(28, Math.min(78, Math.round(timelineDuration * 1.2))) }, (_, index) => index);
+  const rulerTicks = Array.from({ length: 7 }, (_, index) => ({
+    index,
+    value: index === 6 ? timelineDuration : (timelineDuration / 6) * index,
+    percent: index === 6 ? 100 : ((timelineDuration / 6) * index / timelineDuration) * 100,
+  }));
+  const timelineFrameBlocks = Array.from({ length: Math.max(18, Math.min(54, Math.round(timelineDuration * 0.9))) }, (_, index) => index);
+  const timelinePosterUrl = data.clip.posterUrl ?? data.source.posterUrl ?? '';
   const cropWindowWidth = clamp(100 / Math.max(1, settings.zoom), 36, 100);
   const cropCenter = settings.framing_mode === 'center' || settings.framing_mode === 'fit' ? 50 : settings.crop_x * 100;
   const cropWindowLeft = clamp(cropCenter - cropWindowWidth / 2, 0, 100 - cropWindowWidth);
-  const timelineTools = ['Select', 'Undo', 'Redo', 'Split', 'Trim', 'Delete', 'Crop', 'Captions'] as const;
   const audioBars = Array.from({ length: 120 }, (_, index) => {
     const height = 18 + ((index * 17) % 31);
     return height;
@@ -611,32 +613,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             </div>
           </div>
           <div className="min-h-0 flex-1 p-4">
-            {transcriptChunks.length ? (
-              <div className="flex h-full flex-col gap-3 overflow-y-auto pr-1">
-                {transcriptChunks.map((chunk) => (
-                  <section key={chunk.id} className="rounded-2xl border border-white/[0.06] bg-black/20 p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2 text-xs font-bold text-white/48">
-                      <button type="button" onClick={() => seekAbsolute(chunk.start)} className="font-mono transition hover:text-white">
-                        {formatClock(Math.max(0, chunk.start - settings.clip_start_seconds))} - {formatClock(Math.max(0, chunk.end - settings.clip_start_seconds))}
-                      </button>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={chunk.hidden}
-                          onChange={(event) => setTranscriptChunkHidden(chunk, event.target.checked)}
-                          className="accent-red-400"
-                        />
-                        Hide
-                      </label>
-                    </div>
-                    <textarea
-                      value={chunk.text}
-                      onChange={(event) => updateTranscriptChunkText(chunk, event.target.value)}
-                      className="min-h-[118px] w-full resize-y rounded-xl border border-white/10 bg-black/25 px-3 py-3 text-base font-semibold leading-7 text-white outline-none transition focus:border-white/30"
-                    />
-                  </section>
-                ))}
-              </div>
+            {clipTranscript.length ? (
+              <textarea
+                value={clipTranscriptText}
+                onChange={(event) => updateClipTranscriptText(event.target.value)}
+                onFocus={() => seekAbsolute(settings.clip_start_seconds)}
+                spellCheck
+                className="h-full w-full resize-none rounded-2xl border border-white/[0.06] bg-black/20 px-4 py-4 text-base font-semibold leading-8 text-white outline-none transition scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 focus:border-white/25"
+              />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
                 No caption text found inside this reel. Extend the clip handles or reset the AI selection to bring transcript text back into range.
@@ -826,24 +810,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
       <section className="mx-auto mt-3 w-full max-w-[1360px] overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-2">
-          <div className="flex flex-wrap items-center gap-1">
-            {timelineTools.map((tool) => {
-              const disabled = tool === 'Undo' || tool === 'Redo' || tool === 'Split' || tool === 'Trim' || tool === 'Delete';
-              return (
-                <button
-                  key={tool}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    if (tool === 'Crop') patchSettings({ framing_mode: 'manual' });
-                    if (tool === 'Captions') patchSettings({ captions_enabled: true });
-                  }}
-                  className="rounded-lg border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-black text-white/66 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
-                >
-                  {tool}
-                </button>
-              );
-            })}
+          <div>
+            <p className="text-sm font-black text-white">Timeline</p>
+            <p className="text-xs font-semibold text-white/45">
+              Clip {formatClock(0)} - {formatClock(clipDuration)} ({formatClock(clipDuration)})
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -872,22 +843,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
 
         <div className="px-3 py-2">
-          <div className="mb-2 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-sm font-black text-white">Timeline</p>
-              <p className="text-xs font-semibold text-white/45">
-                Selected {formatClock(0)} - {formatClock(clipDuration)} ({formatClock(clipDuration)})
-              </p>
-            </div>
-            <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-[11px] font-black text-emerald-100">
-              Clip view only
-            </span>
-          </div>
-
-          <div className="relative grid h-[154px] grid-cols-[56px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
-            <div className="border-r border-white/[0.08] bg-black/25 pt-7 text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
-              {['Text', 'Crop', 'Video', 'Audio'].map((label) => (
-                <div key={label} className="flex h-[28px] items-center justify-center border-b border-white/[0.035]">
+          <div className="relative grid h-[176px] grid-cols-[54px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
+            <div className="border-r border-white/[0.08] bg-black/25 pt-[31px] text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
+              {[
+                ['Text', 'h-[34px]'],
+                ['Video', 'h-[62px]'],
+                ['Audio', 'h-[43px]'],
+              ].map(([label, heightClass]) => (
+                <div key={label} className={`flex ${heightClass} items-center justify-center border-b border-white/[0.035]`}>
                   {label}
                 </div>
               ))}
@@ -898,50 +861,60 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               onPointerDown={(event) => beginTimelineDrag('seek', event)}
               className="relative cursor-pointer overflow-hidden"
             >
-              <div className="relative h-7 border-b border-white/[0.08] bg-white/[0.02]">
+              <div className="relative h-[31px] border-b border-white/[0.08] bg-white/[0.02]">
                 {rulerTicks.map((tick) => (
                   <div
-                    key={tick}
-                    className="absolute top-0 h-full border-l border-white/[0.12] pl-1 text-[10px] font-mono font-bold text-white/36"
-                    style={{ left: `${(tick / timelineDuration) * 100}%` }}
+                    key={tick.index}
+                    className={`absolute top-0 h-full text-[10px] font-mono font-bold text-white/38 ${tick.index === 6 ? 'border-r border-white/[0.12] pr-1 text-right' : 'border-l border-white/[0.12] pl-1'}`}
+                    style={tick.index === 6 ? { right: 0 } : { left: `${tick.percent}%` }}
                   >
-                    {formatClock(tick)}
+                    {formatClock(tick.value)}
                   </div>
                 ))}
               </div>
 
-              <div className="absolute inset-x-0 top-[31px] h-[28px] bg-orange-400/10" />
-              {clipTranscript.map((phrase) => {
-                const start = clamp(phrase.start - settings.clip_start_seconds, 0, timelineDuration);
-                const end = clamp(phrase.end - settings.clip_start_seconds, 0, timelineDuration);
+              <div className="absolute inset-x-0 top-[34px] h-[30px] bg-orange-400/10" />
+              {transcriptChunks.map((chunk) => {
+                const start = clamp(chunk.start - settings.clip_start_seconds, 0, timelineDuration);
+                const end = clamp(chunk.end - settings.clip_start_seconds, 0, timelineDuration);
                 return (
                   <div
-                    key={phrase.id}
-                    className="absolute top-[34px] h-[21px] overflow-hidden rounded-sm bg-orange-300/75 px-1 text-[9px] font-bold leading-[21px] text-black/75"
-                    title={phrase.text}
+                    key={chunk.id}
+                    className="absolute top-[38px] h-[22px] overflow-hidden rounded-[4px] bg-orange-300/80 px-2 text-[9px] font-black leading-[22px] text-black/78"
+                    title={chunk.text}
                     style={{
                       left: `${(start / timelineDuration) * 100}%`,
                       width: `${Math.max(0.45, ((end - start) / timelineDuration) * 100)}%`,
                     }}
                   >
-                    {phrase.text}
+                    {chunk.text}
                   </div>
                 );
               })}
 
-              <div className="absolute inset-x-0 top-[62px] h-[28px] bg-emerald-400/10" />
+              <div className="absolute inset-x-0 top-[69px] h-[58px] bg-cyan-300/10" />
+              <div className="absolute inset-x-0 top-[72px] flex h-[52px] items-stretch gap-[3px] px-2">
+                {timelineFrameBlocks.map((index) => {
+                  const framePercent = timelineFrameBlocks.length <= 1 ? 50 : (index / (timelineFrameBlocks.length - 1)) * 100;
+                  return (
+                    <span
+                      key={index}
+                      className="min-w-0 flex-1 rounded-[4px] border border-cyan-100/10 bg-cyan-300/28"
+                      style={timelinePosterUrl ? {
+                        backgroundImage: `linear-gradient(180deg, rgba(3,8,14,.18), rgba(3,8,14,.28)), url("${timelinePosterUrl}")`,
+                        backgroundPosition: `${framePercent}% center`,
+                        backgroundSize: 'cover',
+                      } : undefined}
+                    />
+                  );
+                })}
+              </div>
               <div
-                className="absolute top-[65px] h-[22px] rounded-md border border-emerald-300/45 bg-emerald-300/25"
+                className="pointer-events-none absolute top-[72px] h-[52px] rounded-md border border-emerald-300/55 bg-emerald-300/18 shadow-[0_0_24px_rgba(110,231,183,.12)]"
                 style={{ left: `${cropWindowLeft}%`, width: `${cropWindowWidth}%` }}
               />
 
-              <div className="absolute inset-x-0 top-[93px] flex h-[28px] items-center gap-[2px] px-2">
-                {timelineFrameBlocks.map((index) => (
-                  <span key={index} className="h-5 flex-1 rounded-[3px] bg-cyan-300/38" />
-                ))}
-              </div>
-
-              <div className="absolute inset-x-0 bottom-2 flex h-7 items-end gap-[2px] px-2">
+              <div className="absolute inset-x-0 bottom-2 flex h-9 items-end gap-[2px] px-2">
                 {audioBars.map((height, index) => (
                   <span
                     key={index}
@@ -954,13 +927,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               <div className="absolute inset-y-0 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
               <button
                 onPointerDown={(event) => beginTimelineDrag('start', event)}
-                className="absolute top-7 h-[127px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300"
+                className="absolute top-[31px] h-[145px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300"
                 style={{ left: '0%' }}
                 aria-label="Trim start"
               />
               <button
                 onPointerDown={(event) => beginTimelineDrag('end', event)}
-                className="absolute top-7 h-[127px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300"
+                className="absolute top-[31px] h-[145px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300"
                 style={{ left: '100%' }}
                 aria-label="Trim end"
               />
