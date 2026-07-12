@@ -170,7 +170,7 @@ export function AuthCard({
         </>
       ) : null}
 
-      <form onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
+      <form method="post" action="#" onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
         <input
           className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"
