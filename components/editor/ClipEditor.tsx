@@ -75,7 +75,8 @@ function safeJson(value: unknown) {
 }
 
 function phraseOverlapsClip(phrase: TranscriptPhrase, start: number, end: number) {
-  return phrase.end > start - 0.2 && phrase.start < end + 0.2;
+  const overlap = Math.min(phrase.end, end) - Math.max(phrase.start, start);
+  return overlap >= 0.2;
 }
 
 function splitWords(text: string) {
@@ -128,6 +129,12 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
   };
 }
 
+function captionPositionClass(position: ClipEditSettings['caption_position']) {
+  if (position === 'upper') return 'top-[16%]';
+  if (position === 'center') return 'top-1/2 -translate-y-1/2';
+  return 'bottom-[15%]';
+}
+
 export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: string }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -142,6 +149,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<EditorDebugInfo | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [previewDurationSeconds, setPreviewDurationSeconds] = useState(0);
   const [paused, setPaused] = useState(true);
   const [dragMode, setDragMode] = useState<DragMode>(null);
 
@@ -164,14 +172,27 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   const clipTranscript = useMemo(() => {
     if (!settings) return [];
-    return settings.edited_transcript.filter((phrase) => phraseOverlapsClip(phrase, settings.clip_start_seconds, settings.clip_end_seconds));
-  }, [settings]);
+    const renderedClipEnd = !previewUsesSource && previewDurationSeconds > 0
+      ? Math.min(settings.clip_end_seconds, settings.clip_start_seconds + previewDurationSeconds + 0.2)
+      : settings.clip_end_seconds;
+    return settings.edited_transcript.filter((phrase) => phraseOverlapsClip(phrase, settings.clip_start_seconds, renderedClipEnd));
+  }, [previewDurationSeconds, previewUsesSource, settings]);
 
   const clipTranscriptText = useMemo(
     () => clipTranscript.filter((phrase) => phrase.deleted !== true).map((phrase) => phrase.text).join(' '),
     [clipTranscript],
   );
   const clipTranscriptHidden = clipTranscript.length > 0 && clipTranscript.every((phrase) => phrase.deleted === true);
+  const activeCaptionText = useMemo(() => {
+    if (!settings?.captions_enabled || clipTranscriptHidden) return '';
+    const activePhrase = clipTranscript.find((phrase) => (
+      phrase.deleted !== true
+      && currentTime >= Math.max(settings.clip_start_seconds, phrase.start)
+      && currentTime <= Math.min(settings.clip_end_seconds, phrase.end)
+    ));
+    const text = activePhrase?.text || clipTranscript.find((phrase) => phrase.deleted !== true)?.text || '';
+    return splitWords(text).slice(0, Math.max(1, settings.caption_max_words)).join(' ');
+  }, [clipTranscript, clipTranscriptHidden, currentTime, settings]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/clips/${clipId}/edit`, { cache: 'no-store' });
@@ -486,8 +507,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const playheadLeft = `${(currentTime / sourceDuration) * 100}%`;
 
   return (
-    <main className="mx-auto w-full max-w-[1840px] px-5 py-6 text-white">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <main className="mx-auto w-full max-w-[1840px] px-5 py-4 text-white">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/42">Clip Editor</p>
           <h1 className="mt-1 max-w-4xl text-xl font-black leading-tight text-white">{data.clip.title}</h1>
@@ -501,13 +522,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       </div>
 
       {error ? (
-        <div className="mb-4 rounded-2xl border border-red-400/25 bg-red-500/[0.08] px-4 py-3 text-sm font-semibold text-red-100">
+        <div className="mb-3 rounded-2xl border border-red-400/25 bg-red-500/[0.08] px-4 py-2 text-sm font-semibold text-red-100">
           {error}
         </div>
       ) : null}
 
-      <section className="grid min-h-[calc(100vh-230px)] gap-4 xl:grid-cols-[minmax(320px,500px)_minmax(380px,560px)_minmax(280px,360px)]">
-        <aside className="flex min-h-[500px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+      <section className="grid h-[calc(100vh-310px)] min-h-[430px] gap-3 xl:grid-cols-[minmax(300px,500px)_minmax(330px,520px)_minmax(260px,330px)]">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -548,16 +569,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
         </aside>
 
-        <section className="flex min-h-[500px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
-          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/40">Player</p>
-              <p className="text-sm font-semibold text-white/66">{formatClock(Math.max(0, currentTime - settings.clip_start_seconds))} / {formatClock(clipDuration)}</p>
-            </div>
-            {rendering ? <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200">Rendering</span> : null}
-          </div>
-          <div className="grid min-h-0 flex-1 place-items-center bg-[#181a1f] p-4">
-            <div className="relative aspect-[9/16] w-full max-w-[360px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+        <section className="grid min-h-0 place-items-center overflow-hidden rounded-[18px] border border-white/10 bg-[#181a1f] p-3">
+            <div className="relative aspect-[9/16] w-full max-w-[330px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
                   key={previewUrl}
@@ -570,6 +583,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   className="h-full w-full bg-black object-cover"
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
+                    setPreviewDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
                     video.currentTime = previewUsesSource ? settings.clip_start_seconds : 0;
                   }}
                   onTimeUpdate={(event) => {
@@ -588,6 +602,23 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
               )}
 
+              {settings.captions_enabled && activeCaptionText ? (
+                <div className={`pointer-events-none absolute left-4 right-4 z-20 text-center ${captionPositionClass(settings.caption_position)}`}>
+                  <span
+                    style={captionPreviewStyle(activePreset, settings)}
+                    className={`inline-block max-w-full break-words ${settings.caption_background ? 'rounded-lg px-3 py-1' : ''}`}
+                  >
+                    {activeCaptionText}
+                  </span>
+                </div>
+              ) : null}
+
+              {rendering ? (
+                <span className="absolute right-3 top-3 rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200 backdrop-blur">
+                  Rendering
+                </span>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => void togglePlay()}
@@ -604,16 +635,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 )}
               </button>
             </div>
-          </div>
         </section>
 
-        <aside className="flex min-h-[560px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Project</p>
             <p className="mt-1 text-sm font-semibold text-white">Clip settings</p>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-black text-white">Caption style</p>
@@ -703,8 +733,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </aside>
       </section>
 
-      <section className="mt-4 rounded-[18px] border border-white/10 bg-[#111318]/95 p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <section className="mt-3 rounded-[18px] border border-white/10 bg-[#111318]/95 p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
             <p className="text-xs font-semibold text-white/45">
@@ -728,7 +758,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               -5 end
             </button>
             <button onClick={() => void saveDraft()} disabled={!changed || saving} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/75 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45">
-              {saving ? 'Saving...' : 'Save Draft'}
+              {saving ? 'Applying...' : 'Apply'}
             </button>
             <button onClick={() => void rerenderClip()} disabled={!needsRender || rendering} className="rounded-full bg-white px-5 py-2 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-45">
               {rendering ? 'Rendering...' : 'Re-render Clip'}
@@ -744,7 +774,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         <div
           ref={timelineRef}
           onPointerDown={(event) => beginTimelineDrag('seek', event)}
-          className="relative mt-2 h-24 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
+          className="relative mt-2 h-16 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
         >
           <div className="absolute inset-y-0 bg-emerald-400/18" style={{ left: selectedLeft, width: selectedWidth }} />
           {data.transcript.phrases.map((phrase) => (
