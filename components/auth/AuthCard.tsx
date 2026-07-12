@@ -109,17 +109,6 @@ export function AuthCard({
       }
 
       if (isLogin) {
-        const browserSupabase = createSupabaseBrowserClient();
-        const { error: browserLoginError } = await browserSupabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (browserLoginError) {
-          setLocalError(browserLoginError.message);
-          return;
-        }
-
         const nextPath = typeof data?.next === 'string' ? data.next : (next || '/dashboard');
         window.location.assign(nextPath);
         return;
