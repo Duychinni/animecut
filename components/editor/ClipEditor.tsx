@@ -74,6 +74,10 @@ function safeJson(value: unknown) {
   return JSON.stringify(value);
 }
 
+function phraseOverlapsClip(phrase: TranscriptPhrase, start: number, end: number) {
+  return phrase.end > start - 0.2 && phrase.start < end + 0.2;
+}
+
 function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEditSettings) {
   const textColor = settings.caption_text_color || preset?.captionTextColor || '#ffffff';
   const strokeColor = preset?.captionStrokeColor || '#000000';
@@ -110,8 +114,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [paused, setPaused] = useState(true);
   const [dragMode, setDragMode] = useState<DragMode>(null);
 
-  const previewUrl = data?.source.fallbackClipUrl || data?.source.previewUrl || null;
-  const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl);
+  const previewUrl = data?.clip.signedUrl || data?.source.fallbackClipUrl || data?.source.previewUrl || null;
+  const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
   const sourceDuration = Math.max(1, data?.source.durationSeconds ?? settings?.clip_end_seconds ?? 90);
   const changed = Boolean(settings && baseline && safeJson(settings) !== baseline);
   const needsRender = changed || data?.clip.editStatus === 'draft' || data?.clip.editStatus === 'error';
@@ -130,7 +134,10 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const filteredTranscript = useMemo(() => {
     if (!settings) return [];
     const q = query.trim().toLowerCase();
-    return settings.edited_transcript.filter((phrase) => !q || phrase.text.toLowerCase().includes(q));
+    return settings.edited_transcript.filter((phrase) => {
+      if (!phraseOverlapsClip(phrase, settings.clip_start_seconds, settings.clip_end_seconds)) return false;
+      return !q || phrase.text.toLowerCase().includes(q);
+    });
   }, [query, settings]);
 
   const load = useCallback(async () => {
@@ -477,7 +484,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <div key={phrase.id} className={`rounded-2xl border p-3 transition ${active ? 'border-emerald-300/45 bg-emerald-300/[0.09]' : 'border-white/10 bg-white/[0.03]'}`}>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <button onClick={() => seekAbsolute(phrase.start)} className="font-mono text-xs font-bold text-white/50 hover:text-white">
-                      {formatClock(phrase.start)} - {formatClock(phrase.end)}
+                      {formatClock(phrase.start - settings.clip_start_seconds)} - {formatClock(phrase.end - settings.clip_start_seconds)}
                     </button>
                     <label className="flex items-center gap-2 text-xs font-bold text-white/55">
                       <input
@@ -497,6 +504,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               );
             })}
+            {!filteredTranscript.length ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
+                No caption text found inside this reel. Extend the clip handles or reset the AI selection to bring transcript text back into range.
+              </div>
+            ) : null}
           </div>
         </aside>
 
@@ -508,16 +520,17 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             </div>
             {rendering ? <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200">Rendering</span> : null}
           </div>
-          <div className="grid min-h-0 flex-1 place-items-center bg-[#242424] p-5">
-            <div className="relative aspect-[9/16] h-full max-h-[720px] min-h-[480px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+          <div className="grid min-h-0 flex-1 place-items-center bg-[#181a1f] p-5">
+            <div className="relative aspect-[9/16] w-full max-w-[420px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
+                  key={previewUrl}
                   ref={videoRef}
                   src={previewUrl}
                   poster={data.clip.posterUrl ?? undefined}
                   controls
                   playsInline
-                  preload="auto"
+                  preload="metadata"
                   className="h-full w-full bg-black object-cover"
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
