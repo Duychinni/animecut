@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { login } from '@/app/auth/actions';
 import { readJsonSafe } from '@/lib/safe-json';
 import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -170,7 +171,7 @@ export function AuthCard({
         </>
       ) : null}
 
-      <form method="post" action="#" onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
+      <form action={isLogin ? login : undefined} method="post" onSubmit={isLogin ? undefined : onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
         <input
           className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"
@@ -191,6 +192,7 @@ export function AuthCard({
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <input type="hidden" name="next" value={next || '/dashboard'} />
         <button
           className="w-full rounded-2xl bg-white px-4 py-3.5 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"
