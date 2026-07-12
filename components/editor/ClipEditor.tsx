@@ -78,6 +78,38 @@ function phraseOverlapsClip(phrase: TranscriptPhrase, start: number, end: number
   return phrase.end > start - 0.2 && phrase.start < end + 0.2;
 }
 
+function splitWords(text: string) {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+function distributeTextAcrossPhrases(text: string, phrases: TranscriptPhrase[]) {
+  const words = splitWords(text);
+  if (!phrases.length) return [];
+  if (!words.length) {
+    return phrases.map((phrase) => ({ ...phrase, text: '', deleted: true }));
+  }
+
+  const weights = phrases.map((phrase) => Math.max(1, splitWords(phrase.originalText || phrase.text || '').length));
+  let remainingWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  let cursor = 0;
+
+  return phrases.map((phrase, index) => {
+    const wordsLeft = words.length - cursor;
+    const phrasesLeft = phrases.length - index;
+    const count = index === phrases.length - 1
+      ? wordsLeft
+      : clamp(
+        Math.round((wordsLeft * weights[index]) / Math.max(1, remainingWeight)),
+        wordsLeft > phrasesLeft ? 1 : 0,
+        Math.max(0, wordsLeft - (phrasesLeft - 1)),
+      );
+    const chunk = words.slice(cursor, cursor + count);
+    cursor += count;
+    remainingWeight -= weights[index];
+    return { ...phrase, text: chunk.join(' '), deleted: chunk.length ? false : true };
+  });
+}
+
 function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEditSettings) {
   const textColor = settings.caption_text_color || preset?.captionTextColor || '#ffffff';
   const strokeColor = preset?.captionStrokeColor || '#000000';
@@ -109,7 +141,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState<EditorDebugInfo | null>(null);
-  const [query, setQuery] = useState('');
   const [currentTime, setCurrentTime] = useState(0);
   const [paused, setPaused] = useState(true);
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -131,14 +162,16 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     return picked.length ? picked : data.presets.slice(0, 5);
   }, [data]);
 
-  const filteredTranscript = useMemo(() => {
+  const clipTranscript = useMemo(() => {
     if (!settings) return [];
-    const q = query.trim().toLowerCase();
-    return settings.edited_transcript.filter((phrase) => {
-      if (!phraseOverlapsClip(phrase, settings.clip_start_seconds, settings.clip_end_seconds)) return false;
-      return !q || phrase.text.toLowerCase().includes(q);
-    });
-  }, [query, settings]);
+    return settings.edited_transcript.filter((phrase) => phraseOverlapsClip(phrase, settings.clip_start_seconds, settings.clip_end_seconds));
+  }, [settings]);
+
+  const clipTranscriptText = useMemo(
+    () => clipTranscript.filter((phrase) => phrase.deleted !== true).map((phrase) => phrase.text).join(' '),
+    [clipTranscript],
+  );
+  const clipTranscriptHidden = clipTranscript.length > 0 && clipTranscript.every((phrase) => phrase.deleted === true);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/clips/${clipId}/edit`, { cache: 'no-store' });
@@ -264,17 +297,32 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     }
   }
 
-  function updatePhrase(id: string, patch: Partial<TranscriptPhrase>) {
+  function updateClipTranscriptText(text: string) {
     if (!settings) return;
+    const distributed = distributeTextAcrossPhrases(text, clipTranscript);
+    const updates = new Map(distributed.map((phrase) => [phrase.id, phrase]));
     patchSettings({
-      edited_transcript: settings.edited_transcript.map((phrase) => phrase.id === id ? { ...phrase, ...patch } : phrase),
+      edited_transcript: settings.edited_transcript.map((phrase) => updates.get(phrase.id) ?? phrase),
+    });
+  }
+
+  function setClipTranscriptHidden(hidden: boolean) {
+    if (!settings) return;
+    const ids = new Set(clipTranscript.map((phrase) => phrase.id));
+    patchSettings({
+      edited_transcript: settings.edited_transcript.map((phrase) => ids.has(phrase.id) ? { ...phrase, deleted: hidden } : phrase),
     });
   }
 
   function restoreTranscript() {
-    if (!data) return;
+    if (!data || !settings) return;
+    const originals = new Map(data.transcript.phrases.map((phrase) => [phrase.id, phrase]));
     patchSettings({
-      edited_transcript: data.transcript.phrases.map((phrase) => ({ ...phrase, text: phrase.originalText, deleted: false })),
+      edited_transcript: settings.edited_transcript.map((phrase) => {
+        if (!phraseOverlapsClip(phrase, settings.clip_start_seconds, settings.clip_end_seconds)) return phrase;
+        const original = originals.get(phrase.id);
+        return { ...phrase, text: original?.originalText || original?.text || phrase.originalText || phrase.text, deleted: false };
+      }),
     });
   }
 
@@ -458,61 +506,49 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
       ) : null}
 
-      <section className="grid min-h-[calc(100vh-260px)] gap-4 xl:grid-cols-[minmax(320px,500px)_minmax(360px,560px)_minmax(280px,360px)]">
-        <aside className="flex min-h-[560px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+      <section className="grid min-h-[calc(100vh-230px)] gap-4 xl:grid-cols-[minmax(320px,500px)_minmax(380px,560px)_minmax(280px,360px)]">
+        <aside className="flex min-h-[500px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/40">Transcript</p>
-                <p className="mt-1 text-sm font-semibold text-white/68">Edit the caption words directly.</p>
+                <p className="mt-1 text-sm font-semibold text-white/68">Edit this reel's caption text.</p>
               </div>
               <button onClick={restoreTranscript} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/72 hover:bg-white/[0.06]">
                 Restore
               </button>
             </div>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search transcript..."
-              className="mt-3 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/30"
-            />
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold text-white/52">
+              <button onClick={() => seekAbsolute(settings.clip_start_seconds)} className="font-mono hover:text-white">
+                {formatClock(0)} - {formatClock(clipDuration)}
+              </button>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={clipTranscriptHidden}
+                  onChange={(event) => setClipTranscriptHidden(event.target.checked)}
+                  className="accent-red-400"
+                />
+                Hide captions
+              </label>
+            </div>
           </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 pr-3">
-            {filteredTranscript.map((phrase) => {
-              const active = currentTime >= phrase.start && currentTime <= phrase.end;
-              return (
-                <div key={phrase.id} className={`rounded-2xl border p-3 transition ${active ? 'border-emerald-300/45 bg-emerald-300/[0.09]' : 'border-white/10 bg-white/[0.03]'}`}>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <button onClick={() => seekAbsolute(phrase.start)} className="font-mono text-xs font-bold text-white/50 hover:text-white">
-                      {formatClock(phrase.start - settings.clip_start_seconds)} - {formatClock(phrase.end - settings.clip_start_seconds)}
-                    </button>
-                    <label className="flex items-center gap-2 text-xs font-bold text-white/55">
-                      <input
-                        type="checkbox"
-                        checked={phrase.deleted === true}
-                        onChange={(event) => updatePhrase(phrase.id, { deleted: event.target.checked })}
-                        className="accent-red-400"
-                      />
-                      Hide
-                    </label>
-                  </div>
-                  <textarea
-                    value={phrase.text}
-                    onChange={(event) => updatePhrase(phrase.id, { text: event.target.value })}
-                    className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm font-semibold leading-5 text-white outline-none focus:border-white/30"
-                  />
-                </div>
-              );
-            })}
-            {!filteredTranscript.length ? (
+          <div className="min-h-0 flex-1 p-4">
+            {clipTranscript.length ? (
+              <textarea
+                value={clipTranscriptText}
+                onChange={(event) => updateClipTranscriptText(event.target.value)}
+                className="h-full min-h-[360px] w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-base font-semibold leading-7 text-white outline-none transition focus:border-white/30"
+              />
+            ) : (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
                 No caption text found inside this reel. Extend the clip handles or reset the AI selection to bring transcript text back into range.
               </div>
-            ) : null}
+            )}
           </div>
         </aside>
 
-        <section className="flex min-h-[560px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
+        <section className="flex min-h-[500px] flex-col rounded-[18px] border border-white/10 bg-[#111318]/95">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-white/40">Player</p>
@@ -520,14 +556,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             </div>
             {rendering ? <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200">Rendering</span> : null}
           </div>
-          <div className="grid min-h-0 flex-1 place-items-center bg-[#181a1f] p-5">
-            <div className="relative aspect-[9/16] w-full max-w-[420px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+          <div className="grid min-h-0 flex-1 place-items-center bg-[#181a1f] p-4">
+            <div className="relative aspect-[9/16] w-full max-w-[360px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
                   key={previewUrl}
                   ref={videoRef}
                   src={previewUrl}
-                  poster={data.clip.posterUrl ?? undefined}
+                  poster={data.clip.posterUrl ?? data.source.posterUrl ?? undefined}
                   controls
                   playsInline
                   preload="metadata"
