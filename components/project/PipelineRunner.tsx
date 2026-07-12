@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { readJsonSafe } from '@/lib/safe-json';
+import { formatLivePercent, useLiveProgress } from '@/components/project/LiveProgress';
 
 type ProgressPayload = {
   project?: {
@@ -82,6 +83,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
   const activeExportCount = useMemo(() => Number(progress?.progress?.active_exports ?? 0), [progress]);
   const isCompleted = progress?.project?.status === 'completed';
+  const liveProgressPct = useLiveProgress(progressPct, !isCompleted, progress?.project?.pipeline_stage);
 
   const refreshProgress = useCallback(async () => {
     try {
@@ -210,17 +212,19 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
             <div className="w-[78%] max-w-[240px] rounded-lg border border-white/25 bg-black/60 px-4 py-3 text-center backdrop-blur-sm">
               <div className="inline-flex items-center justify-center gap-2 text-2xl font-bold text-white">
                 <ClockIcon className="h-5 w-5 text-emerald-300" />
-                {progressPct}%
+                {formatLivePercent(liveProgressPct)}%
               </div>
               <div className="mb-2 text-[11px] uppercase tracking-[0.12em] text-white/75">
                 {isCompleted ? 'Completed' : processingLabel}
               </div>
               {etaLabel ? <div className="mb-2 text-[11px] font-semibold text-emerald-100/85">{etaLabel}</div> : null}
-              <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
+              <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/20">
                 <div
-                  className="h-full rounded-full bg-emerald-400 transition-[width] duration-500 ease-out"
-                  style={{ width: `${progressPct}%` }}
-                />
+                  className="relative h-full overflow-hidden rounded-full bg-emerald-400 transition-[width] duration-500 ease-linear"
+                  style={{ width: `${liveProgressPct}%` }}
+                >
+                  {!isCompleted ? <span className="progress-active-sheen absolute inset-y-0 block w-10 bg-gradient-to-r from-transparent via-white/40 to-transparent" /> : null}
+                </div>
               </div>
             </div>
           </div>

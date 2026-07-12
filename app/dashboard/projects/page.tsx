@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { LiveProgressPill } from '@/components/project/LiveProgress';
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
@@ -27,15 +28,6 @@ type ProjectListItem = {
   expires_at?: string | null;
   days_until_expiring?: number | null;
 };
-
-function ClockIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 16 16" aria-hidden="true" fill="none">
-      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 4.6v3.7l2.6 1.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function isCompletedProject(project: ProjectListItem) {
   return project.status === 'completed' || project.pipeline_status === 'completed' || Number(project.progress_percent ?? 0) >= 100;
@@ -205,18 +197,7 @@ export default function ProjectsPage() {
 
                 {showProcessing ? (
                   <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
-                    <div className="relative isolate flex min-w-[150px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
-                      <div
-                        className="absolute inset-y-0 left-0 -z-10 bg-emerald-400/35 shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-[width] duration-500 ease-out"
-                        style={{ width: `${Math.max(6, Math.min(100, percent))}%` }}
-                      />
-                      <span className="inline-flex items-center gap-1.5 text-[12px] font-extrabold leading-none">
-                        <ClockIcon className="h-3.5 w-3.5" />
-                        {percent}%
-                        {etaLabel ? <span className="font-black text-emerald-50/85">({etaLabel})</span> : null}
-                      </span>
-                      <span className="max-w-[132px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{processingStage}</span>
-                    </div>
+                    <LiveProgressPill percent={percent} active stage={p.pipeline_stage} stageLabel={processingStage} etaLabel={etaLabel} />
                   </div>
                 ) : null}
               </div>

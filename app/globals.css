@@ -90,3 +90,22 @@ body {
     transform: translateY(-6px);
   }
 }
+
+@keyframes progress-active-sheen {
+  from {
+    transform: translateX(-140%);
+  }
+  to {
+    transform: translateX(440%);
+  }
+}
+
+.progress-active-sheen {
+  animation: progress-active-sheen 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-active-sheen {
+    animation: none;
+  }
+}

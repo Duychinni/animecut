@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 import { readJsonSafe } from '@/lib/safe-json';
+import { formatLivePercent, useLiveProgress } from '@/components/project/LiveProgress';
 
 type ProgressPayload = {
   project?: {
@@ -115,6 +116,7 @@ export function ProcessingHero({
   const isFinished = !forcePreparing && (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
   const liveHeroThumbnail = data?.project?.thumbnail_url || heroThumbnail;
   const stageDisplayLabel = forcePreparing ? 'Preparing your reels...' : pipelineStageLabel || getProcessingLabel(pipelineStage, status);
+  const livePercent = useLiveProgress(percent, !isFinished && !publicError && !isNotEnoughContent, pipelineStage);
 
   useEffect(() => {
     if (completedRefreshRef.current) return;
@@ -176,12 +178,14 @@ export function ProcessingHero({
                 <div className="mb-2 flex items-center justify-between text-sm text-white/70">
                   <span className="inline-flex items-center gap-1.5">
                     <ClockIcon className="h-3.5 w-3.5 text-emerald-300" />
-                    {percent}% complete
+                    {formatLivePercent(livePercent)}% complete
                   </span>
                   {etaLabel ? <span className="text-white/60">{etaLabel}</span> : null}
                 </div>
-                <div className="h-3 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(6, Math.min(100, percent))}%` }} />
+                <div className="relative h-3 overflow-hidden rounded-full bg-white/10">
+                  <div className="relative h-full overflow-hidden rounded-full bg-emerald-400 transition-[width] duration-500 ease-linear" style={{ width: `${Math.max(6, livePercent)}%` }}>
+                    {!isFinished && !publicError && !isNotEnoughContent ? <span className="progress-active-sheen absolute inset-y-0 block w-14 bg-gradient-to-r from-transparent via-white/45 to-transparent" /> : null}
+                  </div>
                 </div>
               </div>
             </div>

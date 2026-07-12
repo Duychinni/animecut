@@ -34,13 +34,14 @@ function computeProgress(params: {
   pipelineStatus: PipelineStatus;
   pipelineStage: string | null;
   elapsedSeconds: number;
+  stageElapsedSeconds: number;
   hasTranscript: boolean;
   analyzedCandidates: number;
   doneExports: number;
   activeExports: number;
   targetCount: number;
 }) {
-  const { status, pipelineStatus, pipelineStage, elapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount } = params;
+  const { status, pipelineStatus, pipelineStage, elapsedSeconds, stageElapsedSeconds, hasTranscript, analyzedCandidates, doneExports, activeExports, targetCount } = params;
   const safeTarget = Math.max(1, targetCount);
 
   if ((status === 'completed' || pipelineStatus === 'completed') && activeExports === 0 && doneExports >= safeTarget) return 100;
@@ -61,13 +62,15 @@ function computeProgress(params: {
   if (pipelineStage && stageWindows[pipelineStage]) {
     const [start, end, expectedSeconds] = stageWindows[pipelineStage];
     if (pipelineStage === 'rendering') {
-      const exportProgress = Math.min(1, doneExports / safeTarget);
-      const activeBoost = activeExports > 0 ? 0.08 : 0;
-      return Math.min(99, Math.round(start + Math.min(1, exportProgress + activeBoost + elapsedSeconds / 900) * (end - start)));
+      const completedRatio = Math.min(1, doneExports / safeTarget);
+      const timeRatio = 1 - Math.exp(-Math.max(0, stageElapsedSeconds) / Math.max(45, safeTarget * 50));
+      const nextExportCeiling = Math.min(0.98, (doneExports + (activeExports > 0 ? 0.9 : 0.35)) / safeTarget);
+      const renderRatio = Math.max(completedRatio, Math.min(nextExportCeiling, timeRatio + (activeExports > 0 ? 0.025 : 0)));
+      return Math.min(98, Math.round((start + renderRatio * (end - start)) * 10) / 10);
     }
 
-    const stageRatio = Math.min(0.92, elapsedSeconds / expectedSeconds);
-    return Math.min(99, Math.round(start + stageRatio * (end - start)));
+    const stageRatio = Math.min(0.97, 1 - Math.exp(-Math.max(0, stageElapsedSeconds) / Math.max(1, expectedSeconds * 0.55)));
+    return Math.min(98, Math.round((start + stageRatio * (end - start)) * 10) / 10);
   }
 
   if (!hasTranscript) {
@@ -538,6 +541,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       pipelineStatus,
       pipelineStage: renderRecoveryQueued ? 'rendering' : pipelineStage,
       elapsedSeconds,
+      stageElapsedSeconds,
       hasTranscript,
       analyzedCandidates,
       doneExports,
