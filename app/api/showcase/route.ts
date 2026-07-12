@@ -96,7 +96,7 @@ function buildFallbackClips(): ShowcaseApiClip[] {
     id,
     title,
     score,
-    caption: 'Public Animacut showcase sample.',
+    caption: '',
     platform: platforms[index % platforms.length],
     length: '0:30',
     source: 'Animacut demo',
@@ -104,6 +104,45 @@ function buildFallbackClips(): ShowcaseApiClip[] {
     mediaType: 'image' as const,
     mediaUrl,
   }));
+}
+
+async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<ShowcaseApiClip[]> {
+  const signedClips = await Promise.all(
+    rows.map(async (row, index) => {
+      if (!row.output_storage_path || row.output_storage_path.startsWith('mock://')) return null;
+
+      try {
+        const candidate = asSingle(row.clip_candidates);
+        const project = asSingle(row.projects);
+        const mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
+        const start = Number(candidate?.start_sec ?? 0);
+        const end = Number(candidate?.end_sec ?? 0);
+        const length = end > start ? formatClock(end - start) : '0:30';
+
+        return {
+          id: row.id,
+          title: candidate?.title?.trim() || project?.source_title?.trim() || project?.title?.trim() || 'Generated short',
+          score: displayScore(candidate?.overall_score),
+          caption: '',
+          platform: platforms[index % platforms.length],
+          length,
+          source: project?.source_channel_name?.trim() || project?.source_title?.trim() || 'Animacut export',
+          gradient: gradients[index % gradients.length],
+          mediaType: 'video' as const,
+          mediaUrl,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const clips: ShowcaseApiClip[] = [];
+  for (const clip of signedClips) {
+    if (clip) clips.push(clip);
+  }
+
+  return clips.slice(0, 6);
 }
 
 async function getConfiguredShowcaseClips(exportIds: string[]): Promise<ShowcaseApiClip[]> {
@@ -129,42 +168,7 @@ async function getConfiguredShowcaseClips(exportIds: string[]): Promise<Showcase
   const rowsById = new Map(((data ?? []) as ExportShowcaseRow[]).map((row) => [row.id, row]));
   const orderedRows = exportIds.map((id) => rowsById.get(id)).filter((row): row is ExportShowcaseRow => Boolean(row));
 
-  const signedClips = await Promise.all(
-    orderedRows.map(async (row, index) => {
-      if (!row.output_storage_path || row.output_storage_path.startsWith('mock://')) return null;
-
-      try {
-        const candidate = asSingle(row.clip_candidates);
-        const project = asSingle(row.projects);
-        const mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
-        const start = Number(candidate?.start_sec ?? 0);
-        const end = Number(candidate?.end_sec ?? 0);
-        const length = end > start ? formatClock(end - start) : '0:30';
-
-        return {
-          id: row.id,
-          title: candidate?.title?.trim() || project?.source_title?.trim() || project?.title?.trim() || 'Generated short',
-          score: displayScore(candidate?.overall_score),
-          caption: 'Public Animacut showcase short.',
-          platform: platforms[index % platforms.length],
-          length,
-          source: project?.source_channel_name?.trim() || project?.source_title?.trim() || 'Animacut export',
-          gradient: gradients[index % gradients.length],
-          mediaType: 'video' as const,
-          mediaUrl,
-        };
-      } catch {
-        return null;
-      }
-    }),
-  );
-
-  const clips: ShowcaseApiClip[] = [];
-  for (const clip of signedClips) {
-    if (clip) clips.push(clip);
-  }
-
-  return clips.slice(0, 6);
+  return mapRowsToShowcaseClips(orderedRows);
 }
 
 async function getProjectShowcaseClips(projectIds: string[]): Promise<ShowcaseApiClip[]> {
@@ -196,18 +200,50 @@ async function getProjectShowcaseClips(projectIds: string[]): Promise<ShowcaseAp
     if (projectId && !rowsByProject.has(projectId)) rowsByProject.set(projectId, row);
   }
 
-  const orderedExportIds = projectIds
-    .map((projectId) => rowsByProject.get(projectId)?.id)
-    .filter((id): id is string => Boolean(id));
+  const orderedRows = projectIds
+    .map((projectId) => rowsByProject.get(projectId))
+    .filter((row): row is ExportShowcaseRow => Boolean(row));
 
-  return getConfiguredShowcaseClips(orderedExportIds);
+  return mapRowsToShowcaseClips(orderedRows);
+}
+
+async function getRecentProjectShowcaseClips(): Promise<ShowcaseApiClip[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('exports')
+    .select(`
+      id,
+      project_id,
+      output_storage_path,
+      created_at,
+      clip_candidates(title, overall_score, start_sec, end_sec),
+      projects(title, source_title, source_channel_name)
+    `)
+    .eq('status', 'done')
+    .not('output_storage_path', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(160);
+
+  if (error) throw error;
+
+  const rowsByProject = new Map<string, ExportShowcaseRow>();
+  for (const row of ((data ?? []) as ExportShowcaseRow[])) {
+    const projectId = row.project_id;
+    if (!projectId || rowsByProject.has(projectId)) continue;
+    if (!row.output_storage_path || row.output_storage_path.startsWith('mock://')) continue;
+    rowsByProject.set(projectId, row);
+    if (rowsByProject.size >= 6) break;
+  }
+
+  return mapRowsToShowcaseClips(Array.from(rowsByProject.values()));
 }
 
 export async function GET() {
   try {
     const projectClips = await getProjectShowcaseClips(getPublicProjectIds());
     const configuredClips = projectClips.length ? projectClips : await getConfiguredShowcaseClips(getPublicExportIds());
-    const clips = configuredClips.length ? configuredClips : buildFallbackClips();
+    const recentClips = configuredClips.length ? [] : await getRecentProjectShowcaseClips();
+    const clips = configuredClips.length ? configuredClips : recentClips.length ? recentClips : buildFallbackClips();
     return NextResponse.json({ clips }, { headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return NextResponse.json({ clips: buildFallbackClips() }, { headers: { 'Cache-Control': 'no-store' } });

@@ -769,8 +769,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   if (e1) throw e1;
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const supabase = createAdminClient();
+  const focusedExportId = new URL(req.url).searchParams.get('exportId')?.trim() || null;
   const stale = await requeueStaleProcessingWork().catch((error) => {
     console.warn('[jobs/process] stale requeue failed', error);
     return { staleJobs: 0, staleExports: 0 };
@@ -833,9 +834,41 @@ export async function POST() {
     }
   }
 
+  if (focusedExportId) {
+    const focusIndex = workItems.findIndex((item) => item.exportId === focusedExportId);
+    if (focusIndex >= 0) {
+      const [focused] = workItems.splice(focusIndex, 1);
+      workItems.unshift(focused);
+    } else {
+      const { data: focusedJobs, error: focusError } = await supabase
+        .from('jobs')
+        .select('id, payload')
+        .eq('status', 'queued')
+        .eq('type', 'export')
+        .order('created_at', { ascending: true })
+        .limit(batchLimit * 2);
+
+      if (focusError) return NextResponse.json({ error: focusError.message }, { status: 400 });
+
+      const focusedJob = ((focusedJobs ?? []) as JobRow[]).find((job) => job.payload?.export_id === focusedExportId);
+      if (focusedJob) {
+        const focusedPayload = (focusedJob.payload as Record<string, unknown>) ?? {};
+        workItems = [
+          {
+            jobId: focusedJob.id,
+            exportId: String(focusedPayload.export_id ?? focusedExportId),
+            payload: focusedPayload,
+          },
+          ...workItems.filter((item) => item.exportId !== focusedExportId),
+        ].slice(0, batchLimit);
+      }
+    }
+  }
+
   console.log('[jobs/process] queue snapshot', {
     queued_jobs_fetched: (jobs ?? []).length,
     work_items_selected: workItems.length,
+    focused_export_id: focusedExportId,
     repaired_done_exports: repaired,
     stale_jobs_requeued: stale.staleJobs,
     stale_exports_requeued: stale.staleExports,
