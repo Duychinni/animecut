@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { DEFAULT_CAPTION_PRESET_ID, type CaptionPreset } from '@/lib/caption-presets';
 import type { ClipEditSettings, TranscriptPhrase, TranscriptSegment } from '@/lib/clip-edit';
@@ -60,10 +60,6 @@ function formatClock(totalSeconds: number) {
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function formatPrecise(seconds: number) {
-  return Math.max(0, seconds).toFixed(2);
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -133,6 +129,18 @@ function captionPositionClass(position: ClipEditSettings['caption_position']) {
   if (position === 'upper') return 'top-[16%]';
   if (position === 'center') return 'top-1/2 -translate-y-1/2';
   return 'bottom-[15%]';
+}
+
+function cropPreviewStyle(settings: ClipEditSettings) {
+  const zoom = settings.framing_mode === 'fit' ? 1 : settings.zoom;
+  const x = settings.framing_mode === 'center' || settings.framing_mode === 'fit' ? 0.5 : settings.crop_x;
+  const y = settings.framing_mode === 'center' || settings.framing_mode === 'fit' ? 0.5 : settings.crop_y;
+
+  return {
+    objectFit: settings.framing_mode === 'fit' ? 'contain' : 'cover',
+    transform: `scale(${zoom}) translate(${(0.5 - x) * 22}%, ${(0.5 - y) * 22}%)`,
+    transformOrigin: 'center',
+  } satisfies CSSProperties;
 }
 
 export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: string }) {
@@ -508,9 +516,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const selectedLeft = '0%';
   const selectedWidth = '100%';
   const playheadLeft = `${clamp(((currentTime - settings.clip_start_seconds) / timelineDuration) * 100, 0, 100)}%`;
+  const rulerTicks = Array.from({ length: 7 }, (_, index) => (timelineDuration / 6) * index);
+  const audioBars = Array.from({ length: 120 }, (_, index) => {
+    const height = 18 + ((index * 17) % 31);
+    return height;
+  });
 
   return (
-      <main className="mx-auto w-full max-w-[1600px] px-5 py-4 text-white">
+      <main className="mx-auto w-full max-w-[1680px] px-5 py-4 text-white">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/42">Clip Editor</p>
@@ -529,8 +542,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
       ) : null}
 
-      <section className="grid h-[390px] justify-center gap-3 xl:grid-cols-[minmax(320px,410px)_minmax(260px,330px)_minmax(230px,270px)]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-white/[0.035] bg-[#111318]/95">
+      <section className="grid h-[640px] justify-center gap-3 xl:grid-cols-[minmax(360px,440px)_minmax(410px,520px)_minmax(260px,320px)]">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-white/[0.025] bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -561,7 +574,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               <textarea
                 value={clipTranscriptText}
                 onChange={(event) => updateClipTranscriptText(event.target.value)}
-                className="h-full min-h-[260px] w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-base font-semibold leading-7 text-white outline-none transition focus:border-white/30"
+                className="h-full min-h-[420px] w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-base font-semibold leading-7 text-white outline-none transition focus:border-white/30"
               />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
@@ -575,8 +588,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           <h1 className="mb-2 line-clamp-2 px-2 text-center text-base font-black leading-tight text-white">
             {data.clip.title}
           </h1>
-          <section className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden rounded-[14px] border border-white/[0.035] bg-[#181a1f] p-3">
-            <div className="relative aspect-[9/16] h-full max-h-[318px] w-auto max-w-[185px] overflow-hidden rounded-[15px] border border-white/[0.055] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+          <section className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden rounded-[14px] border border-white/[0.025] bg-[#181a1f] p-4">
+            <div className="relative aspect-[9/16] h-full max-h-[560px] w-auto max-w-[315px] overflow-hidden rounded-[15px] border border-white/[0.055] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
                   key={previewUrl}
@@ -586,7 +599,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   controls
                   playsInline
                   preload="metadata"
-                  className="h-full w-full bg-black object-cover"
+                  className="h-full w-full bg-black transition-transform duration-200"
+                  style={cropPreviewStyle(settings)}
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
                     setPreviewDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
@@ -625,32 +639,27 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </span>
               ) : null}
 
-              <button
-                type="button"
-                onClick={() => void togglePlay()}
-                className={`absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/45 shadow-[0_10px_26px_rgba(0,0,0,.35)] backdrop-blur transition ${paused ? 'opacity-100' : 'opacity-0 hover:opacity-100 focus:opacity-100'}`}
-                aria-label={paused ? 'Play preview' : 'Pause preview'}
-              >
-                {paused ? (
+              {paused ? (
+                <button
+                  type="button"
+                  onClick={() => void togglePlay()}
+                  className="absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/45 shadow-[0_10px_26px_rgba(0,0,0,.35)] backdrop-blur transition hover:scale-105"
+                  aria-label="Play preview"
+                >
                   <span className="ml-1 h-0 w-0 border-y-[12px] border-y-transparent border-l-[18px] border-l-white" />
-                ) : (
-                  <span className="flex gap-1">
-                    <span className="h-5 w-1.5 rounded-full bg-white" />
-                    <span className="h-5 w-1.5 rounded-full bg-white" />
-                  </span>
-                )}
-              </button>
+                </button>
+              ) : null}
             </div>
           </section>
         </div>
 
-        <aside className="flex min-h-0 flex-col self-start overflow-hidden rounded-[14px] border border-white/[0.035] bg-[#111318]/95">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-white/[0.025] bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Project</p>
             <p className="mt-1 text-sm font-semibold text-white">Clip settings</p>
           </div>
 
-          <div className="min-h-0 space-y-4 p-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto p-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-black text-white">Caption style</p>
@@ -686,11 +695,75 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 })}
               </div>
             </div>
+
+            <div className="space-y-3 border-t border-white/10 pt-4">
+              <p className="text-sm font-black text-white">Crop & framing</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['auto', 'Auto reframe'],
+                  ['center', 'Center'],
+                  ['fit', 'Fit full'],
+                  ['manual', 'Manual crop'],
+                ].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => patchSettings({ framing_mode: mode as ClipEditSettings['framing_mode'] })}
+                    className={`rounded-xl border px-3 py-2 text-xs font-black transition ${settings.framing_mode === mode ? 'border-cyan-300 bg-cyan-300/[0.1] text-cyan-100' : 'border-white/10 bg-white/[0.03] text-white/68 hover:bg-white/[0.06]'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="block space-y-2 text-xs font-bold text-white/58">
+                <span>Horizontal crop</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={settings.crop_x}
+                  onChange={(event) => patchSettings({ framing_mode: 'manual', crop_x: Number(event.target.value) })}
+                  className="w-full accent-cyan-300"
+                />
+              </label>
+              <label className="block space-y-2 text-xs font-bold text-white/58">
+                <span>Vertical crop</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={settings.crop_y}
+                  onChange={(event) => patchSettings({ framing_mode: 'manual', crop_y: Number(event.target.value) })}
+                  className="w-full accent-cyan-300"
+                />
+              </label>
+              <label className="block space-y-2 text-xs font-bold text-white/58">
+                <span>Zoom crop</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="2.4"
+                  step="0.01"
+                  value={settings.zoom}
+                  onChange={(event) => patchSettings({ framing_mode: 'manual', zoom: Number(event.target.value) })}
+                  className="w-full accent-cyan-300"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => patchSettings({ framing_mode: 'auto', crop_x: 0.5, crop_y: 0.34, zoom: 1 })}
+                className="w-full rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-white/70 transition hover:bg-white/[0.06]"
+              >
+                Reset crop
+              </button>
+            </div>
           </div>
         </aside>
       </section>
 
-      <section className="mx-auto mt-2 w-full max-w-[1130px] rounded-[14px] border border-white/[0.035] bg-[#111318]/95 p-2.5">
+      <section className="mx-auto mt-3 w-full max-w-[1260px] rounded-[14px] border border-white/[0.025] bg-[#111318]/95 p-3">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
@@ -723,24 +796,36 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
         </div>
 
-        <div className="grid grid-cols-[64px_1fr_64px] gap-3 text-xs font-mono font-bold text-white/36">
-          <span>{formatPrecise(0)}</span>
-          <span className="text-center">{formatClock(timelineDuration / 2)}</span>
-          <span className="text-right">{formatClock(timelineDuration)}</span>
+        <div className="relative h-5 border-b border-white/[0.08]">
+          {rulerTicks.map((tick) => (
+            <div
+              key={tick}
+              className="absolute top-0 h-full border-l border-white/[0.12] pl-1 text-[10px] font-mono font-bold text-white/36"
+              style={{ left: `${(tick / timelineDuration) * 100}%` }}
+            >
+              {formatClock(tick)}
+            </div>
+          ))}
         </div>
         <div
           ref={timelineRef}
           onPointerDown={(event) => beginTimelineDrag('seek', event)}
-          className="relative mt-2 h-14 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
+          className="relative mt-2 h-24 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
         >
-          <div className="absolute inset-y-0 bg-emerald-400/18" style={{ left: selectedLeft, width: selectedWidth }} />
+          <div className="absolute inset-x-0 top-2 h-8 rounded-lg bg-cyan-400/10" />
+          <div className="absolute inset-x-0 top-2 flex h-8 items-center gap-[2px] px-3">
+            {Array.from({ length: 42 }, (_, index) => (
+              <span key={index} className="h-5 flex-1 rounded-[3px] bg-cyan-300/35" />
+            ))}
+          </div>
+          <div className="absolute inset-x-0 top-[44px] h-5 rounded bg-orange-400/10" />
           {clipTranscript.map((phrase) => {
             const start = clamp(phrase.start - settings.clip_start_seconds, 0, timelineDuration);
             const end = clamp(phrase.end - settings.clip_start_seconds, 0, timelineDuration);
             return (
             <div
               key={phrase.id}
-              className="absolute bottom-3 h-5 rounded-sm bg-white/18"
+              className="absolute top-[45px] h-[18px] rounded-sm bg-orange-300/70"
               title={phrase.text}
               style={{
                 left: `${(start / timelineDuration) * 100}%`,
@@ -749,6 +834,16 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             />
             );
           })}
+          <div className="absolute inset-x-0 bottom-3 flex h-6 items-end gap-[2px] px-3">
+            {audioBars.map((height, index) => (
+              <span
+                key={index}
+                className="flex-1 rounded-t bg-sky-300/55"
+                style={{ height: `${height}%` }}
+              />
+            ))}
+          </div>
+          <div className="absolute inset-y-0 bg-emerald-400/12 ring-1 ring-inset ring-emerald-300/30" style={{ left: selectedLeft, width: selectedWidth }} />
           <div className="absolute inset-y-0 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
           <button
             onPointerDown={(event) => beginTimelineDrag('start', event)}
