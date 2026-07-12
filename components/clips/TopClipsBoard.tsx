@@ -47,13 +47,6 @@ type PlaybackState = {
   volume: number;
 };
 
-type ExpandedPlayback = {
-  clipId: string;
-  current: number;
-  paused: boolean;
-  volume: number;
-};
-
 function formatDuration(startSec: number | null, endSec: number | null) {
   if (startSec == null || endSec == null) return null;
   const total = Math.max(0, Math.round(endSec - startSec));
@@ -254,8 +247,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
   const [hookTextEnabled, setHookTextEnabled] = useState(false);
-  const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
-  const [expandedPlayback, setExpandedPlayback] = useState<ExpandedPlayback | null>(null);
   const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
@@ -362,21 +353,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     router.push(`/dashboard/projects/${projectId}/clips/${clip.exportId}/edit`);
   }
 
-  function handleFullscreen(id: string) {
-    pauseOtherVideos(id);
-    const currentVideo = videoRefs.current[id];
-    const currentState = playback[id];
-    const currentTime = currentVideo?.currentTime ?? currentState?.current ?? 0;
-    const paused = currentVideo?.paused ?? currentState?.paused ?? true;
-    const volume = currentVideo?.muted ? 0 : (currentVideo?.volume ?? currentState?.volume ?? 1);
-    if (currentVideo) {
-      currentVideo.pause();
-      updatePlayback(id, { paused: true, current: currentTime, volume });
-    }
-    setExpandedPlayback({ clipId: id, current: currentTime, paused, volume });
-    setExpandedClipId(id);
-  }
-
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
 
@@ -429,19 +405,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       setApplyingPreset(false);
     }
   }
-
-  useEffect(() => {
-    if (!expandedClipId) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setExpandedClipId(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [expandedClipId]);
 
   useEffect(() => {
     if (!editingClip) return;
@@ -597,7 +560,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         data-clip-frame="true"
                         onPointerEnter={() => primeVideo(clip.exportId, 'auto')}
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
-                        className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22 [&:fullscreen]:mx-auto [&:fullscreen]:flex [&:fullscreen]:h-screen [&:fullscreen]:w-auto [&:fullscreen]:max-w-none [&:fullscreen]:items-center [&:fullscreen]:justify-center [&:fullscreen]:rounded-none [&:fullscreen]:bg-black [&:fullscreen]:ring-0"
+                        className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22"
                       >
                         <video
                           ref={(el) => {
@@ -608,7 +571,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           controls={false}
                           disablePictureInPicture
                           poster={clip.posterUrl ?? undefined}
-                          className="h-full w-full bg-black object-cover [&:fullscreen]:object-contain"
+                          className="h-full w-full bg-black object-cover"
                           src={clip.signedUrl}
                           onLoadedMetadata={(e) => {
                             const v = e.currentTarget;
@@ -767,19 +730,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => void handleFullscreen(clip.exportId)}
-                            className="absolute bottom-3 right-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white/80 backdrop-blur-sm transition hover:bg-black/50 hover:text-white"
-                            aria-label="Fullscreen clip"
-                          >
-                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                              <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-                              <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-                              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                            </svg>
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -835,52 +785,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
           </div>
         </div>
       </section>
-
-      {expandedClipId ? (() => {
-        const expandedClip = clips.find((clip) => clip.exportId === expandedClipId) ?? null;
-        return expandedClip ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/92 px-4 py-6" onClick={() => setExpandedClipId(null)}>
-            <div className="relative flex h-full w-full items-center justify-center" onClick={(e) => e.stopPropagation()}>
-              <div className="relative aspect-[9/16] h-auto max-h-[94vh] w-full max-w-[420px] overflow-hidden rounded-[18px] bg-black shadow-[0_20px_80px_rgba(0,0,0,0.55)]">
-                {expandedClip.signedUrl ? (
-                  <video
-                    src={expandedClip.signedUrl}
-                    controls
-                    playsInline
-                    preload="auto"
-                    poster={expandedClip.posterUrl ?? undefined}
-                    className="aspect-[9/16] h-full w-full bg-black object-cover"
-                    onLoadedMetadata={(e) => {
-                      if (expandedPlayback?.clipId !== expandedClip.exportId) return;
-                      e.currentTarget.currentTime = expandedPlayback.current;
-                      e.currentTarget.volume = expandedPlayback.volume;
-                      e.currentTarget.muted = expandedPlayback.volume === 0;
-                      if (!expandedPlayback.paused) {
-                        void e.currentTarget.play().catch(() => null);
-                      }
-                    }}
-                    onPlay={() => pauseOtherVideos(expandedClip.exportId)}
-                  />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-sm text-white/50">Preview unavailable</div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setExpandedClipId(null)}
-                  className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white/90 transition hover:bg-black/75 hover:text-white"
-                  aria-label="Close expanded reel"
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                    <path d="M6 6l12 12" />
-                    <path d="M18 6 6 18" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null;
-      })() : null}
 
       {editingClip ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/55 backdrop-blur-sm">

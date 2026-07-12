@@ -642,6 +642,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   src={previewUrl}
                   poster={data.clip.posterUrl ?? data.source.posterUrl ?? undefined}
                   controls
+                  controlsList="nofullscreen nodownload noremoteplayback"
+                  disablePictureInPicture
                   playsInline
                   preload="metadata"
                   className="h-full w-full bg-black transition-transform duration-200"
