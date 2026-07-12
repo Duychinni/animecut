@@ -69,12 +69,7 @@ export async function GET() {
       const isCompleted = readyExports > 0 && (markedCompleted || activeExports === 0);
       const needsExportCompletion = markedCompleted && readyExports === 0;
       const uploadThumbnailUrl = project.source_type === 'upload'
-        ? await ensureProjectUploadThumbnail({
-            id: String(project.id),
-            user_id: String(project.user_id),
-            source_type: 'upload',
-            source_storage_path: typeof project.source_storage_path === 'string' ? project.source_storage_path : null,
-          }, { generateIfMissing: false }).catch(() => null)
+        ? project.source_thumbnail_url
         : null;
       const sourceThumbnailUrl = project.source_type === 'youtube'
         ? stableYouTubeThumbnail(project.source_thumbnail_url, parseYouTubeId(project.source_url))
