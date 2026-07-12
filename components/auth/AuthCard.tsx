@@ -7,10 +7,9 @@ import { readJsonSafe } from '@/lib/safe-json';
 import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type Mode = 'login' | 'signup';
-type OAuthProvider = 'google' | 'apple';
+type OAuthProvider = 'google';
 
 const GOOGLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH !== 'false';
-const APPLE_AUTH_ENABLED = process.env.NEXT_PUBLIC_ENABLE_APPLE_AUTH === 'true';
 
 function getBrowserSafeOrigin() {
   const url = new URL(window.location.origin);
@@ -27,14 +26,6 @@ function GoogleIcon() {
       <path d="M12 22c2.7 0 4.964-.896 6.618-2.43l-3.301-2.563c-.917.615-2.09.98-3.317.98-2.548 0-4.705-1.72-5.474-4.032H3.113v2.644A9.997 9.997 0 0 0 12 22Z" fill="#34A853"/>
       <path d="M6.526 13.955A5.996 5.996 0 0 1 6.22 12c0-.68.117-1.34.306-1.955V7.4H3.113A9.997 9.997 0 0 0 2 12c0 1.61.385 3.134 1.113 4.6l3.413-2.645Z" fill="#FBBC05"/>
       <path d="M12 6.013c1.468 0 2.787.505 3.826 1.497l2.87-2.87C16.96 3.02 14.696 2 12 2A9.997 9.997 0 0 0 3.113 7.4l3.413 2.645C7.295 7.733 9.452 6.013 12 6.013Z" fill="#EA4335"/>
-    </svg>
-  );
-}
-
-function AppleIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-      <path d="M15.22 3.5c0 1.06-.39 2.03-1 2.72-.7.78-1.83 1.37-2.89 1.29-.13-1.02.37-2.1.98-2.78.67-.75 1.84-1.3 2.91-1.23ZM18.4 17.2c-.47 1.08-.7 1.56-1.3 2.53-.83 1.35-2 3.03-3.46 3.05-1.3.03-1.64-.83-3.4-.82-1.76.01-2.13.83-3.43.8-1.45-.03-2.57-1.55-3.4-2.9-2.33-3.77-2.57-8.2-1.14-10.4 1.02-1.57 2.62-2.48 4.12-2.48 1.53 0 2.49.84 3.75.84 1.22 0 1.97-.84 3.74-.84 1.34 0 2.77.73 3.8 2 .16.2.3.4.42.62-3.32 1.82-2.78 6.55.3 7.58Z"/>
     </svg>
   );
 }
@@ -60,8 +51,7 @@ export function AuthCard({
   const isLogin = mode === 'login';
 
   async function onOAuth(provider: OAuthProvider) {
-    const providerEnabled = provider === 'google' ? GOOGLE_AUTH_ENABLED : APPLE_AUTH_ENABLED;
-    if (!providerEnabled) {
+    if (!GOOGLE_AUTH_ENABLED) {
       setLocalError('This sign-in option is not available yet. Continue with email for now.');
       return;
     }
@@ -135,7 +125,7 @@ export function AuthCard({
       {localMsg ? <p className="mt-3 text-sm text-emerald-300">{localMsg}</p> : null}
       {localError ? <p className="mt-3 text-sm text-red-300">{localError}</p> : null}
 
-      {GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? (
+      {GOOGLE_AUTH_ENABLED ? (
         <>
           <div className="mt-6 space-y-3">
             {GOOGLE_AUTH_ENABLED ? (
@@ -149,17 +139,6 @@ export function AuthCard({
                 <span>{loading ? 'Working...' : 'Continue with Google'}</span>
               </button>
             ) : null}
-            {APPLE_AUTH_ENABLED ? (
-              <button
-                className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white/[0.08] px-4 py-3 font-semibold text-white transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-60"
-                type="button"
-                onClick={() => void onOAuth('apple')}
-                disabled={loading}
-              >
-                <AppleIcon />
-                <span>{loading ? 'Working...' : 'Continue with Apple'}</span>
-              </button>
-            ) : null}
           </div>
 
           <div className="mt-6 flex items-center gap-3 text-sm text-white/38">
@@ -170,7 +149,7 @@ export function AuthCard({
         </>
       ) : null}
 
-      <form method="post" action="#" onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
+      <form method="post" action="#" onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
         <input
           className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"
