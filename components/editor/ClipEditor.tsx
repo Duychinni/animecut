@@ -153,7 +153,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [paused, setPaused] = useState(true);
   const [dragMode, setDragMode] = useState<DragMode>(null);
 
-  const previewUrl = data?.clip.signedUrl || data?.source.fallbackClipUrl || data?.source.previewUrl || null;
+  const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
   const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
   const sourceDuration = Math.max(1, data?.source.durationSeconds ?? settings?.clip_end_seconds ?? 90);
   const changed = Boolean(settings && baseline && safeJson(settings) !== baseline);
@@ -511,7 +511,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/42">Clip Editor</p>
-          <h1 className="mt-1 max-w-4xl text-xl font-black leading-tight text-white">{data.clip.title}</h1>
         </div>
         <div className="flex items-center gap-2">
           {toast ? <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs font-bold text-emerald-200">{toast}</span> : null}
@@ -527,7 +526,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
       ) : null}
 
-      <section className="grid h-[calc(100vh-310px)] min-h-[430px] gap-3 xl:grid-cols-[minmax(300px,500px)_minmax(330px,520px)_minmax(260px,330px)]">
+      <section className="grid h-[calc(100vh-390px)] min-h-[500px] gap-3 xl:grid-cols-[minmax(300px,500px)_minmax(300px,480px)_minmax(250px,310px)]">
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -536,7 +535,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <p className="mt-1 text-sm font-semibold text-white/68">Edit this reel's caption text.</p>
               </div>
               <button onClick={restoreTranscript} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/72 hover:bg-white/[0.06]">
-                Restore
+                Reset
               </button>
             </div>
             <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold text-white/52">
@@ -569,8 +568,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
         </aside>
 
-        <section className="grid min-h-0 place-items-center overflow-hidden rounded-[18px] border border-white/10 bg-[#181a1f] p-3">
-            <div className="relative aspect-[9/16] w-full max-w-[330px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+        <section className="flex min-h-0 flex-col items-center overflow-hidden rounded-[18px] border border-white/10 bg-[#181a1f] p-3 pt-4">
+          <h1 className="mb-3 line-clamp-2 max-w-[420px] text-center text-base font-black leading-tight text-white">
+            {data.clip.title}
+          </h1>
+          <div className="relative aspect-[9/16] h-full max-h-[470px] w-auto max-w-[265px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
                   key={previewUrl}
@@ -602,7 +604,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
               )}
 
-              {settings.captions_enabled && activeCaptionText ? (
+              {previewUsesSource && settings.captions_enabled && activeCaptionText ? (
                 <div className={`pointer-events-none absolute left-4 right-4 z-20 text-center ${captionPositionClass(settings.caption_position)}`}>
                   <span
                     style={captionPreviewStyle(activePreset, settings)}
@@ -634,7 +636,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   </span>
                 )}
               </button>
-            </div>
+          </div>
         </section>
 
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#111318]/95">
@@ -643,7 +645,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             <p className="mt-1 text-sm font-semibold text-white">Clip settings</p>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 space-y-4 p-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-black text-white">Caption style</p>
@@ -683,52 +685,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               </div>
             </div>
 
-            <div className="space-y-3">
-              <p className="text-sm font-black text-white">Caption controls</p>
-              <label className="space-y-2 text-xs font-bold text-white/62">
-                Font size
-                <input type="range" min={8} max={24} value={settings.caption_font_size} onChange={(event) => patchSettings({ caption_font_size: Number(event.target.value) })} className="w-full accent-white" />
-              </label>
-              <label className="space-y-2 text-xs font-bold text-white/62">
-                Max words
-                <input type="range" min={1} max={6} value={settings.caption_max_words} onChange={(event) => patchSettings({ caption_max_words: Number(event.target.value) })} className="w-full accent-white" />
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['upper', 'center', 'lower-third'] as ClipEditSettings['caption_position'][]).map((pos) => (
-                  <button key={pos} onClick={() => patchSettings({ caption_position: pos })} className={`rounded-xl border px-2 py-2 text-xs font-bold capitalize ${settings.caption_position === pos ? 'border-white/25 bg-white/[0.1]' : 'border-white/10 hover:bg-white/[0.06]'}`}>
-                    {pos === 'lower-third' ? 'Lower' : pos}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-sm font-black text-white">Framing</p>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  ['auto', 'Auto'],
-                  ['center', 'Center'],
-                  ['fit', 'Fit'],
-                  ['manual', 'Manual'],
-                ] as Array<[ClipEditSettings['framing_mode'], string]>).map(([value, label]) => (
-                  <button key={value} onClick={() => patchSettings({ framing_mode: value })} className={`rounded-xl border px-3 py-2 text-xs font-bold ${settings.framing_mode === value ? 'border-cyan-300 bg-cyan-300/[0.08] text-cyan-100' : 'border-white/10 text-white/70 hover:bg-white/[0.06]'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <label className="space-y-2 text-xs font-bold text-white/62">
-                Horizontal
-                <input type="range" min={0} max={1} step={0.01} value={settings.crop_x} onChange={(event) => patchSettings({ framing_mode: 'manual', crop_x: Number(event.target.value) })} className="w-full accent-cyan-300" />
-              </label>
-              <label className="space-y-2 text-xs font-bold text-white/62">
-                Vertical
-                <input type="range" min={0} max={1} step={0.01} value={settings.crop_y} onChange={(event) => patchSettings({ framing_mode: 'manual', crop_y: Number(event.target.value) })} className="w-full accent-cyan-300" />
-              </label>
-              <label className="space-y-2 text-xs font-bold text-white/62">
-                Zoom
-                <input type="range" min={1} max={2.4} step={0.01} value={settings.zoom} onChange={(event) => patchSettings({ framing_mode: 'manual', zoom: Number(event.target.value) })} className="w-full accent-cyan-300" />
-              </label>
-            </div>
           </div>
         </aside>
       </section>
