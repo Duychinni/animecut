@@ -795,8 +795,14 @@ export default function Home() {
                             muted
                             loop
                             playsInline
-                            autoPlay
-                            preload="auto"
+                            preload="metadata"
+                            onMouseEnter={(event) => {
+                              void event.currentTarget.play().catch(() => undefined);
+                            }}
+                            onMouseLeave={(event) => {
+                              event.currentTarget.pause();
+                              event.currentTarget.currentTime = 0;
+                            }}
                             className="absolute inset-0 h-full w-full object-cover"
                           />
                         )
