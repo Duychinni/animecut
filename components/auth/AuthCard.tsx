@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { login } from '@/app/auth/actions';
 import { readJsonSafe } from '@/lib/safe-json';
 import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
 
@@ -110,6 +109,17 @@ export function AuthCard({
       }
 
       if (isLogin) {
+        const browserSupabase = createSupabaseBrowserClient();
+        const { error: browserLoginError } = await browserSupabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (browserLoginError) {
+          setLocalError(browserLoginError.message);
+          return;
+        }
+
         const nextPath = typeof data?.next === 'string' ? data.next : (next || '/dashboard');
         window.location.assign(nextPath);
         return;
@@ -171,7 +181,7 @@ export function AuthCard({
         </>
       ) : null}
 
-      <form action={isLogin ? login : undefined} method="post" onSubmit={isLogin ? undefined : onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
+      <form method="post" action="#" onSubmit={onSubmit} className={`${GOOGLE_AUTH_ENABLED || APPLE_AUTH_ENABLED ? 'mt-6' : 'mt-8'} space-y-3 text-left`}>
         <input
           className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
           type="email"
