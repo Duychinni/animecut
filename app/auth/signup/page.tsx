@@ -13,7 +13,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
       <div className="relative mx-auto max-w-6xl px-6 py-6">
         <header className="flex items-center justify-between border-b border-white/10 pb-4">
           <HomeLogoLink />
-          <Link href="/auth/login" className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
+          <Link href={`/auth/login?next=${encodeURIComponent(next)}`} className="cursor-pointer rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]">
             Login
           </Link>
         </header>

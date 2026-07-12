@@ -425,6 +425,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const incomingSourceUrl = new URLSearchParams(window.location.search).get('sourceUrl');
+    if (incomingSourceUrl) setSourceUrl(incomingSourceUrl);
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     (async () => {
@@ -655,16 +660,12 @@ export default function Home() {
                 <SignOutButton className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-60" />
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('login');
-                  setAuthModalOpen(true);
-                }}
-                className="rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]"
+              <Link
+                href={`/auth/login?next=${encodeURIComponent('/dashboard')}`}
+                className="cursor-pointer rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]"
               >
                 Login
-              </button>
+              </Link>
             )}
           </div>
         </header>
@@ -701,13 +702,22 @@ export default function Home() {
                     onChange={(e) => setSourceUrl(e.target.value)}
                     className="h-12 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/40 outline-none ring-0 transition focus:border-[#8B7CFF]/60 focus:shadow-[0_0_0_1px_rgba(139,124,255,0.25),0_0_30px_rgba(139,124,255,0.16)]"
                   />
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="h-12 shrink-0 cursor-pointer rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {loading ? 'Working...' : isAuthenticated ? 'Get Clips' : 'Get Free Clips'}
-                  </button>
+                  {isAuthenticated ? (
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="h-12 shrink-0 cursor-pointer rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {loading ? 'Working...' : 'Get Clips'}
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/auth/signup?next=${encodeURIComponent(sourceUrl.trim() ? `/?sourceUrl=${encodeURIComponent(sourceUrl.trim())}` : '/dashboard')}`}
+                      className="grid h-12 shrink-0 cursor-pointer place-items-center rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)]"
+                    >
+                      Get Free Clips
+                    </Link>
+                  )}
                 </form>
 
                 <div className="flex items-center gap-2 lg:shrink-0">

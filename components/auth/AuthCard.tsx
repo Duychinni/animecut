@@ -54,7 +54,6 @@ export function AuthCard({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(mode === 'login');
   const [localError, setLocalError] = useState<string | null>(error ?? null);
   const [localMsg, setLocalMsg] = useState<string | null>(msg ?? null);
 
@@ -116,14 +115,8 @@ export function AuthCard({
         return;
       }
 
-      if (!showPassword) {
-        setShowPassword(true);
-        setLocalMsg('Now add a password to finish creating your account.');
-        return;
-      }
-
       const signupMsg = typeof data?.msg === 'string' ? data.msg : 'Check your email to confirm your account';
-      router.push(`/auth/login?msg=${encodeURIComponent(signupMsg)}`);
+      router.push(`/auth/login?msg=${encodeURIComponent(signupMsg)}&next=${encodeURIComponent(next || '/dashboard')}`);
       router.refresh();
     } catch (err: unknown) {
       setLocalError(err instanceof Error ? err.message : 'Request failed');
@@ -188,34 +181,34 @@ export function AuthCard({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
-        {isLogin || showPassword ? (
-          <input
-            className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
-            type="password"
-            name="password"
-            placeholder="Enter password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        ) : null}
+        <input
+          className="w-full rounded-2xl border border-white/12 bg-white/[0.04] px-4 py-3.5 text-white placeholder:text-white/35 outline-none"
+          type="password"
+          name="password"
+          placeholder={isLogin ? 'Enter password' : 'Create password'}
+          required
+          minLength={8}
+          autoComplete={isLogin ? 'current-password' : 'new-password'}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         <button
           className="w-full rounded-2xl bg-white px-4 py-3.5 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"
           disabled={loading}
         >
-          {loading ? 'Working...' : isLogin ? 'Continue with email' : showPassword ? 'Finish sign up' : 'Continue with email'}
+          {loading ? 'Working...' : isLogin ? 'Continue with email' : 'Create account'}
         </button>
       </form>
 
       <p className="mt-5 text-sm text-white/55">
         {isLogin ? (
           <>
-            New here? <Link className="text-white underline underline-offset-4" href="/auth/signup">Create account</Link>
+            New here? <Link className="text-white underline underline-offset-4" href={`/auth/signup?next=${encodeURIComponent(next || '/dashboard')}`}>Create account</Link>
           </>
         ) : (
           <>
-            Already have an account? <Link className="text-white underline underline-offset-4" href="/auth/login">Login here</Link>
+            Already have an account? <Link className="text-white underline underline-offset-4" href={`/auth/login?next=${encodeURIComponent(next || '/dashboard')}`}>Login here</Link>
           </>
         )}
       </p>

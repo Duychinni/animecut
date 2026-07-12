@@ -586,7 +586,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       ) : null}
 
       <section className="grid h-[720px] justify-center gap-3 xl:grid-cols-[minmax(420px,500px)_minmax(560px,640px)_minmax(280px,330px)]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-white/[0.055] bg-[#1b1e24]">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -597,7 +597,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 Reset
               </button>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold text-white/52">
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#25282f] px-4 py-3 text-xs font-bold text-white/60">
               <button onClick={() => seekAbsolute(settings.clip_start_seconds)} className="font-mono hover:text-white">
                 {formatClock(0)} - {formatClock(clipDuration)}
               </button>
@@ -612,14 +612,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               </label>
             </div>
           </div>
-          <div className="min-h-0 flex-1 p-4">
+          <div className="min-h-0 flex-1 bg-[#20232a] p-4">
             {clipTranscript.length ? (
               <textarea
                 value={clipTranscriptText}
                 onChange={(event) => updateClipTranscriptText(event.target.value)}
                 onFocus={() => seekAbsolute(settings.clip_start_seconds)}
                 spellCheck
-                className="h-full w-full resize-none rounded-2xl border border-white/[0.06] bg-black/20 px-4 py-4 text-base font-semibold leading-8 text-white outline-none transition scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 focus:border-white/25"
+                className="h-full w-full resize-none rounded-2xl border border-white/[0.08] bg-[#2a2d34] px-4 py-4 text-base font-semibold leading-8 text-white outline-none transition scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 focus:border-white/25"
               />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
@@ -629,11 +629,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
         </aside>
 
-        <div className="flex min-h-0 flex-col">
-          <h1 className="mb-2 line-clamp-2 px-2 text-center text-base font-black leading-tight text-white">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#181a1f]">
+          <h1 className="flex min-h-[58px] items-center justify-center border-b border-white/10 px-5 py-3 text-center text-base font-black leading-tight text-white">
             {data.clip.title}
           </h1>
-          <section className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden rounded-[12px] border border-white/[0.025] bg-[#181a1f] p-4">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden p-4">
             <div className="relative aspect-[9/16] h-full max-h-[665px] w-auto max-w-[380px] overflow-hidden rounded-[15px] border border-white/[0.04] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
@@ -695,8 +695,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </button>
               ) : null}
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
 
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
@@ -741,69 +741,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               </div>
             </div>
 
-            <div className="space-y-3 border-t border-white/10 pt-4">
-              <p className="text-sm font-black text-white">Crop & framing</p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  ['auto', 'Auto reframe'],
-                  ['center', 'Center'],
-                  ['fit', 'Fit full'],
-                  ['manual', 'Manual crop'],
-                ].map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => patchSettings({ framing_mode: mode as ClipEditSettings['framing_mode'] })}
-                    className={`rounded-xl border px-3 py-2 text-xs font-black transition ${settings.framing_mode === mode ? 'border-cyan-300 bg-cyan-300/[0.1] text-cyan-100' : 'border-white/10 bg-white/[0.03] text-white/68 hover:bg-white/[0.06]'}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <label className="block space-y-2 text-xs font-bold text-white/58">
-                <span>Horizontal crop</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={settings.crop_x}
-                  onChange={(event) => patchSettings({ framing_mode: 'manual', crop_x: Number(event.target.value) })}
-                  className="w-full accent-cyan-300"
-                />
-              </label>
-              <label className="block space-y-2 text-xs font-bold text-white/58">
-                <span>Vertical crop</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={settings.crop_y}
-                  onChange={(event) => patchSettings({ framing_mode: 'manual', crop_y: Number(event.target.value) })}
-                  className="w-full accent-cyan-300"
-                />
-              </label>
-              <label className="block space-y-2 text-xs font-bold text-white/58">
-                <span>Zoom crop</span>
-                <input
-                  type="range"
-                  min="1"
-                  max="2.4"
-                  step="0.01"
-                  value={settings.zoom}
-                  onChange={(event) => patchSettings({ framing_mode: 'manual', zoom: Number(event.target.value) })}
-                  className="w-full accent-cyan-300"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => patchSettings({ framing_mode: 'auto', crop_x: 0.5, crop_y: 0.34, zoom: 1 })}
-                className="w-full rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-white/70 transition hover:bg-white/[0.06]"
-              >
-                Reset crop
-              </button>
-            </div>
           </div>
         </aside>
       </section>
@@ -818,21 +755,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => patchTimes(data.clip.aiStartSeconds, data.clip.aiEndSeconds)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
-              Reset AI
-            </button>
-            <button onClick={() => patchTimes(settings.clip_start_seconds - 5, settings.clip_end_seconds)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
-              +5 start
-            </button>
-            <button onClick={() => patchTimes(settings.clip_start_seconds, settings.clip_end_seconds + 5)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
-              +5 end
-            </button>
-            <button onClick={() => patchTimes(settings.clip_start_seconds + 5, settings.clip_end_seconds)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
-              -5 start
-            </button>
-            <button onClick={() => patchTimes(settings.clip_start_seconds, settings.clip_end_seconds - 5)} className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">
-              -5 end
-            </button>
             <button onClick={() => void saveDraft()} disabled={!changed || saving} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/75 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45">
               {saving ? 'Applying...' : 'Apply'}
             </button>
