@@ -81,7 +81,7 @@ const YOUTUBE_CLIENT_ATTEMPTS = [
   ['--extractor-args', 'youtube:player_client=web'],
 ];
 
-const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v3-2160p';
+const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v4-strict-hd';
 
 function getYouTubeMaxSourceHeight() {
   const raw = Number(process.env.YOUTUBE_MAX_SOURCE_HEIGHT ?? 2160);
@@ -106,6 +106,29 @@ function getYouTubeVideoFormat() {
     'bv*+ba',
     'best',
   ].join('/');
+}
+
+function getYouTubeVideoFormatAttempts() {
+  const override = process.env.YOUTUBE_VIDEO_FORMAT?.trim();
+  if (override) return [override];
+
+  const maxHeight = getYouTubeMaxSourceHeight();
+  const attempts: string[] = [];
+
+  if (maxHeight >= 1440) {
+    attempts.push([
+      `bv*[height>=1440][height<=${maxHeight}]+ba`,
+      `b[height>=1440][height<=${maxHeight}]`,
+    ].join('/'));
+  }
+
+  attempts.push([
+    `bv*[height>=1080][height<=${maxHeight}]+ba`,
+    `b[height>=1080][height<=${maxHeight}]`,
+  ].join('/'));
+  attempts.push(getYouTubeVideoFormat());
+
+  return attempts;
 }
 
 type DownloadedVideoInfo = {
@@ -265,18 +288,53 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
     // no cached video in this worker
   }
 
-  const formatSelector = getYouTubeVideoFormat();
-  await runYtDlpWithFallbacks(ytDlp, [
-    '--concurrent-fragments', '8',
-    '--format-sort', 'res,fps,hdr:12,vcodec,acodec',
-    '-f', formatSelector,
-    '--merge-output-format', 'mp4',
-    '-o', outPath,
-    url,
-  ]);
+  const formatAttempts = getYouTubeVideoFormatAttempts();
+  let downloadedInfo: DownloadedVideoInfo | null = null;
+  let formatSelector = formatAttempts.at(-1) ?? getYouTubeVideoFormat();
+  let lastDownloadError: unknown = null;
+  let downloadSucceeded = false;
 
-  const downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, formatSelector);
+  for (const candidateFormat of formatAttempts) {
+    await unlink(outPath).catch(() => undefined);
+    try {
+      await runYtDlpWithFallbacks(ytDlp, [
+        '--concurrent-fragments', '8',
+        '--format-sort-force',
+        '--format-sort', 'res,fps,br,vcodec,hdr:12,acodec',
+        '-f', candidateFormat,
+        '--merge-output-format', 'mp4',
+        '-o', outPath,
+        url,
+      ]);
+      formatSelector = candidateFormat;
+      downloadSucceeded = true;
+      downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, candidateFormat);
+      break;
+    } catch (error) {
+      lastDownloadError = error;
+      console.warn('[youtube] source-quality-attempt-failed', {
+        projectId,
+        formatSelector: candidateFormat,
+        error: error instanceof Error ? error.message.split('\n').slice(-2).join(' | ') : 'Unknown download error',
+      });
+    }
+  }
+
+  if (!downloadSucceeded) {
+    await unlink(outPath).catch(() => undefined);
+    throw lastDownloadError instanceof Error ? lastDownloadError : new Error('YouTube video download did not produce a playable source file');
+  }
+
   const stillBelowMin = Boolean(downloadedInfo?.height && downloadedInfo.height < getYouTubeMinCacheHeight());
+  if (stillBelowMin) {
+    console.warn('[youtube] source-below-preferred-hd', {
+      projectId,
+      sourceWidth: downloadedInfo?.width ?? null,
+      sourceHeight: downloadedInfo?.height ?? null,
+      preferredHeight: getYouTubeMinCacheHeight(),
+      formatSelector,
+    });
+  }
   await writeCachedQualityMarker(qualityMarkerPath, downloadedInfo, refreshedLowQualityCache || stillBelowMin);
 
   return outPath;

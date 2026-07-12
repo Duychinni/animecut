@@ -37,6 +37,7 @@ export async function uploadExportObject(objectPath: string, bytes: Buffer) {
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
     contentType: 'video/mp4',
+    cacheControl: '0',
   });
   if (error) throw error;
 }
@@ -46,6 +47,7 @@ export async function uploadExportThumbnailObject(objectPath: string, bytes: Buf
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
     contentType: 'image/jpeg',
+    cacheControl: '0',
   });
   if (error) throw error;
 }

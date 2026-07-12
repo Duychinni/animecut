@@ -13,7 +13,7 @@ type LayoutMode = 'single' | 'split_stack';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v5-quality-safe-source';
+const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v6-source-fps';
 const DEFAULT_X264_CRF = '12';
 const DEFAULT_X264_MAXRATE = '50M';
 const DEFAULT_X264_BUFSIZE = '100M';
@@ -1411,12 +1411,12 @@ export async function renderVerticalClip(opts: RenderOpts) {
       );
     }
 
-    common.push(
-      '-r',
-      '30',
-      '-c:v',
-      encoder,
-    );
+    common.push('-c:v', encoder);
+
+    const configuredOutputFps = Number(process.env.FFMPEG_OUTPUT_FPS ?? 0);
+    if (Number.isFinite(configuredOutputFps) && configuredOutputFps >= 24 && configuredOutputFps <= 60) {
+      common.push('-r', String(Math.round(configuredOutputFps)));
+    }
 
     if (encoder === 'libx264') {
       common.push(
@@ -1517,8 +1517,6 @@ export async function renderVerticalClip(opts: RenderOpts) {
           effectiveOpts.inputPath,
           '-vf',
           vf,
-          '-r',
-          '30',
           '-c:v',
           'libx264',
           '-preset',
