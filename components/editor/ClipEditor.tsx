@@ -62,7 +62,6 @@ type TranscriptChunk = {
   hidden: boolean;
 };
 
-const PRESET_IDS = [DEFAULT_CAPTION_PRESET_ID, 'viral-bold', 'creator-glow', 'podcast-pro', 'minimal-pro'];
 
 function formatClock(totalSeconds: number) {
   const total = Math.max(0, Math.floor(totalSeconds));
@@ -145,6 +144,16 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
   const strokeColor = preset?.captionStrokeColor || '#000000';
   const fontFamily = preset?.captionFontFamily || 'Arial Black';
   const fontSize = settings.caption_font_size * 2.2;
+  const shadowMap: Record<string, string> = {
+    'black-heavy': '0 3px 0 #000, 0 8px 18px rgba(0,0,0,.9)',
+    'heavy-shadow': '0 4px 0 #000, 3px 6px 0 rgba(0,0,0,.65), 0 10px 20px rgba(0,0,0,.85)',
+    'subtle-shadow': '0 2px 5px rgba(0,0,0,.8)',
+    'neon-glow': `0 0 9px ${preset?.captionHighlightColor || '#FF4FD8'}, 0 5px 14px rgba(0,0,0,.9)`,
+    'purple-glow': `0 0 10px ${preset?.captionHighlightColor || '#A855F7'}, 0 5px 14px rgba(0,0,0,.9)`,
+    'yellow-glow': '0 3px 0 #000, 0 0 8px rgba(255,216,77,.8), 0 8px 18px rgba(0,0,0,.9)',
+    'soft-glow': `0 0 7px ${preset?.captionHighlightColor || '#5DE4FF'}, 0 6px 16px rgba(0,0,0,.86)`,
+    'red-pop': '0 3px 0 #000, 3px 5px 0 rgba(255,59,48,.72), 0 8px 18px rgba(0,0,0,.9)',
+  };
   return {
     color: textColor,
     fontFamily,
@@ -154,7 +163,10 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
     lineHeight: 1.02,
     textTransform: 'uppercase' as const,
     WebkitTextStroke: settings.caption_background ? '0 transparent' : `${Math.max(1, Math.round(fontSize * 0.08))}px ${strokeColor}`,
-    textShadow: settings.caption_background ? 'none' : '0 2px 0 #000, 0 7px 16px rgba(0,0,0,.78)',
+    textShadow: settings.caption_background ? '0 4px 12px rgba(0,0,0,.28)' : shadowMap[preset?.captionShadow || ''] || shadowMap['black-heavy'],
+    backgroundColor: settings.caption_background ? '#FFFFFF' : undefined,
+    padding: settings.caption_background ? '0.2em 0.42em' : undefined,
+    borderRadius: settings.caption_background ? '0.28em' : undefined,
   };
 }
 
@@ -207,8 +219,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   const presetOptions = useMemo(() => {
     if (!data) return [];
-    const picked = PRESET_IDS.map((id) => data.presets.find((preset) => preset.id === id)).filter((preset): preset is CaptionPreset => Boolean(preset));
-    return picked.length ? picked : data.presets.slice(0, 5);
+    const defaultPreset = data.presets.find((preset) => preset.id === DEFAULT_CAPTION_PRESET_ID);
+    return [
+      ...(defaultPreset ? [defaultPreset] : []),
+      ...data.presets.filter((preset) => preset.id !== DEFAULT_CAPTION_PRESET_ID),
+    ].slice(0, 9);
   }, [data]);
 
   const clipTranscript = useMemo(() => {
@@ -675,7 +690,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     style={captionPreviewStyle(activePreset, settings)}
                     className={`inline-block max-w-full break-words ${settings.caption_background ? 'rounded-lg px-3 py-1' : ''}`}
                   >
-                    {activeCaptionText}
+                    {settings.caption_word_highlight ? (
+                      <>
+                        <span style={{ color: settings.caption_highlight_color }}>{splitWords(activeCaptionText)[0]}</span>
+                        {splitWords(activeCaptionText).length > 1 ? ` ${splitWords(activeCaptionText).slice(1).join(' ')}` : ''}
+                      </>
+                    ) : activeCaptionText}
                   </span>
                 </div>
               ) : null}
@@ -727,6 +747,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                         caption_text_color: preset.captionTextColor,
                         caption_highlight_color: preset.captionHighlightColor,
                         caption_background: preset.captionBackgroundBox,
+                        caption_word_highlight: preset.captionWordHighlight,
+                        caption_max_words: preset.captionMaxWords,
                         caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
                       })}
                       className={`rounded-2xl border p-2 text-left transition ${selected ? 'border-cyan-300 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}

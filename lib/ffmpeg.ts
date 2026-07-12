@@ -183,6 +183,12 @@ function escapeForceStyleForFilter(style: string) {
   return style.replace(/'/g, "\\'").replace(/:/g, '\\:');
 }
 
+function captionFontsDirOption() {
+  const configuredDir = process.env.CAPTION_FONTS_DIR?.trim();
+  const fontsDir = configuredDir || path.join(process.cwd(), 'public', 'fonts');
+  return existsSync(fontsDir) ? `:fontsdir='${escapeSubtitlesPathForFilter(fontsDir)}'` : '';
+}
+
 function shellQuote(arg: string) {
   return /[^A-Za-z0-9_./:=,+-]/.test(arg) ? `'${arg.replace(/'/g, `'"'"'`)}'` : arg;
 }
@@ -883,9 +889,10 @@ function buildSplitStackFilter(
   }
 
   if (includeCaptions && escapedPath) {
+    const fontsDirOption = captionFontsDirOption();
     const isAssInput = (captionPath ?? '').toLowerCase().endsWith('.ass');
     if (isAssInput) {
-      filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}'[outv]`);
+      filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}'${fontsDirOption}[outv]`);
     } else {
       const style = escapeForceStyleForFilter([
         'FontName=Arial Black',
@@ -902,7 +909,7 @@ function buildSplitStackFilter(
         `MarginV=${Math.round(layout.outputHeight * 0.42)}`,
         'Alignment=2',
       ].join(','));
-      filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}':force_style='${style}'[outv]`);
+      filterParts.push(`[${videoLabel}]subtitles=filename='${escapedPath}'${fontsDirOption}:force_style='${style}'[outv]`);
     }
   } else {
     filterParts.push(`[${videoLabel}]copy[outv]`);
@@ -1144,6 +1151,7 @@ function buildFilter(
   }
 
   if (includeCaptions && escapedPath) {
+    const fontsDirOption = captionFontsDirOption();
     const template = opts.captionTemplate ?? 'capcut';
     const captionFont = opts.captionFont ?? 'arial';
 
@@ -1258,10 +1266,10 @@ function buildFilter(
     const isAssInput = (captionPath ?? '').toLowerCase().endsWith('.ass');
     if (isAssInput) {
       // ASS files carry their own styles and inline word highlights; avoid force_style overrides.
-      filterParts.push(`subtitles=filename='${escapedPath}'`);
+      filterParts.push(`subtitles=filename='${escapedPath}'${fontsDirOption}`);
     } else {
       const style = escapeForceStyleForFilter(styleMap[template].join(','));
-      filterParts.push(`subtitles=filename='${escapedPath}':force_style='${style}'`);
+      filterParts.push(`subtitles=filename='${escapedPath}'${fontsDirOption}:force_style='${style}'`);
     }
   }
 

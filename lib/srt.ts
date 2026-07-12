@@ -151,9 +151,8 @@ function hexToAssColor(hex: string | undefined, fallback: string) {
 }
 
 function resolveAssFontName(preset: StyledCaptionPreset | undefined, template: CaptionTemplate) {
-  if (template === 'capcut') return 'Arial Black';
   const family = preset?.captionFontFamily?.trim();
-  if (!family) return 'Arial';
+  if (!family) return template === 'capcut' ? 'Montserrat' : 'Arial';
   return family.replace(/\s+(ExtraBold|Black|Bold|SemiBold)$/i, '') || family;
 }
 
