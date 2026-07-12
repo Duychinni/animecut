@@ -704,7 +704,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="h-12 shrink-0 rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-12 shrink-0 cursor-pointer rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {loading ? 'Working...' : isAuthenticated ? 'Get Clips' : 'Get Free Clips'}
                   </button>
@@ -759,6 +759,16 @@ export default function Home() {
                 return (
                 <div
                   key={clipKey}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Preview ${clip.title}`}
+                  onClick={() => setSelectedClip(clip)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedClip(clip);
+                    }
+                  }}
                   ref={(element) => {
                     if (element) {
                       showcaseCardRefs.current.set(clipKey, element);
@@ -766,7 +776,7 @@ export default function Home() {
                       showcaseCardRefs.current.delete(clipKey);
                     }
                   }}
-                  className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-700 ease-out hover:-translate-y-1 hover:border-white/18"
+                  className="relative min-w-0 cursor-pointer rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] outline-none transition duration-500 ease-out hover:-translate-y-3 hover:scale-[1.025] hover:border-white/28 hover:shadow-[0_26px_70px_rgba(139,124,255,0.2)] focus-visible:border-white/35 focus-visible:shadow-[0_0_0_3px_rgba(139,124,255,0.26)]"
                 >
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
                     <PlatformLogo platform={clip.platform} />
@@ -786,7 +796,7 @@ export default function Home() {
                             loop
                             playsInline
                             autoPlay
-                            preload="metadata"
+                            preload="auto"
                             className="absolute inset-0 h-full w-full object-cover"
                           />
                         )
@@ -972,11 +982,31 @@ export default function Home() {
             </div>
 
             <div className="mt-5 grid gap-5 md:grid-cols-[0.72fr_1fr]">
-              <div className={`aspect-[9/16] rounded-[24px] border border-white/10 bg-gradient-to-b ${selectedClip.gradient} p-3`}>
-                <div className="flex h-full items-end rounded-[18px] border border-white/10 bg-black/20 p-3">
-                  <div className="w-full rounded-2xl border border-white/10 bg-black/35 p-3 text-sm text-white/80 backdrop-blur">
-                    {selectedClip.caption}
-                  </div>
+              <div className={`aspect-[9/16] overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-b ${selectedClip.gradient} p-3`}>
+                <div className="h-full overflow-hidden rounded-[18px] border border-white/10 bg-black">
+                  {selectedClip.mediaUrl ? (
+                    (selectedClip.mediaType ?? 'video') === 'image' ? (
+                      <div
+                        className="h-full w-full bg-cover bg-center"
+                        style={{ backgroundImage: `url("${selectedClip.mediaUrl}")` }}
+                      />
+                    ) : (
+                      <video
+                        src={selectedClip.mediaUrl}
+                        controls
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        preload="auto"
+                        className="h-full w-full object-cover"
+                      />
+                    )
+                  ) : (
+                    <div className="grid h-full place-items-center px-6 text-center text-sm font-semibold text-white/55">
+                      Preview media is loading.
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="space-y-4">
@@ -990,7 +1020,7 @@ export default function Home() {
                 <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Generated with Animacut</p>
                   <p className="mt-3 text-sm leading-7 text-white/68">
-                    This demo card represents a public long-form source transformed into a short-form candidate with AI scoring, title generation, caption-ready structure, and platform packaging.
+                    This public showcase reel is pulled from a saved Animacut export and previews the finished vertical video without demo captions layered on top.
                   </p>
                 </div>
                 <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-4">

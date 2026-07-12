@@ -38,6 +38,7 @@ type RelatedProject = {
 
 type ExportShowcaseRow = {
   id: string;
+  project_id?: string | null;
   output_storage_path: string | null;
   created_at: string;
   clip_candidates?: RelatedCandidate | RelatedCandidate[] | null;
@@ -82,6 +83,14 @@ function getPublicExportIds() {
     .slice(0, 12);
 }
 
+function getPublicProjectIds() {
+  return (process.env.SHOWCASE_PROJECT_IDS || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
 function buildFallbackClips(): ShowcaseApiClip[] {
   return fallbackClips.map(([id, title, score, mediaUrl], index) => ({
     id,
@@ -105,6 +114,7 @@ async function getConfiguredShowcaseClips(exportIds: string[]): Promise<Showcase
     .from('exports')
     .select(`
       id,
+      project_id,
       output_storage_path,
       created_at,
       clip_candidates(title, overall_score, start_sec, end_sec),
@@ -157,9 +167,46 @@ async function getConfiguredShowcaseClips(exportIds: string[]): Promise<Showcase
   return clips.slice(0, 6);
 }
 
+async function getProjectShowcaseClips(projectIds: string[]): Promise<ShowcaseApiClip[]> {
+  if (!projectIds.length) return [];
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('exports')
+    .select(`
+      id,
+      project_id,
+      output_storage_path,
+      created_at,
+      clip_candidates(title, overall_score, start_sec, end_sec),
+      projects(title, source_title, source_channel_name)
+    `)
+    .eq('status', 'done')
+    .not('output_storage_path', 'is', null)
+    .in('project_id', projectIds)
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (error) throw error;
+
+  const rows = ((data ?? []) as ExportShowcaseRow[]).filter((row) => row.project_id);
+  const rowsByProject = new Map<string, ExportShowcaseRow>();
+  for (const row of rows) {
+    const projectId = row.project_id;
+    if (projectId && !rowsByProject.has(projectId)) rowsByProject.set(projectId, row);
+  }
+
+  const orderedExportIds = projectIds
+    .map((projectId) => rowsByProject.get(projectId)?.id)
+    .filter((id): id is string => Boolean(id));
+
+  return getConfiguredShowcaseClips(orderedExportIds);
+}
+
 export async function GET() {
   try {
-    const configuredClips = await getConfiguredShowcaseClips(getPublicExportIds());
+    const projectClips = await getProjectShowcaseClips(getPublicProjectIds());
+    const configuredClips = projectClips.length ? projectClips : await getConfiguredShowcaseClips(getPublicExportIds());
     const clips = configuredClips.length ? configuredClips : buildFallbackClips();
     return NextResponse.json({ clips }, { headers: { 'Cache-Control': 'no-store' } });
   } catch {

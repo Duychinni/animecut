@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import type { CaptionPreset } from '@/lib/caption-presets';
+import { DEFAULT_CAPTION_PRESET_ID, type CaptionPreset } from '@/lib/caption-presets';
 import type { ClipEditSettings, TranscriptPhrase, TranscriptSegment } from '@/lib/clip-edit';
 
 type EditorData = {
@@ -53,7 +53,7 @@ type EditorDebugInfo = {
   clipId: string;
 };
 
-const PRESET_IDS = ['viral-bold', 'opus-clean', 'creator-glow', 'podcast-pro', 'minimal-pro'];
+const PRESET_IDS = [DEFAULT_CAPTION_PRESET_ID, 'viral-bold', 'creator-glow', 'podcast-pro', 'minimal-pro'];
 
 function formatClock(totalSeconds: number) {
   const total = Math.max(0, Math.floor(totalSeconds));
@@ -431,7 +431,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const rect = timelineRef.current?.getBoundingClientRect();
     if (!rect) return 0;
     const x = clamp(event.clientX - rect.left, 0, rect.width);
-    return (x / rect.width) * sourceDuration;
+    if (!settings) return 0;
+    const duration = Math.max(0.1, settings.clip_end_seconds - settings.clip_start_seconds);
+    return settings.clip_start_seconds + (x / rect.width) * duration;
   }
 
   function beginTimelineDrag(mode: DragMode, event: ReactPointerEvent<HTMLElement>) {
@@ -460,7 +462,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [dragMode, settings, sourceDuration]);
+  }, [dragMode, settings]);
 
   if (loading) {
     return (
@@ -502,12 +504,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }
 
   const clipDuration = Math.max(0, settings.clip_end_seconds - settings.clip_start_seconds);
-  const selectedLeft = `${(settings.clip_start_seconds / sourceDuration) * 100}%`;
-  const selectedWidth = `${(clipDuration / sourceDuration) * 100}%`;
-  const playheadLeft = `${(currentTime / sourceDuration) * 100}%`;
+  const timelineDuration = Math.max(0.1, clipDuration);
+  const selectedLeft = '0%';
+  const selectedWidth = '100%';
+  const playheadLeft = `${clamp(((currentTime - settings.clip_start_seconds) / timelineDuration) * 100, 0, 100)}%`;
 
   return (
-    <main className="mx-auto w-full max-w-[1840px] px-5 py-4 text-white">
+      <main className="mx-auto w-full max-w-[1600px] px-5 py-4 text-white">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-white/42">Clip Editor</p>
@@ -526,8 +529,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
       ) : null}
 
-      <section className="grid h-[calc(100vh-390px)] min-h-[500px] gap-3 xl:grid-cols-[minmax(300px,500px)_minmax(300px,480px)_minmax(250px,310px)]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#111318]/95">
+      <section className="grid h-[390px] justify-center gap-3 xl:grid-cols-[minmax(320px,410px)_minmax(260px,330px)_minmax(230px,270px)]">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-white/[0.035] bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -558,7 +561,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               <textarea
                 value={clipTranscriptText}
                 onChange={(event) => updateClipTranscriptText(event.target.value)}
-                className="h-full min-h-[360px] w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-base font-semibold leading-7 text-white outline-none transition focus:border-white/30"
+                className="h-full min-h-[260px] w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-4 text-base font-semibold leading-7 text-white outline-none transition focus:border-white/30"
               />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
@@ -568,11 +571,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col items-center overflow-hidden rounded-[18px] border border-white/10 bg-[#181a1f] p-3 pt-4">
-          <h1 className="mb-3 line-clamp-2 max-w-[420px] text-center text-base font-black leading-tight text-white">
+        <div className="flex min-h-0 flex-col">
+          <h1 className="mb-2 line-clamp-2 px-2 text-center text-base font-black leading-tight text-white">
             {data.clip.title}
           </h1>
-          <div className="relative aspect-[9/16] h-full max-h-[470px] w-auto max-w-[265px] overflow-hidden rounded-[16px] border border-white/10 bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+          <section className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden rounded-[14px] border border-white/[0.035] bg-[#181a1f] p-3">
+            <div className="relative aspect-[9/16] h-full max-h-[318px] w-auto max-w-[185px] overflow-hidden rounded-[15px] border border-white/[0.055] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
                   key={previewUrl}
@@ -636,16 +640,17 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   </span>
                 )}
               </button>
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
 
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#111318]/95">
+        <aside className="flex min-h-0 flex-col self-start overflow-hidden rounded-[14px] border border-white/[0.035] bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Project</p>
             <p className="mt-1 text-sm font-semibold text-white">Clip settings</p>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-4 p-4">
+          <div className="min-h-0 space-y-4 p-4">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-black text-white">Caption style</p>
@@ -680,16 +685,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   );
                 })}
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white/55">
-                Active: <span className="text-white">{activePreset?.name ?? 'Default'}</span>
-              </div>
             </div>
-
           </div>
         </aside>
       </section>
 
-      <section className="mt-3 rounded-[18px] border border-white/10 bg-[#111318]/95 p-3">
+      <section className="mx-auto mt-2 w-full max-w-[1130px] rounded-[14px] border border-white/[0.035] bg-[#111318]/95 p-2.5">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
@@ -724,26 +725,30 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
         <div className="grid grid-cols-[64px_1fr_64px] gap-3 text-xs font-mono font-bold text-white/36">
           <span>{formatPrecise(0)}</span>
-          <span className="text-center">{formatClock(sourceDuration / 2)}</span>
-          <span className="text-right">{formatClock(sourceDuration)}</span>
+          <span className="text-center">{formatClock(timelineDuration / 2)}</span>
+          <span className="text-right">{formatClock(timelineDuration)}</span>
         </div>
         <div
           ref={timelineRef}
           onPointerDown={(event) => beginTimelineDrag('seek', event)}
-          className="relative mt-2 h-16 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
+          className="relative mt-2 h-14 cursor-pointer overflow-hidden rounded-2xl border border-white/10 bg-black/35"
         >
           <div className="absolute inset-y-0 bg-emerald-400/18" style={{ left: selectedLeft, width: selectedWidth }} />
-          {data.transcript.phrases.map((phrase) => (
+          {clipTranscript.map((phrase) => {
+            const start = clamp(phrase.start - settings.clip_start_seconds, 0, timelineDuration);
+            const end = clamp(phrase.end - settings.clip_start_seconds, 0, timelineDuration);
+            return (
             <div
               key={phrase.id}
               className="absolute bottom-3 h-5 rounded-sm bg-white/18"
               title={phrase.text}
               style={{
-                left: `${(phrase.start / sourceDuration) * 100}%`,
-                width: `${Math.max(0.18, ((phrase.end - phrase.start) / sourceDuration) * 100)}%`,
+                left: `${(start / timelineDuration) * 100}%`,
+                width: `${Math.max(0.35, ((end - start) / timelineDuration) * 100)}%`,
               }}
             />
-          ))}
+            );
+          })}
           <div className="absolute inset-y-0 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
           <button
             onPointerDown={(event) => beginTimelineDrag('start', event)}

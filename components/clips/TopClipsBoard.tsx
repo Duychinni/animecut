@@ -2,7 +2,7 @@
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CAPTION_PRESETS } from '@/lib/caption-presets';
+import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-presets';
 import { readJsonSafe } from '@/lib/safe-json';
 
 type ClipItem = {
@@ -21,7 +21,10 @@ type ClipItem = {
   captionPresetId?: string | null;
 };
 
-const CAPTION_TEMPLATE_OPTIONS = CAPTION_PRESETS.slice(0, 9);
+const CAPTION_TEMPLATE_OPTIONS = [
+  ...CAPTION_PRESETS.filter((preset) => preset.id === DEFAULT_CAPTION_PRESET_ID),
+  ...CAPTION_PRESETS.filter((preset) => preset.id !== DEFAULT_CAPTION_PRESET_ID),
+].slice(0, 9);
 const CAPTION_STYLE_SAMPLE = 'The quick hook';
 
 function getFriendlyStatus(status: string) {
@@ -246,7 +249,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
-  const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_TEMPLATE_OPTIONS[0]?.id ?? CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+  const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_TEMPLATE_OPTIONS[0]?.id ?? DEFAULT_CAPTION_PRESET_ID);
   const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
@@ -348,7 +351,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }
 
   function openCaptionTemplates(clip: ClipItem) {
-    setSelectedPresetId(clip.captionPresetId ?? CAPTION_TEMPLATE_OPTIONS[0]?.id ?? CAPTION_PRESETS[0]?.id ?? 'viral-bold');
+    setSelectedPresetId(clip.captionPresetId ?? CAPTION_TEMPLATE_OPTIONS[0]?.id ?? DEFAULT_CAPTION_PRESET_ID);
     setSelectedReframePreset('auto');
     setHookTextEnabled(false);
     setEditorTab('presets');
