@@ -50,3 +50,5 @@ animacut-code.zip
 PRODUCTION_ROADMAP.html
 PRODUCTION_ROADMAP.md
 scripts/__pycache__/
+/.venv/
+/.tools/

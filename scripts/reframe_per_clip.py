@@ -132,8 +132,29 @@ def save_debug_frame(cv2, frame, out_path: Path, detected_box, motion_box, crop_
 
 
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == '--health':
+        try:
+            import cv2  # type: ignore
+            import mediapipe as mp  # type: ignore
+            import numpy as np  # type: ignore
+            detector = mp.solutions.face_detection.FaceDetection(
+                model_selection=1,
+                min_detection_confidence=0.45,
+            )
+            detector.close()
+        except Exception as exc:
+            fail(1, f'dependency_unavailable:{exc}')
+        print(json.dumps({
+            'ok': True,
+            'python': sys.executable,
+            'opencv': cv2.__version__,
+            'mediapipe': mp.__version__,
+            'numpy': np.__version__,
+        }))
+        return
+
     if len(sys.argv) < 4:
-        fail(2, 'usage: reframe_per_clip.py <input_path> <start_sec> <end_sec>')
+        fail(2, 'usage: reframe_per_clip.py <input_path> <start_sec> <end_sec> | --health')
 
     input_path = sys.argv[1]
     start_sec = float(sys.argv[2])

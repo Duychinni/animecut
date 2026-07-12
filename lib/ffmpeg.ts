@@ -24,6 +24,14 @@ const HIGH_QUALITY_SCALE_FLAGS = 'lanczos+accurate_rnd+full_chroma_int';
 const SHARPEN_AFTER_UPSCALE_FILTER = 'unsharp=5:5:0.55:3:3:0.25';
 const MAX_EXTRA_SMART_CROP_UPSCALE = 1.04;
 
+function resolveMediaBinary(name: 'ffmpeg' | 'ffprobe') {
+  const configured = process.env[name === 'ffmpeg' ? 'FFMPEG_PATH' : 'FFPROBE_PATH']?.trim();
+  if (configured) return configured;
+  const executable = process.platform === 'win32' ? `${name}.exe` : name;
+  const localBinary = path.join(process.cwd(), '.tools', 'ffmpeg', 'bin', executable);
+  return existsSync(localBinary) ? localBinary : name;
+}
+
 type RenderOpts = {
   inputPath: string;
   outputPath: string;
@@ -77,7 +85,7 @@ export async function extractAudioForTranscription(inputPath: string, outputPath
 }
 
 export async function validateRenderedVideo(outputPath: string) {
-  const result = await runJsonCommand('ffprobe', [
+  const result = await runJsonCommand(resolveMediaBinary('ffprobe'), [
     '-v', 'error',
     '-show_entries', 'format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate',
     '-of', 'json',
@@ -133,7 +141,7 @@ export async function validateRenderedVideo(outputPath: string) {
 }
 
 async function probeInputVideoForRender(inputPath: string) {
-  const result = await runJsonCommand('ffprobe', [
+  const result = await runJsonCommand(resolveMediaBinary('ffprobe'), [
     '-v', 'error',
     '-show_entries', 'format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate',
     '-of', 'json',
@@ -196,13 +204,14 @@ async function writeDebugCommandFile(clipId: string, commandText: string, output
 }
 
 async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outputPath?: string | null }) {
-  const commandText = formatCommand('ffmpeg', args);
+  const ffmpegCommand = resolveMediaBinary('ffmpeg');
+  const commandText = formatCommand(ffmpegCommand, args);
   console.log('[ffmpeg] command', { clipId: debug?.clipId ?? null, outputPath: debug?.outputPath ?? null, command: commandText });
   if (debug?.clipId && debug?.outputPath) {
     await writeDebugCommandFile(debug.clipId, commandText, debug.outputPath);
   }
   await new Promise<void>((resolve, reject) => {
-    const p = spawn('ffmpeg', args);
+    const p = spawn(ffmpegCommand, args);
     let stderr = '';
 
     p.stderr?.on('data', (chunk: Buffer | string) => {
@@ -405,7 +414,11 @@ function escapeFfmpegExpr(expr: string) {
 }
 
 function resolveSmartReframePython() {
-  if (process.env.SMART_REFRAME_PYTHON) return process.env.SMART_REFRAME_PYTHON;
+  const configured = process.env.SMART_REFRAME_PYTHON?.trim();
+  if (configured) {
+    const looksLikePath = configured.includes('/') || configured.includes('\\') || path.isAbsolute(configured);
+    if (!looksLikePath || existsSync(path.resolve(configured))) return configured;
+  }
 
   const localCandidates = process.platform === 'win32'
     ? [path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')]

@@ -7,9 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker:deps": "python3 -m pip install -r requirements-worker.txt",
-    "worker": "npx tsx workers/pipelineWorker.ts",
-    "worker:once": "npx tsx workers/pipelineWorker.ts --once"
+    "reframe:setup": "node scripts/reframe_runtime.mjs setup",
+    "reframe:check": "node scripts/reframe_runtime.mjs check",
+    "worker:deps": "node scripts/reframe_runtime.mjs worker",
+    "worker:check": "node scripts/reframe_runtime.mjs check",
+    "worker": "npm run worker:check && npx tsx workers/pipelineWorker.ts",
+    "worker:once": "npm run worker:check && npx tsx workers/pipelineWorker.ts --once"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
