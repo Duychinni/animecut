@@ -702,7 +702,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             {data.clip.title}
           </h1>
           <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden p-4">
-            <div className="relative aspect-[9/16] h-full max-h-[665px] w-auto max-w-[380px] overflow-hidden rounded-[15px] border border-white/[0.04] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+            <div className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[15px] border border-white/[0.04] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
               {previewUrl ? (
                 <video
                   key={previewUrl}
