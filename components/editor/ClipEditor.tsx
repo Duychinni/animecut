@@ -411,17 +411,17 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     if (!settings) return;
     const nextSettings: ClipEditSettings = {
       ...settings,
-      caption_preset_id: preset.id,
-      caption_font_size: preset.captionFontSize,
-      caption_text_color: preset.captionTextColor,
+      caption_preset_id: DEFAULT_CAPTION_PRESET_ID,
+      caption_font_size: 12,
+      caption_text_color: '#FFFFFF',
       caption_highlight_color: preset.captionHighlightColor,
-      caption_background: preset.captionBackgroundBox,
-      caption_word_highlight: preset.captionWordHighlight,
-      caption_max_words: preset.captionMaxWords,
-      caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
+      caption_background: false,
+      caption_word_highlight: true,
+      caption_max_words: 2,
+      caption_position: 'lower-third',
     };
     setSettings(nextSettings);
-    setToast('Caption preview updated');
+    setToast('Caption color preview updated');
   }
 
   useEffect(() => {
@@ -437,14 +437,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const removed = settings.removed_ranges.find((range) => currentTime >= range.start && currentTime < range.end);
     if (removed) seekAbsolute(removed.end);
   }, [currentTime, settings?.removed_ranges]);
-
-  function setClipTranscriptHidden(hidden: boolean) {
-    if (!settings) return;
-    const ids = new Set(clipTranscript.map((phrase) => phrase.id));
-    patchSettings({
-      edited_transcript: settings.edited_transcript.map((phrase) => ids.has(phrase.id) ? { ...phrase, deleted: hidden } : phrase),
-    });
-  }
 
   function restoreTranscript() {
     if (!data || !settings) return;
@@ -672,8 +664,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={clipTranscriptHidden}
-                  onChange={(event) => setClipTranscriptHidden(event.target.checked)}
+                  checked={!settings.captions_enabled}
+                  onChange={(event) => patchSettings({ captions_enabled: !event.target.checked })}
                   className="accent-red-400"
                 />
                 Hide captions
@@ -714,8 +706,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   disablePictureInPicture
                   playsInline
                   preload="metadata"
-                  className="h-full w-full bg-black transition-transform duration-200"
+                  className="h-full w-full cursor-pointer bg-black transition-transform duration-200"
                   style={cropPreviewStyle(settings)}
+                  onClick={(event) => {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    if (event.clientY < bounds.bottom - 48) {
+                      void togglePlay();
+                    }
+                  }}
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
                     setPreviewDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
@@ -788,24 +786,38 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   On
                 </label>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {presetOptions.map((preset) => {
-                  const selected = preset.id === settings.caption_preset_id;
-                  return (
-                    <button
-                      key={preset.id}
-                      onClick={() => selectCaptionPreset(preset)}
-                      className={`rounded-2xl border p-2 text-left transition ${selected ? 'border-cyan-300 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}
-                    >
-                      <div className="grid aspect-[1.45] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
-                        <span style={captionPreviewStyle(preset, { ...settings, caption_preset_id: preset.id, caption_text_color: preset.captionTextColor, caption_highlight_color: preset.captionHighlightColor, caption_background: preset.captionBackgroundBox })}>
-                          <span style={{ color: preset.captionHighlightColor }}>THE</span> HOOK
-                        </span>
-                      </div>
-                      <p className="mt-2 truncate text-xs font-black text-white">{preset.name}</p>
-                    </button>
-                  );
-                })}
+              <div className="rounded-2xl border border-cyan-300/70 bg-cyan-300/[0.06] p-3">
+                <div className="grid aspect-[2.15] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
+                  <span style={captionPreviewStyle(activePreset, settings)}>
+                    <span style={{ color: settings.caption_highlight_color }}>YOUR</span> CAPTION
+                  </span>
+                </div>
+                <p className="mt-2 text-xs font-black text-white">Default bold captions</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-black text-white/70">Highlight color</p>
+                <div className="flex flex-wrap gap-2">
+                  {presetOptions.map((preset) => {
+                    const selected =
+                      preset.captionHighlightColor.toLowerCase() ===
+                      settings.caption_highlight_color.toLowerCase();
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => selectCaptionPreset(preset)}
+                        className={`h-9 w-9 rounded-full border-2 transition hover:scale-105 ${
+                          selected
+                            ? 'border-white ring-2 ring-cyan-300/70 ring-offset-2 ring-offset-[#111318]'
+                            : 'border-white/20'
+                        }`}
+                        style={{ backgroundColor: preset.captionHighlightColor }}
+                        aria-label={`Use ${preset.name} highlight color`}
+                        title={preset.name}
+                      />
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
