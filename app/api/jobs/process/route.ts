@@ -234,7 +234,7 @@ type ExportLookupRow = {
 const EXPORT_MAX_RENDER_ATTEMPTS = 3;
 const REPAIR_SCAN_LIMIT = 6;
 const STALE_PROCESSING_MINUTES = 4;
-const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY === 'true';
+const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY !== 'false';
 
 function getWorkerBatchLimit() {
   const defaultLimit = process.env.VERCEL ? 1 : 2;

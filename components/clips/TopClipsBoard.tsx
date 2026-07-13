@@ -246,7 +246,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
   const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
   const [applyingPreset, setApplyingPreset] = useState(false);
-  const [hookTextEnabled, setHookTextEnabled] = useState(false);
+  const [hookTextEnabled, setHookTextEnabled] = useState(true);
   const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});

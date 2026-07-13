@@ -23,6 +23,7 @@ export async function POST(req: Request, context: { params: Promise<{ clipId: st
       .update({
         clip_edit_settings: settings,
         caption_preset_id: settings.caption_preset_id,
+        hook_text_enabled: true,
         edit_status: 'rendering',
         error_message: null,
         updated_at: new Date().toISOString(),
@@ -54,6 +55,7 @@ export async function POST(req: Request, context: { params: Promise<{ clipId: st
         reframe_preset: 'auto',
         motion_tracking: false,
         fast_edit_render: true,
+        hook_text_enabled: true,
       },
     });
 

@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getCaptionPresetById } from '@/lib/caption-presets';
 import { generateHookText } from '@/lib/hook-text';
 
-const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY === 'true';
+const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY !== 'false';
 
 export async function POST(req: Request, context: { params: Promise<{ exportId: string }> }) {
   try {
