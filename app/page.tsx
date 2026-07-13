@@ -28,8 +28,10 @@ type ShowcaseClip = {
   length: string;
   source: string;
   gradient: string;
-  mediaType?: 'video' | 'image';
+  mediaType?: 'video' | 'image' | 'youtube';
   mediaUrl?: string | null;
+  startSeconds?: number;
+  endSeconds?: number;
 };
 
 type ShowcaseResponse = {
@@ -788,27 +790,46 @@ export default function Home() {
                             className="absolute inset-0 bg-cover bg-center"
                             style={{ backgroundImage: `url("${clip.mediaUrl}")` }}
                           />
+                        ) : clip.mediaType === 'youtube' ? (
+                          <iframe
+                            src={clip.mediaUrl}
+                            title={clip.title}
+                            allow="autoplay; encrypted-media"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            className="pointer-events-none absolute left-1/2 top-1/2 h-full w-[316%] -translate-x-1/2 -translate-y-1/2 border-0"
+                          />
                         ) : (
                           <video
                             src={clip.mediaUrl}
+                            autoPlay
                             muted
                             loop
                             playsInline
                             disablePictureInPicture
                             controls={false}
                             controlsList="nofullscreen nodownload noremoteplayback"
-                            preload="metadata"
+                            preload="auto"
                             onLoadedMetadata={(event) => {
+                              const start = Math.max(0, Number(clip.startSeconds ?? 0));
+                              if (start > 0 && Number.isFinite(event.currentTarget.duration)) {
+                                event.currentTarget.currentTime = Math.min(start, Math.max(0, event.currentTarget.duration - 0.1));
+                              }
                               for (let index = 0; index < event.currentTarget.textTracks.length; index += 1) {
                                 event.currentTarget.textTracks[index].mode = 'disabled';
                               }
-                            }}
-                            onMouseEnter={(event) => {
                               void event.currentTarget.play().catch(() => undefined);
                             }}
-                            onMouseLeave={(event) => {
-                              event.currentTarget.pause();
-                              event.currentTarget.currentTime = 0;
+                            onCanPlay={(event) => {
+                              void event.currentTarget.play().catch(() => undefined);
+                            }}
+                            onTimeUpdate={(event) => {
+                              const start = Math.max(0, Number(clip.startSeconds ?? 0));
+                              const end = Number(clip.endSeconds ?? 0);
+                              if (end > start && event.currentTarget.currentTime >= end) {
+                                event.currentTarget.currentTime = start;
+                                void event.currentTarget.play().catch(() => undefined);
+                              }
                             }}
                             className="absolute inset-0 h-full w-full object-cover"
                           />

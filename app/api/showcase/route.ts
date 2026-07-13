@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createExportSignedUrl } from '@/lib/storage';
+import { createExportSignedUrl, createRawMediaSignedUrl } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +34,10 @@ type RelatedProject = {
   title?: string | null;
   source_title?: string | null;
   source_channel_name?: string | null;
+  source_type?: string | null;
+  source_url?: string | null;
+  source_video_id?: string | null;
+  source_storage_path?: string | null;
 };
 
 type ExportShowcaseRow = {
@@ -54,8 +58,10 @@ type ShowcaseApiClip = {
   length: string;
   source: string;
   gradient: string;
-  mediaType: 'video' | 'image';
+  mediaType: 'video' | 'image' | 'youtube';
   mediaUrl: string;
+  startSeconds?: number;
+  endSeconds?: number;
 };
 
 function asSingle<T>(value: T | T[] | null | undefined) {
@@ -73,6 +79,38 @@ function displayScore(value: number | null | undefined) {
   const numeric = Number(value ?? 0);
   if (!Number.isFinite(numeric) || numeric <= 0) return 90;
   return Math.max(70, Math.min(100, Math.round(numeric <= 10 ? numeric * 10 : numeric)));
+}
+
+function youtubeVideoId(project: RelatedProject | null | undefined) {
+  const direct = project?.source_video_id?.trim();
+  if (direct) return direct;
+  const sourceUrl = project?.source_url?.trim();
+  if (!sourceUrl) return null;
+  try {
+    const url = new URL(sourceUrl);
+    if (url.hostname.includes('youtu.be')) return url.pathname.split('/').filter(Boolean)[0] ?? null;
+    return url.searchParams.get('v') || url.pathname.match(/\/(?:shorts|embed)\/([^/?]+)/)?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
+function youtubeShowcaseUrl(videoId: string, start: number, end: number) {
+  const params = new URLSearchParams({
+    autoplay: '1',
+    mute: '1',
+    controls: '0',
+    playsinline: '1',
+    loop: '1',
+    playlist: videoId,
+    rel: '0',
+    modestbranding: '1',
+    cc_load_policy: '0',
+    iv_load_policy: '3',
+    start: String(Math.max(0, Math.floor(start))),
+    end: String(Math.max(Math.floor(start) + 1, Math.ceil(end))),
+  });
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?${params.toString()}`;
 }
 
 function getPublicExportIds() {
@@ -114,10 +152,21 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
       try {
         const candidate = asSingle(row.clip_candidates);
         const project = asSingle(row.projects);
-        const mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
         const start = Number(candidate?.start_sec ?? 0);
         const end = Number(candidate?.end_sec ?? 0);
         const length = end > start ? formatClock(end - start) : '0:30';
+        const videoId = youtubeVideoId(project);
+        let mediaType: ShowcaseApiClip['mediaType'] = 'video';
+        let mediaUrl: string;
+
+        if (videoId) {
+          mediaType = 'youtube';
+          mediaUrl = youtubeShowcaseUrl(videoId, start, end > start ? end : start + 30);
+        } else if (project?.source_storage_path) {
+          mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
+        } else {
+          mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
+        }
 
         return {
           id: row.id,
@@ -128,8 +177,10 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
           length,
           source: project?.source_channel_name?.trim() || project?.source_title?.trim() || 'Animacut export',
           gradient: gradients[index % gradients.length],
-          mediaType: 'video' as const,
+          mediaType,
           mediaUrl,
+          startSeconds: start,
+          endSeconds: end > start ? end : start + 30,
         };
       } catch {
         return null;
@@ -157,7 +208,7 @@ async function getConfiguredShowcaseClips(exportIds: string[]): Promise<Showcase
       output_storage_path,
       created_at,
       clip_candidates(title, overall_score, start_sec, end_sec),
-      projects(title, source_title, source_channel_name)
+      projects(title, source_title, source_channel_name, source_type, source_url, source_video_id, source_storage_path)
     `)
     .eq('status', 'done')
     .not('output_storage_path', 'is', null)
@@ -183,7 +234,7 @@ async function getProjectShowcaseClips(projectIds: string[]): Promise<ShowcaseAp
       output_storage_path,
       created_at,
       clip_candidates(title, overall_score, start_sec, end_sec),
-      projects(title, source_title, source_channel_name)
+      projects(title, source_title, source_channel_name, source_type, source_url, source_video_id, source_storage_path)
     `)
     .eq('status', 'done')
     .not('output_storage_path', 'is', null)
@@ -217,7 +268,7 @@ async function getRecentProjectShowcaseClips(): Promise<ShowcaseApiClip[]> {
       output_storage_path,
       created_at,
       clip_candidates(title, overall_score, start_sec, end_sec),
-      projects(title, source_title, source_channel_name)
+      projects(title, source_title, source_channel_name, source_type, source_url, source_video_id, source_storage_path)
     `)
     .eq('status', 'done')
     .not('output_storage_path', 'is', null)
