@@ -39,6 +39,7 @@ type ShowcaseResponse = {
 };
 
 const SHOWCASE_CARD_COUNT = 6;
+const SHOWCASE_PLATFORMS: ShowcaseClip['platform'][] = ['TikTok', 'Snapchat', 'Instagram', 'X', 'Facebook', 'YouTube'];
 
 const templatePresets = [
   '🔥 Viral Clips',
@@ -328,7 +329,10 @@ export default function Home() {
       if (merged.length >= SHOWCASE_CARD_COUNT) break;
       merged.push(fallback);
     }
-    return merged;
+    return merged.map((clip, index) => ({
+      ...clip,
+      platform: SHOWCASE_PLATFORMS[index % SHOWCASE_PLATFORMS.length],
+    }));
   }, [liveShowcaseClips]);
 
   function getShowcaseKey(clip: ShowcaseClip) {
@@ -764,12 +768,13 @@ export default function Home() {
           </div>
 
           <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
-              {showcaseOrder.map((clipIndex) => {
-                const clip = activeShowcaseClips[clipIndex] ?? showcaseClips[clipIndex];
+              {activeShowcaseClips.map((clip, clipIndex) => {
                 const clipKey = getShowcaseKey(clip);
+                const displayPosition = showcaseOrder.indexOf(clipIndex);
                 return (
                 <div
                   key={clipKey}
+                  style={{ order: displayPosition === -1 ? clipIndex : displayPosition }}
                   ref={(element) => {
                     if (element) {
                       showcaseCardRefs.current.set(clipKey, element);
@@ -797,7 +802,7 @@ export default function Home() {
                             allow="autoplay; encrypted-media"
                             tabIndex={-1}
                             aria-hidden="true"
-                            className="pointer-events-none absolute left-1/2 top-1/2 h-full w-[316%] -translate-x-1/2 -translate-y-1/2 border-0"
+                            className="pointer-events-none absolute left-1/2 top-[54%] h-[122%] w-[350%] -translate-x-1/2 -translate-y-1/2 border-0"
                           />
                         ) : (
                           <video

@@ -100,11 +100,14 @@ function youtubeShowcaseUrl(videoId: string, start: number, end: number) {
     autoplay: '1',
     mute: '1',
     controls: '0',
+    disablekb: '1',
+    fs: '0',
     playsinline: '1',
     loop: '1',
     playlist: videoId,
     rel: '0',
     modestbranding: '1',
+    showinfo: '0',
     cc_load_policy: '0',
     iv_load_policy: '3',
     start: String(Math.max(0, Math.floor(start))),
@@ -159,11 +162,11 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
         let mediaType: ShowcaseApiClip['mediaType'] = 'video';
         let mediaUrl: string;
 
-        if (videoId) {
+        if (project?.source_storage_path) {
+          mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
+        } else if (videoId) {
           mediaType = 'youtube';
           mediaUrl = youtubeShowcaseUrl(videoId, start, end > start ? end : start + 30);
-        } else if (project?.source_storage_path) {
-          mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
         } else {
           mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
         }
