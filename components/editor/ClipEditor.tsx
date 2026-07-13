@@ -192,7 +192,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
-  const renderScheduleRef = useRef<number | null>(null);
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
   const [baseline, setBaseline] = useState('');
@@ -405,16 +404,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setSettings(nextSettings);
     setCutMode(false);
     if (currentTime >= start && currentTime < end) seekAbsolute(end);
-    setToast('Segment removed. Updating export...');
-    scheduleRender(nextSettings, 100);
-  }
-
-  function scheduleRender(nextSettings: ClipEditSettings, delay = 700) {
-    if (renderScheduleRef.current !== null) window.clearTimeout(renderScheduleRef.current);
-    renderScheduleRef.current = window.setTimeout(() => {
-      renderScheduleRef.current = null;
-      void rerenderClip(nextSettings);
-    }, delay);
+    setToast('Segment removed from preview');
   }
 
   function selectCaptionPreset(preset: CaptionPreset) {
@@ -431,13 +421,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
     };
     setSettings(nextSettings);
-    setToast('Caption preview updated. Updating export...');
-    scheduleRender(nextSettings);
+    setToast('Caption preview updated');
   }
-
-  useEffect(() => () => {
-    if (renderScheduleRef.current !== null) window.clearTimeout(renderScheduleRef.current);
-  }, []);
 
   useEffect(() => {
     if (!settings || !baseline || !changed || saving || rendering) return;
@@ -849,7 +834,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               <span aria-hidden="true">&#9986;</span>
             </button>
             <button onClick={() => void rerenderClip()} disabled={!needsRender || rendering} className="rounded-full bg-white px-5 py-2 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-45">
-              {rendering ? 'Updating clip...' : 'Export update'}
+              {rendering ? 'Applying...' : 'Apply'}
             </button>
           </div>
         </div>
