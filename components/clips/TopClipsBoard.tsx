@@ -296,9 +296,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   });
   const [loadingCaptionSettings, setLoadingCaptionSettings] = useState(false);
   const [applyingPreset, setApplyingPreset] = useState(false);
+  const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
   const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const stableMediaUrlsRef = useRef(new Map<string, string>());
+  const previousEditStatusesRef = useRef(new Map<string, string | null | undefined>());
+  const refreshMediaOnNextUrlRef = useRef(new Set<string>());
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
     setPlayback((prev) => ({
@@ -479,9 +483,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       });
       const presetData = await readJsonSafe(presetRes);
       if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
+      refreshMediaOnNextUrlRef.current.add(editingClip.exportId);
+      setOptimisticEditIds((current) => new Set(current).add(editingClip.exportId));
       setEditingClip(null);
       void fetch('/api/jobs/process', { method: 'POST', cache: 'no-store' }).catch(() => null);
-      router.refresh();
     } catch (error) {
       console.error(error);
       window.alert(error instanceof Error ? error.message : 'Could not apply preset');
@@ -507,10 +512,29 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     return [...clips].sort((a, b) => b.score - a.score);
   }, [clips]);
 
+  function stableMediaUrl(clip: ClipItem) {
+    const nextUrl = clip.signedUrl ?? null;
+    const currentUrl = stableMediaUrlsRef.current.get(clip.exportId) ?? null;
+    const previousEditStatus = previousEditStatusesRef.current.get(clip.exportId);
+    const editFinished = previousEditStatus === 'rendering' && clip.editStatus !== 'rendering';
+    const waitingForEditedMedia = refreshMediaOnNextUrlRef.current.has(clip.exportId);
+
+    if (nextUrl && (!currentUrl || (nextUrl !== currentUrl && (editFinished || waitingForEditedMedia)))) {
+      stableMediaUrlsRef.current.set(clip.exportId, nextUrl);
+      if (waitingForEditedMedia && nextUrl !== currentUrl) {
+        refreshMediaOnNextUrlRef.current.delete(clip.exportId);
+      }
+    }
+    previousEditStatusesRef.current.set(clip.exportId, clip.editStatus);
+    return stableMediaUrlsRef.current.get(clip.exportId) ?? nextUrl;
+  }
+
   useEffect(() => {
-    const hasActiveClip = visible.some((clip) => (
-      clip.status === 'queued' || clip.status === 'processing' || clip.editStatus === 'rendering'
-    ));
+    const initialRenderActive = visible.some((clip) => clip.status === 'queued' || clip.status === 'processing');
+    const activeEditIds = visible
+      .filter((clip) => clip.editStatus === 'rendering' || optimisticEditIds.has(clip.exportId))
+      .map((clip) => clip.exportId);
+    const hasActiveClip = initialRenderActive || activeEditIds.length > 0;
     if (!hasActiveClip) return;
 
     const tick = async () => {
@@ -522,7 +546,33 @@ export function TopClipsBoard({ projectId, clips }: Props) {
         // Best effort: the next tick or manual refresh can retry.
       } finally {
         renderKickInFlightRef.current = false;
+      }
+
+      if (initialRenderActive) {
         router.refresh();
+        return;
+      }
+
+      if (activeEditIds.length) {
+        const statuses = await Promise.all(activeEditIds.map(async (exportId) => {
+          try {
+            const response = await fetch(`/api/clips/${exportId}/edit`, { cache: 'no-store' });
+            const payload = await readJsonSafe(response) as { clip?: { editStatus?: string | null } };
+            return response.ok ? String(payload?.clip?.editStatus ?? '') : 'rendering';
+          } catch {
+            return 'rendering';
+          }
+        }));
+        if (statuses.some((status) => status !== 'rendering')) {
+          setOptimisticEditIds((current) => {
+            const next = new Set(current);
+            activeEditIds.forEach((id, index) => {
+              if (statuses[index] !== 'rendering') next.delete(id);
+            });
+            return next;
+          });
+          router.refresh();
+        }
       }
     };
 
@@ -532,7 +582,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [router, visible]);
+  }, [optimisticEditIds, router, visible]);
 
   return (
     <>
@@ -544,6 +594,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
         <div className="px-4 pb-2">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
             {visible.slice(0, 10).map((clip) => {
+              const mediaUrl = stableMediaUrl(clip);
               const durationLabel = formatDuration(clip.startSec, clip.endSec);
               const playbackState = playback[clip.exportId];
               const current = playbackState?.current ?? 0;
@@ -555,9 +606,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
               const primaryBadge = getPrimaryClipBadge(clip);
-              const editRendering = clip.editStatus === 'rendering';
+              const editRendering = clip.editStatus === 'rendering' || optimisticEditIds.has(clip.exportId);
               const pendingCaptionPreset =
-                clip.signedUrl && clip.status !== 'done'
+                mediaUrl && clip.status !== 'done'
                   ? CAPTION_PRESETS.find((preset) =>
                       preset.captionHighlightColor.toLowerCase() === clip.captionHighlightColor?.toLowerCase()
                     ) ?? CAPTION_PRESETS.find((preset) => preset.id === clip.captionPresetId) ?? CAPTION_PRESETS[0]
@@ -642,7 +693,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                     </div>
                   </div>
 
-                  {clip.signedUrl ? (
+                  {mediaUrl ? (
                     <div className="flex justify-center bg-transparent px-1.5">
                       <div
                         data-clip-frame="true"
@@ -654,13 +705,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload="none"
+                          preload="metadata"
                           playsInline
                           controls={false}
                           disablePictureInPicture
                           poster={clip.posterUrl ?? undefined}
                           className="h-full w-full bg-black object-cover"
-                          src={clip.signedUrl}
+                          src={mediaUrl}
                           onLoadedMetadata={(e) => {
                             const v = e.currentTarget;
                             updatePlayback(clip.exportId, {
