@@ -153,6 +153,7 @@ function hexToAssColor(hex: string | undefined, fallback: string) {
 function resolveAssFontName(preset: StyledCaptionPreset | undefined, template: CaptionTemplate) {
   const family = preset?.captionFontFamily?.trim();
   if (!family) return template === 'capcut' ? 'Montserrat' : 'Arial';
+  if (/^Poppins ExtraBold$/i.test(family)) return family;
   return family.replace(/\s+(ExtraBold|Black|Bold|SemiBold)$/i, '') || family;
 }
 
