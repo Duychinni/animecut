@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { extractVideoThumbnail, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractVideoThumbnail, renderCutVideo, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
@@ -218,6 +218,7 @@ type ExportRenderOptions = {
   reframe_mode?: 'off' | 'basic' | 'smart';
   reframe_preset?: 'auto' | 'tight' | 'left' | 'center' | 'right';
   edit_rerender?: boolean;
+  fast_edit_render?: boolean;
 };
 
 type ExportLookupRow = {
@@ -652,6 +653,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const editSettings = normalizeClipEditSettings(bundle.clip_edit_settings, defaults, sourceDuration);
   const renderStart = useEditSettings ? editSettings.clip_start_seconds : bundle.clip.start_sec;
   const renderEnd = useEditSettings ? editSettings.clip_end_seconds : bundle.clip.end_sec;
+  let renderInputPath = inputPath;
+  let effectiveRenderStart = renderStart;
+  let effectiveRenderEnd = renderEnd;
   const captionPreset = getCaptionPresetById(
     useEditSettings
       ? editSettings.caption_preset_id
@@ -662,7 +666,51 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const editedTranscriptPhrases = Array.isArray(editSettings.edited_transcript)
     ? editSettings.edited_transcript.filter(isTranscriptPhraseRow)
     : [];
-  const renderTranscriptSegments = useEditSettings ? phrasesToSegments(editedTranscriptPhrases) : transcriptSegments;
+  let renderTranscriptSegments = useEditSettings ? phrasesToSegments(editedTranscriptPhrases) : transcriptSegments;
+
+  if (useEditSettings && editSettings.removed_ranges.length) {
+    const removed = editSettings.removed_ranges
+      .map((range) => ({
+        start: Math.max(renderStart, Math.min(renderEnd, range.start)),
+        end: Math.max(renderStart, Math.min(renderEnd, range.end)),
+      }))
+      .filter((range) => range.end - range.start >= 0.15)
+      .sort((a, b) => a.start - b.start);
+    const kept: Array<{ start: number; end: number }> = [];
+    let cursor = renderStart;
+    for (const range of removed) {
+      if (range.start > cursor + 0.05) kept.push({ start: cursor, end: range.start });
+      cursor = Math.max(cursor, range.end);
+    }
+    if (cursor < renderEnd - 0.05) kept.push({ start: cursor, end: renderEnd });
+    if (!kept.length) throw new Error('The selected cuts remove the entire clip');
+
+    const cutPath = path.join(exportDir, `${bundle.id}.cut.mp4`);
+    await renderCutVideo(inputPath, cutPath, kept);
+    renderInputPath = cutPath;
+    effectiveRenderStart = 0;
+    effectiveRenderEnd = kept.reduce((total, range) => total + (range.end - range.start), 0);
+    renderTranscriptSegments = renderTranscriptSegments.flatMap((segment) => {
+      const segmentStart = Number(segment.start ?? 0);
+      const segmentEnd = Number(segment.end ?? segmentStart);
+      let elapsed = 0;
+      const mapped: typeof renderTranscriptSegments = [];
+      for (const range of kept) {
+        const overlapStart = Math.max(segmentStart, range.start);
+        const overlapEnd = Math.min(segmentEnd, range.end);
+        if (overlapEnd > overlapStart) {
+          mapped.push({
+            ...segment,
+            start: elapsed + (overlapStart - range.start),
+            end: elapsed + (overlapEnd - range.start),
+            words: [],
+          });
+        }
+        elapsed += range.end - range.start;
+      }
+      return mapped;
+    });
+  }
   const captionStyle = useEditSettings
     ? {
         ...captionPreset,
@@ -679,16 +727,16 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
         caption_template: captionTemplate,
       };
 
-  const captionText = segmentsToCapcutAss(renderTranscriptSegments, renderStart, renderEnd, captionStyle);
+  const captionText = segmentsToCapcutAss(renderTranscriptSegments, effectiveRenderStart, effectiveRenderEnd, captionStyle);
 
   const fallbackCaption = '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial Black,127,&H00FFFFFF,&H005AF421,&H00000000,&H00000000,-1,0,0,0,106,110,0,0,1,12,2,2,40,40,380,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n';
   await writeFile(srtPath, captionText || fallbackCaption);
 
   const generatedHookText = generateHookText({
     clipTitle: bundle.clip.title ?? null,
-    transcriptSegments,
-    startSec: renderStart,
-    endSec: renderEnd,
+    transcriptSegments: renderTranscriptSegments,
+    startSec: effectiveRenderStart,
+    endSec: effectiveRenderEnd,
   });
   const hookTextEnabled = HOOK_TEXT_OVERLAY_ENABLED && bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
   const hookText = usableHookText(options?.hook_text, bundle.clip.title)
@@ -697,10 +745,10 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     || null;
 
   await renderVerticalClip({
-    inputPath,
+    inputPath: renderInputPath,
     outputPath: outPath,
-    startSec: renderStart,
-    endSec: renderEnd,
+    startSec: effectiveRenderStart,
+    endSec: effectiveRenderEnd,
     srtPath,
     captionsEnabled: useEditSettings ? editSettings.captions_enabled : options?.captions_enabled !== false,
     captionTemplate,
@@ -717,6 +765,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     zoom: useEditSettings ? editSettings.zoom : undefined,
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
+    fastRender: options?.fast_edit_render === true,
   });
 
   await validateRenderedVideo(outPath);
@@ -727,7 +776,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
-    const clipDuration = Math.max(0.25, renderEnd - renderStart);
+    const clipDuration = Math.max(0.25, effectiveRenderEnd - effectiveRenderStart);
     const posterSecond = Math.min(1.5, Math.max(0.25, clipDuration * 0.18));
     await extractVideoThumbnail(outPath, posterPath, posterSecond);
     const posterBytes = await readFile(posterPath);

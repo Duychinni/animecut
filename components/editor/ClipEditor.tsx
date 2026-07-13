@@ -192,6 +192,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const renderScheduleRef = useRef<number | null>(null);
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
   const [baseline, setBaseline] = useState('');
@@ -205,6 +206,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [previewDurationSeconds, setPreviewDurationSeconds] = useState(0);
   const [paused, setPaused] = useState(true);
   const [dragMode, setDragMode] = useState<DragMode>(null);
+  const [cutMode, setCutMode] = useState(false);
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
   const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
@@ -236,11 +238,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   const transcriptChunks = useMemo(() => buildTranscriptChunks(clipTranscript, 5), [clipTranscript]);
   const clipTranscriptText = useMemo(() => (
-    clipTranscript
-      .map((phrase) => (typeof phrase.text === 'string' ? phrase.text : phrase.originalText || '').trim())
-      .filter(Boolean)
-      .join(' ')
-  ), [clipTranscript]);
+    transcriptChunks.map((chunk) => chunk.text.trim()).filter(Boolean).join('\n\n')
+  ), [transcriptChunks]);
   const clipTranscriptHidden = clipTranscript.length > 0 && clipTranscript.every((phrase) => phrase.deleted === true);
   const activeCaptionText = useMemo(() => {
     if (!settings?.captions_enabled || clipTranscriptHidden) return '';
@@ -379,12 +378,80 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   function updateClipTranscriptText(text: string) {
     if (!settings) return;
-    const distributed = distributeTextAcrossPhrases(text, clipTranscript);
+    const paragraphs = text.split(/\n\s*\n/);
+    const distributed = transcriptChunks.flatMap((chunk, index) => (
+      distributeTextAcrossPhrases(paragraphs[index] ?? '', chunk.phrases)
+    ));
     const updates = new Map(distributed.map((phrase) => [phrase.id, phrase]));
     patchSettings({
       edited_transcript: settings.edited_transcript.map((phrase) => updates.get(phrase.id) ?? phrase),
     });
   }
+
+  function removeTimelineChunk(chunk: TranscriptChunk) {
+    if (!settings) return;
+    const start = clamp(chunk.start, settings.clip_start_seconds, settings.clip_end_seconds);
+    const end = clamp(chunk.end, start, settings.clip_end_seconds);
+    if (end - start < 0.15) return;
+    const ids = new Set(chunk.phrases.map((phrase) => phrase.id));
+    const nextSettings: ClipEditSettings = {
+      ...settings,
+      removed_ranges: [...settings.removed_ranges, { start, end }]
+        .sort((a, b) => a.start - b.start),
+      edited_transcript: settings.edited_transcript.map((phrase) => (
+        ids.has(phrase.id) ? { ...phrase, deleted: true } : phrase
+      )),
+    };
+    setSettings(nextSettings);
+    setCutMode(false);
+    if (currentTime >= start && currentTime < end) seekAbsolute(end);
+    setToast('Segment removed. Updating export...');
+    scheduleRender(nextSettings, 100);
+  }
+
+  function scheduleRender(nextSettings: ClipEditSettings, delay = 700) {
+    if (renderScheduleRef.current !== null) window.clearTimeout(renderScheduleRef.current);
+    renderScheduleRef.current = window.setTimeout(() => {
+      renderScheduleRef.current = null;
+      void rerenderClip(nextSettings);
+    }, delay);
+  }
+
+  function selectCaptionPreset(preset: CaptionPreset) {
+    if (!settings) return;
+    const nextSettings: ClipEditSettings = {
+      ...settings,
+      caption_preset_id: preset.id,
+      caption_font_size: preset.captionFontSize,
+      caption_text_color: preset.captionTextColor,
+      caption_highlight_color: preset.captionHighlightColor,
+      caption_background: preset.captionBackgroundBox,
+      caption_word_highlight: preset.captionWordHighlight,
+      caption_max_words: preset.captionMaxWords,
+      caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
+    };
+    setSettings(nextSettings);
+    setToast('Caption preview updated. Updating export...');
+    scheduleRender(nextSettings);
+  }
+
+  useEffect(() => () => {
+    if (renderScheduleRef.current !== null) window.clearTimeout(renderScheduleRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!settings || !baseline || !changed || saving || rendering) return;
+    const timer = window.setTimeout(() => {
+      void saveDraft(false);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [baseline, changed, rendering, saving, settings]);
+
+  useEffect(() => {
+    if (!settings?.removed_ranges.length) return;
+    const removed = settings.removed_ranges.find((range) => currentTime >= range.start && currentTime < range.end);
+    if (removed) seekAbsolute(removed.end);
+  }, [currentTime, settings?.removed_ranges]);
 
   function setClipTranscriptHidden(hidden: boolean) {
     if (!settings) return;
@@ -398,6 +465,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     if (!data || !settings) return;
     const originals = new Map(data.transcript.phrases.map((phrase) => [phrase.id, phrase]));
     patchSettings({
+      removed_ranges: [],
       edited_transcript: settings.edited_transcript.map((phrase) => {
         if (!phraseOverlapsClip(phrase, settings.clip_start_seconds, settings.clip_end_seconds)) return phrase;
         const original = originals.get(phrase.id);
@@ -463,15 +531,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     }
   }
 
-  async function rerenderClip() {
-    if (!settings) return;
+  async function rerenderClip(nextSettings: ClipEditSettings | null = settings) {
+    if (!nextSettings) return;
     setRendering(true);
     setError(null);
     try {
       const res = await fetch(`/api/clips/${clipId}/rerender`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings: nextSettings }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(String(json?.error || 'Could not start render'));
@@ -634,7 +702,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 onChange={(event) => updateClipTranscriptText(event.target.value)}
                 onFocus={() => seekAbsolute(settings.clip_start_seconds)}
                 spellCheck
-                className="h-full w-full resize-none rounded-2xl border border-white/[0.08] bg-[#2a2d34] px-4 py-4 text-base font-semibold leading-8 text-white outline-none transition scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/20 focus:border-white/25"
+                className="h-full w-full resize-none rounded-2xl border border-white/[0.08] bg-[#30343c] px-4 py-4 text-base font-semibold leading-8 text-white outline-none transition focus:border-white/25"
               />
             ) : (
               <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm font-semibold text-white/58">
@@ -741,16 +809,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   return (
                     <button
                       key={preset.id}
-                      onClick={() => patchSettings({
-                        caption_preset_id: preset.id,
-                        caption_font_size: preset.captionFontSize,
-                        caption_text_color: preset.captionTextColor,
-                        caption_highlight_color: preset.captionHighlightColor,
-                        caption_background: preset.captionBackgroundBox,
-                        caption_word_highlight: preset.captionWordHighlight,
-                        caption_max_words: preset.captionMaxWords,
-                        caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center' ? preset.captionPosition : 'lower-third',
-                      })}
+                      onClick={() => selectCaptionPreset(preset)}
                       className={`rounded-2xl border p-2 text-left transition ${selected ? 'border-cyan-300 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}
                     >
                       <div className="grid aspect-[1.45] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
@@ -778,12 +837,19 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => void saveDraft()} disabled={!changed || saving} className="rounded-full border border-white/10 px-4 py-2 text-sm font-bold text-white/75 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45">
-              {saving ? 'Applying...' : 'Apply'}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-white/45">{saving ? 'Saving changes...' : changed ? 'Waiting to save...' : 'Changes saved'}</span>
+            <button
+              type="button"
+              onClick={() => setCutMode((value) => !value)}
+              className={`grid h-9 w-9 place-items-center rounded-md border text-lg transition ${cutMode ? 'border-orange-300 bg-orange-300/15 text-orange-200' : 'border-white/10 text-white/72 hover:bg-white/[0.06]'}`}
+              aria-label="Cut a timeline segment"
+              title="Select a text block to remove that segment"
+            >
+              <span aria-hidden="true">&#9986;</span>
             </button>
             <button onClick={() => void rerenderClip()} disabled={!needsRender || rendering} className="rounded-full bg-white px-5 py-2 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-45">
-              {rendering ? 'Rendering...' : 'Re-render Clip'}
+              {rendering ? 'Updating clip...' : 'Export update'}
             </button>
           </div>
         </div>
@@ -824,9 +890,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 const start = clamp(chunk.start - settings.clip_start_seconds, 0, timelineDuration);
                 const end = clamp(chunk.end - settings.clip_start_seconds, 0, timelineDuration);
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={chunk.id}
-                    className="absolute top-[38px] h-[22px] overflow-hidden rounded-[4px] bg-orange-300/80 px-2 text-[9px] font-black leading-[22px] text-black/78"
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      if (cutMode) removeTimelineChunk(chunk);
+                      else seekAbsolute(chunk.start);
+                    }}
+                    className={`absolute top-[38px] h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${cutMode ? 'cursor-crosshair bg-orange-200 ring-1 ring-orange-100' : 'bg-orange-300/80'}`}
                     title={chunk.text}
                     style={{
                       left: `${(start / timelineDuration) * 100}%`,
@@ -834,7 +906,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     }}
                   >
                     {chunk.text}
-                  </div>
+                  </button>
                 );
               })}
 
@@ -869,6 +941,17 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   />
                 ))}
               </div>
+
+              {settings.removed_ranges.map((range, index) => (
+                <div
+                  key={`${range.start}-${range.end}-${index}`}
+                  className="pointer-events-none absolute bottom-0 top-[31px] border-x border-red-300/70 bg-red-500/25"
+                  style={{
+                    left: `${clamp(((range.start - settings.clip_start_seconds) / timelineDuration) * 100, 0, 100)}%`,
+                    width: `${clamp(((range.end - range.start) / timelineDuration) * 100, 0, 100)}%`,
+                  }}
+                />
+              ))}
 
               <div className="absolute inset-y-0 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
               <button

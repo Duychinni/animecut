@@ -37,6 +37,7 @@ type RenderOpts = {
   outputPath: string;
   startSec: number;
   endSec: number;
+  fastRender?: boolean;
   srtPath?: string;
   captionsEnabled?: boolean;
   captionTemplate?: CaptionTemplate;
@@ -181,6 +182,38 @@ function escapeSubtitlesPathForFilter(path: string) {
 
 function escapeForceStyleForFilter(style: string) {
   return style.replace(/'/g, "\\'").replace(/:/g, '\\:');
+}
+
+export async function renderCutVideo(
+  inputPath: string,
+  outputPath: string,
+  ranges: Array<{ start: number; end: number }>,
+) {
+  const validRanges = ranges.filter((range) => range.end - range.start >= 0.15);
+  if (!validRanges.length) throw new Error('No playable timeline remains after cuts');
+
+  const filters = validRanges.flatMap((range, index) => [
+    `[0:v]trim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},setpts=PTS-STARTPTS[v${index}]`,
+    `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},asetpts=PTS-STARTPTS[a${index}]`,
+  ]);
+  const concatInputs = validRanges.map((_, index) => `[v${index}][a${index}]`).join('');
+  filters.push(`${concatInputs}concat=n=${validRanges.length}:v=1:a=1[outv][outa]`);
+
+  await runFfmpeg([
+    '-y',
+    '-i', inputPath,
+    '-filter_complex', filters.join(';'),
+    '-map', '[outv]',
+    '-map', '[outa]',
+    '-c:v', 'libx264',
+    '-preset', process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast',
+    '-crf', '10',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-movflags', '+faststart',
+    outputPath,
+  ]);
 }
 
 function captionFontsDirOption() {
@@ -1376,7 +1409,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   }
 
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || 'libx264').trim();
-  const configuredPreset = (process.env.FFMPEG_X264_PRESET || 'medium').trim();
+  const configuredPreset = (opts.fastRender ? process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast' : process.env.FFMPEG_X264_PRESET || 'medium').trim();
   const configuredCrf = (process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF).trim();
   const configuredX264Maxrate = (process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE).trim();
   const configuredX264Bufsize = (process.env.FFMPEG_X264_BUFSIZE || DEFAULT_X264_BUFSIZE).trim();

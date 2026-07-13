@@ -26,6 +26,7 @@ export type ClipEditSettings = {
   crop_x: number;
   crop_y: number;
   zoom: number;
+  removed_ranges: Array<{ start: number; end: number }>;
 };
 
 export type TranscriptSegment = {
@@ -144,6 +145,7 @@ export function buildDefaultClipEditSettings(params: {
     crop_x: 0.5,
     crop_y: 0.34,
     zoom: 1,
+    removed_ranges: [],
   } satisfies ClipEditSettings;
 }
 
@@ -171,6 +173,18 @@ export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettin
     crop_x: clamp(finiteNumber(row.crop_x, defaults.crop_x), 0, 1),
     crop_y: clamp(finiteNumber(row.crop_y, defaults.crop_y), 0, 1),
     zoom: clamp(finiteNumber(row.zoom, defaults.zoom), 1, 2.4),
+    removed_ranges: Array.isArray(row.removed_ranges)
+      ? row.removed_ranges
+        .map((item) => {
+          const range = item as Record<string, unknown>;
+          const rangeStart = clamp(finiteNumber(range.start, NaN), start, end);
+          const rangeEnd = clamp(finiteNumber(range.end, NaN), rangeStart, end);
+          return Number.isFinite(rangeStart) && Number.isFinite(rangeEnd) && rangeEnd - rangeStart >= 0.15
+            ? { start: rangeStart, end: rangeEnd }
+            : null;
+        })
+        .filter((item): item is { start: number; end: number } => Boolean(item))
+      : defaults.removed_ranges,
   } satisfies ClipEditSettings;
 }
 
