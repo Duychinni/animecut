@@ -724,10 +724,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                 className="h-1.5 w-16 cursor-pointer accent-white"
                                 aria-label="Clip volume"
                               />
-                              <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
-                                {currentLabel} / {totalLabel}
-                              </span>
                             </div>
+                            <span className="ml-auto shrink-0 rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
+                              {currentLabel} / {totalLabel}
+                            </span>
                           </div>
 
                         </div>
