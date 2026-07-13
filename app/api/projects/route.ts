@@ -3,11 +3,11 @@ import { createProjectSchema } from '@/lib/validators';
 import { createClient } from '@/lib/supabase/server';
 import { fetchYouTubeSourceMetadata, stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { PLAN_LOOKUP, type PlanId } from '@/lib/plans';
+import { FREE_TRIAL_MAX_UPLOAD_MINUTES, FREE_TRIAL_UPLOADS, PLAN_LOOKUP, type PlanId } from '@/lib/plans';
 import { minutesRequiredFromSeconds } from '@/lib/billing';
 import { isMockAiEnabled } from '@/lib/dev-ai';
-import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { getProjectExpiryInfo } from '@/lib/project-retention';
+import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -118,7 +118,7 @@ export async function POST(req: Request) {
             sourceTitle: parsed.title,
             sourceThumbnailUrl: null,
             sourceChannelName: null,
-            sourceDurationSeconds: null,
+            sourceDurationSeconds: parsed.source_duration_seconds ?? null,
           };
 
     const admin = createAdminClient();
@@ -130,9 +130,30 @@ export async function POST(req: Request) {
 
     const planId = (profile?.subscription_plan ?? 'free') as PlanId;
     const configuredPlan = planId === 'starter' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;
+    if (planId === 'free' && parsed.source_type === 'youtube' && !sourceMeta.sourceDurationSeconds && parsed.source_url) {
+      sourceMeta.sourceDurationSeconds = await fetchYouTubeDurationSeconds(parsed.source_url);
+    }
     const uploadMinutes = minutesRequiredFromSeconds(sourceMeta.sourceDurationSeconds);
 
     if (!BILLING_DEV_BYPASS) {
+      if (planId === 'free' && uploadMinutes <= 0) {
+        return NextResponse.json(
+          {
+            error: 'We could not verify this video\'s length for the free test. Try the link again or upload the video file instead.',
+          },
+          { status: 400 },
+        );
+      }
+
+      if (planId === 'free' && uploadMinutes > FREE_TRIAL_MAX_UPLOAD_MINUTES) {
+        return NextResponse.json(
+          {
+            error: `Your free test video can be up to ${FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes long. Choose a shorter video or upgrade to continue.`,
+          },
+          { status: 400 },
+        );
+      }
+
       if (configuredPlan?.maxUploadLengthMinutes && uploadMinutes > configuredPlan.maxUploadLengthMinutes) {
         return NextResponse.json(
           {
@@ -143,7 +164,7 @@ export async function POST(req: Request) {
       }
 
       if (planId === 'free') {
-        const freeUploadsRemaining = Number(profile?.free_uploads_remaining ?? 1);
+        const freeUploadsRemaining = Number(profile?.free_uploads_remaining ?? FREE_TRIAL_UPLOADS);
         if (freeUploadsRemaining <= 0) {
           return NextResponse.json(
             {
@@ -187,7 +208,7 @@ export async function POST(req: Request) {
 
     if (!BILLING_DEV_BYPASS) {
       if (planId === 'free') {
-        const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1) - 1);
+        const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? FREE_TRIAL_UPLOADS) - 1);
         await admin.from('profiles').update({ free_uploads_remaining: freeUploadsRemaining, updated_at: new Date().toISOString() }).eq('id', user.id);
         await admin.from('usage_ledger').insert({
           user_id: user.id,

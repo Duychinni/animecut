@@ -284,9 +284,28 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function getClipFileName(clip: ClipItem) {
+  return `${(clip.title || 'clip')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'clip'}.mp4`;
+}
+
+function downloadClipBlob(blob: Blob, fileName: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function TopClipsBoard({ projectId, clips }: Props) {
   const router = useRouter();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [sharingId, setSharingId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
@@ -440,22 +459,45 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       const res = await fetch(clip.signedUrl);
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = `${(clip.title || 'clip')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '') || 'clip'}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
+      downloadClipBlob(blob, getClipFileName(clip));
     } catch (error) {
       console.error(error);
       window.alert('Download failed. Try again.');
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  async function handleShare(clip: ClipItem) {
+    if (!clip.signedUrl || sharingId) return;
+
+    try {
+      setSharingId(clip.exportId);
+      const response = await fetch(clip.signedUrl);
+      if (!response.ok) throw new Error('Could not prepare this reel for sharing');
+
+      const blob = await response.blob();
+      const fileName = getClipFileName(clip);
+      const file = new File([blob], fileName, { type: blob.type || 'video/mp4' });
+      const shareData: ShareData = {
+        files: [file],
+        title: clip.title || 'AnimaCut reel',
+        text: 'Created with AnimaCut',
+      };
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      downloadClipBlob(blob, fileName);
+      window.alert('This browser cannot send video files to social apps directly. The reel was downloaded so you can upload it to your social account.');
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.error(error);
+      window.alert('Could not open social sharing for this reel. Try again.');
+    } finally {
+      setSharingId(null);
     }
   }
 
@@ -648,6 +690,29 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           </span>
                         </div>
 
+                        {clip.signedUrl ? (
+                          <div className="group/share relative">
+                            <button
+                              type="button"
+                              onClick={() => void handleShare(clip)}
+                              disabled={Boolean(sharingId) || editRendering}
+                              className="inline-flex items-center justify-center text-white/90 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                              aria-label="Share or publish clip"
+                            >
+                              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <circle cx="18" cy="5" r="2.5" />
+                                <circle cx="6" cy="12" r="2.5" />
+                                <circle cx="18" cy="19" r="2.5" />
+                                <path d="m8.2 10.8 7.6-4.5" />
+                                <path d="m8.2 13.2 7.6 4.5" />
+                              </svg>
+                            </button>
+                            <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/share:opacity-100">
+                              {sharingId === clip.exportId ? 'Preparing reel...' : 'Share / publish'}
+                            </span>
+                          </div>
+                        ) : null}
+
                         <div className="group/captions relative">
                           <button
                             type="button"
@@ -774,6 +839,29 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                 Edit clip
                               </span>
                             </div>
+
+                            {clip.signedUrl ? (
+                              <div className="group/share relative">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleShare(clip)}
+                                  disabled={Boolean(sharingId)}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                                  aria-label="Share or publish clip"
+                                >
+                                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <circle cx="18" cy="5" r="2.5" />
+                                    <circle cx="6" cy="12" r="2.5" />
+                                    <circle cx="18" cy="19" r="2.5" />
+                                    <path d="m8.2 10.8 7.6-4.5" />
+                                    <path d="m8.2 13.2 7.6 4.5" />
+                                  </svg>
+                                </button>
+                                <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/share:opacity-100">
+                                  {sharingId === clip.exportId ? 'Preparing reel...' : 'Share / publish'}
+                                </span>
+                              </div>
+                            ) : null}
 
                             <div className="group/captions relative">
                               <button

@@ -83,6 +83,32 @@ const YOUTUBE_CLIENT_ATTEMPTS = [
 
 const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v4-strict-hd';
 
+export async function fetchYouTubeDurationSeconds(url: string) {
+  const command = await resolveYtDlpBinary();
+  let lastError: unknown = null;
+
+  for (const clientArgs of YOUTUBE_CLIENT_ATTEMPTS) {
+    try {
+      const metadata = await runJson(command, [
+        ...COMMON_YT_DLP_ARGS,
+        ...clientArgs,
+        '--skip-download',
+        '--dump-single-json',
+        url,
+      ]) as { duration?: number | string | null };
+      const duration = Number(metadata.duration ?? 0);
+      if (Number.isFinite(duration) && duration > 0) return duration;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  console.warn('[youtube] duration lookup failed', {
+    error: lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown error'),
+  });
+  return null;
+}
+
 function getYouTubeMaxSourceHeight() {
   const raw = Number(process.env.YOUTUBE_MAX_SOURCE_HEIGHT ?? 2160);
   if (!Number.isFinite(raw) || raw < 720) return 2160;

@@ -20,13 +20,41 @@ function makeProjectTitle() {
   return 'MAIN PROJECTS';
 }
 
+function readLocalVideoDuration(file: File) {
+  return new Promise<number>((resolve, reject) => {
+    const video = document.createElement('video');
+    const objectUrl = URL.createObjectURL(file);
+    let settled = false;
+
+    const finish = (error?: Error, durationSeconds?: number) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute('src');
+      if (error) reject(error);
+      else resolve(durationSeconds ?? 0);
+    };
+
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        finish(new Error('Could not determine this video\'s duration.'));
+        return;
+      }
+      finish(undefined, video.duration);
+    };
+    video.onerror = () => finish(new Error('This file could not be read as a video.'));
+    video.src = objectUrl;
+  });
+}
+
 export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string }) {
+  async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string; source_duration_seconds?: number }) {
     const res = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -75,12 +103,16 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
     try {
       setLoading(true);
       setUploadProgress(0);
+      setMsg('Checking video length...');
+
+      const durationSeconds = await readLocalVideoDuration(selectedFile);
       setMsg('Creating upload project...');
 
       const cleanedTitle = selectedFile.name.replace(/\.[^/.]+$/, '');
       const project = await createProject({
         title: cleanedTitle || makeProjectTitle(),
         source_type: 'upload',
+        source_duration_seconds: durationSeconds,
       });
 
       setMsg('Preparing direct upload...');

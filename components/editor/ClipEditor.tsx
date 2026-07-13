@@ -68,7 +68,34 @@ type TimelineRange = {
   end: number;
 };
 
+type TimelineFilmstrip = {
+  key: string;
+  frames: string[];
+  captureFailed: boolean;
+};
+
 const SCISSORS_CURSOR = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22 viewBox=%220 0 32 32%22%3E%3Ctext x=%221%22 y=%2226%22 font-size=%2227%22%3E%E2%9C%82%3C/text%3E%3C/svg%3E") 4 4, crosshair';
+
+function TimelineVideoThumbnail({ src, time }: { src: string; time: number }) {
+  return (
+    <video
+      src={src}
+      muted
+      playsInline
+      preload="metadata"
+      disablePictureInPicture
+      className="pointer-events-none h-full min-w-0 flex-1 bg-black object-cover opacity-0 transition-opacity duration-150"
+      onLoadedMetadata={(event) => {
+        const video = event.currentTarget;
+        video.currentTime = clamp(time, 0, Math.max(0, video.duration - 0.05));
+      }}
+      onSeeked={(event) => {
+        event.currentTarget.style.opacity = '1';
+      }}
+      aria-hidden="true"
+    />
+  );
+}
 
 
 function formatClock(totalSeconds: number) {
@@ -238,6 +265,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [cutMode, setCutMode] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimelineRange | null>(null);
   const [timelineViewport, setTimelineViewport] = useState({ start: 0, end: 1 });
+  const [timelineFilmstrip, setTimelineFilmstrip] = useState<TimelineFilmstrip>({ key: '', frames: [], captureFailed: false });
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
   const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
@@ -246,6 +274,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const clipEndSeconds = settings?.clip_end_seconds;
   const changed = Boolean(settings && baseline && safeJson(settings) !== baseline);
   const needsRender = changed || data?.clip.editStatus === 'draft' || data?.clip.editStatus === 'error';
+  const filmstripFrameCount = clamp(Math.ceil((timelineViewport.end - timelineViewport.start) / 3), 8, 16);
+  const timelineSampleTimes = useMemo(() => Array.from({ length: filmstripFrameCount }, (_, index) => {
+    const ratio = (index + 0.5) / filmstripFrameCount;
+    return previewUsesSource
+      ? timelineViewport.start + (timelineViewport.end - timelineViewport.start) * ratio
+      : (timelineViewport.end - timelineViewport.start) * ratio;
+  }), [filmstripFrameCount, previewUsesSource, timelineViewport.end, timelineViewport.start]);
+  const timelineFilmstripKey = `${previewUrl ?? ''}|${previewUsesSource ? 'source' : 'clip'}|${timelineViewport.start.toFixed(3)}|${timelineViewport.end.toFixed(3)}|${filmstripFrameCount}`;
 
   const activePreset = useMemo(() => {
     if (!data || !settings) return undefined;
@@ -443,6 +479,82 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     if (clipStartSeconds === undefined || clipEndSeconds === undefined || dragMode) return;
     setTimelineViewport(buildTimelineViewport(clipStartSeconds, clipEndSeconds));
   }, [clipEndSeconds, clipStartSeconds, dragMode]);
+
+  useEffect(() => {
+    if (!previewUrl || !timelineSampleTimes.length) return;
+    let cancelled = false;
+    const video = document.createElement('video');
+    video.crossOrigin = 'anonymous';
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+
+    const waitForMetadata = () => new Promise<void>((resolve, reject) => {
+      if (video.readyState >= 1) {
+        resolve();
+        return;
+      }
+      video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+      video.addEventListener('error', () => reject(new Error('timeline_video_load_failed')), { once: true });
+    });
+
+    const seekTo = (time: number) => new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error('timeline_seek_timeout')), 3500);
+      video.addEventListener('seeked', () => {
+        window.clearTimeout(timeout);
+        resolve();
+      }, { once: true });
+      video.currentTime = clamp(time, 0, Math.max(0, video.duration - 0.05));
+    });
+
+    void (async () => {
+      try {
+        video.src = previewUrl;
+        await waitForMetadata();
+        const canvas = document.createElement('canvas');
+        canvas.width = 120;
+        canvas.height = 80;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('timeline_canvas_unavailable');
+        const frames: string[] = [];
+
+        for (const time of timelineSampleTimes) {
+          if (cancelled) return;
+          await seekTo(time);
+          const sourceWidth = Math.max(1, video.videoWidth);
+          const sourceHeight = Math.max(1, video.videoHeight);
+          const targetAspect = canvas.width / canvas.height;
+          const sourceAspect = sourceWidth / sourceHeight;
+          let sx = 0;
+          let sy = 0;
+          let sw = sourceWidth;
+          let sh = sourceHeight;
+          if (sourceAspect < targetAspect) {
+            sh = sourceWidth / targetAspect;
+            sy = Math.max(0, (sourceHeight - sh) * 0.34);
+          } else if (sourceAspect > targetAspect) {
+            sw = sourceHeight * targetAspect;
+            sx = Math.max(0, (sourceWidth - sw) / 2);
+          }
+          context.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+          frames.push(canvas.toDataURL('image/jpeg', 0.68));
+        }
+
+        if (!cancelled) setTimelineFilmstrip({ key: timelineFilmstripKey, frames, captureFailed: false });
+      } catch {
+        if (!cancelled) setTimelineFilmstrip({ key: timelineFilmstripKey, frames: [], captureFailed: true });
+      } finally {
+        video.removeAttribute('src');
+        video.load();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [previewUrl, timelineFilmstripKey, timelineSampleTimes]);
 
   function patchSettings(patch: Partial<ClipEditSettings>) {
     setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -753,7 +865,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     value: index === 6 ? timelineDuration : (timelineDuration / 6) * index,
     percent: index === 6 ? 100 : ((timelineDuration / 6) * index / timelineDuration) * 100,
   }));
-  const timelinePosterUrl = data.clip.posterUrl ?? data.source.posterUrl ?? '';
   const audioBars = Array.from({ length: 120 }, (_, index) => {
     const height = 18 + ((index * 17) % 31);
     return height;
@@ -1122,15 +1233,28 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               })}
 
               <div className="absolute inset-x-0 top-[69px] h-[58px] bg-cyan-300/10" />
-              <div
-                className="absolute inset-x-0 top-[72px] h-[52px] border-y border-cyan-100/15 bg-cyan-950/70"
-                style={timelinePosterUrl ? {
-                  backgroundImage: `linear-gradient(90deg, rgba(3,8,14,.28), rgba(3,8,14,.05), rgba(3,8,14,.28)), url("${timelinePosterUrl}")`,
-                  backgroundPosition: 'center',
-                  backgroundRepeat: 'repeat-x',
-                  backgroundSize: 'auto 100%',
-                } : undefined}
-              />
+              <div className="absolute inset-x-0 top-[72px] flex h-[52px] overflow-hidden border-y border-cyan-100/15 bg-cyan-950/70">
+                {timelineFilmstrip.key === timelineFilmstripKey && timelineFilmstrip.frames.length === timelineSampleTimes.length
+                  ? timelineFilmstrip.frames.map((frame, index) => (
+                    <span
+                      key={`${timelineFilmstripKey}-${index}`}
+                      className="h-full min-w-0 flex-1 border-r border-black/20 bg-cover bg-center last:border-r-0"
+                      style={{ backgroundImage: `url("${frame}")` }}
+                      aria-hidden="true"
+                    />
+                  ))
+                  : timelineFilmstrip.key === timelineFilmstripKey && timelineFilmstrip.captureFailed && previewUrl
+                    ? timelineSampleTimes.map((time, index) => (
+                      <TimelineVideoThumbnail key={`${timelineFilmstripKey}-video-${index}`} src={previewUrl} time={time} />
+                    ))
+                    : timelineSampleTimes.map((_, index) => (
+                      <span
+                        key={`${timelineFilmstripKey}-loading-${index}`}
+                        className="h-full min-w-0 flex-1 animate-pulse border-r border-white/5 bg-cyan-200/10 last:border-r-0"
+                        aria-hidden="true"
+                      />
+                    ))}
+              </div>
 
               {timelineSegments.map((segment, index) => (
                 <button

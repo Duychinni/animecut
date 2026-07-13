@@ -1,6 +1,9 @@
 export type BillingInterval = 'monthly' | 'yearly';
 export type PlanId = 'free' | 'starter' | 'pro' | 'business';
 
+export const FREE_TRIAL_UPLOADS = 1;
+export const FREE_TRIAL_MAX_UPLOAD_MINUTES = 30;
+
 export type PlanConfig = {
   id: Exclude<PlanId, 'free'>;
   name: string;
@@ -88,7 +91,7 @@ export function buildPlanFeatures(plan: PlanConfig) {
   const base = [] as string[];
 
   if (plan.id !== 'business') {
-    base.push('1 free upload to test the product first');
+    base.push(`1 free video up to ${FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes to test the product first`);
   }
 
   base.push(formatMinutesLabel(plan.processingMinutes));
