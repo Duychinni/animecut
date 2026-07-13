@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createExportSignedUrl, createRawMediaSignedUrl } from '@/lib/storage';
+import { createRawMediaSignedUrl } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,14 +123,9 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
         const start = Number(candidate?.start_sec ?? 0);
         const end = Number(candidate?.end_sec ?? 0);
         const length = end > start ? formatClock(end - start) : '0:30';
+        if (!project?.source_storage_path) return null;
         const mediaType: ShowcaseApiClip['mediaType'] = 'video';
-        let mediaUrl: string;
-
-        if (project?.source_storage_path) {
-          mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
-        } else {
-          mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
-        }
+        const mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
 
         return {
           id: row.id,
