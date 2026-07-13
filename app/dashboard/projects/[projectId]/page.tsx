@@ -19,6 +19,8 @@ type ExportRow = {
   clip_edit_settings?: {
     clip_start_seconds?: number;
     clip_end_seconds?: number;
+    captions_enabled?: boolean;
+    caption_highlight_color?: string;
   } | null;
   edit_status?: string | null;
 };
@@ -334,6 +336,8 @@ export default async function ProjectDetailPage({
               reason: row.reason,
               rank: row.rank,
               captionPresetId: row.caption_preset_id,
+              captionsEnabled: row.clip_edit_settings?.captions_enabled !== false,
+              captionHighlightColor: row.clip_edit_settings?.caption_highlight_color ?? null,
             }))}
           />
         ) : showProcessingHero ? (

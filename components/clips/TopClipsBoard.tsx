@@ -3,6 +3,7 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-presets';
+import type { ClipEditSettings } from '@/lib/clip-edit';
 import { readJsonSafe } from '@/lib/safe-json';
 
 type ClipItem = {
@@ -19,13 +20,14 @@ type ClipItem = {
   reason?: string | null;
   rank: number | null;
   captionPresetId?: string | null;
+  captionsEnabled?: boolean;
+  captionHighlightColor?: string | null;
 };
 
 const CAPTION_TEMPLATE_OPTIONS = [
   ...CAPTION_PRESETS.filter((preset) => preset.id === DEFAULT_CAPTION_PRESET_ID),
   ...CAPTION_PRESETS.filter((preset) => preset.id !== DEFAULT_CAPTION_PRESET_ID),
 ].slice(0, 9);
-const CAPTION_STYLE_SAMPLE = 'The quick hook';
 
 function getFriendlyStatus(status: string) {
   if (status === 'queued') return 'Queued';
@@ -243,10 +245,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState(CAPTION_TEMPLATE_OPTIONS[0]?.id ?? DEFAULT_CAPTION_PRESET_ID);
-  const [selectedReframePreset, setSelectedReframePreset] = useState<'auto' | 'tight' | 'left' | 'center' | 'right'>('auto');
-  const [editorTab, setEditorTab] = useState<'presets' | 'framing' | 'effects'>('presets');
+  const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
+  const [captionsEnabled, setCaptionsEnabled] = useState(true);
+  const [loadingCaptionSettings, setLoadingCaptionSettings] = useState(false);
   const [applyingPreset, setApplyingPreset] = useState(false);
-  const [hookTextEnabled, setHookTextEnabled] = useState(true);
   const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
@@ -341,12 +343,33 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     updatePlayback(id, { paused: true });
   }
 
-  function openCaptionTemplates(clip: ClipItem) {
-    setSelectedPresetId(clip.captionPresetId ?? CAPTION_TEMPLATE_OPTIONS[0]?.id ?? DEFAULT_CAPTION_PRESET_ID);
-    setSelectedReframePreset('auto');
-    setHookTextEnabled(false);
-    setEditorTab('presets');
+  async function openCaptionTemplates(clip: ClipItem) {
+    const fallbackPreset = CAPTION_TEMPLATE_OPTIONS.find((preset) =>
+      preset.captionHighlightColor.toLowerCase() === clip.captionHighlightColor?.toLowerCase()
+    ) ?? CAPTION_TEMPLATE_OPTIONS.find((preset) => preset.id === clip.captionPresetId) ?? CAPTION_TEMPLATE_OPTIONS[0];
+    setSelectedPresetId(fallbackPreset?.id ?? DEFAULT_CAPTION_PRESET_ID);
+    setCaptionsEnabled(clip.captionsEnabled !== false);
+    setCaptionSettings(null);
     setEditingClip(clip);
+    setLoadingCaptionSettings(true);
+
+    try {
+      const res = await fetch(`/api/clips/${clip.exportId}/edit`, { cache: 'no-store' });
+      const data = await readJsonSafe(res);
+      if (!res.ok || !data?.settings) throw new Error(String(data?.error || 'Could not load caption settings'));
+      const settings = data.settings as ClipEditSettings;
+      const selected = CAPTION_TEMPLATE_OPTIONS.find((preset) =>
+        preset.captionHighlightColor.toLowerCase() === settings.caption_highlight_color.toLowerCase()
+      ) ?? fallbackPreset;
+      setCaptionSettings(settings);
+      setCaptionsEnabled(settings.captions_enabled);
+      setSelectedPresetId(selected?.id ?? DEFAULT_CAPTION_PRESET_ID);
+    } catch (error) {
+      setEditingClip(null);
+      window.alert(error instanceof Error ? error.message : 'Could not load caption settings');
+    } finally {
+      setLoadingCaptionSettings(false);
+    }
   }
 
   function openClipEditor(clip: ClipItem) {
@@ -381,17 +404,26 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }
 
   async function applyPreset() {
-    if (!editingClip) return;
+    if (!editingClip || !captionSettings) return;
     try {
       setApplyingPreset(true);
-      const presetRes = await fetch(`/api/exports/${editingClip.exportId}/caption-preset`, {
+      const preset = CAPTION_TEMPLATE_OPTIONS.find((option) => option.id === selectedPresetId) ?? CAPTION_TEMPLATE_OPTIONS[0]!;
+      const nextSettings: ClipEditSettings = {
+        ...captionSettings,
+        captions_enabled: captionsEnabled,
+        caption_preset_id: DEFAULT_CAPTION_PRESET_ID,
+        caption_font_size: 12,
+        caption_text_color: '#FFFFFF',
+        caption_highlight_color: preset.captionHighlightColor,
+        caption_background: false,
+        caption_word_highlight: true,
+        caption_max_words: 2,
+        caption_position: 'lower-third',
+      };
+      const presetRes = await fetch(`/api/clips/${editingClip.exportId}/rerender`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          presetId: selectedPresetId,
-          reframePreset: selectedReframePreset,
-          hookTextEnabled,
-        }),
+        body: JSON.stringify({ settings: nextSettings }),
       });
       const presetData = await readJsonSafe(presetRes);
       if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
@@ -449,7 +481,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }, [router, visible]);
 
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
-  const showHookTextControls = false;
 
   return (
     <>
@@ -474,7 +505,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const primaryBadge = getPrimaryClipBadge(clip);
               const pendingCaptionPreset =
                 clip.signedUrl && clip.status !== 'done'
-                  ? CAPTION_PRESETS.find((preset) => preset.id === clip.captionPresetId) ?? CAPTION_PRESETS[0]
+                  ? CAPTION_PRESETS.find((preset) =>
+                      preset.captionHighlightColor.toLowerCase() === clip.captionHighlightColor?.toLowerCase()
+                    ) ?? CAPTION_PRESETS.find((preset) => preset.id === clip.captionPresetId) ?? CAPTION_PRESETS[0]
                   : null;
 
               return (
@@ -513,7 +546,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         <div className="group/captions relative">
                           <button
                             type="button"
-                            onClick={() => openCaptionTemplates(clip)}
+                            onClick={() => void openCaptionTemplates(clip)}
                             className="inline-flex items-center justify-center text-white/90 transition hover:text-white"
                             aria-label="Captions"
                           >
@@ -603,7 +636,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           Your browser does not support the video tag.
                         </video>
 
-                        {pendingCaptionPreset ? (
+                        {pendingCaptionPreset && clip.captionsEnabled !== false ? (
                           <>
                             <div className="pointer-events-none absolute inset-x-0 bottom-[10%] h-[24%] bg-gradient-to-t from-black/90 via-black/82 to-transparent backdrop-blur-[1.5px]" />
                             <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
@@ -637,7 +670,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             <div className="group/captions relative">
                               <button
                                 type="button"
-                                onClick={() => openCaptionTemplates(clip)}
+                                onClick={() => void openCaptionTemplates(clip)}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white"
                                 aria-label="Captions"
                               >
@@ -807,35 +840,45 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                   ) : (
                     <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
                   )}
-                  <div className="pointer-events-none absolute inset-x-0 bottom-[10%] h-[24%] bg-gradient-to-t from-black/90 via-black/82 to-transparent backdrop-blur-[1.5px]" />
-                  <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
-                    <CaptionPreviewText preset={activePreset} title={editingClip.title} size="reel" />
-                  </div>
+                  {captionsEnabled ? (
+                    <>
+                      <div className="pointer-events-none absolute inset-x-0 bottom-[10%] h-[24%] bg-gradient-to-t from-black/90 via-black/82 to-transparent backdrop-blur-[1.5px]" />
+                      <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
+                        <CaptionPreviewText preset={activePreset} title={editingClip.title} size="reel" />
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
 
               <div className="flex flex-col p-6">
-                <div className="mb-5 flex gap-2 text-xs font-semibold text-white/60">
-                  <button
-                    type="button"
-                    onClick={() => setEditorTab('presets')}
-                    className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'presets' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
-                  >
-                    Presets
-                  </button>
-                  {showHookTextControls ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditorTab('effects')}
-                      className={`rounded-full border px-3 py-1.5 transition ${editorTab === 'effects' ? 'border-white/10 bg-white/[0.05] text-white' : 'border-white/10 hover:bg-white/[0.05]'}`}
-                    >
-                      Effects
-                    </button>
-                  ) : null}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black text-white">Caption style</p>
+                    <p className="mt-1 text-xs font-semibold text-white/55">Matches the settings available on the edit page.</p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-white/65">
+                    <input
+                      type="checkbox"
+                      checked={captionsEnabled}
+                      onChange={(event) => setCaptionsEnabled(event.target.checked)}
+                      disabled={loadingCaptionSettings}
+                      className="accent-emerald-400"
+                    />
+                    On
+                  </label>
                 </div>
 
-                {editorTab === 'presets' ? (
-                  <div className="grid max-h-[calc(100vh-260px)] grid-cols-2 gap-3 overflow-y-auto pr-1">
+                <div className="mt-5 rounded-2xl border border-cyan-300/70 bg-cyan-300/[0.06] p-3">
+                  <div className="grid aspect-[2.15] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
+                    {captionsEnabled ? <CaptionPreviewText preset={activePreset} title="Your caption" /> : <span className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Captions off</span>}
+                  </div>
+                  <p className="mt-2 text-xs font-black text-white">Default bold captions</p>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <p className="text-xs font-black text-white/70">Highlight color</p>
+                  <div className="flex flex-wrap gap-2">
                     {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
                       const active = preset.id === selectedPresetId;
                       return (
@@ -843,83 +886,32 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           key={preset.id}
                           type="button"
                           onClick={() => setSelectedPresetId(preset.id)}
-                          className={`rounded-2xl border p-2.5 text-left transition ${
-                            active ? 'border-cyan-300/80 bg-cyan-300/[0.08]' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                          disabled={loadingCaptionSettings}
+                          className={`h-9 w-9 rounded-full border-2 transition hover:scale-105 disabled:opacity-45 ${
+                            active
+                              ? 'border-white ring-2 ring-cyan-300/70 ring-offset-2 ring-offset-[#0d0f14]'
+                              : 'border-white/20'
                           }`}
-                        >
-                          <div className="grid aspect-[1.22] place-items-center overflow-hidden rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,.13),rgba(255,255,255,.035)_42%,rgba(0,0,0,.55))] px-2 text-center">
-                            <CaptionPreviewText preset={preset} title={CAPTION_STYLE_SAMPLE} />
-                          </div>
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-bold text-white">{preset.name}</p>
-                              <p className="truncate text-[10px] font-semibold text-white/48">{preset.captionFontFamily}</p>
-                            </div>
-                            <span className={`h-3 w-3 shrink-0 rounded-full border ${active ? 'border-cyan-200 bg-cyan-300' : 'border-white/25 bg-white/10'}`} />
-                          </div>
-                        </button>
+                          style={{ backgroundColor: preset.captionHighlightColor }}
+                          aria-label={`Use ${preset.name} highlight color`}
+                          title={preset.name}
+                        />
                       );
                     })}
                   </div>
-                ) : null}
-
-                {editorTab === 'framing' ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      ['auto', 'Auto'],
-                      ['tight', 'Tight center'],
-                      ['left', 'Left speaker'],
-                      ['center', 'Center speaker'],
-                      ['right', 'Right speaker'],
-                    ].map(([value, label]) => {
-                      const active = selectedReframePreset === value;
-                      return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setSelectedReframePreset(value as 'auto' | 'tight' | 'left' | 'center' | 'right')}
-                          className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                            active ? 'border-white/25 bg-white/[0.08] text-white' : 'border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/[0.05]'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-
-                {showHookTextControls && editorTab === 'effects' ? (
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-white">Auto hook text</p>
-                        <p className="mt-1 text-xs text-white/55">Shows a generated top-of-screen hook for the first few seconds based on the clip title and opening transcript.</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setHookTextEnabled((prev) => !prev)}
-                        className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${hookTextEnabled ? 'bg-emerald-400' : 'bg-white/15'}`}
-                        aria-pressed={hookTextEnabled}
-                        aria-label="Toggle auto hook text"
-                      >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${hookTextEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
+                </div>
 
                 <div className="mt-auto pt-6">
                   <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
-                    Apply <span className="font-semibold text-white">{activePreset?.name}</span> to this reel and return to the project page while the updated clip saves.
+                    Apply the same caption settings used by the edit page, then regenerate this reel.
                   </div>
                   <button
                     type="button"
                     onClick={() => void applyPreset()}
-                    disabled={applyingPreset}
+                    disabled={applyingPreset || loadingCaptionSettings || !captionSettings}
                     className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {applyingPreset ? 'Applying...' : 'Apply'}
+                    {loadingCaptionSettings ? 'Loading...' : applyingPreset ? 'Applying...' : 'Apply'}
                   </button>
                 </div>
               </div>

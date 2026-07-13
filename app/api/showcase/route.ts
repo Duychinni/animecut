@@ -81,41 +81,6 @@ function displayScore(value: number | null | undefined) {
   return Math.max(70, Math.min(100, Math.round(numeric <= 10 ? numeric * 10 : numeric)));
 }
 
-function youtubeVideoId(project: RelatedProject | null | undefined) {
-  const direct = project?.source_video_id?.trim();
-  if (direct) return direct;
-  const sourceUrl = project?.source_url?.trim();
-  if (!sourceUrl) return null;
-  try {
-    const url = new URL(sourceUrl);
-    if (url.hostname.includes('youtu.be')) return url.pathname.split('/').filter(Boolean)[0] ?? null;
-    return url.searchParams.get('v') || url.pathname.match(/\/(?:shorts|embed)\/([^/?]+)/)?.[1] || null;
-  } catch {
-    return null;
-  }
-}
-
-function youtubeShowcaseUrl(videoId: string, start: number, end: number) {
-  const params = new URLSearchParams({
-    autoplay: '1',
-    mute: '1',
-    controls: '0',
-    disablekb: '1',
-    fs: '0',
-    playsinline: '1',
-    loop: '1',
-    playlist: videoId,
-    rel: '0',
-    modestbranding: '1',
-    showinfo: '0',
-    cc_load_policy: '0',
-    iv_load_policy: '3',
-    start: String(Math.max(0, Math.floor(start))),
-    end: String(Math.max(Math.floor(start) + 1, Math.ceil(end))),
-  });
-  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?${params.toString()}`;
-}
-
 function getPublicExportIds() {
   return (process.env.SHOWCASE_EXPORT_IDS || '')
     .split(',')
@@ -158,15 +123,11 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
         const start = Number(candidate?.start_sec ?? 0);
         const end = Number(candidate?.end_sec ?? 0);
         const length = end > start ? formatClock(end - start) : '0:30';
-        const videoId = youtubeVideoId(project);
-        let mediaType: ShowcaseApiClip['mediaType'] = 'video';
+        const mediaType: ShowcaseApiClip['mediaType'] = 'video';
         let mediaUrl: string;
 
         if (project?.source_storage_path) {
           mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
-        } else if (videoId) {
-          mediaType = 'youtube';
-          mediaUrl = youtubeShowcaseUrl(videoId, start, end > start ? end : start + 30);
         } else {
           mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
         }

@@ -692,9 +692,15 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       ? analyzeTranscriptLocally(transcriptRow.full_text as string, segments)
       : await analyzeClipCandidates(transcriptRow.full_text as string, segments);
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
+    const localSupplement = options.forceLocal
+      ? { candidates: [] }
+      : analyzeTranscriptLocally(transcriptRow.full_text as string, segments);
+    const analysisCandidates = [
+      ...(parsed.candidates ?? []).slice(0, candidateLimit),
+      ...(localSupplement.candidates ?? []).slice(0, candidateLimit),
+    ];
 
-    const allScoredCandidates: RankedCandidate[] = (parsed.candidates ?? [])
-      .slice(0, candidateLimit)
+    const allScoredCandidates: RankedCandidate[] = analysisCandidates
       .map((c: RawCandidate, idx: number) => {
         const localAnalysisCandidate = isLocalAnalysisCandidate(c);
         const rawStart = num(c.raw_start ?? c.start_sec ?? c.adjusted_start);
@@ -822,6 +828,22 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       }
     }
 
+    if (selected.length < minimumFinalCount) {
+      const coveragePool = distinctCandidates(allScoredCandidates)
+        .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked)))
+        .filter((c) => c.duration_seconds >= Math.max(15, analysisMinClipSec - 5))
+        .filter((c) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= Math.max(24, fallbackMinimumWordCount - 8))
+        .filter((c) => Number(c.overall_score ?? 0) >= Math.max(55, MIN_TOP_CLIP_SCORE - 18));
+
+      for (const candidate of coveragePool) {
+        if (selected.length >= minimumFinalCount) break;
+        selected.push({
+          ...candidate,
+          reason: `${candidate.reason} | Added by transcript coverage pass to avoid under-producing reels for this source length.`,
+        });
+      }
+    }
+
     const ranked = calibrateFinalScores(selected.slice(0, targetClipCount)).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
     console.log('[analyze] counts', {
@@ -834,6 +856,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       fallbackMinimumWordCount,
       punctuationReliable,
       candidateCountGenerated: aiReturnedCount,
+      localSupplementCount: localSupplement.candidates.length,
       candidateCountAfterLengthFilter: filteredCandidates.length,
       candidateCountAfterOverlapRemoval: deduped.length,
       finalClipCount: ranked.length,
@@ -846,7 +869,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         hookText: c.hook_text,
         reasonSelected: c.reason,
       })),
-      rejectedCandidates: (parsed.candidates ?? []).length - ranked.length,
+      rejectedCandidates: analysisCandidates.length - ranked.length,
       rejectedReasonsSample: allScoredCandidates
         .filter((c) => c.reject_reason)
         .slice(0, 20)

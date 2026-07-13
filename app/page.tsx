@@ -795,15 +795,6 @@ export default function Home() {
                             className="absolute inset-0 bg-cover bg-center"
                             style={{ backgroundImage: `url("${clip.mediaUrl}")` }}
                           />
-                        ) : clip.mediaType === 'youtube' ? (
-                          <iframe
-                            src={clip.mediaUrl}
-                            title={clip.title}
-                            allow="autoplay; encrypted-media"
-                            tabIndex={-1}
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-1/2 top-[54%] h-[122%] w-[350%] -translate-x-1/2 -translate-y-1/2 border-0"
-                          />
                         ) : (
                           <video
                             src={clip.mediaUrl}
@@ -836,7 +827,7 @@ export default function Home() {
                                 void event.currentTarget.play().catch(() => undefined);
                               }
                             }}
-                            className="absolute inset-0 h-full w-full object-cover"
+                            className="hero-showcase-video absolute inset-0 h-full w-full object-cover"
                           />
                         )
                       ) : null}

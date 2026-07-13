@@ -136,6 +136,20 @@ body {
   animation: progress-active-sheen 1.6s linear infinite;
 }
 
+.hero-showcase-video {
+  pointer-events: none;
+}
+
+.hero-showcase-video::-webkit-media-controls,
+.hero-showcase-video::-webkit-media-controls-enclosure,
+.hero-showcase-video::-webkit-media-controls-panel,
+.hero-showcase-video::-webkit-media-controls-overlay-play-button,
+.hero-showcase-video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .progress-active-sheen {
     animation: none;

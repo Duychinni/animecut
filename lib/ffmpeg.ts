@@ -13,7 +13,7 @@ type LayoutMode = 'single' | 'split_stack';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-shoulder-crop-v6-source-fps';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v7-source-fps';
 const DEFAULT_X264_CRF = '12';
 const DEFAULT_X264_MAXRATE = '50M';
 const DEFAULT_X264_BUFSIZE = '100M';
@@ -707,7 +707,15 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       return {};
     }
 
-    if (raw.mode === 'per_clip' && typeof raw.crop_w === 'number' && typeof raw.crop_h === 'number' && typeof raw.crop_x === 'number') {
+    const dynamicPointCount = raw.points?.length ?? 0;
+    const forceStaticPerClipCrop = process.env.SMART_REFRAME_DYNAMIC === 'false';
+    if (
+      raw.mode === 'per_clip'
+      && typeof raw.crop_w === 'number'
+      && typeof raw.crop_h === 'number'
+      && typeof raw.crop_x === 'number'
+      && (forceStaticPerClipCrop || dynamicPointCount < 2)
+    ) {
       const outputHeight = resolveOutputHeight();
       const outputWidth = resolveOutputWidth(outputHeight);
       const sourceW = Number(raw.source_w ?? 0);
@@ -780,6 +788,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         fallbackUsed: raw.fallback_used ?? null,
         ffmpeg_crop: raw.ffmpeg_crop ?? null,
         jsonSaved,
+        dynamicPointCount,
+        forceStaticPerClipCrop,
       });
       return { cropExpr };
     }
