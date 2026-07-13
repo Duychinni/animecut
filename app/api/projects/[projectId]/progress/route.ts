@@ -357,7 +357,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         .single(),
       supabase
         .from('exports')
-        .select('id, status, output_storage_path, error_message, updated_at, created_at')
+        .select('id, status, output_storage_path, error_message, edit_status, updated_at, created_at')
         .eq('project_id', projectId),
       supabase
         .from('clip_candidates')
@@ -398,6 +398,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const exportJobs = (jobRows ?? []).filter((row) => row.type === 'export');
     const latestPipelineJob = pipelineJobs[0] ?? null;
     const doneExports = rows.filter(hasPlayableOutput).length;
+    const activeEdits = rows.filter((row) => (row as { edit_status?: string | null }).edit_status === 'rendering').length;
     const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
     const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
     const failedExports = rows.filter((r) => r.status === 'error' && !hasPlayableOutput(r)).length;
@@ -682,6 +683,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         percent: Math.max(0, Math.min(100, progressPercent)),
         done_exports: doneExports,
         active_exports: isReallyCompleted ? 0 : visibleActiveExports,
+        active_edits: activeEdits,
         target_exports: targetCount,
         elapsed_seconds: elapsedSeconds,
         eta_seconds: etaSeconds,
@@ -694,6 +696,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         analyzed_candidates: analyzedCandidates,
         done_exports: doneExports,
         active_exports: visibleActiveExports,
+        active_edits: activeEdits,
         failed_exports: failedExports,
         target_exports: targetCount,
         recovery_queued: recoveryQueued,

@@ -235,6 +235,7 @@ export default async function ProjectDetailPage({
   const projectMarkedCompleted = projectRow?.status === 'completed' || projectRow?.pipeline_status === 'completed';
   const savedExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
   const activeExportItems = filteredExportItems.filter((row) => (row.status === 'queued' || row.status === 'processing') && !hasSavedPlayableOutput(row));
+  const hasActiveEditRenders = filteredExportItems.some((row) => row.edit_status === 'rendering');
 
   const pageTitle =
     typeof projectRow?.source_title === 'string' && projectRow.source_title.trim().length
@@ -273,7 +274,7 @@ export default async function ProjectDetailPage({
   const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
   const playableExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
   const hasPlayableExports = playableExportItems.length > 0;
-  const shouldShowResults = hasPlayableExports && (activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
+  const shouldShowResults = !hasActiveEditRenders && hasPlayableExports && (activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
   const displayExportItems = shouldShowResults ? playableExportItems : [];
   const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || projectHasTerminalIssue || doneExports >= targetCount);
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
@@ -306,7 +307,7 @@ export default async function ProjectDetailPage({
     !hasRenderableResults &&
     !hasMockResults &&
     (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
-  const showProcessingHero = !shouldShowResults && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults || waitingForPlayableReels);
+  const showProcessingHero = hasActiveEditRenders || (!shouldShowResults && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults || waitingForPlayableReels));
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -347,7 +348,8 @@ export default async function ProjectDetailPage({
             heroThumbnail={heroThumbnail}
             fallbackPercent={progressPercent}
             fallbackTargetCount={targetCount}
-            forcePreparing={waitingForPlayableReels}
+            forcePreparing={waitingForPlayableReels || hasActiveEditRenders}
+            watchActiveEdits={hasActiveEditRenders}
           />
         ) : null}
       </section>

@@ -21,6 +21,7 @@ type ProgressPayload = {
     eta_seconds: number | null;
     target_exports: number;
     done_exports?: number | null;
+    active_edits?: number | null;
   };
 };
 
@@ -65,6 +66,7 @@ export function ProcessingHero({
   heroThumbnail,
   fallbackPercent,
   forcePreparing = false,
+  watchActiveEdits = false,
 }: {
   projectId: string;
   pageTitle: string;
@@ -72,6 +74,7 @@ export function ProcessingHero({
   fallbackPercent: number;
   fallbackTargetCount: number;
   forcePreparing?: boolean;
+  watchActiveEdits?: boolean;
 }) {
   const router = useRouter();
   const [data, setData] = useState<ProgressPayload | null>(null);
@@ -109,13 +112,19 @@ export function ProcessingHero({
   const pipelineStage = data?.project?.pipeline_stage ?? null;
   const pipelineStageLabel = data?.project?.pipeline_stage_label ?? null;
   const pipelineError = data?.project?.pipeline_error ?? null;
+  const activeEdits = Number(data?.progress?.active_edits ?? (watchActiveEdits ? 1 : 0));
   const etaSeconds = data?.progress?.eta_seconds ?? null;
   const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `ETA ${fmtDuration(etaSeconds)}` : null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
   const publicError = pipelineError && !isNotEnoughContent ? getPipelineErrorInfo(pipelineError) : null;
-  const isFinished = !forcePreparing && (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
+  const editUpdateFinished = watchActiveEdits && data !== null && activeEdits === 0;
+  const isFinished = watchActiveEdits
+    ? editUpdateFinished
+    : !forcePreparing && (status === 'completed' || pipelineStatus === 'completed' || percent >= 100) && !isNotEnoughContent;
   const liveHeroThumbnail = data?.project?.thumbnail_url || heroThumbnail;
-  const stageDisplayLabel = forcePreparing ? 'Preparing your reels...' : pipelineStageLabel || getProcessingLabel(pipelineStage, status);
+  const stageDisplayLabel = watchActiveEdits
+    ? 'Applying your reel changes...'
+    : forcePreparing ? 'Preparing your reels...' : pipelineStageLabel || getProcessingLabel(pipelineStage, status);
   const livePercent = useLiveProgress(percent, !isFinished && !publicError && !isNotEnoughContent, pipelineStage);
 
   useEffect(() => {
@@ -151,7 +160,9 @@ export function ProcessingHero({
                 : publicError
                   ? publicError.message
                   : forcePreparing
-                    ? 'Your reels are being prepared for playback. This page will update automatically as soon as the clips are ready.'
+                    ? watchActiveEdits
+                      ? 'Your edited reel is rendering now. This page will return to the project automatically as soon as the updated clip is ready.'
+                      : 'Your reels are being prepared for playback. This page will update automatically as soon as the clips are ready.'
                     : `Current stage: ${stageDisplayLabel}. Keep this page open if you want to watch progress, or come back when it's done.`}
             </p>
 

@@ -523,8 +523,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       setData(json);
       setSettings(json.settings);
       setBaseline(safeJson(json.settings));
-      await fetch(`/api/jobs/process?exportId=${encodeURIComponent(clipId)}`, { method: 'POST', cache: 'no-store' }).catch(() => null);
-      setToast('Rendering updated clip');
+      void fetch(`/api/jobs/process?exportId=${encodeURIComponent(clipId)}`, { method: 'POST', cache: 'no-store' }).catch(() => null);
+      router.push(`/dashboard/projects/${projectId}`);
     } catch (err) {
       setRendering(false);
       setError(err instanceof Error ? err.message : 'Could not start render');
