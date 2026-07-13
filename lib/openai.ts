@@ -162,21 +162,21 @@ CANDIDATE GENERATION RULES:
 
 REEL TITLE RULES:
 - The "title" appears above each reel in the project page.
-- Write the title like an enticing short-form headline/hook.
+- The title is the subject label for the reel, not its attention hook.
+- Summarize what the reel is about and its central idea in clear, natural language.
 - Do not use the first words of the transcript as the title.
 - Do not copy the opening_line, hook_text, or any raw transcript phrase as the title.
-- Summarize the subject, tension, curiosity gap, and payoff like a strong creator would title the reel.
 - Make it specific, human-readable, and grounded in the clip.
-- Prefer hooks with stakes or curiosity, such as "Why...", "How...", "The Moment...", "When...", or "[Subject] Reveals...".
-- Use 5-12 words in title case or sentence case.
+- Name the person, topic, decision, lesson, or event discussed when the transcript makes it clear.
+- Use 4-10 words in title case or sentence case.
 - Avoid invented drama, hashtags, emojis, quotation marks, and all-caps.
 - Bad examples: "Yeah, I mean", "I can't back that up", "Did you get ghosts close to black".
-- Good examples: "Steve-O Challenges The Flat Earth Argument", "Why This Rematch Still Matters", "The Interview Moment That Changed The Story".
+- Good examples: "Building An App Through Cold Outreach", "The Cost Of Posting Only Highlights", "Steve-O's Flat Earth Debate".
 
 REEL HOOK TEXT RULES:
 - Write a separate "hook_text" for the white title card that appears on the reel.
-- Choose the hook_text from the transcript window: a short spoken phrase, lightly trimmed spoken phrase, or question that captures the viral moment.
-- It must not simply repeat the clip title.
+- Create an attention-grabbing line from the transcript window: a short spoken phrase, lightly trimmed phrase, direct question, contrarian claim, or unresolved tension.
+- It must be textually and conceptually distinct from the clip title, not a copy or close paraphrase.
 - Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question from the actual dialogue.
 - Keep it grounded in the transcript. Do not invent facts, names, outcomes, or drama.
 - Keep it short enough for a 9:16 title card: 2-8 words, max 38 characters.
@@ -184,6 +184,11 @@ REEL HOOK TEXT RULES:
 - Preserve question marks or exclamation marks when they make the spoken hook stronger.
 - Avoid bland labels like "Top Moment" unless there is truly no better hook.
 - Do not use hashtags, emojis, quotation marks, or all-caps.
+
+TITLE / HOOK PAIR EXAMPLES:
+- title: "Building An App Through Cold Outreach"; hook_text: "100 Calls Every Single Day?"
+- title: "The Cost Of Posting Only Highlights"; hook_text: "You're Hiding The Real Work"
+- title: "Steve-O's Flat Earth Debate"; hook_text: "Can You Actually Prove It?"
 
 VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 - Generate at least ${targetCandidates} candidate clips.
@@ -330,7 +335,7 @@ Every remaining clip must end on a complete sentence, punchline, answer, or clea
 If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
-Rewrite every title as an enticing short-form headline based on the clip subject and payoff. Do not copy the opening transcript words, opening_line, or hook_text as the title.
+Rewrite every title as a concise subject label that explains what its reel is about, not as an attention hook. Rewrite every hook_text as a distinct curiosity, tension, question, or surprising claim. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
 Return revised JSON only.`;
 
       const refineRes = await createAnalysisResponse({

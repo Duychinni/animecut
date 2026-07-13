@@ -15,6 +15,7 @@ type ExportRow = {
   output_storage_path: string | null;
   error_message: string | null;
   created_at: string;
+  updated_at?: string | null;
   caption_preset_id: string | null;
   clip_edit_settings?: {
     clip_start_seconds?: number;
@@ -105,7 +106,7 @@ function isMissingEditColumnError(error: unknown) {
 async function loadProjectExports(supabase: SupabaseServerClient, projectId: string): Promise<ExportRow[]> {
   const withEditFields = await supabase
     .from('exports')
-    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id, clip_edit_settings, edit_status')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id, clip_edit_settings, edit_status')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -116,7 +117,7 @@ async function loadProjectExports(supabase: SupabaseServerClient, projectId: str
   console.warn('[project/detail] edit columns missing; loading exports with legacy schema', { project_id: projectId });
   const legacyExports = await supabase
     .from('exports')
-    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, caption_preset_id')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -274,7 +275,7 @@ export default async function ProjectDetailPage({
   const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
   const playableExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
   const hasPlayableExports = playableExportItems.length > 0;
-  const shouldShowResults = !hasActiveEditRenders && hasPlayableExports && (activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
+  const shouldShowResults = hasPlayableExports && (hasActiveEditRenders || activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
   const displayExportItems = shouldShowResults ? playableExportItems : [];
   const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || projectHasTerminalIssue || doneExports >= targetCount);
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
@@ -307,7 +308,7 @@ export default async function ProjectDetailPage({
     !hasRenderableResults &&
     !hasMockResults &&
     (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
-  const showProcessingHero = hasActiveEditRenders || (!shouldShowResults && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults || waitingForPlayableReels));
+  const showProcessingHero = !shouldShowResults && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults || waitingForPlayableReels);
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -339,6 +340,8 @@ export default async function ProjectDetailPage({
               captionPresetId: row.caption_preset_id,
               captionsEnabled: row.clip_edit_settings?.captions_enabled !== false,
               captionHighlightColor: row.clip_edit_settings?.caption_highlight_color ?? null,
+              editStatus: row.edit_status ?? null,
+              editStartedAt: row.updated_at ?? row.created_at,
             }))}
           />
         ) : showProcessingHero ? (

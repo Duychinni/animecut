@@ -43,7 +43,7 @@ type EditorData = {
   presets: CaptionPreset[];
 };
 
-type DragMode = 'start' | 'end' | 'seek' | null;
+type DragMode = 'start' | 'end' | 'seek' | 'selection-start' | 'selection-end' | null;
 type EditorDebugInfo = {
   code?: string;
   status?: number;
@@ -62,6 +62,12 @@ type TranscriptChunk = {
   hidden: boolean;
 };
 
+type TimelineRange = {
+  id: string;
+  start: number;
+  end: number;
+};
+
 
 function formatClock(totalSeconds: number) {
   const total = Math.max(0, Math.floor(totalSeconds));
@@ -72,6 +78,39 @@ function formatClock(totalSeconds: number) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function buildTimelineViewport(start: number, end: number, sourceDuration: number) {
+  const clipDuration = Math.max(1, end - start);
+  const padding = clamp(clipDuration * 0.35, 5, 20);
+  let viewportStart = Math.max(0, start - padding);
+  let viewportEnd = Math.min(sourceDuration, end + padding);
+  const targetDuration = Math.min(sourceDuration, clipDuration + padding * 2);
+
+  if (viewportEnd - viewportStart < targetDuration) {
+    if (viewportStart === 0) viewportEnd = Math.min(sourceDuration, targetDuration);
+    if (viewportEnd === sourceDuration) viewportStart = Math.max(0, sourceDuration - targetDuration);
+  }
+
+  return { start: viewportStart, end: Math.max(viewportStart + 0.1, viewportEnd) };
+}
+
+function mergeTimelineRanges(ranges: Array<{ start: number; end: number }>) {
+  const sorted = ranges
+    .filter((range) => range.end - range.start >= 0.15)
+    .sort((a, b) => a.start - b.start);
+  const merged: Array<{ start: number; end: number }> = [];
+
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1];
+    if (!previous || range.start > previous.end + 0.05) {
+      merged.push({ ...range });
+    } else {
+      previous.end = Math.max(previous.end, range.end);
+    }
+  }
+
+  return merged;
 }
 
 function safeJson(value: unknown) {
@@ -206,6 +245,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [paused, setPaused] = useState(true);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [cutMode, setCutMode] = useState(false);
+  const [selectedRange, setSelectedRange] = useState<TimelineRange | null>(null);
+  const [timelineViewport, setTimelineViewport] = useState({ start: 0, end: 1 });
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
   const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
@@ -236,6 +277,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }, [previewDurationSeconds, previewUsesSource, settings]);
 
   const transcriptChunks = useMemo(() => buildTranscriptChunks(clipTranscript, 5), [clipTranscript]);
+  const timelineChunks = useMemo(() => {
+    if (!settings) return [];
+    const phrases = settings.edited_transcript.filter((phrase) => (
+      phraseOverlapsClip(phrase, timelineViewport.start, timelineViewport.end)
+    ));
+    return buildTranscriptChunks(phrases, Math.max(5, Math.ceil((timelineViewport.end - timelineViewport.start) / 8)));
+  }, [settings, timelineViewport]);
   const clipTranscriptText = useMemo(() => (
     transcriptChunks.map((chunk) => chunk.text.trim()).filter(Boolean).join('\n\n')
   ), [transcriptChunks]);
@@ -272,6 +320,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setSettings(json.settings);
     setBaseline(safeJson(json.settings));
     setCurrentTime(Number(json.settings.clip_start_seconds ?? 0));
+    setTimelineViewport(buildTimelineViewport(
+      Number(json.settings.clip_start_seconds ?? 0),
+      Number(json.settings.clip_end_seconds ?? 30),
+      Math.max(1, Number(json.source?.durationSeconds ?? json.settings.clip_end_seconds ?? 30)),
+    ));
+    setSelectedRange(null);
     setRendering(json.clip?.editStatus === 'rendering');
   }, [clipId, projectId]);
 
@@ -313,9 +367,23 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      handleBack();
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedRange) {
+        const target = event.target as HTMLElement | null;
+        if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT') return;
+        event.preventDefault();
+        removeTimelineRange(selectedRange);
+        return;
+      }
+      if (event.key === 'Escape' && selectedRange) {
+        event.preventDefault();
+        setSelectedRange(null);
+        setCutMode(false);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        handleBack();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -387,24 +455,50 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     });
   }
 
-  function removeTimelineChunk(chunk: TranscriptChunk) {
+  function selectTimelineChunk(chunk: TranscriptChunk) {
     if (!settings) return;
     const start = clamp(chunk.start, settings.clip_start_seconds, settings.clip_end_seconds);
     const end = clamp(chunk.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
-    const ids = new Set(chunk.phrases.map((phrase) => phrase.id));
+    setSelectedRange({ id: chunk.id, start, end });
+    setCutMode(true);
+    seekAbsolute(start);
+    setToast('Segment selected — drag either edge to adjust it');
+  }
+
+  function removeTimelineRange(range: TimelineRange) {
+    if (!settings) return;
+    const start = clamp(range.start, settings.clip_start_seconds, settings.clip_end_seconds);
+    const end = clamp(range.end, start, settings.clip_end_seconds);
+    if (end - start < 0.15) return;
     const nextSettings: ClipEditSettings = {
       ...settings,
-      removed_ranges: [...settings.removed_ranges, { start, end }]
-        .sort((a, b) => a.start - b.start),
+      removed_ranges: mergeTimelineRanges([...settings.removed_ranges, { start, end }]),
       edited_transcript: settings.edited_transcript.map((phrase) => (
-        ids.has(phrase.id) ? { ...phrase, deleted: true } : phrase
+        phrase.start >= start && phrase.end <= end ? { ...phrase, deleted: true } : phrase
       )),
     };
     setSettings(nextSettings);
+    setSelectedRange(null);
     setCutMode(false);
     if (currentTime >= start && currentTime < end) seekAbsolute(end);
-    setToast('Segment removed from preview');
+    setToast('Selected time removed from preview');
+  }
+
+  function restoreRemovedRange(index: number) {
+    if (!settings) return;
+    const restored = settings.removed_ranges[index];
+    if (!restored) return;
+    const remainingRanges = settings.removed_ranges.filter((_, rangeIndex) => rangeIndex !== index);
+    patchSettings({
+      removed_ranges: remainingRanges,
+      edited_transcript: settings.edited_transcript.map((phrase) => {
+        if (!(phrase.end > restored.start && phrase.start < restored.end)) return phrase;
+        const stillRemoved = remainingRanges.some((range) => phrase.start >= range.start && phrase.end <= range.end);
+        return { ...phrase, deleted: stillRemoved };
+      }),
+    });
+    setToast('Cut restored');
   }
 
   function selectCaptionPreset(preset: CaptionPreset) {
@@ -535,9 +629,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const rect = timelineRef.current?.getBoundingClientRect();
     if (!rect) return 0;
     const x = clamp(event.clientX - rect.left, 0, rect.width);
-    if (!settings) return 0;
-    const duration = Math.max(0.1, settings.clip_end_seconds - settings.clip_start_seconds);
-    return settings.clip_start_seconds + (x / rect.width) * duration;
+    const duration = Math.max(0.1, timelineViewport.end - timelineViewport.start);
+    return timelineViewport.start + (x / rect.width) * duration;
   }
 
   function beginTimelineDrag(mode: DragMode, event: ReactPointerEvent<HTMLElement>) {
@@ -548,6 +641,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     if (mode === 'start' && settings) patchTimes(seconds, settings.clip_end_seconds);
     if (mode === 'end' && settings) patchTimes(settings.clip_start_seconds, seconds);
     if (mode === 'seek') seekAbsolute(seconds);
+    if (mode === 'selection-start' && selectedRange) {
+      setSelectedRange({ ...selectedRange, start: clamp(seconds, settings?.clip_start_seconds ?? 0, selectedRange.end - 0.15) });
+    }
+    if (mode === 'selection-end' && selectedRange) {
+      setSelectedRange({ ...selectedRange, end: clamp(seconds, selectedRange.start + 0.15, settings?.clip_end_seconds ?? sourceDuration) });
+    }
   }
 
   useEffect(() => {
@@ -558,6 +657,18 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       if (dragMode === 'start') patchTimes(seconds, settings.clip_end_seconds);
       if (dragMode === 'end') patchTimes(settings.clip_start_seconds, seconds);
       if (dragMode === 'seek') seekAbsolute(seconds);
+      if (dragMode === 'selection-start') {
+        setSelectedRange((range) => range ? {
+          ...range,
+          start: clamp(seconds, settings.clip_start_seconds, range.end - 0.15),
+        } : range);
+      }
+      if (dragMode === 'selection-end') {
+        setSelectedRange((range) => range ? {
+          ...range,
+          end: clamp(seconds, range.start + 0.15, settings.clip_end_seconds),
+        } : range);
+      }
     };
     const onUp = () => setDragMode(null);
     window.addEventListener('pointermove', onMove);
@@ -566,7 +677,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [dragMode, settings]);
+  }, [dragMode, settings, timelineViewport]);
 
   if (loading) {
     return (
@@ -608,18 +719,18 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }
 
   const clipDuration = Math.max(0, settings.clip_end_seconds - settings.clip_start_seconds);
-  const timelineDuration = Math.max(0.1, clipDuration);
-  const playheadLeft = `${clamp(((currentTime - settings.clip_start_seconds) / timelineDuration) * 100, 0, 100)}%`;
+  const timelineDuration = Math.max(0.1, timelineViewport.end - timelineViewport.start);
+  const playheadLeft = `${clamp(((currentTime - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`;
+  const clipStartLeft = clamp(((settings.clip_start_seconds - timelineViewport.start) / timelineDuration) * 100, 0, 100);
+  const clipEndLeft = clamp(((settings.clip_end_seconds - timelineViewport.start) / timelineDuration) * 100, 0, 100);
+  const clipWindowWidth = Math.max(0.25, clipEndLeft - clipStartLeft);
   const rulerTicks = Array.from({ length: 7 }, (_, index) => ({
     index,
-    value: index === 6 ? timelineDuration : (timelineDuration / 6) * index,
+    value: index === 6 ? timelineViewport.end : timelineViewport.start + (timelineDuration / 6) * index,
     percent: index === 6 ? 100 : ((timelineDuration / 6) * index / timelineDuration) * 100,
   }));
   const timelineFrameBlocks = Array.from({ length: Math.max(18, Math.min(54, Math.round(timelineDuration * 0.9))) }, (_, index) => index);
   const timelinePosterUrl = data.clip.posterUrl ?? data.source.posterUrl ?? '';
-  const cropWindowWidth = clamp(100 / Math.max(1, settings.zoom), 36, 100);
-  const cropCenter = settings.framing_mode === 'center' || settings.framing_mode === 'fit' ? 50 : settings.crop_x * 100;
-  const cropWindowLeft = clamp(cropCenter - cropWindowWidth / 2, 0, 100 - cropWindowWidth);
   const audioBars = Array.from({ length: 120 }, (_, index) => {
     const height = 18 + ((index * 17) % 31);
     return height;
@@ -751,6 +862,21 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               ) : null}
 
+              <div className="absolute inset-x-3 bottom-[42px] z-30 rounded-full bg-black/55 px-2 py-1 shadow-lg">
+                <input
+                  type="range"
+                  min={settings.clip_start_seconds}
+                  max={Math.max(settings.clip_start_seconds + 0.01, settings.clip_end_seconds)}
+                  step="0.01"
+                  value={clamp(currentTime, settings.clip_start_seconds, settings.clip_end_seconds)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => seekAbsolute(Number(event.target.value))}
+                  className="block h-2 w-full cursor-pointer accent-white"
+                  aria-label="Seek video preview"
+                />
+              </div>
+
               {rendering ? (
                 <span className="absolute right-3 top-3 rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200 backdrop-blur">
                   Rendering
@@ -830,7 +956,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
             <p className="text-xs font-semibold text-white/45">
-              Clip {formatClock(0)} - {formatClock(clipDuration)} ({formatClock(clipDuration)})
+              Source {formatClock(timelineViewport.start)} - {formatClock(timelineViewport.end)} · clip {formatClock(clipDuration)}
             </p>
           </div>
 
@@ -838,13 +964,28 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             <span className="text-xs font-bold text-white/45">{saving ? 'Saving changes...' : changed ? 'Waiting to save...' : 'Changes saved'}</span>
             <button
               type="button"
-              onClick={() => setCutMode((value) => !value)}
+              onClick={() => {
+                if (selectedRange) removeTimelineRange(selectedRange);
+                else setCutMode((value) => !value);
+              }}
               className={`grid h-9 w-9 place-items-center rounded-md border text-lg transition ${cutMode ? 'border-orange-300 bg-orange-300/15 text-orange-200' : 'border-white/10 text-white/72 hover:bg-white/[0.06]'}`}
-              aria-label="Cut a timeline segment"
-              title="Select a text block to remove that segment"
+              aria-label={selectedRange ? 'Delete selected timeline range' : 'Select a timeline segment to cut'}
+              title={selectedRange ? 'Delete selected range' : 'Select a segment, adjust its edges, then cut it'}
             >
               <span aria-hidden="true">&#9986;</span>
             </button>
+            {selectedRange ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRange(null);
+                  setCutMode(false);
+                }}
+                className="rounded-md border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]"
+              >
+                Cancel selection
+              </button>
+            ) : null}
             <button onClick={() => void rerenderClip()} disabled={!needsRender || rendering} className="rounded-full bg-white px-5 py-2 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-45">
               {rendering ? 'Applying...' : 'Apply'}
             </button>
@@ -852,6 +993,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
 
         <div className="px-3 py-2">
+          <p className="mb-2 text-xs font-semibold text-white/48">
+            Click anywhere to seek. Drag the green clip handles to shorten or extend. Select an orange segment, adjust its orange edges, then use scissors or Delete to remove it.
+          </p>
           <div className="relative grid h-[176px] grid-cols-[54px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
             <div className="border-r border-white/[0.08] bg-black/25 pt-[31px] text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
               {[
@@ -883,19 +1027,20 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               </div>
 
               <div className="absolute inset-x-0 top-[34px] h-[30px] bg-orange-400/10" />
-              {transcriptChunks.map((chunk) => {
-                const start = clamp(chunk.start - settings.clip_start_seconds, 0, timelineDuration);
-                const end = clamp(chunk.end - settings.clip_start_seconds, 0, timelineDuration);
+              {timelineChunks.map((chunk) => {
+                const start = clamp(chunk.start - timelineViewport.start, 0, timelineDuration);
+                const end = clamp(chunk.end - timelineViewport.start, 0, timelineDuration);
+                const selected = selectedRange?.id === chunk.id;
                 return (
                   <button
                     type="button"
                     key={chunk.id}
                     onPointerDown={(event) => {
+                      event.preventDefault();
                       event.stopPropagation();
-                      if (cutMode) removeTimelineChunk(chunk);
-                      else seekAbsolute(chunk.start);
+                      selectTimelineChunk(chunk);
                     }}
-                    className={`absolute top-[38px] h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${cutMode ? 'cursor-crosshair bg-orange-200 ring-1 ring-orange-100' : 'bg-orange-300/80'}`}
+                    className={`absolute top-[38px] z-10 h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${selected ? 'bg-orange-100 ring-2 ring-white' : cutMode ? 'cursor-crosshair bg-orange-200 ring-1 ring-orange-100' : 'bg-orange-300/80'}`}
                     title={chunk.text}
                     style={{
                       left: `${(start / timelineDuration) * 100}%`,
@@ -925,8 +1070,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 })}
               </div>
               <div
-                className="pointer-events-none absolute top-[72px] h-[52px] rounded-md border border-emerald-300/55 bg-emerald-300/18 shadow-[0_0_24px_rgba(110,231,183,.12)]"
-                style={{ left: `${cropWindowLeft}%`, width: `${cropWindowWidth}%` }}
+                className="pointer-events-none absolute bottom-0 top-[31px] rounded-md border-y border-emerald-300/55 bg-emerald-300/10 shadow-[0_0_24px_rgba(110,231,183,.12)]"
+                style={{ left: `${clipStartLeft}%`, width: `${clipWindowWidth}%` }}
               />
 
               <div className="absolute inset-x-0 bottom-2 flex h-9 items-end gap-[2px] px-2">
@@ -940,27 +1085,65 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               </div>
 
               {settings.removed_ranges.map((range, index) => (
-                <div
+                <button
+                  type="button"
                   key={`${range.start}-${range.end}-${index}`}
-                  className="pointer-events-none absolute bottom-0 top-[31px] border-x border-red-300/70 bg-red-500/25"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => restoreRemovedRange(index)}
+                  className="absolute bottom-0 top-[31px] z-20 border-x border-red-300/70 bg-red-500/25 transition hover:bg-red-400/35"
                   style={{
-                    left: `${clamp(((range.start - settings.clip_start_seconds) / timelineDuration) * 100, 0, 100)}%`,
+                    left: `${clamp(((range.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`,
                     width: `${clamp(((range.end - range.start) / timelineDuration) * 100, 0, 100)}%`,
                   }}
+                  aria-label="Restore removed range"
+                  title="Click to restore this cut"
                 />
               ))}
 
-              <div className="absolute inset-y-0 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
+              {selectedRange ? (
+                <div
+                  className="pointer-events-none absolute bottom-0 top-[31px] z-30 border-y border-orange-200/90 bg-orange-300/18"
+                  style={{
+                    left: `${clamp(((selectedRange.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`,
+                    width: `${clamp(((selectedRange.end - selectedRange.start) / timelineDuration) * 100, 0, 100)}%`,
+                  }}
+                >
+                  <span className="absolute left-1 top-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-bold text-orange-100">
+                    {formatClock(selectedRange.end - selectedRange.start)} selected
+                  </span>
+                </div>
+              ) : null}
+
+              {selectedRange ? (
+                <>
+                  <button
+                    type="button"
+                    onPointerDown={(event) => beginTimelineDrag('selection-start', event)}
+                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-orange-200 shadow-[0_0_12px_rgba(253,186,116,.7)]"
+                    style={{ left: `${clamp(((selectedRange.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%` }}
+                    aria-label="Adjust selected segment start"
+                  />
+                  <button
+                    type="button"
+                    onPointerDown={(event) => beginTimelineDrag('selection-end', event)}
+                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-orange-200 shadow-[0_0_12px_rgba(253,186,116,.7)]"
+                    style={{ left: `${clamp(((selectedRange.end - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%` }}
+                    aria-label="Adjust selected segment end"
+                  />
+                </>
+              ) : null}
+
+              <div className="pointer-events-none absolute inset-y-0 z-30 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
               <button
                 onPointerDown={(event) => beginTimelineDrag('start', event)}
-                className="absolute top-[31px] h-[145px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300"
-                style={{ left: '0%' }}
+                className="absolute top-[31px] z-40 h-[145px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,.65)]"
+                style={{ left: `${clipStartLeft}%` }}
                 aria-label="Trim start"
               />
               <button
                 onPointerDown={(event) => beginTimelineDrag('end', event)}
-                className="absolute top-[31px] h-[145px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300"
-                style={{ left: '100%' }}
+                className="absolute top-[31px] z-40 h-[145px] w-4 -translate-x-1/2 cursor-ew-resize rounded-full bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,.65)]"
+                style={{ left: `${clipEndLeft}%` }}
                 aria-label="Trim end"
               />
             </div>

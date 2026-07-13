@@ -123,14 +123,7 @@ function keywordTitle(text: string, index: number) {
 }
 
 function titleFromTranscript(text: string, index: number) {
-  const cleaned = cleanText(text);
-  const question = cleaned.match(/\b(why|what|how|who|when|where|can|did|does|is|are)\b[^.!?]{12,70}[?!]?/i)?.[0];
-  if (question) {
-    const phrase = phraseFromText(question, 8, 70);
-    if (phrase) return titleCasePhrase(phrase);
-  }
-
-  return keywordTitle(cleaned, index);
+  return keywordTitle(cleanText(text), index);
 }
 
 function hookTextFromTranscript(text: string, fallback: string) {
@@ -141,7 +134,10 @@ function hookTextFromTranscript(text: string, fallback: string) {
   const question = cleaned.match(/\b(why|what|how|who|when|where|can|did|does|is|are)\b[^.!?]{8,42}[?!]?/i)?.[0];
   const tension = cleaned.match(/\b(secret|truth|mistake|problem|crazy|wild|never|always|wrong|fight|shocking|realized)\b[^.!?]{0,36}/i)?.[0];
   const personal = cleaned.match(/\b(my|your|his|her|their|daughter|son|mom|dad|brother|friend)\b[^.!?]{6,42}/i)?.[0];
-  return phraseFromText(question || tension || personal || cleaned || fallback, 7, 38) || 'Top Moment';
+  const hook = phraseFromText(question || tension || personal || cleaned, 7, 38);
+  const normalize = (value: string) => cleanText(value).toLowerCase().replace(/[^a-z0-9\s]/g, '');
+  if (hook && normalize(hook) !== normalize(fallback)) return hook;
+  return 'This Is The Part That Matters';
 }
 
 function hasTension(text: string) {

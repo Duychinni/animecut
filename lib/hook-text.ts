@@ -54,6 +54,36 @@ function pickOpeningTranscript(segments: TranscriptSegment[], startSec: number, 
   return text;
 }
 
+function pickTranscriptRange(segments: TranscriptSegment[], startSec: number, endSec: number) {
+  return segments
+    .filter((seg) => Number(seg.end ?? 0) >= startSec && Number(seg.start ?? 0) <= endSec)
+    .map((seg) => cleanText(String(seg.text ?? '')))
+    .filter(Boolean)
+    .join(' ');
+}
+
+function normalizeForComparison(text: string) {
+  return cleanText(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isTooSimilarToTitle(hook: string, title: string) {
+  const normalizedHook = normalizeForComparison(hook);
+  const normalizedTitle = normalizeForComparison(title);
+  if (!normalizedHook || !normalizedTitle) return false;
+  if (normalizedHook === normalizedTitle) return true;
+  if (normalizedHook.length >= 10 && normalizedTitle.includes(normalizedHook)) return true;
+  if (normalizedTitle.length >= 10 && normalizedHook.includes(normalizedTitle)) return true;
+
+  const hookWords = normalizedHook.split(' ').filter((word) => word.length > 2);
+  const titleWords = new Set(normalizedTitle.split(' ').filter((word) => word.length > 2));
+  if (hookWords.length < 3 || !titleWords.size) return false;
+  return hookWords.filter((word) => titleWords.has(word)).length / hookWords.length >= 0.7;
+}
+
 function pickTranscriptHookPhrase(text: string) {
   const cleaned = cleanText(text)
     .replace(/^["'\-:\s]+/, '')
@@ -86,22 +116,24 @@ export function generateHookText(params: {
   const startSec = Number(params.startSec ?? 0);
   const endSec = Number(params.endSec ?? 0);
   const openingTranscript = pickOpeningTranscript(params.transcriptSegments ?? [], startSec, endSec);
+  const fullTranscript = pickTranscriptRange(params.transcriptSegments ?? [], startSec, endSec);
+  const closingTranscript = pickTranscriptRange(
+    params.transcriptSegments ?? [],
+    Math.max(startSec, endSec - 12),
+    endSec,
+  );
 
-  const titleCandidate = stripTrailingPunctuation(clipTitle)
-    .split(/[:|—-]/)[0]
-    ?.trim() ?? '';
-
-  const transcriptCandidate = stripTrailingPunctuation(pickTranscriptHookPhrase(openingTranscript));
-
-  const candidates = [transcriptCandidate, transcriptCandidate ? '' : titleCandidate]
+  const candidates = [openingTranscript, fullTranscript, closingTranscript]
+    .map((text) => stripTrailingPunctuation(pickTranscriptHookPhrase(text)))
     .map(removeWeakHookPrefix)
     .filter(Boolean);
 
   for (const candidate of candidates) {
     const shortened = shortenWords(candidate, 8, 38);
     if (!shortened) continue;
-    return toTitleCaseHook(shortened);
+    const hook = toTitleCaseHook(shortened);
+    if (!isTooSimilarToTitle(hook, clipTitle)) return hook;
   }
 
-  return 'Top Moment';
+  return 'This Is The Part That Matters';
 }

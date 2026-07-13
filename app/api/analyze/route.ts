@@ -510,9 +510,14 @@ function resolveCandidateHookText(params: {
     endSec: params.endSec,
   }));
 
-  if (transcriptHook && !isGenericHookText(transcriptHook)) return transcriptHook;
+  if (transcriptHook && !isGenericHookText(transcriptHook) && !isTitleLikeHook(transcriptHook, title)) {
+    return transcriptHook;
+  }
 
-  return normalizeHookText(params.openingLine, title || 'Top Moment');
+  const openingHook = normalizeHookText(params.openingLine, '');
+  if (!isGenericHookText(openingHook) && !isTitleLikeHook(openingHook, title)) return openingHook;
+
+  return 'This Is The Part That Matters';
 }
 
 function errorText(error: unknown) {
