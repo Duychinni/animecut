@@ -388,7 +388,19 @@ async function buildDrawtextFiltersFromSrt(srtPath: string) {
   return filters;
 }
 
-type ReframePoint = { t: number; nx: number; ny: number; w?: number; h?: number; framing?: string; mode?: string };
+type ReframePoint = {
+  t: number;
+  nx: number;
+  ny: number;
+  w?: number;
+  h?: number;
+  framing?: string;
+  mode?: string;
+  shotId?: number;
+  cut?: boolean;
+  audioActivity?: number;
+  speakerConfidence?: number;
+};
 type SubjectBox = { x: number; y: number; w: number; h: number; cx?: number; cy?: number };
 type SplitStackLayout = {
   mode: 'split_stack';
@@ -432,6 +444,27 @@ function downsamplePoints(points: ReframePoint[], maxPoints = 12) {
     out.push(points[idx]);
   }
   return out;
+}
+
+function stabilizeReframePoints(points: ReframePoint[], maxPoints = 48) {
+  if (!points.length) return points;
+  const shots: ReframePoint[][] = [];
+  for (const point of points) {
+    const current = shots[shots.length - 1];
+    if (!current || point.cut || point.shotId !== current[0].shotId) shots.push([point]);
+    else current.push(point);
+  }
+
+  const total = points.length;
+  return shots.flatMap((shot) => {
+    // Smooth only inside a stable shot. Never average the outgoing speaker into
+    // the incoming speaker's crop at a real cut.
+    const smoothed = smoothPoints(shot, 0.38);
+    const allocation = Math.max(2, Math.round(maxPoints * (shot.length / total)));
+    const sampled = downsamplePoints(smoothed, allocation);
+    if (sampled.length) sampled[0] = { ...sampled[0], cut: shot[0].cut };
+    return sampled;
+  });
 }
 
 function buildTimelineExpr(points: ReframePoint[], pick: (p: ReframePoint) => string, fallback: string) {
@@ -601,12 +634,28 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       ffmpeg_crop?: string;
       fallback_used?: boolean;
       samples?: Array<{ timestamp?: number; detected_face?: { x?: number; y?: number; w?: number; h?: number }; chosen_center_x?: number; chosen_center_y?: number; fallback_used?: boolean }>;
-      points?: Array<{ t?: number; nx?: number; ny?: number; w?: number; h?: number; framing?: string; mode?: string }>;
+      points?: Array<{
+        t?: number;
+        nx?: number;
+        ny?: number;
+        w?: number;
+        h?: number;
+        framing?: string;
+        mode?: string;
+        shot_id?: number;
+        cut?: boolean;
+        audio_activity?: number;
+        speaker_confidence?: number;
+      }>;
       meta?: {
         points?: number;
         frames_with_detection_pct?: number;
         average_face_center?: { x?: number; y?: number };
         fallback_used?: boolean;
+        audio_available?: boolean;
+        speaker_switches?: number;
+        confident_speaker_samples?: number;
+        analysis_rate_fps?: number;
       };
       detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number }> }>;
       error?: string;
@@ -817,6 +866,10 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         h: Number(p.h ?? 0),
         framing: typeof p.framing === 'string' ? p.framing : undefined,
         mode: typeof p.mode === 'string' ? p.mode : undefined,
+        shotId: Number.isFinite(Number(p.shot_id)) ? Number(p.shot_id) : 0,
+        cut: p.cut === true,
+        audioActivity: Number(p.audio_activity ?? 0),
+        speakerConfidence: Number(p.speaker_confidence ?? 0),
       }))
       .filter((p) => Number.isFinite(p.t))
       .sort((a, b) => a.t - b.t);
@@ -832,7 +885,19 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       return {};
     }
 
-    const stabilized = downsamplePoints(smoothPoints(points, 0.62), 20);
+    const stabilized = stabilizeReframePoints(points, 48);
+
+    console.log('[smart-reframe-active-speaker]', {
+      clipId,
+      candidateId,
+      audioAvailable: raw.meta?.audio_available ?? null,
+      speakerSwitches: raw.meta?.speaker_switches ?? null,
+      confidentSpeakerSamples: raw.meta?.confident_speaker_samples ?? null,
+      analysisRateFps: raw.meta?.analysis_rate_fps ?? null,
+      sourcePoints: points.length,
+      stabilizedPoints: stabilized.length,
+      framingShots: new Set(stabilized.map((point) => point.shotId ?? 0)).size,
+    });
 
     const preset = opts.reframePreset ?? 'auto';
     const cropWidth = VERTICAL_EXPORT_WIDTH;

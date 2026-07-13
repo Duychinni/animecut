@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
+import { getClipPolicy } from '@/lib/clip-policy';
 
 export const maxDuration = 300;
 
@@ -285,30 +286,56 @@ export async function POST() {
     }
 
     let candidateCount = await getCandidateCount(projectId);
+    const expectedCandidateMinimum = getClipPolicy(transcriptStats.durationSeconds).targetMin;
     let analyzeData: Record<string, unknown> = { ok: true, count: candidateCount, resumed: true };
-    if (candidateCount > 0) {
-      console.log('[pipeline] resume-after-analyze', { projectId, candidateCount });
+    if (candidateCount >= expectedCandidateMinimum) {
+      console.log('[pipeline] resume-after-analyze', { projectId, candidateCount, expectedCandidateMinimum });
     } else {
+      let usedLocalAnalysis = false;
       await updateProjectProgress(projectId, 'finding_hooks', 'Finding hooks');
-      console.log('[pipeline] before analyze', { projectId, transcriptStats });
+      console.log('[pipeline] before analyze', {
+        projectId,
+        transcriptStats,
+        existingCandidateCount: candidateCount,
+        expectedCandidateMinimum,
+        reason: candidateCount > 0 ? 'partial_candidate_pool' : 'candidate_pool_missing',
+      });
       try {
         analyzeData = await withTimeout(
           callInternalJson('/api/analyze', { project_id: projectId }),
-          40000,
+          65000,
           'finding_hooks timeout before local fallback',
         ) as Record<string, unknown>;
       } catch (analysisError) {
+        usedLocalAnalysis = true;
         console.warn('[pipeline] analyze-primary-failed-using-local', {
           projectId,
           error: analysisError instanceof Error ? analysisError.message : String(analysisError),
         });
         analyzeData = await withTimeout(
           callInternalJson('/api/analyze', { project_id: projectId, force_local: true }),
-          15000,
+          30000,
           'local finding_hooks fallback timeout',
         ) as Record<string, unknown>;
       }
       candidateCount = Number(analyzeData?.count ?? 0);
+
+      if (!usedLocalAnalysis && candidateCount < expectedCandidateMinimum && analyzeData?.reason !== 'not_enough_content') {
+        usedLocalAnalysis = true;
+        console.warn('[pipeline] analyze-underproduced-using-local', {
+          projectId,
+          candidateCount,
+          expectedCandidateMinimum,
+        });
+        await updateProjectProgress(projectId, 'finding_hooks', `Expanding reel coverage (${candidateCount}/${expectedCandidateMinimum})`);
+        analyzeData = await withTimeout(
+          callInternalJson('/api/analyze', { project_id: projectId, force_local: true }),
+          30000,
+          'local reel coverage retry timeout',
+        ) as Record<string, unknown>;
+        candidateCount = Number(analyzeData?.count ?? 0);
+      }
+
       console.log('[pipeline] after analyze', { projectId, candidateCount });
     }
 

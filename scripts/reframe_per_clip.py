@@ -3,6 +3,7 @@ import json
 import math
 import os
 import statistics
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
@@ -10,6 +11,9 @@ from typing import Optional, Tuple
 DEBUG_FRAME_NAME = 'debug-still.jpg'
 SAFE_EDGE_MARGIN_X = 0.10
 MOTION_MIN_AREA_RATIO = 0.0035
+AUDIO_SAMPLE_RATE = 16000
+AUDIO_WINDOW_SEC = 0.18
+SPEAKER_SWITCH_CONFIRM_SAMPLES = 2
 
 
 def fail(code: int, error: str):
@@ -24,6 +28,80 @@ def clamp(v: float, lo: float, hi: float) -> float:
 def center(b: Tuple[float, float, float, float]) -> Tuple[float, float]:
     x, y, w, h = b
     return x + w / 2.0, y + h / 2.0
+
+
+def box_match_score(a, b, width: float, height: float) -> float:
+    if a is None or b is None:
+        return 0.0
+    acx, acy = center(a)
+    bcx, bcy = center(b)
+    distance = math.hypot((acx - bcx) / max(width, 1.0), (acy - bcy) / max(height, 1.0))
+    size_ratio = min(a[2] * a[3], b[2] * b[3]) / max(1.0, max(a[2] * a[3], b[2] * b[3]))
+    return clamp(1.0 - distance * 3.5, 0.0, 1.0) * 0.72 + size_ratio * 0.28
+
+
+def mouth_motion_score(cv2, previous_gray, gray, face) -> float:
+    if previous_gray is None or face is None:
+        return 0.0
+    x, y, w, h = face
+    # The lower-center face region captures lips/jaw while avoiding most eye and
+    # hair movement. Comparing the same screen-space ROI also makes head motion
+    # useful evidence without allowing it to decide the speaker by itself.
+    x1 = int(clamp(x + w * 0.18, 0, gray.shape[1] - 1))
+    x2 = int(clamp(x + w * 0.82, x1 + 1, gray.shape[1]))
+    y1 = int(clamp(y + h * 0.52, 0, gray.shape[0] - 1))
+    y2 = int(clamp(y + h * 0.94, y1 + 1, gray.shape[0]))
+    current = gray[y1:y2, x1:x2]
+    previous = previous_gray[y1:y2, x1:x2]
+    if current.size == 0 or previous.size == 0:
+        return 0.0
+    diff = cv2.absdiff(current, previous)
+    return clamp(float(diff.mean()) / 28.0, 0.0, 1.0)
+
+
+def extract_audio_activity(input_path: str, start_sec: float, duration: float, sample_times):
+    try:
+        import numpy as np  # type: ignore
+        ffmpeg = os.environ.get('FFMPEG_PATH', 'ffmpeg')
+        command = [
+            ffmpeg, '-hide_banner', '-loglevel', 'error', '-ss', str(max(0.0, start_sec)),
+            '-t', str(max(0.01, duration)), '-i', input_path, '-vn', '-ac', '1',
+            '-ar', str(AUDIO_SAMPLE_RATE), '-f', 'f32le', 'pipe:1',
+        ]
+        completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=max(30, int(duration * 2)))
+        if completed.returncode != 0 or not completed.stdout:
+            return [0.0 for _ in sample_times], False
+        pcm = np.frombuffer(completed.stdout, dtype=np.float32)
+        half_window = max(1, int(AUDIO_WINDOW_SEC * AUDIO_SAMPLE_RATE / 2.0))
+        rms_values = []
+        for absolute_t in sample_times:
+            sample_index = int(max(0.0, absolute_t - start_sec) * AUDIO_SAMPLE_RATE)
+            lo = max(0, sample_index - half_window)
+            hi = min(len(pcm), sample_index + half_window)
+            window = pcm[lo:hi]
+            rms_values.append(float(np.sqrt(np.mean(window * window))) if window.size else 0.0)
+        if not rms_values or max(rms_values) <= 1e-7:
+            return [0.0 for _ in sample_times], False
+        noise_floor = float(np.percentile(rms_values, 20))
+        speech_level = float(np.percentile(rms_values, 90))
+        span = max(1e-6, speech_level - noise_floor)
+        normalized = [clamp((value - noise_floor) / span, 0.0, 1.0) for value in rms_values]
+        # A small temporal envelope avoids treating every syllable boundary as silence.
+        activity = []
+        for index, value in enumerate(normalized):
+            neighbors = normalized[max(0, index - 1):min(len(normalized), index + 2)]
+            activity.append(clamp(value * 0.65 + max(neighbors) * 0.35, 0.0, 1.0))
+        return activity, True
+    except Exception:
+        return [0.0 for _ in sample_times], False
+
+
+def scene_change_score(cv2, previous_gray, gray) -> float:
+    if previous_gray is None:
+        return 0.0
+    small_previous = cv2.resize(previous_gray, (160, 90), interpolation=cv2.INTER_AREA)
+    small_current = cv2.resize(gray, (160, 90), interpolation=cv2.INTER_AREA)
+    return clamp(float(cv2.absdiff(small_previous, small_current).mean()) / 55.0, 0.0, 1.0)
 
 
 def average_box(boxes):
@@ -182,8 +260,11 @@ def main():
     crop_h = int(source_h)
 
     duration = max(0.01, end_sec - start_sec)
-    sample_count = min(42, max(12, int(math.ceil(duration * 1.15))))
+    # Four observations per second is frequent enough to associate speech with
+    # mouth motion and still bounded for long clips.
+    sample_count = min(240, max(24, int(math.ceil(duration * 4.0))))
     sample_times = [start_sec + (duration * i / max(1, sample_count - 1)) for i in range(sample_count)]
+    audio_activity, audio_available = extract_audio_activity(input_path, start_sec, duration, sample_times)
 
     mp_face = mp.solutions.face_detection
     detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.45)
@@ -197,8 +278,14 @@ def main():
     first_box = None
     first_motion_box = None
     prev_gray = None
+    active_box = None
+    pending_box = None
+    pending_count = 0
+    shot_id = 0
+    speaker_switches = 0
+    confident_speaker_samples = 0
 
-    for sample_t in sample_times:
+    for sample_index, sample_t in enumerate(sample_times):
         cap.set(cv2.CAP_PROP_POS_MSEC, sample_t * 1000.0)
         ok, frame = cap.read()
         if not ok:
@@ -222,7 +309,6 @@ def main():
                 h = max(1.0, bbox.height * source_h)
                 faces.append((x, y, w, h))
             faces.sort(key=lambda b: b[2] * b[3], reverse=True)
-            selected_box = faces[0]
         else:
             bodies = [] if body_cascade.empty() else list(body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(80, 80)))
             if bodies:
@@ -230,8 +316,57 @@ def main():
                 selected_box = (float(x), float(y), float(w), float(h))
                 fallback_used = True
 
+        current_audio = audio_activity[sample_index] if sample_index < len(audio_activity) else 0.0
+        scene_change = scene_change_score(cv2, prev_gray, gray)
+        mouth_scores = [mouth_motion_score(cv2, prev_gray, gray, face) for face in faces]
+
+        if faces:
+            scored_faces = []
+            for face, mouth_score in zip(faces, mouth_scores):
+                area_quality = clamp((face[2] * face[3]) / max(1.0, source_w * source_h * 0.08), 0.0, 1.0)
+                continuity = box_match_score(face, active_box, source_w, source_h)
+                # Audio gates the mouth evidence. During silence continuity wins,
+                # so the crop stays fixed instead of chasing incidental motion.
+                score = area_quality * 0.18 + continuity * 0.42 + mouth_score * current_audio * 0.72
+                scored_faces.append((score, mouth_score, face))
+            scored_faces.sort(key=lambda item: item[0], reverse=True)
+            candidate_score, candidate_mouth, candidate_box = scored_faces[0]
+            active_match = box_match_score(candidate_box, active_box, source_w, source_h)
+            should_switch = active_box is not None and active_match < 0.48
+            strong_speaker_evidence = current_audio >= 0.28 and candidate_mouth >= 0.12
+
+            if active_box is None or scene_change >= 0.72:
+                if active_box is not None:
+                    shot_id += 1
+                    speaker_switches += 1
+                active_box = candidate_box
+                pending_box = None
+                pending_count = 0
+            elif should_switch and strong_speaker_evidence:
+                if box_match_score(candidate_box, pending_box, source_w, source_h) >= 0.58:
+                    pending_count += 1
+                else:
+                    pending_box = candidate_box
+                    pending_count = 1
+                if pending_count >= SPEAKER_SWITCH_CONFIRM_SAMPLES:
+                    active_box = candidate_box
+                    pending_box = None
+                    pending_count = 0
+                    shot_id += 1
+                    speaker_switches += 1
+            else:
+                # Refresh the tracked box using the best match to its previous location.
+                best_continuation = max(faces, key=lambda face: box_match_score(face, active_box, source_w, source_h))
+                if box_match_score(best_continuation, active_box, source_w, source_h) >= 0.32:
+                    active_box = best_continuation
+                pending_box = None
+                pending_count = 0
+
+            selected_box = active_box
+            if strong_speaker_evidence:
+                confident_speaker_samples += 1
+
         motion_boxes = motion_regions(cv2, prev_gray, gray, source_w, source_h)
-        prev_gray = gray
         if motion_boxes:
             motion_box = motion_boxes[0]
 
@@ -309,7 +444,14 @@ def main():
             'h': subject_h,
             'framing': framing,
             'mode': mode,
+            'shot_id': shot_id,
+            'cut': bool(points and points[-1].get('shot_id') != shot_id),
+            'audio_activity': round(current_audio, 4),
+            'speaker_confidence': round((max(mouth_scores) if mouth_scores else 0.0) * current_audio, 4),
+            'scene_change': round(scene_change, 4),
         })
+
+        prev_gray = gray
 
         if first_debug_frame is None:
             first_debug_frame = frame.copy()
@@ -342,7 +484,13 @@ def main():
             if separation >= 0.18 and size_ratio >= 0.38:
                 dual_frames += 1
 
-    split_stack = dual_frames >= max(2, math.ceil(len(detected_faces) * 0.35))
+    # Preserve the legacy two-up layout only when active-speaker evidence is not
+    # available. With reliable audio/visual evidence, speaker-directed cuts are
+    # more natural and retain more detail than permanently shrinking both faces.
+    split_stack = (
+        dual_frames >= max(2, math.ceil(len(detected_faces) * 0.35))
+        and (not audio_available or confident_speaker_samples < max(3, len(points) * 0.08))
+    )
 
     result = {
         'ok': True,
@@ -373,6 +521,10 @@ def main():
                 'h': avg_subject_box[3],
             },
             'fallback_used': fallback_used,
+            'audio_available': audio_available,
+            'speaker_switches': speaker_switches,
+            'confident_speaker_samples': confident_speaker_samples,
+            'analysis_rate_fps': sample_count / duration,
         },
         'detected_faces': detected_faces,
         'ffmpeg_crop': f'crop={int(round(crop_w))}:{int(round(crop_h))}:{int(round(crop_x))}:{int(round(crop_y))},scale=1080:1920',

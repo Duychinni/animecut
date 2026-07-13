@@ -26,6 +26,7 @@ export type ClipEditSettings = {
   crop_x: number;
   crop_y: number;
   zoom: number;
+  cut_points: number[];
   removed_ranges: Array<{ start: number; end: number }>;
 };
 
@@ -145,6 +146,7 @@ export function buildDefaultClipEditSettings(params: {
     crop_x: 0.5,
     crop_y: 0.34,
     zoom: 1,
+    cut_points: [],
     removed_ranges: [],
   } satisfies ClipEditSettings;
 }
@@ -173,6 +175,13 @@ export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettin
     crop_x: clamp(finiteNumber(row.crop_x, defaults.crop_x), 0, 1),
     crop_y: clamp(finiteNumber(row.crop_y, defaults.crop_y), 0, 1),
     zoom: clamp(finiteNumber(row.zoom, defaults.zoom), 1, 2.4),
+    cut_points: Array.isArray(row.cut_points)
+      ? [...new Set(row.cut_points
+        .map((item) => finiteNumber(item, NaN))
+        .filter((item) => Number.isFinite(item) && item > start + 0.1 && item < end - 0.1)
+        .map((item) => Number(item.toFixed(3))))]
+        .sort((a, b) => a - b)
+      : defaults.cut_points,
     removed_ranges: Array.isArray(row.removed_ranges)
       ? row.removed_ranges
         .map((item) => {

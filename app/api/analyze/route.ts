@@ -433,6 +433,26 @@ function distinctCandidates(candidates: RankedCandidate[]) {
     }, []);
 }
 
+function isCoverageDuplicate(cur: RankedCandidate, picked: RankedCandidate) {
+  const curStart = Number(cur.start_sec ?? 0);
+  const curEnd = Number(cur.end_sec ?? 0);
+  const pickedStart = Number(picked.start_sec ?? 0);
+  const pickedEnd = Number(picked.end_sec ?? 0);
+  const overlap = Math.max(0, Math.min(curEnd, pickedEnd) - Math.max(curStart, pickedStart));
+  const minDuration = Math.max(1, Math.min(curEnd - curStart, pickedEnd - pickedStart));
+  const curCenter = (curStart + curEnd) / 2;
+  const pickedCenter = (pickedStart + pickedEnd) / 2;
+  const exactWindow = Math.abs(curStart - pickedStart) < 3 && Math.abs(curEnd - pickedEnd) < 3;
+  const nearSameMoment = Math.abs(curCenter - pickedCenter) < 10 && overlap / minDuration >= 0.62;
+  const nearlyContained = overlap / minDuration >= 0.82;
+  return exactWindow || nearSameMoment || nearlyContained;
+}
+
+function coverageBucket(startSec: number, totalSeconds: number, desiredCount: number) {
+  const bucketSize = Math.max(1, totalSeconds / Math.max(1, desiredCount));
+  return Math.max(0, Math.min(desiredCount - 1, Math.floor(startSec / bucketSize)));
+}
+
 function hasStrongPayoff(text: string) {
   const t = text.trim();
   if (!t) return false;
@@ -834,17 +854,41 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     }
 
     if (selected.length < minimumFinalCount) {
-      const coveragePool = distinctCandidates(allScoredCandidates)
-        .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked)))
+      // The quality pass deliberately removes overlapping ideas, but it must not
+      // collapse a long source to one or two reels. This final pass uses a much
+      // narrower duplicate definition and fills uncovered time buckets first.
+      const occupiedBuckets = new Set(selected.map((candidate) => coverageBucket(candidate.start_sec, transcriptMaxEnd, minimumFinalCount)));
+      const coveragePool = [...allScoredCandidates]
+        .filter((c) => !selected.some((picked) => isCoverageDuplicate(c, picked)))
         .filter((c) => c.duration_seconds >= Math.max(15, analysisMinClipSec - 5))
         .filter((c) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= Math.max(24, fallbackMinimumWordCount - 8))
-        .filter((c) => Number(c.overall_score ?? 0) >= Math.max(55, MIN_TOP_CLIP_SCORE - 18));
+        .filter((c) => Number(c.overall_score ?? 0) >= Math.max(55, MIN_TOP_CLIP_SCORE - 18))
+        .sort((a, b) => {
+          const aBucketOpen = occupiedBuckets.has(coverageBucket(a.start_sec, transcriptMaxEnd, minimumFinalCount)) ? 1 : 0;
+          const bBucketOpen = occupiedBuckets.has(coverageBucket(b.start_sec, transcriptMaxEnd, minimumFinalCount)) ? 1 : 0;
+          return aBucketOpen - bBucketOpen || Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0);
+        });
 
       for (const candidate of coveragePool) {
         if (selected.length >= minimumFinalCount) break;
+        const bucket = coverageBucket(candidate.start_sec, transcriptMaxEnd, minimumFinalCount);
+        if (occupiedBuckets.has(bucket)) continue;
+        if (selected.some((picked) => isCoverageDuplicate(candidate, picked))) continue;
         selected.push({
           ...candidate,
           reason: `${candidate.reason} | Added by transcript coverage pass to avoid under-producing reels for this source length.`,
+        });
+        occupiedBuckets.add(bucket);
+      }
+
+      // If a quiet section has no viable standalone moment, fill from the best
+      // remaining transcript regions instead of returning below the policy floor.
+      for (const candidate of coveragePool) {
+        if (selected.length >= minimumFinalCount) break;
+        if (selected.some((picked) => isCoverageDuplicate(candidate, picked))) continue;
+        selected.push({
+          ...candidate,
+          reason: `${candidate.reason} | Added by final quality backfill to meet the expected reel count for this source length.`,
         });
       }
     }
