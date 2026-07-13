@@ -113,6 +113,23 @@ body {
   z-index: 1;
 }
 
+/* Every enabled interactive surface in the app shell should visibly behave
+   like a control. This covers icon-only buttons, project/reel links, Get Clips,
+   upload labels, and accessible custom buttons without repeating utilities. */
+.app-shell :where(
+  a[href],
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  summary,
+  label:has(input:not(:disabled))
+) {
+  cursor: pointer;
+}
+
+.app-shell :where(button:disabled, [aria-disabled="true"]) {
+  cursor: not-allowed;
+}
+
 @keyframes floaty {
   0%,
   100% {
@@ -138,16 +155,45 @@ body {
 
 .hero-showcase-video {
   pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .hero-showcase-video::-webkit-media-controls,
 .hero-showcase-video::-webkit-media-controls-enclosure,
+.hero-showcase-video::-webkit-media-controls-overlay-enclosure,
 .hero-showcase-video::-webkit-media-controls-panel,
+.hero-showcase-video::-webkit-media-controls-play-button,
+.hero-showcase-video::-webkit-media-controls-timeline,
+.hero-showcase-video::-webkit-media-controls-current-time-display,
+.hero-showcase-video::-webkit-media-controls-time-remaining-display,
+.hero-showcase-video::-webkit-media-controls-mute-button,
+.hero-showcase-video::-webkit-media-controls-volume-slider,
+.hero-showcase-video::-webkit-media-controls-fullscreen-button,
+.hero-showcase-video::-webkit-media-controls-toggle-closed-captions-button,
 .hero-showcase-video::-webkit-media-controls-overlay-play-button,
 .hero-showcase-video::-webkit-media-controls-start-playback-button {
   display: none !important;
   -webkit-appearance: none;
   opacity: 0;
+}
+
+@keyframes hero-showcase-youtube-reveal {
+  to {
+    opacity: 1;
+  }
+}
+
+.hero-showcase-youtube {
+  opacity: 0;
+  animation: hero-showcase-youtube-reveal 1ms linear 1.1s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-showcase-youtube {
+    animation-delay: 1.1s;
+    animation-duration: 1ms;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

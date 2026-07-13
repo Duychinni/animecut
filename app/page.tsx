@@ -802,7 +802,7 @@ export default function Home() {
                             allow="autoplay; encrypted-media"
                             tabIndex={-1}
                             aria-hidden="true"
-                            className="pointer-events-none absolute left-1/2 top-[54%] h-[122%] w-[350%] -translate-x-1/2 -translate-y-1/2 border-0"
+                            className="hero-showcase-youtube pointer-events-none absolute left-1/2 top-[54%] h-[122%] w-[350%] -translate-x-1/2 -translate-y-1/2 border-0"
                           />
                         ) : (
                           <video
@@ -828,6 +828,12 @@ export default function Home() {
                             onCanPlay={(event) => {
                               void event.currentTarget.play().catch(() => undefined);
                             }}
+                            onPlaying={(event) => {
+                              event.currentTarget.style.opacity = '1';
+                            }}
+                            onWaiting={(event) => {
+                              event.currentTarget.style.opacity = '0';
+                            }}
                             onTimeUpdate={(event) => {
                               const start = Math.max(0, Number(clip.startSeconds ?? 0));
                               const end = Number(clip.endSeconds ?? 0);
@@ -836,7 +842,7 @@ export default function Home() {
                                 void event.currentTarget.play().catch(() => undefined);
                               }
                             }}
-                            className="hero-showcase-video absolute inset-0 h-full w-full object-cover"
+                            className="hero-showcase-video absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-150"
                           />
                         )
                       ) : null}

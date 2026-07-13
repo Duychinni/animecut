@@ -699,7 +699,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         data-clip-frame="true"
                         onPointerEnter={() => primeVideo(clip.exportId, 'auto')}
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
-                        className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22"
+                        className="relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22"
                       >
                         <video
                           ref={(el) => {
@@ -710,7 +710,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           controls={false}
                           disablePictureInPicture
                           poster={clip.posterUrl ?? undefined}
-                          className="h-full w-full bg-black object-cover"
+                          className="h-full w-full cursor-pointer bg-black object-cover"
                           src={mediaUrl}
                           onLoadedMetadata={(e) => {
                             const v = e.currentTarget;

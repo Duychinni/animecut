@@ -233,6 +233,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [currentTime, setCurrentTime] = useState(0);
   const [previewDurationSeconds, setPreviewDurationSeconds] = useState(0);
   const [paused, setPaused] = useState(true);
+  const [volume, setVolume] = useState(1);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [cutMode, setCutMode] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimelineRange | null>(null);
@@ -373,7 +374,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedRange) {
         const target = event.target as HTMLElement | null;
-        if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT') return;
+        if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.isContentEditable) return;
         event.preventDefault();
         removeTimelineRange(selectedRange);
         return;
@@ -382,6 +383,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         event.preventDefault();
         setSelectedRange(null);
         setCutMode(false);
+        return;
+      }
+      if (event.key === 'Escape' && cutMode) {
+        event.preventDefault();
+        setCutMode(false);
+        setToast('Scissors tool turned off');
         return;
       }
       if (event.key === 'Escape') {
@@ -605,6 +612,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     }
   }
 
+  function handlePreviewVolume(nextVolume: number) {
+    const safeVolume = clamp(nextVolume, 0, 1);
+    setVolume(safeVolume);
+    if (!videoRef.current) return;
+    videoRef.current.muted = safeVolume === 0;
+    videoRef.current.volume = safeVolume;
+  }
+
   async function rerenderClip(nextSettings: ClipEditSettings | null = settings) {
     if (!nextSettings) return;
     setRendering(true);
@@ -727,6 +742,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }
 
   const clipDuration = Math.max(0, settings.clip_end_seconds - settings.clip_start_seconds);
+  const playerCurrent = clamp(currentTime - settings.clip_start_seconds, 0, clipDuration);
+  const playerProgressPercent = clipDuration > 0 ? clamp((playerCurrent / clipDuration) * 100, 0, 100) : 0;
   const timelineDuration = Math.max(0.1, timelineViewport.end - timelineViewport.start);
   const playheadLeft = `${clamp(((currentTime - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`;
   const clipStartLeft = clamp(((settings.clip_start_seconds - timelineViewport.start) / timelineDuration) * 100, 0, 100);
@@ -811,29 +828,23 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             {data.clip.title}
           </h1>
           <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden p-4">
-            <div className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[15px] border border-white/[0.04] bg-black shadow-[0_24px_90px_rgba(0,0,0,.45)]">
+            <div className="group relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] shadow-[0_24px_90px_rgba(0,0,0,.45)] ring-1 ring-white/10 transition hover:ring-white/22">
               {previewUrl ? (
                 <video
                   key={previewUrl}
                   ref={videoRef}
                   src={previewUrl}
                   poster={data.clip.posterUrl ?? data.source.posterUrl ?? undefined}
-                  controls
-                  controlsList="nofullscreen nodownload noremoteplayback"
                   disablePictureInPicture
                   playsInline
                   preload="metadata"
                   className="h-full w-full cursor-pointer bg-black transition-transform duration-200"
                   style={cropPreviewStyle(settings)}
-                  onClick={(event) => {
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    if (event.clientY < bounds.bottom - 48) {
-                      void togglePlay();
-                    }
-                  }}
+                  onClick={() => void togglePlay()}
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
                     setPreviewDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
+                    setVolume(video.muted ? 0 : video.volume);
                     video.currentTime = previewUsesSource ? settings.clip_start_seconds : 0;
                   }}
                   onTimeUpdate={(event) => {
@@ -847,6 +858,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   }}
                   onPlay={() => setPaused(false)}
                   onPause={() => setPaused(true)}
+                  onVolumeChange={(event) => setVolume(event.currentTarget.muted ? 0 : event.currentTarget.volume)}
                 />
               ) : (
                 <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
@@ -868,21 +880,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               ) : null}
 
-              <div className="absolute inset-x-3 bottom-[42px] z-30 rounded-full bg-black/55 px-2 py-1 shadow-lg">
-                <input
-                  type="range"
-                  min={settings.clip_start_seconds}
-                  max={Math.max(settings.clip_start_seconds + 0.01, settings.clip_end_seconds)}
-                  step="0.01"
-                  value={clamp(currentTime, settings.clip_start_seconds, settings.clip_end_seconds)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => seekAbsolute(Number(event.target.value))}
-                  className="block h-2 w-full cursor-pointer accent-white"
-                  aria-label="Seek video preview"
-                />
-              </div>
-
               {rendering ? (
                 <span className="absolute right-3 top-3 rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-200 backdrop-blur">
                   Rendering
@@ -893,11 +890,62 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <button
                   type="button"
                   onClick={() => void togglePlay()}
-                  className="absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/45 shadow-[0_10px_26px_rgba(0,0,0,.35)] backdrop-blur transition hover:scale-105"
+                  className="pointer-events-none absolute left-1/2 top-1/2 z-30 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/30 text-white opacity-0 backdrop-blur-sm transition duration-200 hover:bg-black/45 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
                   aria-label="Play preview"
                 >
-                  <span className="ml-1 h-0 w-0 border-y-[12px] border-y-transparent border-l-[18px] border-l-white" />
+                  <svg viewBox="0 0 24 24" className="h-7 w-7 fill-current" aria-hidden="true">
+                    <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+                  </svg>
                 </button>
+              ) : null}
+
+              {previewUrl ? (
+                <div
+                  className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="relative mb-3 h-[2px] w-full bg-white/25">
+                    <div className="h-full bg-white transition-[width] duration-150" style={{ width: `${playerProgressPercent}%` }} />
+                    <div
+                      className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white"
+                      style={{ left: `calc(${playerProgressPercent}% - 6px)` }}
+                    />
+                    <input
+                      type="range"
+                      min={settings.clip_start_seconds}
+                      max={Math.max(settings.clip_start_seconds + 0.01, settings.clip_end_seconds)}
+                      step="0.01"
+                      value={clamp(currentTime, settings.clip_start_seconds, settings.clip_end_seconds)}
+                      onChange={(event) => seekAbsolute(Number(event.target.value))}
+                      className="absolute inset-0 h-4 w-full -translate-y-1/2 cursor-pointer appearance-none bg-transparent opacity-0"
+                      aria-label="Seek clip"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/75" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                      </svg>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step="0.01"
+                        value={volume}
+                        onChange={(event) => handlePreviewVolume(Number(event.target.value))}
+                        className="h-1.5 w-16 cursor-pointer accent-white"
+                        aria-label="Clip volume"
+                      />
+                    </div>
+                    <span className="ml-auto shrink-0 rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
+                      {formatClock(playerCurrent)} / {formatClock(clipDuration)}
+                    </span>
+                  </div>
+                </div>
               ) : null}
             </div>
           </div>
@@ -989,6 +1037,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   type="button"
                   onClick={() => removeTimelineRange(selectedRange)}
                   className="rounded-md border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-bold text-red-100 hover:bg-red-400/20"
+                  aria-keyshortcuts="Delete Backspace"
                 >
                   Delete segment
                 </button>
@@ -1144,7 +1193,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   }}
                 >
                   <span className="absolute left-1 top-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-bold text-orange-100">
-                    {formatClock(selectedRange.end - selectedRange.start)} selected
+                    {formatClock(selectedRange.end - selectedRange.start)} selected · Delete/Backspace to remove
                   </span>
                 </div>
               ) : null}
