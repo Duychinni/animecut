@@ -1390,14 +1390,14 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string) {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 840;
-  const cardHeight = twoLine ? 218 : 154;
+  const cardWidth = 900;
+  const cardHeight = twoLine ? 238 : 170;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const cardY = twoLine ? 58 : 72;
+  const cardY = twoLine ? 54 : 68;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 34);
-  const hookFontSize = twoLine ? 88 : 98;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 38);
+  const hookFontSize = twoLine ? 96 : 108;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1409,7 +1409,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00303030,&H00000000,-1,0,0,0,100,100,0,0,1,1.4,0,5,70,70,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1431,15 +1431,16 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=96',
+    'fontsize=108',
     'box=1',
     'boxcolor=white',
-    'boxborderw=34',
-    'borderw=0',
+    'boxborderw=38',
+    'borderw=2',
+    'bordercolor=black@0.28',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=11',
+    'line_spacing=14',
     'fix_bounds=1',
     'x=(w-text_w)/2',
     'y=74',
