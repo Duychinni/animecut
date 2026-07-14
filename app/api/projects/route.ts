@@ -55,7 +55,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('projects')
-      .select('id, user_id, title, status, pipeline_status, pipeline_completed_at, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
+      .select('id, user_id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, pipeline_error, worker_last_seen_at, pipeline_completed_at, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -81,8 +81,8 @@ export async function GET() {
         ...project,
         status: isCompleted ? 'completed' : needsExportCompletion ? 'analyzed' : project.status,
         pipeline_status: isCompleted ? 'completed' : needsExportCompletion ? 'processing' : project.pipeline_status,
+        progress_percent: isCompleted ? 100 : Number(project.pipeline_progress_percent ?? 0),
         source_thumbnail_url: sourceThumbnailUrl,
-        progress_percent: isCompleted ? 100 : undefined,
         expires_at: expiryInfo.expires_at,
         days_until_expiring: expiryInfo.days_until_expiring,
         is_expired: expiryInfo.is_expired,

@@ -98,8 +98,12 @@ function isCompletedProject(project: ProjectListItem) {
 function isActiveProject(project: ProjectListItem) {
   if (isCompletedProject(project)) return false;
   if (project.pipeline_error === 'not_enough_content') return false;
-  if (project.pipeline_status === 'error' || project.status === 'failed') return false;
+  if (project.pipeline_status === 'error' || project.status === 'failed' || project.status === 'error') return false;
   return Boolean(project.optimistic || project.pipeline_status === 'queued' || project.pipeline_status === 'processing');
+}
+
+function isFailedProject(project: ProjectListItem) {
+  return project.pipeline_status === 'error' || project.status === 'failed' || project.status === 'error';
 }
 
 function getExpiryLabel(project: ProjectListItem) {
@@ -220,7 +224,7 @@ export default function DashboardPage() {
       }
 
       const processingIds = (baseProjects.length ? baseProjects : projects)
-        .filter((p) => isActiveProject(p))
+        .filter((p) => isActiveProject(p) || (!isCompletedProject(p) && !p.optimistic))
         .slice(0, 6)
         .map((p) => p.id);
 
@@ -564,10 +568,14 @@ export default function DashboardPage() {
         {orderedProjects.map((p) => {
           const isCompleted = isCompletedProject(p);
           const isNotEnoughContent = p.pipeline_error === 'not_enough_content';
-          const isFailed = (p.pipeline_status === 'error' || p.status === 'failed') && !isNotEnoughContent;
+          const isFailed = isFailedProject(p) && !isNotEnoughContent;
           const percent = isCompleted ? 100 : getFlooredProgress(p);
           const showProcessing = isActiveProject(p) && !isFailed && !isNotEnoughContent && percent < 100;
-          const canOpenProject = isCompleted && !isFailed && !isNotEnoughContent;
+          // A saved project must always remain openable. Its project page owns the
+          // processing, recovery, failure, and completed views. Only the temporary
+          // optimistic card lacks a stable route while the project is being created.
+          const canOpenProject = !p.optimistic;
+          const isPaused = !isCompleted && !showProcessing && !isFailed && !isNotEnoughContent && !p.optimistic;
           const expiryLabel = getExpiryLabel(p);
           const rawProcessingStage = p.pipeline_stage_label || (p.pipeline_status === 'queued'
             ? 'Queued'
@@ -647,7 +655,9 @@ export default function DashboardPage() {
                     <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
                   )}
                   {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
-                  {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found</p> : null}
+                  {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found · open project for details</p> : null}
+                  {isFailed ? <p className="mt-1 text-xs text-red-300/85">Rendering stopped · open project to review or retry</p> : null}
+                  {isPaused ? <p className="mt-1 text-xs text-amber-200/75">Project paused · open project to continue</p> : null}
                   {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%{etaLabel ? ` · ${etaLabel}` : ''}</p> : null}
                   {showDebug ? (
                     <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.035] p-2 text-[11px] leading-4 text-white/55">

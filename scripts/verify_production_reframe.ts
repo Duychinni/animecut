@@ -84,6 +84,11 @@ async function main() {
       reframe_timeline?: Array<Record<string, unknown>>;
     };
     const timeline = metadata.reframe_timeline ?? [];
+    const stackedDuration = timeline
+      .filter((segment) => segment.mode === 'stacked')
+      .reduce((total, segment) => total + Math.max(0, Number(segment.end) - Number(segment.start)), 0);
+    const reelDuration = Math.max(0.001, item.end - item.start);
+    const stackedDurationRatio = stackedDuration / reelDuration;
     const report = {
       source,
       case: item,
@@ -98,10 +103,13 @@ async function main() {
       analysisRateFps: metadata.meta?.analysis_rate_fps ?? null,
       timelineSegments: timeline.length,
       modes: timeline.map((segment) => segment.mode),
+      stackedDuration,
+      stackedDurationRatio,
       acceptance: {
         hasMultipleTimedDecisions: timeline.length > 1,
         hasSingleSpeaker: timeline.some((segment) => segment.mode === 'single'),
         hasStackedTwoPerson: timeline.some((segment) => segment.mode === 'stacked'),
+        stackedShareUnder20Percent: stackedDurationRatio < 0.20,
         noSubSecondLayoutFlicker: timeline.every((segment) => Number(segment.end) - Number(segment.start) >= 0.9),
         outputIs1080x1920: validation.width === 1080 && validation.height === 1920,
         outputIsH264: validation.videoCodec === 'h264',

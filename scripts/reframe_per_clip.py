@@ -18,6 +18,13 @@ FRAMING_SWITCH_CONFIRM_SAMPLES = 2
 LAYOUT_MIN_HOLD_SAMPLES = 4
 LAYOUT_CONFIRM_SAMPLES = 2
 STACK_PAIR_CONFIRM_SAMPLES = 4
+STACK_ENTER_CONFIRM_SAMPLES = 4
+STACK_PARTICIPATION_WINDOW_SEC = 6.0
+STACK_TURN_WINDOW_SEC = 4.5
+STACK_REACTION_WINDOW_SEC = 3.0
+STACK_MIN_RAPID_SWITCHES = 2
+STACK_SCORE_MARGIN = 0.15
+STACK_MAX_DURATION_RATIO = 0.18
 WIDE_FACE_HEIGHT_RATIO = 0.22
 WIDE_FACE_WIDTH_RATIO = 0.105
 
@@ -358,6 +365,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     pair_streak = 0
     last_pair_ids = None
     recent_active_ids = []
+    participation_history = []
+    reaction_history = []
+    contextual_shot_latched = False
+    talking_head_release_streak = 0
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -382,29 +393,155 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             recent_active_ids.append((float(point.get('t', 0.0)), int(active_id)))
         now = float(point.get('t', 0.0))
         recent_active_ids = [item for item in recent_active_ids if now - item[0] <= 2.5]
+
+        if active_id is not None:
+            participation_history.append({
+                't': now,
+                'track_id': int(active_id),
+                'confidence': speaker_confidence,
+                'audio_activity': audio_activity,
+            })
+        participation_history = [
+            item for item in participation_history
+            if now - float(item['t']) <= STACK_PARTICIPATION_WINDOW_SEC
+        ]
+
+        # A non-active participant's visible mouth response is a conservative
+        # proxy for a reaction/interruption that would be lost in a tight crop.
+        # Merely being visible never counts as an editorial reason to stack.
+        if pair_ids is not None and active_id is not None:
+            for face in faces:
+                track_id = int(face.get('track_id'))
+                if track_id == int(active_id) or track_id not in pair_ids:
+                    continue
+                mouth_motion = float(face.get('mouth_motion', 0.0))
+                face_confidence = float(face.get('active_speaker_confidence', 0.0))
+                if mouth_motion >= 0.065 and face_confidence >= 0.12:
+                    reaction_history.append({
+                        't': now,
+                        'track_id': track_id,
+                        'strength': mouth_motion * max(audio_activity, 0.35),
+                    })
+        reaction_history = [
+            item for item in reaction_history
+            if now - float(item['t']) <= STACK_REACTION_WINDOW_SEC
+        ]
+
+        recent_turns = [
+            item for item in participation_history
+            if now - float(item['t']) <= STACK_TURN_WINDOW_SEC
+            and (pair_ids is None or int(item['track_id']) in pair_ids)
+        ]
         recent_switches = sum(
-            1 for item_index in range(1, len(recent_active_ids))
-            if recent_active_ids[item_index][1] != recent_active_ids[item_index - 1][1]
+            1 for item_index in range(1, len(recent_turns))
+            if recent_turns[item_index]['track_id'] != recent_turns[item_index - 1]['track_id']
         )
+
+        participant_counts = {}
+        participant_confidences = {}
+        if pair_ids is not None:
+            for item in participation_history:
+                track_id = int(item['track_id'])
+                if track_id not in pair_ids:
+                    continue
+                participant_counts[track_id] = participant_counts.get(track_id, 0) + 1
+                participant_confidences.setdefault(track_id, []).append(float(item['confidence']))
+
+        pair_counts = [participant_counts.get(track_id, 0) for track_id in pair_ids] if pair_ids else []
+        pair_mean_confidence = [
+            statistics.mean(participant_confidences.get(track_id, [0.0]))
+            for track_id in pair_ids
+        ] if pair_ids else []
+        total_participation = sum(pair_counts)
+        participation_balance = (
+            min(pair_counts) / max(pair_counts)
+            if len(pair_counts) == 2 and max(pair_counts) > 0
+            else 0.0
+        )
+        dominant_share = (
+            max(pair_counts) / max(total_participation, 1)
+            if pair_counts
+            else 1.0
+        )
+        reaction_samples = [
+            item for item in reaction_history
+            if pair_ids is not None and int(item['track_id']) in pair_ids
+        ]
+
+        two_stable_speakers = pair_ids is not None and pair_streak >= STACK_PAIR_CONFIRM_SAMPLES
+        both_actively_participating = len(pair_counts) == 2 and min(pair_counts) >= 2
+        both_meaningful = (
+            both_actively_participating
+            and min(pair_mean_confidence) >= 0.12
+            and participation_balance >= 0.35
+        )
+        rapid_alternation = recent_switches >= STACK_MIN_RAPID_SWITCHES
+        reaction_matters = len(reaction_samples) >= 2
+        loses_context_in_single = rapid_alternation and participation_balance >= 0.45 and reaction_matters
+
+        turn_score = clamp(recent_switches / 3.0, 0.0, 1.0)
+        reaction_score = clamp(len(reaction_samples) / 3.0, 0.0, 1.0)
+        stability_score = clamp(pair_streak / 8.0, 0.0, 1.0)
+        single_score = 1.0 + dominant_share * 0.45 + speaker_confidence * 0.25
+        stacked_score = (
+            0.15
+            + turn_score * 0.70
+            + participation_balance * 0.40
+            + reaction_score * 0.35
+            + stability_score * 0.15
+        )
+        stack_eligible = (
+            two_stable_speakers
+            and both_actively_participating
+            and both_meaningful
+            and reaction_matters
+            and rapid_alternation
+            and loses_context_in_single
+            and stacked_score >= single_score + STACK_SCORE_MARGIN
+        )
+
+        face_height_ratio = (
+            float(selected.get('h', 0)) / max(source_h, 1.0)
+            if selected is not None
+            else 0.0
+        )
+        wide_context_trigger = (
+            len(faces) >= 3
+            or selected is None
+            or (point.get('fallback_used') and speaker_confidence < 0.08)
+            or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.72
+        )
+        strong_talking_head = (
+            selected is not None
+            and len(faces) <= 2
+            and not point.get('fallback_used')
+            and face_height_ratio > WIDE_FACE_HEIGHT_RATIO * 0.88
+            and speaker_confidence >= 0.52
+        )
+
+        if scene_cut or index == 0:
+            contextual_shot_latched = bool(wide_context_trigger and not portrait_source)
+            talking_head_release_streak = 0
+        elif contextual_shot_latched:
+            talking_head_release_streak = talking_head_release_streak + 1 if strong_talking_head else 0
+            if talking_head_release_streak >= 6:
+                contextual_shot_latched = False
+                talking_head_release_streak = 0
 
         if portrait_source:
             desired_mode = 'source_vertical'
-        elif len(faces) >= 3:
+        elif contextual_shot_latched:
             desired_mode = 'wide_context'
-        elif pair is not None and pair_streak >= STACK_PAIR_CONFIRM_SAMPLES and (
-            recent_switches >= 1 or speaker_confidence < 0.18 or audio_activity < 0.2
-        ):
+        elif wide_context_trigger:
+            desired_mode = 'wide_context'
+        elif stack_eligible:
             desired_mode = 'stacked'
-        elif selected is None or (point.get('fallback_used') and speaker_confidence < 0.08):
-            desired_mode = 'wide_context'
-        elif float(selected.get('h', 0)) / max(source_h, 1.0) <= WIDE_FACE_HEIGHT_RATIO * 0.72:
-            desired_mode = 'wide_context'
         else:
             desired_mode = 'single'
 
         if scene_cut:
             current_mode = desired_mode
-            current_pair = pair_ids
+            current_pair = pair_ids if desired_mode == 'stacked' else None
             pending_mode = None
             pending_count = 0
             held_samples = 0
@@ -420,7 +557,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             else:
                 pending_mode = desired_mode
                 pending_count = 1
-            if held_samples >= LAYOUT_MIN_HOLD_SAMPLES and pending_count >= LAYOUT_CONFIRM_SAMPLES:
+            required_confirmation = STACK_ENTER_CONFIRM_SAMPLES if desired_mode == 'stacked' else LAYOUT_CONFIRM_SAMPLES
+            if held_samples >= LAYOUT_MIN_HOLD_SAMPLES and pending_count >= required_confirmation:
                 current_mode = desired_mode
                 current_pair = pair_ids if desired_mode == 'stacked' else None
                 pending_mode = None
@@ -474,6 +612,20 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'speaker_confidence': round(speaker_confidence, 4),
             'audio_activity': round(audio_activity, 4),
             'scene_cut': scene_cut,
+            'single_score': round(single_score, 4),
+            'stacked_score': round(stacked_score, 4),
+            'stack_eligible': stack_eligible,
+            'editorial_signals': {
+                'two_stable_speakers': two_stable_speakers,
+                'both_actively_participating': both_actively_participating,
+                'both_meaningful': both_meaningful,
+                'reaction_matters': reaction_matters,
+                'rapid_alternation': rapid_alternation,
+                'loses_context_in_single': loses_context_in_single,
+                'recent_switches': recent_switches,
+                'participation_balance': round(participation_balance, 4),
+                'dominant_share': round(dominant_share, 4),
+            },
             'crop': crop,
             'primary_face': primary_face,
             'top_face': top_face,
@@ -485,6 +637,60 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         frame['layout_bottom_track_id'] = decision['bottom_track_id']
         frame['speaker_confidence'] = decision['speaker_confidence']
         point['framing'] = current_mode
+
+    # Stacked composition is an editorial exception, never the default. Keep
+    # only the strongest complete stacked runs that fit inside an 18% budget.
+    # Dropping a run returns each sample to its active-speaker crop, so speaker
+    # switches remain clean segment boundaries instead of a midpoint crop.
+    stacked_runs = []
+    run_start = None
+    for decision_index, decision in enumerate(decisions + [{'mode': None}]):
+        if decision.get('mode') == 'stacked' and run_start is None:
+            run_start = decision_index
+        elif decision.get('mode') != 'stacked' and run_start is not None:
+            run_end = decision_index
+            run_scores = [float(item.get('stacked_score', 0.0)) - float(item.get('single_score', 0.0)) for item in decisions[run_start:run_end]]
+            stacked_runs.append({
+                'start': run_start,
+                'end': run_end,
+                'samples': run_end - run_start,
+                'score': statistics.mean(run_scores) if run_scores else 0.0,
+            })
+            run_start = None
+
+    max_stacked_samples = int(math.floor(len(decisions) * STACK_MAX_DURATION_RATIO))
+    retained_stacked_indexes = set()
+    used_stacked_samples = 0
+    for run in sorted(stacked_runs, key=lambda item: float(item['score']), reverse=True):
+        run_samples = int(run['samples'])
+        remaining_budget = max_stacked_samples - used_stacked_samples
+        retained_samples = min(run_samples, remaining_budget, 16)  # at most four seconds per editorial beat
+        if retained_samples < STACK_ENTER_CONFIRM_SAMPLES:
+            continue
+        run_start_index = int(run['start'])
+        run_end_index = int(run['end'])
+        margins = [
+            float(item.get('stacked_score', 0.0)) - float(item.get('single_score', 0.0))
+            for item in decisions[run_start_index:run_end_index]
+        ]
+        best_offset = max(
+            range(0, run_samples - retained_samples + 1),
+            key=lambda offset: sum(margins[offset:offset + retained_samples]),
+        )
+        retained_start = run_start_index + best_offset
+        retained_stacked_indexes.update(range(retained_start, retained_start + retained_samples))
+        used_stacked_samples += retained_samples
+
+    for decision_index, decision in enumerate(decisions):
+        if decision.get('mode') != 'stacked' or decision_index in retained_stacked_indexes:
+            continue
+        decision['mode'] = 'single'
+        decision['top_track_id'] = None
+        decision['bottom_track_id'] = None
+        frames[decision_index]['layout_mode'] = 'single'
+        frames[decision_index]['layout_top_track_id'] = None
+        frames[decision_index]['layout_bottom_track_id'] = None
+        points[decision_index]['framing'] = 'single'
 
     segments = []
     for index, decision in enumerate(decisions):
@@ -508,12 +714,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'points': [],
                 '_top_boxes': [],
                 '_bottom_boxes': [],
+                '_single_scores': [],
+                '_stacked_scores': [],
             })
             if len(segments) > 1:
                 segments[-2]['end'] = float(decision['timestamp'])
         segment = segments[-1]
         segment['points'].append({
             't': decision['timestamp'],
+            'primaryTrackId': decision['primary_track_id'],
             'cropX': decision['crop']['x'],
             'cropY': decision['crop']['y'],
             'cropW': decision['crop']['w'],
@@ -527,6 +736,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             segment['_top_boxes'].append(decision['top_face'])
         if decision.get('bottom_face'):
             segment['_bottom_boxes'].append(decision['bottom_face'])
+        segment['_single_scores'].append(float(decision.get('single_score', 0.0)))
+        segment['_stacked_scores'].append(float(decision.get('stacked_score', 0.0)))
 
     def median_dict_box(items):
         if not items:
@@ -542,6 +753,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             continue
         segment['topBox'] = median_dict_box(segment.pop('_top_boxes'))
         segment['bottomBox'] = median_dict_box(segment.pop('_bottom_boxes'))
+        segment['singleScore'] = round(statistics.mean(segment.pop('_single_scores')), 4)
+        segment['stackedScore'] = round(statistics.mean(segment.pop('_stacked_scores')), 4)
         segment.pop('_key', None)
         segment['start'] = round(float(segment['start']), 3)
         segment['end'] = round(float(segment['end']), 3)
@@ -558,7 +771,16 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             continue
         previous = clean_segments[index - 1] if index > 0 else None
         following = clean_segments[index + 1] if index + 1 < len(clean_segments) else None
-        if segment.get('sceneCutStart') and following is not None:
+        if segment['mode'] != 'stacked' and following is not None and following['mode'] == 'stacked' and previous is not None:
+            previous['end'] = segment['end']
+            previous['points'].extend(segment['points'])
+            clean_segments.pop(index)
+            index = max(0, index - 1)
+        elif segment['mode'] != 'stacked' and previous is not None and previous['mode'] == 'stacked' and following is not None:
+            following['start'] = segment['start']
+            following['points'] = segment['points'] + following['points']
+            clean_segments.pop(index)
+        elif segment.get('sceneCutStart') and following is not None:
             following['start'] = segment['start']
             following['sceneCutStart'] = True
             following['points'] = segment['points'] + following['points']
@@ -586,6 +808,30 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             index = max(0, index - 1)
         else:
             index += 1
+
+    # Final defensive budget check after short-segment coalescing. If an edge
+    # transition still expanded stacked time past the budget, demote the least
+    # valuable stacked beats back to their active-speaker crop.
+    stacked_budget_seconds = duration * STACK_MAX_DURATION_RATIO
+    stacked_duration = sum(
+        float(segment['end']) - float(segment['start'])
+        for segment in clean_segments
+        if segment['mode'] == 'stacked'
+    )
+    if stacked_duration > stacked_budget_seconds:
+        for segment in sorted(
+            (item for item in clean_segments if item['mode'] == 'stacked'),
+            key=lambda item: float(item.get('stackedScore', 0.0)) - float(item.get('singleScore', 0.0)),
+        ):
+            segment_duration = float(segment['end']) - float(segment['start'])
+            segment['mode'] = 'single'
+            segment['topTrackId'] = None
+            segment['bottomTrackId'] = None
+            segment['topBox'] = None
+            segment['bottomBox'] = None
+            stacked_duration -= segment_duration
+            if stacked_duration <= stacked_budget_seconds:
+                break
 
     # Smooth and velocity-limit the virtual camera inside each uninterrupted
     # single-speaker segment. Speaker/layout cuts remain hard boundaries.
