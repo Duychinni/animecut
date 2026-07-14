@@ -58,7 +58,7 @@ export async function POST() {
     const admin = createAdminClient();
     const { data: projects, error } = await admin
       .from('projects')
-      .select('id, user_id, status, pipeline_status, exports(id, status, output_storage_path, error_message, updated_at)')
+      .select('id, user_id, status, pipeline_status, pipeline_completed_at, exports(id, status, output_storage_path, error_message, updated_at)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -73,7 +73,9 @@ export async function POST() {
       const rows = Array.isArray(project.exports)
         ? (project.exports as ExportRepairRow[])
         : [];
-      const projectAlreadyCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
+      const projectAlreadyCompleted = project.status === 'completed'
+        || project.pipeline_status === 'completed'
+        || Boolean(project.pipeline_completed_at);
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r));
       const readyExports = rows.filter(hasPlayableOutput).length;
       const hasSavedReels = readyExports > 0;
@@ -103,7 +105,7 @@ export async function POST() {
               pipeline_stage_label: 'Completed',
               pipeline_progress_percent: 100,
               pipeline_error: null,
-              pipeline_completed_at: new Date().toISOString(),
+              pipeline_completed_at: project.pipeline_completed_at || new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
             .eq('id', project.id)
@@ -186,7 +188,7 @@ export async function POST() {
             status: 'completed',
             pipeline_status: 'completed',
             pipeline_error: null,
-            pipeline_completed_at: new Date().toISOString(),
+            pipeline_completed_at: project.pipeline_completed_at || new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', project.id)

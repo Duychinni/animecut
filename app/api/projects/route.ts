@@ -66,7 +66,8 @@ export async function GET() {
       const readyExports = rows.filter(hasPlayableOutput).length;
       const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
-      const isCompleted = readyExports > 0 && (markedCompleted || activeExports === 0);
+      const completionLatched = markedCompleted || Boolean(project.pipeline_completed_at);
+      const isCompleted = readyExports > 0 && (completionLatched || activeExports === 0);
       const needsExportCompletion = markedCompleted && readyExports === 0;
       const uploadThumbnailUrl = project.source_type === 'upload'
         ? project.source_thumbnail_url

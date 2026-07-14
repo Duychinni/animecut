@@ -175,14 +175,21 @@ REEL TITLE RULES:
 
 REEL HOOK TEXT RULES:
 - Write a separate "hook_text" for the white title card that appears on the reel.
-- Create an attention-grabbing line from the transcript window: a short spoken phrase, lightly trimmed phrase, direct question, contrarian claim, or unresolved tension.
+- Write it like the first line of a high-performing short, not like a label or summary.
+- Its job is to make a viewer feel that they must keep watching to resolve a curiosity gap.
+- First identify the most compelling transcript-proven tension, consequence, result, contradiction, confession, disagreement, number, or unanswered question in this specific reel.
+- Then turn that idea into a reader-stopping line: a direct question, surprising claim, high-stakes consequence, contrarian statement, or unresolved tension.
 - It must be textually and conceptually distinct from the clip title, not a copy or close paraphrase.
 - Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question from the actual dialogue.
 - Keep it grounded in the transcript. Do not invent facts, names, outcomes, or drama.
-- Keep it short enough for a 9:16 title card: 2-8 words, max 38 characters.
+- Every factual word in the hook must be supported by the reel transcript, even when the wording is lightly tightened.
+- The hook must make sense before the video starts; reject fragments that only make sense after hearing the previous sentence.
+- Prefer specificity over vague hype. Numbers, concrete stakes, named conflicts, and surprising outcomes beat phrases such as "This Is Crazy".
+- Keep it short enough for a 9:16 title card: 3-9 words, max 42 characters.
 - Make it punchier than the title and suitable for a rounded white reel hook card.
 - Preserve question marks or exclamation marks when they make the spoken hook stronger.
-- Avoid bland labels like "Top Moment" unless there is truly no better hook.
+- Never use filler hooks such as "Top Moment", "Watch This", "This Is Crazy", "You Need To See This", or "This Is The Part That Matters".
+- Do not merely copy the first few transcript words. Choose the strongest hook idea from anywhere inside the reel window.
 - Do not use hashtags, emojis, quotation marks, or all-caps.
 
 TITLE / HOOK PAIR EXAMPLES:
@@ -335,7 +342,7 @@ Every remaining clip must end on a complete sentence, punchline, answer, or clea
 If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
-Rewrite every title as a concise subject label that explains what its reel is about, not as an attention hook. Rewrite every hook_text as a distinct curiosity, tension, question, or surprising claim. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
+Rewrite every title as a concise subject label that explains what its reel is about, not as an attention hook. Rewrite every hook_text as a transcript-proven, reader-stopping curiosity gap, tension, high-stakes consequence, specific result, question, or surprising claim. The hook must make sense before playback and create a reason to keep watching; reject vague hype and incomplete transcript fragments. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
 Return revised JSON only.`;
 
       const refineRes = await createAnalysisResponse({

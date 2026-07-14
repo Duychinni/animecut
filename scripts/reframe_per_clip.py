@@ -680,6 +680,7 @@ def main():
             'chosen_center_x': chosen_center_x,
             'chosen_center_y': chosen_center_y,
             'fallback_used': fallback_used,
+            'active_track_id': active_track_id,
         })
         points.append({
             't': rel_t,
@@ -696,6 +697,19 @@ def main():
             'audio_activity': round(current_audio, 4),
             'speaker_confidence': round(selected_mouth_score * current_audio, 4),
             'scene_change': round(scene_change, 4),
+            'active_track_id': active_track_id,
+            'fallback_used': fallback_used,
+        })
+        detected_faces[-1].update({
+            'active_track_id': active_track_id,
+            'selected_box': None if selected_box is None else {
+                'x': selected_box[0], 'y': selected_box[1], 'w': selected_box[2], 'h': selected_box[3],
+            },
+            'chosen_center_x': chosen_center_x,
+            'chosen_center_y': chosen_center_y,
+            'layout_mode': framing,
+            'fallback_used': fallback_used,
+            'scene_cut': scene_change >= 0.72,
         })
 
         prev_gray = gray
@@ -742,6 +756,25 @@ def main():
     # participants throughout a podcast/debate clip.
     split_stack = dual_frames >= 3 and dual_frame_ratio >= 0.45
 
+    unique_track_ids = sorted({
+        int(face['track_id'])
+        for frame in detected_faces
+        for face in frame.get('faces', [])
+        if face.get('track_id') is not None
+    })
+    detection_count = sum(
+        1 for frame in detected_faces for face in frame.get('faces', []) if not face.get('predicted', False)
+    )
+    predicted_samples = sum(
+        1 for frame in detected_faces if any(face.get('predicted', False) for face in frame.get('faces', []))
+    )
+    fallback_count = sum(1 for item in centers_x if item.get('fallback_used'))
+    scene_cut_count = sum(1 for frame in detected_faces if frame.get('scene_cut'))
+    layout_changes = sum(
+        1 for index in range(1, len(points))
+        if points[index].get('framing') != points[index - 1].get('framing')
+    )
+
     result = {
         'ok': True,
         'mode': 'split_stack' if split_stack else 'per_clip',
@@ -773,6 +806,14 @@ def main():
             'fallback_used': fallback_used,
             'audio_available': audio_available,
             'speaker_switches': speaker_switches,
+            'track_switches': speaker_switches,
+            'detection_count': detection_count,
+            'track_count': len(unique_track_ids),
+            'track_ids': unique_track_ids,
+            'scene_cuts': scene_cut_count,
+            'layout_mode_changes': layout_changes,
+            'detection_fallback_count': fallback_count,
+            'samples_using_prediction': predicted_samples,
             'confident_speaker_samples': confident_speaker_samples,
             'wide_context_samples': wide_context_samples,
             'analysis_rate_fps': sample_count / duration,
@@ -783,6 +824,11 @@ def main():
         'detected_faces': detected_faces,
         'ffmpeg_crop': f'crop={int(round(crop_w))}:{int(round(crop_h))}:{int(round(crop_x))}:{int(round(crop_y))},scale=1080:1920',
     }
+    metadata_path = os.environ.get('SMART_REFRAME_METADATA_PATH', '').strip()
+    if metadata_path:
+        metadata_output = Path(metadata_path)
+        metadata_output.parent.mkdir(parents=True, exist_ok=True)
+        metadata_output.write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result))
 
 

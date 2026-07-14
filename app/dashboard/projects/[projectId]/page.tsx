@@ -233,7 +233,9 @@ export default async function ProjectDetailPage({
         return similarTitle || (similarWindow && similarDuration);
       }) === index;
   });
-  const projectMarkedCompleted = projectRow?.status === 'completed' || projectRow?.pipeline_status === 'completed';
+  const projectMarkedCompleted = projectRow?.status === 'completed'
+    || projectRow?.pipeline_status === 'completed'
+    || Boolean((projectRow as { pipeline_completed_at?: string | null } | null)?.pipeline_completed_at);
   const savedExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
   const activeExportItems = filteredExportItems.filter((row) => (row.status === 'queued' || row.status === 'processing') && !hasSavedPlayableOutput(row));
   const hasActiveEditRenders = filteredExportItems.some((row) => row.edit_status === 'rendering');
@@ -277,9 +279,12 @@ export default async function ProjectDetailPage({
   const hasPlayableExports = playableExportItems.length > 0;
   const shouldShowResults = hasPlayableExports && (hasActiveEditRenders || activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
   const displayExportItems = shouldShowResults ? playableExportItems : [];
-  const isCompletedFromRows = doneExports > 0 && activeExports === 0 && (projectMarkedCompleted || projectHasTerminalIssue || doneExports >= targetCount);
+  const isCompletedFromRows = doneExports > 0 && (
+    projectMarkedCompleted
+    || (activeExports === 0 && (projectHasTerminalIssue || doneExports >= targetCount))
+  );
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
-  const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && activeExports === 0 && doneExports >= targetCount)
+  const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && doneExports > 0)
     ? 100
     : Math.max(0, Math.min(98, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
 

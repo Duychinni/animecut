@@ -3,6 +3,26 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export async function ensurePipelineJob(projectId: string) {
   const supabase = createAdminClient();
 
+  const { data: project } = await supabase
+    .from('projects')
+    .select('status, pipeline_status, pipeline_completed_at, exports(status, output_storage_path)')
+    .eq('id', projectId)
+    .maybeSingle();
+  const savedExports = Array.isArray(project?.exports)
+    ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }>
+    : [];
+  const hasPlayableOutput = savedExports.some((row) => row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://'));
+  const completionLatched = project?.status === 'completed'
+    || project?.pipeline_status === 'completed'
+    || Boolean(project?.pipeline_completed_at);
+
+  if (completionLatched && hasPlayableOutput) {
+    return { id: `completed:${projectId}`, status: 'completed' };
+  }
+
   const { data: existing, error: existingError } = await supabase
     .from('jobs')
     .select('id, status')

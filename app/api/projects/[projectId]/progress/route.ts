@@ -352,7 +352,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const [{ data: project, error: pErr }, { data: exportsRows, error: eErr }, { count: candidateCount, error: cErr }, { data: transcriptRow }] = await Promise.all([
       supabase
         .from('projects')
-        .select('id, user_id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, worker_last_seen_at, worker_last_log_message, pipeline_error, source_type, source_url, source_storage_path, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
+        .select('id, user_id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, pipeline_completed_at, worker_last_seen_at, worker_last_log_message, pipeline_error, source_type, source_url, source_storage_path, source_thumbnail_url, source_duration_seconds, created_at, updated_at')
         .eq('id', projectId)
         .single(),
       supabase
@@ -399,7 +399,9 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const latestPipelineJob = pipelineJobs[0] ?? null;
     const doneExports = rows.filter(hasPlayableOutput).length;
     const activeEdits = rows.filter((row) => (row as { edit_status?: string | null }).edit_status === 'rendering').length;
-    const projectMarkedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
+    const projectMarkedCompleted = project.status === 'completed'
+      || project.pipeline_status === 'completed'
+      || Boolean((project as { pipeline_completed_at?: string | null }).pipeline_completed_at);
     const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
     const failedExports = rows.filter((r) => r.status === 'error' && !hasPlayableOutput(r)).length;
     const retryableErroredExportIds = rows
@@ -583,7 +585,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
           pipeline_stage_label: 'Completed',
           pipeline_progress_percent: 100,
           pipeline_error: null,
-          pipeline_completed_at: new Date().toISOString(),
+          pipeline_completed_at: (project as { pipeline_completed_at?: string | null }).pipeline_completed_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq('id', projectId);

@@ -27,7 +27,7 @@ function toTitleCaseHook(text: string) {
     .join(' ');
 }
 
-function shortenWords(text: string, maxWords = 6, maxChars = 28) {
+function shortenWords(text: string, maxWords = 7, maxChars = 38) {
   const words = cleanText(text).split(/\s+/).filter(Boolean);
   const kept: string[] = [];
   for (const word of words) {
@@ -84,7 +84,51 @@ function isTooSimilarToTitle(hook: string, title: string) {
   return hookWords.filter((word) => titleWords.has(word)).length / hookWords.length >= 0.7;
 }
 
-function pickTranscriptHookPhrase(text: string) {
+function hookPhraseScore(text: string) {
+  const cleaned = cleanText(text);
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  let score = 0;
+  if (/\?/.test(cleaned) || /^(what|why|how|who|when|where|can|did|does|is|are|should|would|could)\b/i.test(cleaned)) score += 9;
+  if (/[$%]|\b\d+(?:[.,]\d+)?\b/.test(cleaned)) score += 8;
+  if (/\b(secret|truth|mistake|problem|wrong|never|can't|cannot|lost|broke|fight|knockout|shocking|risk|cost|reason|regret|threat|apology|million|thousand)\b/i.test(cleaned)) score += 7;
+  if (/\b(but|until|unless|instead|actually|because|nobody|everyone|only)\b/i.test(cleaned)) score += 4;
+  if (/\b(you|your)\b/i.test(cleaned)) score += 2;
+  if (words.length >= 3 && words.length <= 9) score += 4;
+  if (words.length < 3 || words.length > 12) score -= 5;
+  if (/^(i think|i mean|you know|and|but|so|yeah|well|like)\b/i.test(cleaned)) score -= 5;
+  return score;
+}
+
+function derivedCuriosityCandidates(text: string) {
+  const cleaned = cleanText(text);
+  const candidates: string[] = [];
+
+  const timedResult = cleaned.match(/\b((?:(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty|\d+)\s+)?(?:days?|weeks?|months?|years?))\s+later\b[^.!?]*?\b(?:made|earned|reached|grew to)\s+([^.!?]+)/i);
+  if (timedResult) candidates.push(`${timedResult[2]} In ${timedResult[1]}`);
+
+  const testedResult = cleaned.match(/\b(?:we|i|they)\s+tested\s+([\w-]+)\s+([a-z][a-z-]*)[^.!?]*?\bonly\s+one\b(?:\s+of\s+them)?\s+(?:actually\s+)?([^.!?]+)/i);
+  if (testedResult) candidates.push(`Only One Of ${testedResult[1]} ${testedResult[2]} ${testedResult[3]}`);
+
+  const reversal = cleaned.match(/\bi\s+thought\s+(?:the\s+)?(.{2,28}?)\s+(?:would|was|had|ended|could)[^.!?]*[.!?]\s*instead,?\s+(?:it|that|this)\s+([^.!?]+)/i);
+  if (reversal) candidates.push(`The ${reversal[1]} ${reversal[2]}`);
+
+  const question = cleaned.match(/\b(?:what|why|how|who|when|where|can|did|does|is|are|should|would|could)\b[^?]{6,80}\?/i)?.[0];
+  if (question) {
+    candidates.push(question
+      .replace(/\bmost\b\s*/i, '')
+      .replace(/\btheir\s+videos?\b/gi, 'it')
+      .replace(/\bfinally\b\s*/gi, '')
+      .replace(/\bit\s+start\b/gi, 'it starts')
+      .replace(/\s+/g, ' '));
+  }
+
+  return candidates
+    .map((candidate) => stripTrailingPunctuation(removeWeakHookPrefix(candidate)))
+    .map((candidate) => shortenWords(candidate, 9, 42))
+    .filter(Boolean);
+}
+
+function transcriptHookCandidates(text: string) {
   const cleaned = cleanText(text)
     .replace(/^["'\-:\s]+/, '')
     .replace(/^(and|but|so|yeah|well|like|you know|i mean)\s+/i, '')
@@ -97,13 +141,22 @@ function pickTranscriptHookPhrase(text: string) {
     /\b(my|your|his|her|their|daughter|son|mom|dad|brother|friend)\b[^.!?]{6,54}/i,
   ];
 
-  for (const pattern of patterns) {
-    const match = cleaned.match(pattern)?.[0];
-    const shortened = shortenWords(match ?? '', 8, 38);
-    if (shortened) return shortened;
-  }
+  const candidates = patterns
+    .map((pattern) => cleaned.match(pattern)?.[0] ?? '')
+    .concat(cleaned.split(/(?<=[.!?])\s+|\s+(?=but|until|unless|instead|because)\s*/i))
+    .map((candidate) => stripTrailingPunctuation(removeWeakHookPrefix(candidate)))
+    .map((candidate) => shortenWords(candidate, 9, 42))
+    .filter((candidate, index, all) => candidate.split(/\s+/).length >= 3 && all.indexOf(candidate) === index);
 
-  return shortenWords(cleaned, 8, 38);
+  return candidates.sort((a, b) => hookPhraseScore(b) - hookPhraseScore(a));
+}
+
+export function generateHookTextFromText(text: string, clipTitle = '') {
+  for (const candidate of [...derivedCuriosityCandidates(text), ...transcriptHookCandidates(text)]) {
+    const hook = toTitleCaseHook(candidate);
+    if (!isTooSimilarToTitle(hook, clipTitle)) return hook;
+  }
+  return '';
 }
 
 export function generateHookText(params: {
@@ -123,17 +176,18 @@ export function generateHookText(params: {
     endSec,
   );
 
-  const candidates = [openingTranscript, fullTranscript, closingTranscript]
-    .map((text) => stripTrailingPunctuation(pickTranscriptHookPhrase(text)))
-    .map(removeWeakHookPrefix)
+  // Score the whole reel before the opening so a stronger payoff, conflict, or
+  // concrete result can beat a weak first sentence while staying transcript-grounded.
+  const candidates = [fullTranscript, openingTranscript, closingTranscript]
+    .flatMap((text) => [...derivedCuriosityCandidates(text), ...transcriptHookCandidates(text)])
     .filter(Boolean);
 
   for (const candidate of candidates) {
-    const shortened = shortenWords(candidate, 8, 38);
+    const shortened = shortenWords(candidate, 9, 42);
     if (!shortened) continue;
     const hook = toTitleCaseHook(shortened);
     if (!isTooSimilarToTitle(hook, clipTitle)) return hook;
   }
 
-  return 'This Is The Part That Matters';
+  return generateHookTextFromText(fullTranscript || openingTranscript, clipTitle) || 'Keep Watching For The Answer';
 }

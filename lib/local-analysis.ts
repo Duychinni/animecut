@@ -1,4 +1,5 @@
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
+import { generateHookTextFromText } from '@/lib/hook-text';
 
 type TranscriptSegment = {
   start?: number;
@@ -127,6 +128,8 @@ function titleFromTranscript(text: string, index: number) {
 }
 
 function hookTextFromTranscript(text: string, fallback: string) {
+  const viralHook = generateHookTextFromText(text, fallback);
+  if (viralHook) return viralHook;
   const cleaned = cleanText(text)
     .replace(/^["'\-\u2013\u2014\s]+/, '')
     .replace(/^(and|but|so|yeah|well|like|you know|i mean)\s+/i, '');
@@ -137,7 +140,7 @@ function hookTextFromTranscript(text: string, fallback: string) {
   const hook = phraseFromText(question || tension || personal || cleaned, 7, 38);
   const normalize = (value: string) => cleanText(value).toLowerCase().replace(/[^a-z0-9\s]/g, '');
   if (hook && normalize(hook) !== normalize(fallback)) return hook;
-  return 'This Is The Part That Matters';
+  return phraseFromText(cleaned, 8, 42) || 'Keep Watching For The Answer';
 }
 
 function hasTension(text: string) {
