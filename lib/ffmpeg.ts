@@ -11,7 +11,7 @@ type ReframeMode = 'off' | 'basic' | 'smart';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v11-editorial-shot-context';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v12-full-canvas-context';
 const DEFAULT_X264_CRF = '12';
 const DEFAULT_X264_MAXRATE = '50M';
 const DEFAULT_X264_BUFSIZE = '100M';
@@ -429,6 +429,7 @@ type SplitStackLayout = {
 };
 type FramingInterval = { start: number; end: number };
 type TimelineLayoutMode = 'single' | 'stacked' | 'wide_context' | 'source_vertical';
+type WideContextKind = 'two_person' | 'broll' | 'safe_wide';
 type ReframeTimelinePoint = {
   t: number;
   cropX: number;
@@ -447,6 +448,7 @@ type ReframeTimelineSegment = {
   primaryTrackId?: number | null;
   topTrackId?: number | null;
   bottomTrackId?: number | null;
+  wideKind?: WideContextKind;
   topBox?: SubjectBox;
   bottomBox?: SubjectBox;
   points: ReframeTimelinePoint[];
@@ -593,6 +595,10 @@ function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): R
     const start = clamp(Number(item.start ?? 0), 0, clipDuration);
     const end = clamp(Number(item.end ?? clipDuration), 0, clipDuration);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.05) return [];
+    const rawWideKind = String(item.wideKind ?? 'safe_wide');
+    const wideKind: WideContextKind = rawWideKind === 'two_person' || rawWideKind === 'broll'
+      ? rawWideKind
+      : 'safe_wide';
     const points = Array.isArray(item.points)
       ? item.points.flatMap((rawPoint): ReframeTimelinePoint[] => {
           if (!rawPoint || typeof rawPoint !== 'object') return [];
@@ -623,6 +629,7 @@ function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): R
       primaryTrackId: item.primaryTrackId == null || item.primaryTrackId === '' ? null : Number.isFinite(Number(item.primaryTrackId)) ? Number(item.primaryTrackId) : null,
       topTrackId: item.topTrackId == null || item.topTrackId === '' ? null : Number.isFinite(Number(item.topTrackId)) ? Number(item.topTrackId) : null,
       bottomTrackId: item.bottomTrackId == null || item.bottomTrackId === '' ? null : Number.isFinite(Number(item.bottomTrackId)) ? Number(item.bottomTrackId) : null,
+      wideKind,
       topBox: normalizeBox(item.topBox as Partial<SubjectBox> | null | undefined),
       bottomBox: normalizeBox(item.bottomBox as Partial<SubjectBox> | null | undefined),
       points,
@@ -1681,6 +1688,63 @@ function buildTimelineStackPane(
   return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${VERTICAL_EXPORT_WIDTH}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},setsar=1${outputLabel}`;
 }
 
+function buildTwoPersonColumnPane(
+  inputLabel: string,
+  outputLabel: string,
+  box: SubjectBox,
+  sourceW: number,
+  sourceH: number,
+  paneWidth: number,
+  labelPrefix: string,
+) {
+  // Side-by-side portrait columns keep both speakers prominent without
+  // reintroducing stacked mode. A narrow full-height crop can cut through a
+  // large face, so each pane uses a face-safe foreground crop over a matching
+  // full-height background. The foreground remains centered and occupies as
+  // much of the pane height as the source geometry safely allows.
+  const paneAspect = paneWidth / VERTICAL_EXPORT_HEIGHT;
+  const cropHeight = floorEven(sourceH);
+  const backgroundCropWidth = floorEven(Math.min(sourceW, cropHeight * paneAspect));
+  const cropWidth = floorEven(clamp(box.w * 1.04, backgroundCropWidth, sourceW));
+  const faceCx = box.cx ?? (box.x + box.w / 2);
+  const cropX = floorEven(clamp(faceCx - cropWidth / 2, 0, Math.max(0, sourceW - cropWidth)));
+  const backgroundX = floorEven(clamp(faceCx - backgroundCropWidth / 2, 0, Math.max(0, sourceW - backgroundCropWidth)));
+  return [
+    `${inputLabel}split=2[${labelPrefix}bg][${labelPrefix}fg]`,
+    `[${labelPrefix}bg]crop=${backgroundCropWidth}:${cropHeight}:${backgroundX}:0,scale=${paneWidth}:${VERTICAL_EXPORT_HEIGHT}:flags=${HIGH_QUALITY_SCALE_FLAGS},boxblur=18:2[${labelPrefix}bgready]`,
+    `[${labelPrefix}fg]crop=${cropWidth}:${cropHeight}:${cropX}:0,scale=${paneWidth}:-2:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1[${labelPrefix}fgready]`,
+    `[${labelPrefix}bgready][${labelPrefix}fgready]overlay=0:(H-h)/2:format=auto,setsar=1${outputLabel}`,
+  ];
+}
+
+function buildCropToFillContext(
+  inputLabel: string,
+  outputLabel: string,
+  sourceW: number,
+  sourceH: number,
+) {
+  const cropHeight = floorEven(sourceH);
+  const cropWidth = floorEven(Math.min(sourceW, cropHeight * VERTICAL_EXPORT_WIDTH / VERTICAL_EXPORT_HEIGHT));
+  const cropX = floorEven(Math.max(0, (sourceW - cropWidth) / 2));
+  return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:0,scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1${outputLabel}`;
+}
+
+function buildLargeSafeWideContext(
+  base: string,
+  normalizedOutput: string,
+  index: number,
+) {
+  // Low-confidence fallback: preserve context, but make the foreground occupy
+  // 85% of the vertical canvas. The old fit path occupied only ~32%.
+  const foregroundHeight = floorEven(VERTICAL_EXPORT_HEIGHT * 0.85);
+  return [
+    `${base},split=2[safewidebg${index}][safewidefg${index}]`,
+    `[safewidebg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2[safewidebgready${index}]`,
+    `[safewidefg${index}]scale=-2:${foregroundHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${foregroundHeight}:(iw-${VERTICAL_EXPORT_WIDTH})/2:0[safewidefgready${index}]`,
+    `[safewidebgready${index}][safewidefgready${index}]overlay=0:(H-h)/2:format=auto,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`,
+  ];
+}
+
 function buildTimedReframeFilter(
   opts: RenderOpts,
   timeline: ReframeTimelineSegment[],
@@ -1701,11 +1765,22 @@ function buildTimedReframeFilter(
 
     if (segment.mode === 'source_vertical') {
       graph.push(`${base},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS},pad=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else if (segment.mode === 'wide_context' && segment.wideKind === 'two_person' && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
+      const dividerWidth = 8;
+      const leftWidth = floorEven((VERTICAL_EXPORT_WIDTH - dividerWidth) / 2);
+      const rightWidth = VERTICAL_EXPORT_WIDTH - dividerWidth - leftWidth;
+      const orderedBoxes = [segment.topBox, segment.bottomBox].sort(
+        (a, b) => (a.cx ?? (a.x + a.w / 2)) - (b.cx ?? (b.x + b.w / 2)),
+      );
+      graph.push(`${base},split=2[twopersonleft${index}][twopersonright${index}]`);
+      graph.push(...buildTwoPersonColumnPane(`[twopersonleft${index}]`, `[twopersonleftready${index}]`, orderedBoxes[0], sourceW, sourceH, leftWidth, `twopersonleftpane${index}`));
+      graph.push(...buildTwoPersonColumnPane(`[twopersonright${index}]`, `[twopersonrightready${index}]`, orderedBoxes[1], sourceW, sourceH, rightWidth, `twopersonrightpane${index}`));
+      graph.push(`color=c=black@0.92:s=${dividerWidth}x${VERTICAL_EXPORT_HEIGHT}:d=${(segment.end - segment.start).toFixed(3)}[twopersondivider${index}]`);
+      graph.push(`[twopersonleftready${index}][twopersondivider${index}][twopersonrightready${index}]hstack=inputs=3,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else if (segment.mode === 'wide_context' && segment.wideKind === 'broll' && sourceW > 0 && sourceH > 0) {
+      graph.push(`${buildCropToFillContext(`${base},`, '', sourceW, sourceH)},fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
     } else if (segment.mode === 'wide_context') {
-      graph.push(`${base},split=2[widebg${index}][widefg${index}]`);
-      graph.push(`[widebg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2[widebgready${index}]`);
-      graph.push(`[widefg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS}[widefgready${index}]`);
-      graph.push(`[widebgready${index}][widefgready${index}]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+      graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index));
     } else if (segment.mode === 'stacked' && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
       const dividerHeight = 16;
       const paneHeight = Math.floor((VERTICAL_EXPORT_HEIGHT - dividerHeight) / 2);
@@ -1783,7 +1858,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
     ...opts,
     autoReframe: opts.autoReframe ?? process.env.AUTO_REFRAME_ENABLED !== 'false',
     reframeMode: effectiveMode,
-    debugReframeOverlay: opts.debugReframeOverlay ?? process.env.DEBUG_REFRAME_OVERLAY === 'true',
+    // Debug overlays must be explicitly requested by a debug-only caller. An
+    // environment variable can never burn guides into a customer export.
+    debugReframeOverlay: opts.debugReframeOverlay === true,
   };
 
   let escapedPath: string | undefined;

@@ -25,6 +25,8 @@ STACK_REACTION_WINDOW_SEC = 3.0
 STACK_MIN_RAPID_SWITCHES = 2
 STACK_SCORE_MARGIN = 0.15
 STACK_MAX_DURATION_RATIO = 0.18
+STACK_LAYOUT_ENABLED = False
+SCENE_CUT_LOOKAHEAD_SEC = 0.25
 WIDE_FACE_HEIGHT_RATIO = 0.22
 WIDE_FACE_WIDTH_RATIO = 0.105
 
@@ -369,6 +371,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     reaction_history = []
     contextual_shot_latched = False
     talking_head_release_streak = 0
+    wide_pair_hold_ids = None
+    wide_pair_hold_faces = None
+    wide_pair_miss_streak = 0
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -379,6 +384,47 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         selected = frame.get('selected_box')
         pair = strongest_face_pair(faces, source_w)
         pair_ids = None if pair is None else tuple(int(face.get('track_id')) for face in pair)
+
+        # A conversation composition is a visual decision, not an editorial
+        # stacked-layout decision. Ignore predicted and tiny incidental faces,
+        # then keep the two dominant faces only when they occupy distinct
+        # horizontal regions of the source frame. This handles pre-composed
+        # podcast panels without letting logos/audience faces force the mode.
+        visible_faces = [
+            face for face in faces
+            if not bool(face.get('predicted')) and face.get('track_id') is not None
+        ]
+        dominant_faces = sorted(
+            (
+                face for face in visible_faces
+                if float(face.get('h', 0.0)) >= source_h * 0.15
+            ),
+            key=lambda face: float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+            reverse=True,
+        )[:2]
+        visual_pair = None
+        if len(dominant_faces) == 2:
+            dominant_faces = sorted(dominant_faces, key=lambda face: float(face.get('cx', 0.0)))
+            horizontal_separation = abs(
+                float(dominant_faces[1].get('cx', 0.0)) - float(dominant_faces[0].get('cx', 0.0))
+            )
+            if horizontal_separation >= source_w * 0.24:
+                visual_pair = tuple(dominant_faces)
+
+        if scene_cut:
+            wide_pair_hold_ids = None
+            wide_pair_hold_faces = None
+            wide_pair_miss_streak = 0
+        if visual_pair is not None:
+            wide_pair_hold_ids = tuple(int(face.get('track_id')) for face in visual_pair)
+            wide_pair_hold_faces = visual_pair
+            wide_pair_miss_streak = 0
+        elif wide_pair_hold_ids is not None:
+            wide_pair_miss_streak += 1
+            if wide_pair_miss_streak > 2:
+                wide_pair_hold_ids = None
+                wide_pair_hold_faces = None
+                wide_pair_miss_streak = 0
 
         if pair_ids is not None and pair_ids == last_pair_ids:
             pair_streak += 1
@@ -490,7 +536,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             + reaction_score * 0.35
             + stability_score * 0.15
         )
-        stack_eligible = (
+        stack_eligible = STACK_LAYOUT_ENABLED and (
             two_stable_speakers
             and both_actively_participating
             and both_meaningful
@@ -539,6 +585,24 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         else:
             desired_mode = 'single'
 
+        two_person_context = wide_pair_hold_ids is not None
+        grid_like_context = (
+            len(visible_faces) >= 2
+            and max(float(face.get('h', 0.0)) for face in visible_faces) < source_h * 0.15
+            and (
+                max(float(face.get('cy', 0.0)) for face in visible_faces)
+                - min(float(face.get('cy', 0.0)) for face in visible_faces)
+            ) >= source_h * 0.25
+        )
+        if two_person_context:
+            wide_kind = 'two_person'
+        elif grid_like_context:
+            wide_kind = 'safe_wide'
+        elif contextual_shot_latched or len(faces) >= 3 or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.72:
+            wide_kind = 'broll'
+        else:
+            wide_kind = 'safe_wide'
+
         if scene_cut:
             current_mode = desired_mode
             current_pair = pair_ids if desired_mode == 'stacked' else None
@@ -577,6 +641,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             }
 
         top_face = bottom_face = None
+        wide_pair_ids = None
         if current_mode == 'stacked':
             active_pair = current_pair if current_pair and all(track_id in face_by_id for track_id in current_pair) else pair_ids
             if active_pair and all(track_id in face_by_id for track_id in active_pair):
@@ -587,6 +652,22 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 # Hold the layout through a short detection gap; the segment
                 # aggregator will use the last observed boxes for both tracks.
                 active_pair = current_pair
+        elif current_mode == 'wide_context' and wide_kind == 'two_person':
+            active_pair = wide_pair_hold_ids
+            held_faces_by_id = {
+                int(face.get('track_id')): face for face in (wide_pair_hold_faces or ())
+                if face.get('track_id') is not None
+            }
+            if active_pair:
+                ordered_people = []
+                for track_id in active_pair:
+                    face = face_by_id.get(track_id) or held_faces_by_id.get(track_id)
+                    if face is not None:
+                        ordered_people.append((track_id, face))
+                if len(ordered_people) == 2:
+                    ordered_people.sort(key=lambda item: float(item[1].get('cx', 0)))
+                    wide_pair_ids = (ordered_people[0][0], ordered_people[1][0])
+                    top_face, bottom_face = ordered_people[0][1], ordered_people[1][1]
 
         crop = portrait_crop_for_face(
             (
@@ -607,14 +688,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'timestamp': round(now, 3),
             'mode': current_mode,
             'primary_track_id': active_id,
-            'top_track_id': None if current_pair is None else current_pair[0],
-            'bottom_track_id': None if current_pair is None else current_pair[1],
+            'top_track_id': wide_pair_ids[0] if wide_pair_ids else (None if current_pair is None else current_pair[0]),
+            'bottom_track_id': wide_pair_ids[1] if wide_pair_ids else (None if current_pair is None else current_pair[1]),
             'speaker_confidence': round(speaker_confidence, 4),
             'audio_activity': round(audio_activity, 4),
             'scene_cut': scene_cut,
             'single_score': round(single_score, 4),
             'stacked_score': round(stacked_score, 4),
             'stack_eligible': stack_eligible,
+            'wide_kind': wide_kind if current_mode == 'wide_context' else None,
             'editorial_signals': {
                 'two_stable_speakers': two_stable_speakers,
                 'both_actively_participating': both_actively_participating,
@@ -635,6 +717,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         frame['layout_mode'] = current_mode
         frame['layout_top_track_id'] = decision['top_track_id']
         frame['layout_bottom_track_id'] = decision['bottom_track_id']
+        frame['layout_wide_kind'] = decision['wide_kind']
         frame['speaker_confidence'] = decision['speaker_confidence']
         point['framing'] = current_mode
 
@@ -697,8 +780,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         identity_key = (
             decision['mode'],
             decision['primary_track_id'] if decision['mode'] == 'single' else None,
-            decision['top_track_id'] if decision['mode'] == 'stacked' else None,
-            decision['bottom_track_id'] if decision['mode'] == 'stacked' else None,
+            decision['wide_kind'] if decision['mode'] == 'wide_context' else None,
+            decision['top_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
+            decision['bottom_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
         )
         force_boundary = bool(decision.get('scene_cut'))
         if not segments or identity_key != segments[-1]['_key'] or force_boundary:
@@ -710,6 +794,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'primaryTrackId': decision['primary_track_id'],
                 'topTrackId': decision['top_track_id'],
                 'bottomTrackId': decision['bottom_track_id'],
+                'wideKind': decision['wide_kind'],
                 'sceneCutStart': force_boundary,
                 'points': [],
                 '_top_boxes': [],
@@ -832,6 +917,24 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             stacked_duration -= segment_duration
             if stacked_duration <= stacked_budget_seconds:
                 break
+
+    # Scene analysis is sampled every 250 ms. Pull hard-cut boundaries forward
+    # by one sample so the incoming composition appears on the first visible
+    # frame instead of holding the outgoing B-roll layout for another sample.
+    for segment_index in range(1, len(clean_segments)):
+        segment = clean_segments[segment_index]
+        previous = clean_segments[segment_index - 1]
+        if not segment.get('sceneCutStart') or not segment.get('points'):
+            continue
+        original_start = float(segment['start'])
+        boundary = max(float(previous['start']), original_start - SCENE_CUT_LOOKAHEAD_SEC)
+        if original_start - boundary < 0.05:
+            continue
+        previous['end'] = round(boundary, 3)
+        segment['start'] = round(boundary, 3)
+        leading_point = dict(segment['points'][0])
+        leading_point['t'] = round(boundary, 3)
+        segment['points'].insert(0, leading_point)
 
     # Smooth and velocity-limit the virtual camera inside each uninterrupted
     # single-speaker segment. Speaker/layout cuts remain hard boundaries.
