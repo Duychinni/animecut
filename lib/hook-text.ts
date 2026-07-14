@@ -90,13 +90,63 @@ function hookPhraseScore(text: string) {
   let score = 0;
   if (/\?/.test(cleaned) || /^(what|why|how|who|when|where|can|did|does|is|are|should|would|could)\b/i.test(cleaned)) score += 9;
   if (/[$%]|\b\d+(?:[.,]\d+)?\b/.test(cleaned)) score += 8;
-  if (/\b(secret|truth|mistake|problem|wrong|never|can't|cannot|lost|broke|fight|knockout|shocking|risk|cost|reason|regret|threat|apology|million|thousand)\b/i.test(cleaned)) score += 7;
+  if (/\b(secret|truth|mistake|problem|wrong|never|can't|cannot|lost|broke|fight|knockout|shocking|risk|cost|reason|regret|threat|apology|accusation|debate|refused|million|thousand)\b/i.test(cleaned)) score += 7;
   if (/\b(but|until|unless|instead|actually|because|nobody|everyone|only)\b/i.test(cleaned)) score += 4;
   if (/\b(you|your)\b/i.test(cleaned)) score += 2;
   if (words.length >= 3 && words.length <= 9) score += 4;
   if (words.length < 3 || words.length > 12) score -= 5;
   if (/^(i think|i mean|you know|and|but|so|yeah|well|like)\b/i.test(cleaned)) score -= 5;
+  if (/^(what do you mean|how old are you|would you have believed it|do you know what i mean)\??$/i.test(cleaned)) score -= 18;
+  if (/\b(bet|versus|vs\.?|calls|refused|threat|challenge|risk|money|knockout|ducking|soft)\b/i.test(cleaned)) score += 6;
+  if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|is|are|was|were)\??$/i.test(cleaned)) score -= 14;
+  if (/^(is|are|was|were)\s+(ducking|avoiding|fighting|betting|calling)\b/i.test(cleaned)) score -= 12;
   return score;
+}
+
+function editorialPremiseCandidates(text: string) {
+  const cleaned = cleanText(text);
+  const candidates: string[] = [];
+
+  if (/\b(age|old)\b/i.test(cleaned) && /\b(bet|money|wager)\b/i.test(cleaned)) {
+    candidates.push('Betting My Age Against Your Money?');
+  }
+  if (/\b(knockout|knock out|knock\s+(?:him|her|them)\s+out|ko)\b/i.test(cleaned)) {
+    candidates.push('Can He Actually Get The Knockout?');
+  }
+  if (/\b(duck|ducking|avoid|avoiding)\b/i.test(cleaned) && /\b(fight|fighter|boxing|opponent)\b/i.test(cleaned)) {
+    candidates.push('Is He Avoiding The Real Fight?');
+    candidates.push('Why He Refused To Take The Fight');
+  }
+  if (/\b(soft|scared|afraid)\b/i.test(cleaned) && /\b(fight|fighter|boxing|opponent)\b/i.test(cleaned)) {
+    candidates.push('The Accusation That Changed The Debate');
+  }
+  if (/\b(bet|money|wager|odds)\b/i.test(cleaned) && /\b(fight|fighter|boxing|wins?)\b/i.test(cleaned)) {
+    candidates.push('Would You Bet Money On Him?');
+  }
+  if (/\b(disagree|argument|debate|back down|refused)\b/i.test(cleaned)) {
+    candidates.push('Why Neither Side Backed Down');
+  }
+
+  return candidates;
+}
+
+function rankedHookCandidates(texts: string[]) {
+  const candidates = texts.flatMap((text) => [
+    ...editorialPremiseCandidates(text),
+    ...derivedCuriosityCandidates(text),
+    ...transcriptHookCandidates(text),
+  ]);
+
+  const unique = new Map<string, string>();
+  for (const candidate of candidates) {
+    const shortened = shortenWords(candidate, 9, 42);
+    const key = normalizeForComparison(shortened);
+    if (shortened && key && !unique.has(key)) unique.set(key, shortened);
+  }
+
+  return [...unique.values()]
+    .map((text) => ({ text: toTitleCaseHook(text), score: hookPhraseScore(text) }))
+    .sort((a, b) => b.score - a.score || a.text.length - b.text.length);
 }
 
 function derivedCuriosityCandidates(text: string) {
@@ -152,11 +202,17 @@ function transcriptHookCandidates(text: string) {
 }
 
 export function generateHookTextFromText(text: string, clipTitle = '') {
-  for (const candidate of [...derivedCuriosityCandidates(text), ...transcriptHookCandidates(text)]) {
-    const hook = toTitleCaseHook(candidate);
+  for (const candidate of rankedHookCandidates([text])) {
+    const hook = candidate.text;
     if (!isTooSimilarToTitle(hook, clipTitle)) return hook;
   }
   return '';
+}
+
+export function generateHookOptionsFromText(text: string, clipTitle = '', limit = 5) {
+  return rankedHookCandidates([text])
+    .filter((candidate) => !isTooSimilarToTitle(candidate.text, clipTitle))
+    .slice(0, Math.max(1, limit));
 }
 
 export function generateHookText(params: {
@@ -178,12 +234,10 @@ export function generateHookText(params: {
 
   // Score the whole reel before the opening so a stronger payoff, conflict, or
   // concrete result can beat a weak first sentence while staying transcript-grounded.
-  const candidates = [fullTranscript, openingTranscript, closingTranscript]
-    .flatMap((text) => [...derivedCuriosityCandidates(text), ...transcriptHookCandidates(text)])
-    .filter(Boolean);
+  const candidates = rankedHookCandidates([fullTranscript, openingTranscript, closingTranscript]);
 
   for (const candidate of candidates) {
-    const shortened = shortenWords(candidate, 9, 42);
+    const shortened = shortenWords(candidate.text, 9, 42);
     if (!shortened) continue;
     const hook = toTitleCaseHook(shortened);
     if (!isTooSimilarToTitle(hook, clipTitle)) return hook;

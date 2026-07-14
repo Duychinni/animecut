@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { analyzeClipCandidates } from '@/lib/openai';
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
@@ -327,13 +329,18 @@ function looksLikeTranscriptTitle(title: string, openingLine: string) {
 
 function keywordDisplayTitle(openingLine: string, closingLine: string, reason: unknown, index: number) {
   const source = normalizeDisplayTitle(`${openingLine} ${closingLine} ${String(reason ?? '')}`);
-  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(source)) return 'Flat Earth Debate Moment';
-  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent|challenge)\b/i.test(source)) return 'Fight Talk Turning Point';
-  if (/\b(song|music|producer|album|record|studio)\b/i.test(source)) return 'Music Story Breakthrough';
-  if (/\b(podcast|interview|question|answer)\b/i.test(source)) return 'Interview Moment That Stands Out';
-  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(source)) return 'The Truth Behind The Moment';
-  if (/\b(funny|laugh|joke|hilarious)\b/i.test(source)) return 'Funny Moment With A Payoff';
-  if (/\b(emotional|daughter|family|memory|lost|honest)\b/i.test(source)) return 'Honest Story That Hits';
+  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(source)) return 'The Evidence Behind the Flat Earth Debate';
+  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent|challenge)\b/i.test(source)) {
+    if (/\b(bet|money|odds|wager)\b/i.test(source)) return 'The Fight Bet They Could Not Agree On';
+    if (/\b(knockout|knock out|ko)\b/i.test(source)) return 'The Knockout Claim Behind the Debate';
+    if (/\b(duck|soft|scared|afraid|avoid)\b/i.test(source)) return 'The Accusation Dividing the Fight Debate';
+    return 'The Fight Prediction They Disagree On';
+  }
+  if (/\b(song|music|producer|album|record|studio)\b/i.test(source)) return 'The Decision That Changed the Music Story';
+  if (/\b(podcast|interview|question|answer)\b/i.test(source)) return 'The Question That Changed the Conversation';
+  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(source)) return 'The Realization That Changed Their View';
+  if (/\b(funny|laugh|joke|hilarious)\b/i.test(source)) return 'The Joke That Broke the Conversation';
+  if (/\b(emotional|daughter|family|memory|lost|honest)\b/i.test(source)) return 'The Personal Story Behind the Reaction';
 
   const words = source
     .toLowerCase()
@@ -347,8 +354,8 @@ function keywordDisplayTitle(openingLine: string, closingLine: string, reason: u
     .slice(0, 3)
     .map(([word]) => word);
 
-  if (keywords.length >= 2) return `${titleCasePhrase(keywords.join(' '))} Moment`;
-  return `Standout Clip ${index + 1}`;
+  if (keywords.length >= 2) return `Why ${titleCasePhrase(keywords.join(' '))} Matters`;
+  return `A Conversation Worth Hearing ${index + 1}`;
 }
 
 function buildDisplayTitle(rawTitle: unknown, openingLine: string, closingLine: string, reason: unknown, index: number) {
@@ -371,13 +378,45 @@ function normalizeLooseText(t: string) {
 function isNearDuplicateWindow(aStart: number, aEnd: number, bStart: number, bEnd: number) {
   const overlap = Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
   const minDur = Math.max(1, Math.min(aEnd - aStart, bEnd - bStart));
-  const maxDur = Math.max(1, Math.max(aEnd - aStart, bEnd - bStart));
   const startDelta = Math.abs(aStart - bStart);
   const endDelta = Math.abs(aEnd - bEnd);
-  const sameHookWindow = startDelta < 6 && endDelta < 6;
-  const heavyTranscriptOverlap = overlap >= 12 && (overlap / minDur >= 0.32 || overlap / maxDur >= 0.24);
-  const sameNeighborhood = startDelta < 14 && overlap / minDur >= 0.22;
-  return (sameHookWindow && overlap / minDur >= 0.5) || heavyTranscriptOverlap || sameNeighborhood;
+  const overlapRatio = overlap / minDur;
+  return (startDelta < 3 && endDelta < 3) || overlapRatio >= 0.8;
+}
+
+const STORY_STOPWORDS = new Set([
+  'about', 'after', 'again', 'also', 'and', 'are', 'because', 'been', 'before', 'being', 'but', 'could', 'does',
+  'from', 'have', 'here', 'into', 'just', 'like', 'more', 'only', 'really', 'said', 'that', 'their', 'there',
+  'they', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'with', 'would', 'your',
+]);
+
+function storyTokens(candidate: RankedCandidate) {
+  return new Set(normalizeLooseText([
+    candidate.title,
+    candidate.hook_text,
+    candidate.opening_line,
+    candidate.closing_line,
+  ].join(' '))
+    .split(/\s+/)
+    .filter((word) => word.length >= 3 && !STORY_STOPWORDS.has(word)));
+}
+
+function storySimilarity(a: RankedCandidate, b: RankedCandidate) {
+  const aTokens = storyTokens(a);
+  const bTokens = storyTokens(b);
+  if (!aTokens.size || !bTokens.size) return 0;
+  let shared = 0;
+  for (const token of aTokens) if (bTokens.has(token)) shared += 1;
+  return shared / Math.max(1, new Set([...aTokens, ...bTokens]).size);
+}
+
+function candidateOverlapRatio(a: RankedCandidate, b: RankedCandidate) {
+  const overlap = Math.max(0, Math.min(a.end_sec, b.end_sec) - Math.max(a.start_sec, b.start_sec));
+  return overlap / Math.max(1, Math.min(a.end_sec - a.start_sec, b.end_sec - b.start_sec));
+}
+
+function isGenericEditorialTitle(title: string) {
+  return /^(fight talk|interview|standout clip|top moment|viral moment|best moment|the truth behind|a conversation worth hearing)/i.test(title.trim());
 }
 
 function hasReliableSentencePunctuation(segments: TranscriptSegment[]) {
@@ -408,10 +447,14 @@ function fallbackWordFloor(totalSeconds: number) {
 function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
   const curTitle = normalizeTitle(String(cur.title ?? ''));
   const pickedTitle = normalizeTitle(String(picked.title ?? ''));
-  const curSignature = hookContextSignature(String(cur.opening_line ?? ''), String(cur.closing_line ?? ''));
-  const pickedSignature = hookContextSignature(String(picked.opening_line ?? ''), String(picked.closing_line ?? ''));
-  const sameTitle = curTitle.length > 10 && pickedTitle.length > 10 && curTitle === pickedTitle;
-  const sameStory = curSignature.length > 20 && pickedSignature.length > 20 && curSignature === pickedSignature;
+  const similarity = storySimilarity(cur, picked);
+  const overlapRatio = candidateOverlapRatio(cur, picked);
+  const sameTitle = curTitle.length > 10
+    && pickedTitle.length > 10
+    && curTitle === pickedTitle
+    && !isGenericEditorialTitle(curTitle)
+    && similarity >= 0.45;
+  const sameStory = similarity >= 0.82 || (similarity >= 0.58 && overlapRatio > 0.2);
   const sameWindow = isNearDuplicateWindow(
     Number(cur.start_sec ?? 0),
     Number(cur.end_sec ?? 0),
@@ -540,10 +583,6 @@ function hasStrongPayoff(text: string) {
   if (!t) return false;
   if (!endsSentence(t)) return false;
   return /(!|\?|\.|\bthat'?s why\b|\bthe point is\b|\bso the answer is\b|\bwhich means\b|\bthat means\b|\bthe result is\b|\bthe lesson is\b)/i.test(t);
-}
-
-function hookContextSignature(opening: string, closing: string) {
-  return `${normalizeLooseText(opening).slice(0, 80)}__${normalizeLooseText(closing).slice(0, 80)}`;
 }
 
 function normalizeHookText(raw: unknown, fallback: string) {
@@ -798,6 +837,11 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const parsed = options.forceLocal
       ? analyzeTranscriptLocally(transcriptRow.full_text as string, segments)
       : await analyzeClipCandidates(transcriptRow.full_text as string, segments);
+    const analysisDiagnostics = options.forceLocal
+      ? { provider: 'local', openai_timed_out: false, fallback_used: true, fallback_reason: 'force_local_requested' }
+      : ((parsed as { diagnostics?: Record<string, unknown> }).diagnostics ?? {
+          provider: 'unknown', openai_timed_out: false, fallback_used: false, fallback_reason: null,
+        });
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
     const localSupplement = options.forceLocal
       ? { candidates: [] }
@@ -997,6 +1041,71 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const ranked = calibrateFinalScores(selected.slice(0, targetClipCount)).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
+    const sameCandidate = (left: RankedCandidate, right: RankedCandidate) => (
+      Math.abs(left.start_sec - right.start_sec) < 0.05
+      && Math.abs(left.end_sec - right.end_sec) < 0.05
+      && normalizeTitle(left.title) === normalizeTitle(right.title)
+    );
+    const rejectedCandidateReport = allScoredCandidates
+      .filter((candidate) => !ranked.some((selectedCandidate) => sameCandidate(candidate, selectedCandidate)))
+      .map((candidate) => {
+        let rejectionReason = candidate.reject_reason;
+        if (!rejectionReason && candidate.self_contained_confidence < SELF_CONTAINED_MIN_CONFIDENCE) rejectionReason = 'self_contained_confidence_below_minimum';
+        if (!rejectionReason && candidate.duration_seconds < analysisMinClipSec) rejectionReason = 'duration_below_minimum';
+        if (!rejectionReason && countTranscriptWordsInRange(segments, candidate.start_sec, candidate.end_sec) < minimumWordCount) rejectionReason = 'word_count_below_minimum';
+        if (!rejectionReason && ranked.some((selectedCandidate) => isDuplicateCandidate(candidate, selectedCandidate))) rejectionReason = 'semantic_or_timeline_duplicate';
+        if (!rejectionReason) rejectionReason = 'ranked_below_final_selection_cutoff';
+        return {
+          start: candidate.start_sec,
+          end: candidate.end_sec,
+          duration: candidate.duration_seconds,
+          title: candidate.title,
+          hook: candidate.hook_text,
+          score: Number(candidate.overall_score ?? 0),
+          reason: rejectionReason,
+        };
+      });
+
+    const productionDiagnostics = {
+      project_id,
+      transcript_segments: segments.length,
+      transcript_duration_seconds: Number(transcriptMaxEnd.toFixed(2)),
+      analysis_provider: analysisDiagnostics.provider ?? 'unknown',
+      openai_timed_out: analysisDiagnostics.openai_timed_out === true,
+      fallback_analysis_used: analysisDiagnostics.fallback_used === true,
+      fallback_reason: analysisDiagnostics.fallback_reason ?? null,
+      candidates_returned_by_primary_analysis: aiReturnedCount,
+      local_supplement_candidates: localSupplement.candidates.length,
+      candidates_before_deduplication: filteredCandidates.length,
+      candidates_after_deduplication: deduped.length,
+      final_selected_clip_count: ranked.length,
+      selected_clips: ranked.map((candidate) => ({
+        start: candidate.start_sec,
+        end: candidate.end_sec,
+        duration: candidate.duration_seconds,
+        title: candidate.title,
+        hook: candidate.hook_text,
+        score: Number(candidate.overall_score ?? 0),
+      })),
+      rejected_candidates: rejectedCandidateReport,
+    };
+    console.log('[analyze:production-diagnostics]', JSON.stringify(productionDiagnostics));
+    try {
+      const diagnosticsDir = path.resolve(
+        /* turbopackIgnore: true */
+        process.env.ANALYSIS_DIAGNOSTICS_DIR?.trim() || './tmp/analysis-diagnostics',
+      );
+      await mkdir(diagnosticsDir, { recursive: true });
+      const diagnosticsPath = path.join(diagnosticsDir, `${project_id}.candidate-report.json`);
+      await writeFile(diagnosticsPath, JSON.stringify(productionDiagnostics, null, 2), 'utf8');
+      console.log('[analyze:diagnostic-report-saved]', { project_id, diagnosticsPath });
+    } catch (diagnosticError) {
+      console.warn('[analyze:diagnostic-report-unavailable]', {
+        project_id,
+        error: diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
+      });
+    }
+
     console.log('[analyze] counts', {
       project_id,
       videoDurationSeconds: Number(transcriptMaxEnd.toFixed(2)),
@@ -1006,6 +1115,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       minimumWordCount,
       fallbackMinimumWordCount,
       punctuationReliable,
+      analysisDiagnostics,
       candidateCountGenerated: aiReturnedCount,
       localSupplementCount: localSupplement.candidates.length,
       candidateCountAfterLengthFilter: filteredCandidates.length,
@@ -1020,11 +1130,8 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         hookText: c.hook_text,
         reasonSelected: c.reason,
       })),
-      rejectedCandidates: analysisCandidates.length - ranked.length,
-      rejectedReasonsSample: allScoredCandidates
-        .filter((c) => c.reject_reason)
-        .slice(0, 20)
-        .map((c) => ({ title: c.title, reject_reason: c.reject_reason, start: c.start_sec, end: c.end_sec, score: c.overall_score })),
+      rejectedCandidates: rejectedCandidateReport.length,
+      rejectedReasons: rejectedCandidateReport,
     });
 
     const toLegacyTenPoint = (value: number) => Math.max(1, Math.min(10, Math.round(value / 10)));
@@ -1060,7 +1167,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         updated_at: new Date().toISOString(),
       }).eq('id', project_id);
 
-      return { ok: true, count: 0, candidates: [], reason: 'not_enough_content' };
+      return { ok: true, count: 0, candidates: [], reason: 'not_enough_content', diagnostics: productionDiagnostics };
     }
 
     let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
@@ -1074,7 +1181,13 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     if (insErr) throw insErr;
 
     await supabase.from('projects').update({ status: 'analyzed', pipeline_error: null }).eq('id', project_id);
-    return { ok: true, count: ranked.length, candidates: ranked, inserted_candidate_ids: insertedRows?.map((row) => row.id) ?? [] };
+    return {
+      ok: true,
+      count: ranked.length,
+      candidates: ranked,
+      inserted_candidate_ids: insertedRows?.map((row) => row.id) ?? [],
+      diagnostics: productionDiagnostics,
+    };
 }
 
 export async function POST(req: Request) {

@@ -403,7 +403,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             reverse=True,
         )[:2]
         visual_pair = None
-        if len(dominant_faces) == 2:
+        # A third or fourth visible participant must not automatically create a
+        # two-column layout. In group shots the active-speaker crop remains the
+        # default; safe-wide is reserved for genuinely tiny/uncertain faces.
+        if len(dominant_faces) == 2 and len(visible_faces) <= 2:
             dominant_faces = sorted(dominant_faces, key=lambda face: float(face.get('cx', 0.0)))
             horizontal_separation = abs(
                 float(dominant_faces[1].get('cx', 0.0)) - float(dominant_faces[0].get('cx', 0.0))
@@ -552,17 +555,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             else 0.0
         )
         wide_context_trigger = (
-            len(faces) >= 3
-            or selected is None
+            selected is None
             or (point.get('fallback_used') and speaker_confidence < 0.08)
-            or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.72
+            or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.55
         )
         strong_talking_head = (
             selected is not None
-            and len(faces) <= 2
             and not point.get('fallback_used')
-            and face_height_ratio > WIDE_FACE_HEIGHT_RATIO * 0.88
-            and speaker_confidence >= 0.52
+            and face_height_ratio > WIDE_FACE_HEIGHT_RATIO * 0.72
+            and speaker_confidence >= 0.42
         )
 
         if scene_cut or index == 0:
@@ -598,7 +599,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             wide_kind = 'two_person'
         elif grid_like_context:
             wide_kind = 'safe_wide'
-        elif contextual_shot_latched or len(faces) >= 3 or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.72:
+        elif contextual_shot_latched or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.55:
             wide_kind = 'broll'
         else:
             wide_kind = 'safe_wide'

@@ -151,6 +151,38 @@ export async function validateRenderedVideo(outputPath: string) {
   };
 }
 
+export async function extractBestVideoThumbnail(inputPath: string, outputPath: string, durationSeconds: number) {
+  const script = process.env.THUMBNAIL_SELECTOR_SCRIPT || path.join(process.cwd(), 'scripts', 'select_thumbnail.py');
+  try {
+    const result = await runJsonCommand(resolveSmartReframePython(), [
+      script,
+      inputPath,
+      outputPath,
+      String(Math.max(0.25, durationSeconds)),
+    ]);
+    const payload = result.json as { ok?: boolean; selected_timestamp?: number; selected_score?: number; selected_faces?: number };
+    if (!payload.ok || !existsSync(outputPath)) throw new Error('Thumbnail selector did not produce an image');
+    return payload;
+  } catch (error) {
+    console.warn('[thumbnail] visual scoring unavailable; using representative FFmpeg frame', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    const safeStart = Math.max(0.25, durationSeconds * 0.08);
+    const safeDuration = Math.max(0.5, durationSeconds * 0.82);
+    await runFfmpeg([
+      '-y',
+      '-ss', String(safeStart),
+      '-t', String(safeDuration),
+      '-i', inputPath,
+      '-vf', 'thumbnail=120,scale=1280:-2',
+      '-frames:v', '1',
+      '-q:v', '2',
+      outputPath,
+    ]);
+    return { ok: true, selected_timestamp: null, selected_score: null, selected_faces: null };
+  }
+}
+
 async function probeInputVideoForRender(inputPath: string) {
   const result = await runJsonCommand(resolveMediaBinary('ffprobe'), [
     '-v', 'error',
@@ -929,6 +961,15 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         segments: reframeTimeline.length,
         modeChanges: Math.max(0, reframeTimeline.length - 1),
         modes: reframeTimeline.map((segment) => segment.mode),
+        timeline: reframeTimeline.map((segment) => ({
+          start: segment.start,
+          end: segment.end,
+          mode: segment.mode,
+          wideKind: segment.wideKind ?? null,
+          primaryTrackId: segment.primaryTrackId ?? null,
+          topTrackId: segment.topTrackId ?? null,
+          bottomTrackId: segment.bottomTrackId ?? null,
+        })),
         identities: reframeTimeline.map((segment) => ({
           primaryTrackId: segment.primaryTrackId ?? null,
           topTrackId: segment.topTrackId ?? null,

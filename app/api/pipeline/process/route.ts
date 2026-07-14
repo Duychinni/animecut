@@ -337,6 +337,9 @@ export async function POST() {
       }
 
       console.log('[pipeline] after analyze', { projectId, candidateCount });
+      if (analyzeData?.diagnostics && typeof analyzeData.diagnostics === 'object') {
+        console.log('[pipeline:analysis-diagnostics]', JSON.stringify(analyzeData.diagnostics));
+      }
     }
 
     if (analyzeData?.reason === 'not_enough_content' || Number(analyzeData?.count ?? 0) === 0) {
@@ -424,6 +427,7 @@ export async function POST() {
         project_id: projectId,
         waiting_for_exports: true,
         export_counts: finalExportCounts,
+        analysis_diagnostics: analyzeData?.diagnostics ?? null,
       });
     }
 
@@ -448,7 +452,13 @@ export async function POST() {
 
     await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id);
 
-    return NextResponse.json({ ok: true, processed: 1, project_id: projectId });
+    return NextResponse.json({
+      ok: true,
+      processed: 1,
+      project_id: projectId,
+      export_counts: finalExportCounts,
+      analysis_diagnostics: analyzeData?.diagnostics ?? null,
+    });
   } catch (e: unknown) {
     const rawMessage = e instanceof Error ? e.message : 'Pipeline failed';
     const publicError = getPipelineErrorInfo(rawMessage);

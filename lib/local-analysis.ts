@@ -101,11 +101,16 @@ function titleCasePhrase(text: string) {
 
 function keywordTitle(text: string, index: number) {
   const cleaned = cleanText(text);
-  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(cleaned)) return 'Flat Earth Debate Moment';
-  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent)\b/i.test(cleaned)) return 'Fight Talk Turning Point';
-  if (/\b(song|music|producer|album|record|studio)\b/i.test(cleaned)) return 'Music Story Breakthrough';
-  if (/\b(podcast|interview|question|answer)\b/i.test(cleaned)) return 'Interview Moment That Stands Out';
-  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(cleaned)) return 'The Truth Behind The Moment';
+  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(cleaned)) return 'The Evidence Behind the Flat Earth Debate';
+  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent)\b/i.test(cleaned)) {
+    if (/\b(bet|money|odds|wager)\b/i.test(cleaned)) return 'The Fight Bet They Could Not Agree On';
+    if (/\b(knockout|knock out|ko)\b/i.test(cleaned)) return 'The Knockout Claim Behind the Debate';
+    if (/\b(duck|soft|scared|afraid|avoid)\b/i.test(cleaned)) return 'The Accusation Dividing the Fight Debate';
+    return 'The Fight Prediction They Disagree On';
+  }
+  if (/\b(song|music|producer|album|record|studio)\b/i.test(cleaned)) return 'The Decision That Changed the Music Story';
+  if (/\b(podcast|interview|question|answer)\b/i.test(cleaned)) return 'The Question That Changed the Conversation';
+  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(cleaned)) return 'The Realization That Changed Their View';
 
   const words = cleaned
     .toLowerCase()
@@ -119,8 +124,8 @@ function keywordTitle(text: string, index: number) {
     .slice(0, 3)
     .map(([word]) => word);
 
-  if (keywords.length >= 2) return `${titleCasePhrase(keywords.join(' '))} Moment`;
-  return `Standout Clip ${index + 1}`;
+  if (keywords.length >= 2) return `Why ${titleCasePhrase(keywords.join(' '))} Matters`;
+  return `A Conversation Worth Hearing ${index + 1}`;
 }
 
 function titleFromTranscript(text: string, index: number) {

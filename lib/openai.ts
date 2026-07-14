@@ -191,6 +191,9 @@ REEL HOOK TEXT RULES:
 - Never use filler hooks such as "Top Moment", "Watch This", "This Is Crazy", "You Need To See This", or "This Is The Part That Matters".
 - Do not merely copy the first few transcript words. Choose the strongest hook idea from anywhere inside the reel window.
 - Do not use hashtags, emojis, quotation marks, or all-caps.
+- Generate five materially different hook options internally before choosing one.
+- Score the options for clarity, curiosity, specificity, emotional tension, accuracy, and brevity.
+- Save the alternatives and the transcript sentence that proves the chosen hook.
 
 TITLE / HOOK PAIR EXAMPLES:
 - title: "Building An App Through Cold Outreach"; hook_text: "100 Calls Every Single Day?"
@@ -239,6 +242,12 @@ Return ONLY valid JSON in this exact shape:
       "overall_score": number,
       "standalone_confidence": number,
       "hook_text": string,
+      "hook_options": [{ "text": string, "score": number }],
+      "hook_supporting_quote": string,
+      "hook_selection_reason": string,
+      "topic": string,
+      "moment_type": string,
+      "virality_reason": string,
       "opening_line": string,
       "closing_line": string
     }
@@ -282,16 +291,28 @@ export async function analyzeClipCandidates(
   segments: Array<{ start?: number; end?: number; text?: string }> = [],
 ) {
   if (isMockClipAnalysisEnabled()) {
-    return buildMockCandidates(segments);
+    return {
+      ...buildMockCandidates(segments),
+      diagnostics: { provider: 'mock', openai_timed_out: false, fallback_used: false, fallback_reason: null },
+    };
   }
 
   const provider = analysisProvider();
   if (provider === 'local' || !hasOpenAiKey()) {
-    return analyzeTranscriptLocally(transcript, segments);
+    return {
+      ...analyzeTranscriptLocally(transcript, segments),
+      diagnostics: {
+        provider: 'local',
+        openai_timed_out: false,
+        fallback_used: true,
+        fallback_reason: provider === 'local' ? 'local_provider_configured' : 'openai_key_missing',
+      },
+    };
   }
 
   try {
     const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
+    const policy = getClipPolicy(totalSeconds);
     const targetCandidates = minCandidatePoolForDuration(totalSeconds);
     const prompt = buildPrompt(targetCandidates, totalSeconds);
 
@@ -333,16 +354,21 @@ export async function analyzeClipCandidates(
 
       const merged = { candidates: allCandidates };
       if (!allCandidates.length) {
-        return analyzeTranscriptLocally(transcript, segments);
+        return {
+          ...analyzeTranscriptLocally(transcript, segments),
+          diagnostics: { provider: 'local', openai_timed_out: false, fallback_used: true, fallback_reason: 'openai_returned_no_candidates' },
+        };
       }
 
       const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
+Return at least ${Math.max(policy.targetMin * 2, policy.targetMax)} distinct candidates when the transcript contains that many complete moments. The route will perform final ranking and deduplication later.
 Keep a broad candidate pool, but remove near-duplicate or overlapping clips that use the same transcript section.
 Every remaining clip must end on a complete sentence, punchline, answer, or clear statement.
 If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
 Rewrite every title as a concise subject label that explains what its reel is about, not as an attention hook. Rewrite every hook_text as a transcript-proven, reader-stopping curiosity gap, tension, high-stakes consequence, specific result, question, or surprising claim. The hook must make sense before playback and create a reason to keep watching; reject vague hype and incomplete transcript fragments. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
+For every candidate, retain five hook_options, one hook_supporting_quote, a hook_selection_reason, topic, moment_type, and virality_reason.
 Return revised JSON only.`;
 
       const refineRes = await createAnalysisResponse({
@@ -356,15 +382,30 @@ Return revised JSON only.`;
 
       const refined = await parseJsonWithRepair(refineRes.output_text);
       if (Array.isArray(refined?.candidates)) {
-        return refined;
+        return {
+          ...refined,
+          diagnostics: { provider: 'openai', openai_timed_out: false, fallback_used: false, fallback_reason: null },
+        };
       }
 
-      return merged;
+      return {
+        ...merged,
+        diagnostics: { provider: 'openai', openai_timed_out: false, fallback_used: false, fallback_reason: null },
+      };
     })(), OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS, 'OpenAI clip analysis');
   } catch (error) {
     if (shouldUseLocalFallback(error)) {
       console.warn('[analysis] OpenAI analysis unavailable; using local transcript analysis.', error);
-      return analyzeTranscriptLocally(transcript, segments);
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ...analyzeTranscriptLocally(transcript, segments),
+        diagnostics: {
+          provider: 'local',
+          openai_timed_out: /timed out|timeout|aborted/i.test(message),
+          fallback_used: true,
+          fallback_reason: message.slice(0, 240),
+        },
+      };
     }
     throw error;
   }

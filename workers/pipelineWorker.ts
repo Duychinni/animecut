@@ -28,11 +28,15 @@ async function runOnce() {
   const pipelineProcessed = Number(pipeline?.processed ?? 0);
   const jobsProcessed = Number(jobs?.processed ?? 0);
   const totalProcessed = pipelineProcessed + jobsProcessed;
+  const pipelineDetails = pipeline as Record<string, unknown>;
 
   console.log('[worker] tick', {
     pipelineProcessed,
     jobsProcessed,
     totalProcessed,
+    projectId: pipelineDetails.project_id ?? null,
+    exportCounts: pipelineDetails.export_counts ?? null,
+    analysisDiagnostics: pipelineDetails.analysis_diagnostics ?? null,
   });
 
   return totalProcessed;
