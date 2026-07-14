@@ -178,7 +178,7 @@ function getPreviewCaptionWords(title: string) {
 }
 
 function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: 'tile' | 'reel'): CSSProperties {
-  const scale = size === 'reel' ? 2.25 : 1.65;
+  const scale = size === 'reel' ? 2.6 : 1.9;
   const stroke = Math.max(0, Math.round(preset.captionStrokeWidth * (size === 'reel' ? 0.78 : 0.42)));
   const glowColor = preset.captionHighlightColor;
   const shadowMap: Record<string, string> = {
@@ -978,7 +978,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                     <div className="flex justify-center bg-transparent px-1.5">
                       <div className="relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] border border-white/10 bg-[linear-gradient(180deg,#4b2c1d_0%,#17101f_48%,#06070b_100%)] text-white shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
                         <div className="absolute inset-x-0 top-0 h-7 bg-[linear-gradient(90deg,rgba(255,255,255,0.14)_50%,transparent_50%)] bg-[length:18px_100%] opacity-45" />
-                        <div className="absolute inset-x-4 top-9 rounded-md bg-white px-3 py-2 text-center text-[13px] font-black leading-tight text-black shadow-[0_4px_18px_rgba(0,0,0,0.35)]">
+                        <div className="absolute inset-x-3 top-8 rounded-md bg-white px-3 py-2.5 text-center text-[15px] font-black leading-[1.08] text-black shadow-[0_4px_18px_rgba(0,0,0,0.35)]">
                           {formatMockHook(clip.title)}
                         </div>
 

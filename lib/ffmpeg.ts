@@ -86,7 +86,7 @@ export async function extractAudioForTranscription(inputPath: string, outputPath
 export async function validateRenderedVideo(outputPath: string) {
   const result = await runJsonCommand(resolveMediaBinary('ffprobe'), [
     '-v', 'error',
-    '-show_entries', 'format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate',
+    '-show_entries', 'format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate,pix_fmt',
     '-of', 'json',
     outputPath,
   ]);
@@ -98,6 +98,7 @@ export async function validateRenderedVideo(outputPath: string) {
       width?: number;
       height?: number;
       avg_frame_rate?: string;
+      pix_fmt?: string;
     }>;
     format?: { duration?: string; size?: string };
   };
@@ -137,6 +138,17 @@ export async function validateRenderedVideo(outputPath: string) {
   if (decodeErrors) {
     throw new Error(`Rendered export is corrupted: ${stderr.split('\n').slice(0, 4).join(' | ')}`);
   }
+
+  return {
+    width: video.width,
+    height: video.height,
+    videoCodec: video.codec_name ?? null,
+    audioCodec: audio.codec_name ?? null,
+    pixelFormat: video.pix_fmt ?? null,
+    duration,
+    size,
+    frameRate: video.avg_frame_rate ?? null,
+  };
 }
 
 async function probeInputVideoForRender(inputPath: string) {
@@ -228,15 +240,20 @@ function formatCommand(cmd: string, args: string[]) {
   return [cmd, ...args].map(shellQuote).join(' ');
 }
 
-async function writeDebugCommandFile(clipId: string, commandText: string, outputPath: string) {
-  const debugDir = path.join(process.cwd(), 'tmp', 'reframe-debug');
+async function writeDebugCommandFile(clipId: string, commandText: string, outputPath: string, args: string[]) {
+  const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || path.join(process.cwd(), 'tmp', 'reframe-debug');
   await mkdir(debugDir, { recursive: true });
+  const filterIndex = args.indexOf('-filter_complex');
+  const filterGraph = filterIndex >= 0 ? args[filterIndex + 1] ?? null : null;
   const bundle = {
     clipId,
     outputPath,
     ffmpegCommand: commandText,
+    ffmpegArgs: args,
+    filterGraph,
   };
   await writeFile(path.join(debugDir, `${clipId}.ffmpeg-command.txt`), `${commandText}\n`, 'utf8');
+  if (filterGraph) await writeFile(path.join(debugDir, `${clipId}.filter-graph.txt`), `${filterGraph}\n`, 'utf8');
   await writeFile(path.join(debugDir, `${clipId}.bundle.json`), JSON.stringify(bundle, null, 2), 'utf8');
 }
 
@@ -245,7 +262,7 @@ async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outpu
   const commandText = formatCommand(ffmpegCommand, args);
   console.log('[ffmpeg] command', { clipId: debug?.clipId ?? null, outputPath: debug?.outputPath ?? null, command: commandText });
   if (debug?.clipId && debug?.outputPath) {
-    await writeDebugCommandFile(debug.clipId, commandText, debug.outputPath);
+    await writeDebugCommandFile(debug.clipId, commandText, debug.outputPath, args);
   }
   await new Promise<void>((resolve, reject) => {
     const p = spawn(ffmpegCommand, args);
@@ -411,10 +428,36 @@ type SplitStackLayout = {
   outputHeight: number;
 };
 type FramingInterval = { start: number; end: number };
+type TimelineLayoutMode = 'single' | 'stacked' | 'wide_context' | 'source_vertical';
+type ReframeTimelinePoint = {
+  t: number;
+  cropX: number;
+  cropY: number;
+  cropW: number;
+  cropH: number;
+  cropCenterX?: number;
+  cropCenterY?: number;
+  zoom?: number;
+  speakerConfidence?: number;
+};
+type ReframeTimelineSegment = {
+  start: number;
+  end: number;
+  mode: TimelineLayoutMode;
+  primaryTrackId?: number | null;
+  topTrackId?: number | null;
+  bottomTrackId?: number | null;
+  topBox?: SubjectBox;
+  bottomBox?: SubjectBox;
+  points: ReframeTimelinePoint[];
+};
 type SmartReframeResult = {
   cropExpr?: string;
   layout?: SplitStackLayout;
   wideIntervals?: FramingInterval[];
+  timeline?: ReframeTimelineSegment[];
+  sourceW?: number;
+  sourceH?: number;
 };
 
 function clamp01(v: number) {
@@ -537,6 +580,64 @@ function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox |
   const h = Number(box.h ?? 0);
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h) || w <= 1 || h <= 1) return undefined;
   return { x, y, w, h, cx: Number(box.cx ?? (x + w / 2)), cy: Number(box.cy ?? (y + h / 2)) };
+}
+
+function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): ReframeTimelineSegment[] {
+  if (!Array.isArray(rawTimeline)) return [];
+  const validModes = new Set<TimelineLayoutMode>(['single', 'stacked', 'wide_context', 'source_vertical']);
+  const segments = rawTimeline.flatMap((raw): ReframeTimelineSegment[] => {
+    if (!raw || typeof raw !== 'object') return [];
+    const item = raw as Record<string, unknown>;
+    const mode = String(item.mode ?? '') as TimelineLayoutMode;
+    if (!validModes.has(mode)) return [];
+    const start = clamp(Number(item.start ?? 0), 0, clipDuration);
+    const end = clamp(Number(item.end ?? clipDuration), 0, clipDuration);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.05) return [];
+    const points = Array.isArray(item.points)
+      ? item.points.flatMap((rawPoint): ReframeTimelinePoint[] => {
+          if (!rawPoint || typeof rawPoint !== 'object') return [];
+          const point = rawPoint as Record<string, unknown>;
+          const t = Number(point.t ?? start);
+          const cropX = Number(point.cropX ?? 0);
+          const cropY = Number(point.cropY ?? 0);
+          const cropW = Number(point.cropW ?? 0);
+          const cropH = Number(point.cropH ?? 0);
+          if (![t, cropX, cropY, cropW, cropH].every(Number.isFinite) || cropW <= 1 || cropH <= 1) return [];
+          return [{
+            t: clamp(t, start, end),
+            cropX,
+            cropY,
+            cropW,
+            cropH,
+            cropCenterX: Number(point.cropCenterX ?? (cropX + cropW / 2)),
+            cropCenterY: Number(point.cropCenterY ?? (cropY + cropH / 2)),
+            zoom: Number(point.zoom ?? 1),
+            speakerConfidence: Number(point.speakerConfidence ?? 0),
+          }];
+        }).sort((a, b) => a.t - b.t)
+      : [];
+    return [{
+      start,
+      end,
+      mode,
+      primaryTrackId: item.primaryTrackId == null || item.primaryTrackId === '' ? null : Number.isFinite(Number(item.primaryTrackId)) ? Number(item.primaryTrackId) : null,
+      topTrackId: item.topTrackId == null || item.topTrackId === '' ? null : Number.isFinite(Number(item.topTrackId)) ? Number(item.topTrackId) : null,
+      bottomTrackId: item.bottomTrackId == null || item.bottomTrackId === '' ? null : Number.isFinite(Number(item.bottomTrackId)) ? Number(item.bottomTrackId) : null,
+      topBox: normalizeBox(item.topBox as Partial<SubjectBox> | null | undefined),
+      bottomBox: normalizeBox(item.bottomBox as Partial<SubjectBox> | null | undefined),
+      points,
+    }];
+  }).sort((a, b) => a.start - b.start);
+
+  if (!segments.length) return [];
+  segments[0].start = 0;
+  for (let index = 1; index < segments.length; index += 1) {
+    const boundary = clamp(segments[index].start, segments[index - 1].start + 0.05, clipDuration);
+    segments[index - 1].end = boundary;
+    segments[index].start = boundary;
+  }
+  segments[segments.length - 1].end = clipDuration;
+  return segments.filter((segment) => segment.end - segment.start >= 0.05);
 }
 
 function medianSubjectBoxes(items: SubjectBox[]): SubjectBox | undefined {
@@ -734,6 +835,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         audio_activity?: number;
         speaker_confidence?: number;
       }>;
+      reframe_timeline?: unknown;
       meta?: {
         points?: number;
         frames_with_detection_pct?: number;
@@ -747,6 +849,9 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         dual_observation_opportunities?: number;
         dual_frame_ratio?: number;
         analysis_rate_fps?: number;
+        timeline_segments?: number;
+        layout_mode_changes?: number;
+        layout_modes?: string[];
       };
       detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number }> }>;
       error?: string;
@@ -802,25 +907,32 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
     let jsonSaved = false;
 
     if (process.env.DEBUG_REFRAME_SAVE_JSON === 'true') {
-      const debugDir = `${process.cwd()}/tmp/reframe-debug`;
+      const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || `${process.cwd()}/tmp/reframe-debug`;
       await mkdir(debugDir, { recursive: true });
       await writeFile(`${debugDir}/${clipId}.json`, JSON.stringify(raw, null, 2), 'utf8');
       jsonSaved = true;
     }
 
-    const splitStackLayout = maybeBuildSplitStackLayout(raw);
-    if (splitStackLayout) {
-      console.log('[smart-reframe-layout]', {
+    const clipDuration = Math.max(0.01, opts.endSec - opts.startSec);
+    const reframeTimeline = normalizeReframeTimeline(raw.reframe_timeline, clipDuration);
+    if (reframeTimeline.length) {
+      console.log('[smart-reframe-layout-timeline]', {
         clipId,
         candidateId,
-        mode: splitStackLayout.mode,
-        topBox: splitStackLayout.topBox,
-        bottomBox: splitStackLayout.bottomBox,
-        dualFrames: raw.meta?.dual_frames ?? null,
-        dualObservationOpportunities: raw.meta?.dual_observation_opportunities ?? null,
-        dualFrameRatio: raw.meta?.dual_frame_ratio ?? null,
+        segments: reframeTimeline.length,
+        modeChanges: Math.max(0, reframeTimeline.length - 1),
+        modes: reframeTimeline.map((segment) => segment.mode),
+        identities: reframeTimeline.map((segment) => ({
+          primaryTrackId: segment.primaryTrackId ?? null,
+          topTrackId: segment.topTrackId ?? null,
+          bottomTrackId: segment.bottomTrackId ?? null,
+        })),
       });
-      return { layout: splitStackLayout };
+      return {
+        timeline: reframeTimeline,
+        sourceW: Number(raw.source_w ?? 0) || undefined,
+        sourceH: Number(raw.source_h ?? 0) || undefined,
+      };
     }
 
     const detectionPct = Number(raw.meta?.frames_with_detection_pct ?? NaN);
@@ -1230,14 +1342,14 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string) {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 770;
-  const cardHeight = twoLine ? 188 : 130;
+  const cardWidth = 840;
+  const cardHeight = twoLine ? 218 : 154;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const cardY = twoLine ? 66 : 82;
+  const cardY = twoLine ? 58 : 72;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 76 : 84;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 34);
+  const hookFontSize = twoLine ? 88 : 98;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1271,18 +1383,18 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=82',
+    'fontsize=96',
     'box=1',
     'boxcolor=white',
-    'boxborderw=30',
+    'boxborderw=34',
     'borderw=0',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=9',
+    'line_spacing=11',
     'fix_bounds=1',
     'x=(w-text_w)/2',
-    'y=86',
+    'y=74',
     drawtextBetween(0, 4.5),
   ].join(':');
 }
@@ -1364,7 +1476,7 @@ function appendPresentationFilters(
     const styleMap: Record<CaptionTemplate, string[]> = {
       clean: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=10',
+        'FontSize=12',
         'PrimaryColour=&H00FFFFFF',
         'OutlineColour=&H00303030',
         'BorderStyle=1',
@@ -1375,7 +1487,7 @@ function appendPresentationFilters(
       ],
       bold: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=11',
+        'FontSize=13',
         'PrimaryColour=&H00FFFFFF',
         'OutlineColour=&H00000000',
         'BorderStyle=1',
@@ -1386,7 +1498,7 @@ function appendPresentationFilters(
       ],
       viral: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=12',
+        'FontSize=14',
         'PrimaryColour=&H0000F5FF',
         'OutlineColour=&H00000000',
         'BorderStyle=1',
@@ -1397,7 +1509,7 @@ function appendPresentationFilters(
       ],
       karaoke: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=13',
+        'FontSize=15',
         'PrimaryColour=&H0000FFFF',
         'OutlineColour=&H00000000',
         'BorderStyle=1',
@@ -1409,7 +1521,7 @@ function appendPresentationFilters(
       ],
       cinematic: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=9',
+        'FontSize=10',
         'PrimaryColour=&H00F0F0F0',
         'OutlineColour=&H00202020',
         'BorderStyle=1',
@@ -1421,7 +1533,7 @@ function appendPresentationFilters(
       ],
       rage: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=14',
+        'FontSize=16',
         'PrimaryColour=&H004C4CFF',
         'OutlineColour=&H00000000',
         'BorderStyle=1',
@@ -1433,7 +1545,7 @@ function appendPresentationFilters(
       ],
       minimal: [
         `FontName=${fontMap[captionFont]}`,
-        'FontSize=8',
+        'FontSize=9',
         'PrimaryColour=&H00FFFFFF',
         'OutlineColour=&H002B2B2B',
         'BorderStyle=1',
@@ -1444,7 +1556,7 @@ function appendPresentationFilters(
       ],
       capcut: [
         'FontName=Arial Black',
-        'FontSize=108',
+        'FontSize=124',
         'PrimaryColour=&H00FFFFFF',
         'SecondaryColour=&H005AF421',
         'OutlineColour=&H00000000',
@@ -1529,6 +1641,100 @@ function buildAdaptiveWideFilter(
   return graph.join(';');
 }
 
+function buildInterpolatedSegmentExpr(
+  segment: ReframeTimelineSegment,
+  pick: (point: ReframeTimelinePoint) => number,
+  fallback: number,
+) {
+  const points = segment.points.filter((point) => point.t >= segment.start - 0.001 && point.t <= segment.end + 0.001);
+  if (!points.length) return fallback.toFixed(3);
+  let expression = pick(points[points.length - 1]).toFixed(3);
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    const first = points[index];
+    const second = points[index + 1];
+    const localStart = Math.max(0, first.t - segment.start);
+    const localEnd = Math.max(localStart + 0.001, second.t - segment.start);
+    const firstValue = pick(first);
+    const secondValue = pick(second);
+    const interpolated = `${firstValue.toFixed(3)}+(${(secondValue - firstValue).toFixed(3)})*(t-${localStart.toFixed(3)})/${(localEnd - localStart).toFixed(3)}`;
+    expression = `if(between(t,${localStart.toFixed(3)},${localEnd.toFixed(3)}),${interpolated},${expression})`;
+  }
+  return expression;
+}
+
+function buildTimelineStackPane(
+  inputLabel: string,
+  outputLabel: string,
+  box: SubjectBox,
+  sourceW: number,
+  sourceH: number,
+  paneHeight: number,
+) {
+  const paneAspect = VERTICAL_EXPORT_WIDTH / paneHeight;
+  const desiredCropHeight = clamp(box.h * 3.2, sourceH * 0.72, sourceH);
+  const cropHeight = floorEven(Math.min(sourceH, desiredCropHeight));
+  const cropWidth = floorEven(Math.min(sourceW, cropHeight * paneAspect));
+  const faceCx = box.cx ?? (box.x + box.w / 2);
+  const faceCy = box.cy ?? (box.y + box.h / 2);
+  const cropX = floorEven(clamp(faceCx - cropWidth / 2, 0, Math.max(0, sourceW - cropWidth)));
+  const cropY = floorEven(clamp(faceCy - cropHeight * 0.40, 0, Math.max(0, sourceH - cropHeight)));
+  return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${VERTICAL_EXPORT_WIDTH}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},setsar=1${outputLabel}`;
+}
+
+function buildTimedReframeFilter(
+  opts: RenderOpts,
+  timeline: ReframeTimelineSegment[],
+  sourceW: number,
+  sourceH: number,
+  includeCaptions: boolean,
+  escapedPath?: string,
+  captionPath?: string,
+) {
+  const segments = timeline.filter((segment) => segment.end - segment.start >= 0.05);
+  if (!segments.length) throw new Error('Timed reframe plan has no renderable segments');
+  const graph: string[] = [`[0:v]split=${segments.length}${segments.map((_, index) => `[timeline${index}]`).join('')}`];
+  const outputs: string[] = [];
+
+  segments.forEach((segment, index) => {
+    const base = `[timeline${index}]trim=start=${segment.start.toFixed(3)}:end=${segment.end.toFixed(3)},setpts=PTS-STARTPTS`;
+    const normalizedOutput = `[segment${index}]`;
+
+    if (segment.mode === 'source_vertical') {
+      graph.push(`${base},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS},pad=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else if (segment.mode === 'wide_context') {
+      graph.push(`${base},split=2[widebg${index}][widefg${index}]`);
+      graph.push(`[widebg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2[widebgready${index}]`);
+      graph.push(`[widefg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS}[widefgready${index}]`);
+      graph.push(`[widebgready${index}][widefgready${index}]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else if (segment.mode === 'stacked' && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
+      const dividerHeight = 16;
+      const paneHeight = Math.floor((VERTICAL_EXPORT_HEIGHT - dividerHeight) / 2);
+      graph.push(`${base},split=2[stacktop${index}][stackbottom${index}]`);
+      graph.push(buildTimelineStackPane(`[stacktop${index}]`, `[stacktopready${index}]`, segment.topBox, sourceW, sourceH, paneHeight));
+      graph.push(buildTimelineStackPane(`[stackbottom${index}]`, `[stackbottomready${index}]`, segment.bottomBox, sourceW, sourceH, paneHeight));
+      graph.push(`color=c=white@0.82:s=${VERTICAL_EXPORT_WIDTH}x${dividerHeight}:d=${(segment.end - segment.start).toFixed(3)}[divider${index}]`);
+      graph.push(`[stacktopready${index}][divider${index}][stackbottomready${index}]vstack=inputs=3,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else {
+      const firstPoint = segment.points[0];
+      const cropWidth = floorEven(firstPoint?.cropW ?? Math.min(sourceW, sourceH * 9 / 16));
+      const cropHeight = floorEven(firstPoint?.cropH ?? sourceH);
+      const fallbackX = firstPoint?.cropX ?? Math.max(0, (sourceW - cropWidth) / 2);
+      const fallbackY = firstPoint?.cropY ?? 0;
+      const xExpr = escapeFfmpegExpr(buildInterpolatedSegmentExpr(segment, (point) => point.cropX, fallbackX));
+      const yExpr = escapeFfmpegExpr(buildInterpolatedSegmentExpr(segment, (point) => point.cropY, fallbackY));
+      graph.push(`${base},crop=${cropWidth}:${cropHeight}:${xExpr}:${yExpr},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    }
+    outputs.push(normalizedOutput);
+  });
+
+  graph.push(`${outputs.join('')}concat=n=${outputs.length}:v=1:a=0[timelineout]`);
+  const presentationFilters = appendPresentationFilters([], opts, includeCaptions, escapedPath, captionPath);
+  graph.push(presentationFilters.length
+    ? `[timelineout]${presentationFilters.join(',')}[outv]`
+    : '[timelineout]null[outv]');
+  return graph.join(';');
+}
+
 export async function renderVerticalClip(opts: RenderOpts) {
   const outputHeight = resolveOutputHeight();
   const outputWidth = resolveOutputWidth(outputHeight);
@@ -1587,6 +1793,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const smartCropExpr = smartReframe.cropExpr;
   const splitStackLayout = smartReframe.layout;
   const adaptiveWideIntervals = smartReframe.wideIntervals ?? [];
+  const reframeTimeline = smartReframe.timeline ?? [];
 
   if (effectiveOpts.captionsEnabled !== false && effectiveOpts.srtPath) {
     try {
@@ -1659,7 +1866,24 @@ export async function renderVerticalClip(opts: RenderOpts) {
       effectiveOpts.inputPath,
     ];
 
-    if (splitStackLayout) {
+    if (reframeTimeline.length > 0) {
+      common.push(
+        '-filter_complex',
+        buildTimedReframeFilter(
+          effectiveOpts,
+          reframeTimeline,
+          Number(smartReframe.sourceW ?? 0),
+          Number(smartReframe.sourceH ?? 0),
+          includeCaptions,
+          escapedPath,
+          effectiveOpts.srtPath,
+        ),
+        '-map',
+        '[outv]',
+        '-map',
+        '0:a?',
+      );
+    } else if (splitStackLayout) {
       common.push(
         '-filter_complex',
         buildSplitStackFilter(effectiveOpts, splitStackLayout, includeCaptions, escapedPath, effectiveOpts.srtPath),
@@ -1744,7 +1968,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   };
 
   try {
-    console.log('[render] output-path', { clipId: debugClipId, localMp4Path: effectiveOpts.outputPath, inputPath: effectiveOpts.inputPath, startSec: effectiveOpts.startSec, endSec: effectiveOpts.endSec, smartCropExpr: smartCropExpr ?? null, splitStack: Boolean(splitStackLayout), adaptiveWideIntervals });
+    console.log('[render] output-path', { clipId: debugClipId, localMp4Path: effectiveOpts.outputPath, inputPath: effectiveOpts.inputPath, startSec: effectiveOpts.startSec, endSec: effectiveOpts.endSec, smartCropExpr: smartCropExpr ?? null, splitStack: Boolean(splitStackLayout), timelineSegments: reframeTimeline.length, adaptiveWideIntervals });
     await runFfmpeg(buildArgs(canUseCaptions), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

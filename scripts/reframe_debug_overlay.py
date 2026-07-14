@@ -36,7 +36,7 @@ def main():
     data = json.loads(Path(metadata_path).read_text(encoding='utf-8'))
     samples = data.get('detected_faces', [])
     sample_times = [float(item.get('timestamp', 0.0)) for item in samples]
-    final_mode = data.get('mode', 'per_clip')
+    timeline = data.get('reframe_timeline', [])
 
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -67,6 +67,10 @@ def main():
         elif index > 0 and abs(sample_times[index - 1] - rel_t) < abs(sample_times[index] - rel_t):
             index -= 1
         sample = samples[index] if samples else {}
+        segment = next((item for item in timeline if float(item.get('start', 0)) <= rel_t < float(item.get('end', duration + 0.001))), None)
+        if segment is None and timeline:
+            segment = timeline[-1]
+        layout_mode = (segment or {}).get('mode', sample.get('layout_mode', 'unknown'))
         active_id = sample.get('active_track_id')
         center_x = float(sample.get('chosen_center_x', source_w / 2.0))
         center_y = float(sample.get('chosen_center_y', source_h / 2.0))
@@ -80,23 +84,50 @@ def main():
             is_active = track_id == active_id
             color = (0, 255, 0) if is_active else ((0, 215, 255) if predicted else (255, 180, 0))
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 4 if is_active else 2)
-            draw_label(frame, f"ID {track_id}{' ACTIVE' if is_active else ''}{' PRED' if predicted else ''}", (x, max(22, y)), color)
+            confidence = float(face.get('active_speaker_confidence', 0.0))
+            draw_label(frame, f"ID {track_id}{' ACTIVE' if is_active else ''}{' PRED' if predicted else ''} conf={confidence:.2f}", (x, max(22, y)), color)
+            person = face.get('person_box') or {}
+            if person:
+                px, py, pw, ph = [int(round(float(person.get(key, 0)))) for key in ('x', 'y', 'w', 'h')]
+                cv2.rectangle(frame, (px, py), (px + pw, py + ph), (180, 80, 255), 1)
 
-        if final_mode == 'split_stack' and len(faces) >= 2:
-            strongest = sorted(faces, key=lambda face: float(face.get('w', 0)) * float(face.get('h', 0)), reverse=True)[:2]
-            for slot, face in enumerate(strongest, start=1):
+        if layout_mode == 'stacked' and len(faces) >= 2:
+            top_id = (segment or {}).get('topTrackId', sample.get('layout_top_track_id'))
+            bottom_id = (segment or {}).get('bottomTrackId', sample.get('layout_bottom_track_id'))
+            selected_faces = []
+            for track_id in (top_id, bottom_id):
+                match = next((face for face in faces if face.get('track_id') == track_id), None)
+                if match is not None:
+                    selected_faces.append(match)
+            if len(selected_faces) < 2:
+                selected_faces = sorted(faces, key=lambda face: float(face.get('w', 0)) * float(face.get('h', 0)), reverse=True)[:2]
+            for slot, face in enumerate(selected_faces, start=1):
                 face_center = float(face.get('cx', float(face.get('x', 0)) + float(face.get('w', 0)) / 2.0))
                 x, y, w, h = crop_rect(face_center, source_w, source_h)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 255), 2)
                 draw_label(frame, f'STACK SLOT {slot}', (x + 5, 45 + (slot - 1) * 26), (255, 0, 255))
+        elif layout_mode in ('wide_context', 'source_vertical'):
+            cv2.rectangle(frame, (2, 2), (source_w - 3, source_h - 3), (255, 0, 255), 3)
         else:
-            x, y, w, h = crop_rect(center_x, source_w, source_h)
+            point = None
+            if segment:
+                points = segment.get('points', [])
+                if points:
+                    point = min(points, key=lambda item: abs(float(item.get('t', 0)) - rel_t))
+            if point:
+                x = int(round(float(point.get('cropX', 0))))
+                y = int(round(float(point.get('cropY', 0))))
+                w = int(round(float(point.get('cropW', source_h * 9.0 / 16.0))))
+                h = int(round(float(point.get('cropH', source_h))))
+            else:
+                x, y, w, h = crop_rect(center_x, source_w, source_h)
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 255), 3)
 
         if len(path_points) > 1:
             cv2.polylines(frame, [__import__('numpy').array(path_points, dtype='int32')], False, (255, 255, 0), 2, cv2.LINE_AA)
         cv2.circle(frame, (int(round(center_x)), int(round(center_y))), 7, (0, 0, 255), -1)
-        draw_label(frame, f"t={rel_t:06.2f}s layout={final_mode}/{sample.get('layout_mode', 'unknown')}", (12, source_h - 18), (255, 255, 255))
+        speaker_confidence = float(sample.get('speaker_confidence', 0.0))
+        draw_label(frame, f"t={rel_t:06.2f}s layout={layout_mode} active={active_id} conf={speaker_confidence:.2f}", (12, source_h - 18), (255, 255, 255))
         if sample.get('scene_cut'):
             draw_label(frame, 'HARD CUT / TRACK RESET', (12, 32), (0, 0, 255))
         writer.write(frame)

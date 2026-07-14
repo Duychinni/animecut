@@ -200,7 +200,7 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
   const textColor = settings.caption_text_color || preset?.captionTextColor || '#ffffff';
   const strokeColor = preset?.captionStrokeColor || '#000000';
   const fontFamily = preset?.captionFontFamily || 'Arial Black';
-  const fontSize = settings.caption_font_size * 2.2;
+  const fontSize = settings.caption_font_size * 2.55;
   const shadowMap: Record<string, string> = {
     'black-heavy': '0 3px 0 #000, 0 8px 18px rgba(0,0,0,.9)',
     'heavy-shadow': '0 4px 0 #000, 3px 6px 0 rgba(0,0,0,.65), 0 10px 20px rgba(0,0,0,.85)',

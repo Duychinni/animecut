@@ -160,7 +160,10 @@ function resolveAssFontName(preset: StyledCaptionPreset | undefined, template: C
 function resolveAssStyle(preset?: StyledCaptionPreset) {
   const exportSize = getVerticalExportSize();
   const template = preset?.caption_template ?? 'capcut';
-  const fontScale = template === 'minimal' ? 7.4 : template === 'capcut' ? 9.8 : 8.6;
+  // Render captions about 15% larger across every template. Keep the size
+  // multiplier here so existing saved presets also receive the improved,
+  // more readable output when they are rendered again.
+  const fontScale = template === 'minimal' ? 8.5 : template === 'capcut' ? 11.3 : 9.9;
   const fontSize = Math.round((preset?.captionFontSize ?? 11) * fontScale);
   const outlineScale = template === 'minimal' ? 1 : template === 'capcut' ? 1.7 : 1;
   const outline = preset?.captionBackgroundBox
