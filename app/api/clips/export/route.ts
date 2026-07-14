@@ -212,7 +212,7 @@ export async function POST(req: Request) {
 
       const durationFiltered = candidatePool.filter((row) => {
         const duration = Math.max(0, Number(row.end_sec ?? 0) - Number(row.start_sec ?? 0));
-        return duration >= 20;
+        return duration >= 15;
       });
 
       console.log('[clips/export] candidate-pool', {
@@ -239,7 +239,7 @@ export async function POST(req: Request) {
       selectedIds = deduped
         .map((row) => String(row.id))
         .filter((id) => !blockedCandidateIds.has(id))
-        .slice(0, Math.min(needed, 10));
+        .slice(0, Math.min(needed, 20));
       console.log('[clips/export] after-dedupe-selection', {
         project_id,
         deduped_count: deduped.length,

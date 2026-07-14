@@ -453,6 +453,88 @@ function coverageBucket(startSec: number, totalSeconds: number, desiredCount: nu
   return Math.max(0, Math.min(desiredCount - 1, Math.floor(startSec / bucketSize)));
 }
 
+function buildTranscriptCoverageCandidates(params: {
+  projectId: string;
+  segments: TranscriptSegment[];
+  totalSeconds: number;
+  desiredCount: number;
+  minClipSec: number;
+  expectedMinSec: number;
+  expectedMaxSec: number;
+  maxClipSec: number;
+  minimumWords: number;
+}) {
+  const candidates: RankedCandidate[] = [];
+  const bucketSize = params.totalSeconds / Math.max(1, params.desiredCount);
+  const targetDuration = Math.max(
+    params.expectedMinSec,
+    Math.min(params.expectedMaxSec, Math.min(48, bucketSize * 0.72)),
+  );
+
+  // Two offsets per time bucket make this independent from the AI/local pool.
+  // It is only used when normal quality ranking under-produces the policy floor.
+  for (let pass = 0; pass < 2; pass += 1) {
+    for (let bucket = 0; bucket < params.desiredCount; bucket += 1) {
+      const bucketStart = bucket * bucketSize;
+      const offset = pass === 0 ? bucketSize * 0.08 : bucketSize * 0.34;
+      const rawStart = Math.max(0, Math.min(params.totalSeconds - targetDuration, bucketStart + offset));
+      const rawEnd = Math.min(params.totalSeconds, rawStart + targetDuration);
+      const cleaned = adjustBoundaries(
+        rawStart,
+        rawEnd,
+        params.segments,
+        Math.max(15, Math.min(params.minClipSec, targetDuration)),
+        params.maxClipSec,
+      );
+      const transcriptWordCount = countTranscriptWordsInRange(params.segments, cleaned.start_sec, cleaned.end_sec);
+      if (transcriptWordCount < Math.max(18, params.minimumWords - 10)) continue;
+
+      const openingLine = openingLineForWindow(cleaned.start_sec, cleaned.end_sec, params.segments);
+      const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, params.segments);
+      if (!openingLine || !closingLine || endsWithFiller(closingLine) || isIncompleteTrailingPhrase(closingLine)) continue;
+
+      const index = pass * params.desiredCount + bucket;
+      const title = keywordDisplayTitle(openingLine, closingLine, 'Transcript coverage moment', index);
+      const passesQuality = startsLikeNaturalBoundary(openingLine) && cleaned.end_complete;
+      const overallScore = passesQuality ? 76 : 71;
+      candidates.push({
+        project_id: params.projectId,
+        raw_start: rawStart,
+        raw_end: rawEnd,
+        start_sec: cleaned.start_sec,
+        end_sec: cleaned.end_sec,
+        duration_seconds: Number((cleaned.end_sec - cleaned.start_sec).toFixed(2)),
+        title,
+        hook_text: resolveCandidateHookText({
+          rawHookText: null,
+          title,
+          openingLine,
+          segments: params.segments,
+          startSec: cleaned.start_sec,
+          endSec: cleaned.end_sec,
+        }),
+        reason: `Independent transcript coverage fallback for bucket ${bucket + 1}/${params.desiredCount}. Boundary pass: ${cleaned.reason}`,
+        self_contained_confidence: passesQuality ? 0.72 : 0.62,
+        boundary_adjustment_reason: cleaned.reason,
+        opening_line: openingLine,
+        closing_line: closingLine,
+        hook_strength: overallScore,
+        retention_potential: overallScore,
+        story_completeness: passesQuality ? 78 : 70,
+        entertainment_or_emotion: 70,
+        educational_value: 70,
+        speaker_energy: 72,
+        overall_score: overallScore,
+        reject_reason: null,
+        rank: index + 1,
+        passes_quality: passesQuality,
+      });
+    }
+  }
+
+  return candidates;
+}
+
 function hasStrongPayoff(text: string) {
   const t = text.trim();
   if (!t) return false;
@@ -890,6 +972,26 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           ...candidate,
           reason: `${candidate.reason} | Added by final quality backfill to meet the expected reel count for this source length.`,
         });
+      }
+    }
+
+    if (selected.length < minimumFinalCount) {
+      const independentCoveragePool = buildTranscriptCoverageCandidates({
+        projectId: project_id,
+        segments,
+        totalSeconds: transcriptMaxEnd,
+        desiredCount: minimumFinalCount,
+        minClipSec: policy.minSec,
+        expectedMinSec: policy.expectedMinSec,
+        expectedMaxSec: policy.expectedMaxSec,
+        maxClipSec: Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC),
+        minimumWords: fallbackMinimumWordCount,
+      });
+
+      for (const candidate of independentCoveragePool) {
+        if (selected.length >= minimumFinalCount) break;
+        if (selected.some((picked) => isCoverageDuplicate(candidate, picked))) continue;
+        selected.push(candidate);
       }
     }
 

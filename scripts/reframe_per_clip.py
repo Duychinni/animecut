@@ -43,6 +43,120 @@ def box_match_score(a, b, width: float, height: float) -> float:
     return clamp(1.0 - distance * 3.5, 0.0, 1.0) * 0.72 + size_ratio * 0.28
 
 
+def box_iou(a, b) -> float:
+    ax1, ay1, aw, ah = a
+    bx1, by1, bw, bh = b
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    intersection = max(0.0, min(ax2, bx2) - max(ax1, bx1)) * max(0.0, min(ay2, by2) - max(ay1, by1))
+    union = aw * ah + bw * bh - intersection
+    return intersection / max(1.0, union)
+
+
+def dedupe_boxes(boxes):
+    kept = []
+    for box in sorted(boxes, key=lambda item: item[2] * item[3], reverse=True):
+        duplicate = False
+        for existing in kept:
+            box_cx, box_cy = center(box)
+            existing_cx, existing_cy = center(existing)
+            center_distance = math.hypot(box_cx - existing_cx, box_cy - existing_cy)
+            size_reference = max(box[2], box[3], existing[2], existing[3], 1.0)
+            size_ratio = min(box[2] * box[3], existing[2] * existing[3]) / max(1.0, max(box[2] * box[3], existing[2] * existing[3]))
+            if box_iou(box, existing) >= 0.34 or (center_distance <= size_reference * 0.28 and size_ratio >= 0.34):
+                duplicate = True
+                break
+        if duplicate:
+            continue
+        kept.append(box)
+    return kept
+
+
+def create_face_track(cv2, np, track_id: int, box):
+    kalman = cv2.KalmanFilter(8, 4)
+    kalman.transitionMatrix = np.array([
+        [1, 0, 0, 0, 1, 0, 0, 0],
+        [0, 1, 0, 0, 0, 1, 0, 0],
+        [0, 0, 1, 0, 0, 0, 1, 0],
+        [0, 0, 0, 1, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1],
+    ], dtype=np.float32)
+    kalman.measurementMatrix = np.zeros((4, 8), dtype=np.float32)
+    kalman.measurementMatrix[:4, :4] = np.eye(4, dtype=np.float32)
+    kalman.processNoiseCov = np.eye(8, dtype=np.float32) * 0.035
+    kalman.measurementNoiseCov = np.eye(4, dtype=np.float32) * 0.18
+    kalman.errorCovPost = np.eye(8, dtype=np.float32)
+    kalman.statePost = np.array([[box[0]], [box[1]], [box[2]], [box[3]], [0], [0], [0], [0]], dtype=np.float32)
+    return {
+        'id': track_id,
+        'kalman': kalman,
+        'box': box,
+        'hits': 1,
+        'missed': 0,
+        'observed': True,
+    }
+
+
+def clamp_track_box(box, width: float, height: float):
+    x, y, w, h = box
+    w = clamp(float(w), 8.0, max(8.0, width))
+    h = clamp(float(h), 8.0, max(8.0, height))
+    x = clamp(float(x), 0.0, max(0.0, width - w))
+    y = clamp(float(y), 0.0, max(0.0, height - h))
+    return (x, y, w, h)
+
+
+def update_face_tracks(cv2, np, tracks, detections, next_track_id: int, width: float, height: float):
+    for track in tracks:
+        predicted = track['kalman'].predict().reshape(-1)
+        track['box'] = clamp_track_box(tuple(float(value) for value in predicted[:4]), width, height)
+        track['observed'] = False
+
+    candidates = []
+    for track_index, track in enumerate(tracks):
+        for detection_index, detection in enumerate(detections):
+            continuity = box_match_score(track['box'], detection, width, height)
+            overlap = box_iou(track['box'], detection)
+            association_score = continuity * 0.72 + overlap * 0.28
+            if association_score >= 0.24:
+                candidates.append((association_score, track_index, detection_index))
+    candidates.sort(reverse=True)
+
+    matched_tracks = set()
+    matched_detections = set()
+    for _, track_index, detection_index in candidates:
+        if track_index in matched_tracks or detection_index in matched_detections:
+            continue
+        track = tracks[track_index]
+        detection = detections[detection_index]
+        measurement = np.array(detection, dtype=np.float32).reshape(4, 1)
+        corrected = track['kalman'].correct(measurement).reshape(-1)
+        track['box'] = clamp_track_box(tuple(float(value) for value in corrected[:4]), width, height)
+        track['hits'] += 1
+        track['missed'] = 0
+        track['observed'] = True
+        matched_tracks.add(track_index)
+        matched_detections.add(detection_index)
+
+    for track_index, track in enumerate(tracks):
+        if track_index not in matched_tracks:
+            track['missed'] += 1
+
+    for detection_index, detection in enumerate(detections):
+        if detection_index in matched_detections:
+            continue
+        tracks.append(create_face_track(cv2, np, next_track_id, detection))
+        next_track_id += 1
+
+    tracks = [track for track in tracks if track['missed'] <= 4]
+    visible_tracks = [track for track in tracks if track['hits'] >= 2 or track['observed']]
+    visible_tracks.sort(key=lambda track: track['box'][2] * track['box'][3], reverse=True)
+    return tracks, visible_tracks, next_track_id
+
+
 def mouth_motion_score(cv2, previous_gray, gray, face, previous_face=None) -> float:
     if previous_gray is None or face is None:
         return 0.0
@@ -251,6 +365,7 @@ def main():
     try:
         import cv2  # type: ignore
         import mediapipe as mp  # type: ignore
+        import numpy as np  # type: ignore
     except Exception as exc:
         fail(1, f'dependency_unavailable:{exc}')
 
@@ -279,6 +394,8 @@ def main():
     mp_face = mp.solutions.face_detection
     detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.45)
     body_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_upperbody.xml')
+    frontal_face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    profile_face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
 
     centers_x = []
     points = []
@@ -289,6 +406,7 @@ def main():
     first_motion_box = None
     prev_gray = None
     active_box = None
+    active_track_id = None
     pending_box = None
     pending_count = 0
     active_framing = 'single'
@@ -298,7 +416,9 @@ def main():
     speaker_switches = 0
     confident_speaker_samples = 0
     wide_context_samples = 0
-    previous_faces = []
+    face_tracks = []
+    next_face_track_id = 1
+    previous_track_boxes = {}
 
     for sample_index, sample_t in enumerate(sample_times):
         cap.set(cv2.CAP_PROP_POS_MSEC, sample_t * 1000.0)
@@ -309,6 +429,7 @@ def main():
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         result = detector.process(rgb)
+        scene_change = scene_change_score(cv2, prev_gray, gray)
 
         selected_box: Optional[Tuple[float, float, float, float]] = None
         motion_box: Optional[Tuple[float, float, float, float]] = None
@@ -323,8 +444,61 @@ def main():
                 w = max(1.0, bbox.width * source_w)
                 h = max(1.0, bbox.height * source_h)
                 faces.append((x, y, w, h))
-            faces.sort(key=lambda b: b[2] * b[3], reverse=True)
-        else:
+
+        mediapipe_face_count = len(faces)
+        multi_person_checked = mediapipe_face_count >= 2
+
+        # BlazeFace can miss edge-on or partially cropped podcast guests. When
+        # fewer than two people are found, supplement it with frontal and both
+        # profile directions from OpenCV, then merge duplicate detections.
+        # One supplemental scan per second is enough to prove a sustained
+        # conversation layout without tripling analysis time on single speakers.
+        if len(faces) < 2 and sample_index % 4 == 0:
+            multi_person_checked = True
+            haar_faces = []
+            haar_scale = min(1.0, 720.0 / max(source_w, 1.0))
+            haar_gray = gray if haar_scale >= 0.999 else cv2.resize(
+                gray,
+                (max(1, int(round(source_w * haar_scale))), max(1, int(round(source_h * haar_scale)))),
+                interpolation=cv2.INTER_AREA,
+            )
+            min_haar_face = max(28, int(round(42 * haar_scale)))
+            if not frontal_face_cascade.empty():
+                haar_faces.extend(frontal_face_cascade.detectMultiScale(haar_gray, scaleFactor=1.1, minNeighbors=5, minSize=(min_haar_face, min_haar_face)))
+            if not profile_face_cascade.empty():
+                haar_faces.extend(profile_face_cascade.detectMultiScale(haar_gray, scaleFactor=1.1, minNeighbors=4, minSize=(min_haar_face, min_haar_face)))
+                flipped_gray = cv2.flip(haar_gray, 1)
+                flipped_profiles = profile_face_cascade.detectMultiScale(flipped_gray, scaleFactor=1.1, minNeighbors=4, minSize=(min_haar_face, min_haar_face))
+                haar_faces.extend([(haar_gray.shape[1] - x - w, y, w, h) for (x, y, w, h) in flipped_profiles])
+            inverse_haar_scale = 1.0 / max(haar_scale, 1e-6)
+            faces.extend(
+                (float(x) * inverse_haar_scale, float(y) * inverse_haar_scale, float(w) * inverse_haar_scale, float(h) * inverse_haar_scale)
+                for (x, y, w, h) in haar_faces
+            )
+
+        faces = dedupe_boxes(faces)
+        faces.sort(key=lambda b: b[2] * b[3], reverse=True)
+
+        if scene_change >= 0.72:
+            face_tracks = []
+            previous_track_boxes = {}
+
+        face_tracks, visible_face_tracks, next_face_track_id = update_face_tracks(
+            cv2,
+            np,
+            face_tracks,
+            faces,
+            next_face_track_id,
+            source_w,
+            source_h,
+        )
+        faces = [track['box'] for track in visible_face_tracks]
+        face_track_ids = [track['id'] for track in visible_face_tracks]
+        face_observed = [track['observed'] for track in visible_face_tracks]
+        if len(visible_face_tracks) >= 2:
+            multi_person_checked = True
+
+        if not faces:
             bodies = [] if body_cascade.empty() else list(body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(80, 80)))
             if bodies:
                 x, y, w, h = max(bodies, key=lambda b: b[2] * b[3])
@@ -332,32 +506,29 @@ def main():
                 fallback_used = True
 
         current_audio = audio_activity[sample_index] if sample_index < len(audio_activity) else 0.0
-        scene_change = scene_change_score(cv2, prev_gray, gray)
         mouth_scores = []
-        for face in faces:
-            previous_match = max(previous_faces, key=lambda old: box_match_score(face, old, source_w, source_h)) if previous_faces else None
-            if previous_match is not None and box_match_score(face, previous_match, source_w, source_h) < 0.24:
-                previous_match = None
-            mouth_scores.append(mouth_motion_score(cv2, prev_gray, gray, face, previous_match))
+        for face, track_id, observed in zip(faces, face_track_ids, face_observed):
+            previous_match = previous_track_boxes.get(track_id)
+            mouth_scores.append(mouth_motion_score(cv2, prev_gray, gray, face, previous_match) if observed else 0.0)
 
         selected_mouth_score = 0.0
 
         if faces:
             scored_faces = []
-            for face, mouth_score in zip(faces, mouth_scores):
+            for face, mouth_score, track_id, observed in zip(faces, mouth_scores, face_track_ids, face_observed):
                 area_quality = clamp((face[2] * face[3]) / max(1.0, source_w * source_h * 0.08), 0.0, 1.0)
-                continuity = box_match_score(face, active_box, source_w, source_h)
+                continuity = 1.0 if track_id == active_track_id else box_match_score(face, active_box, source_w, source_h)
                 # Audio gates the mouth evidence. During silence continuity wins,
                 # so the crop stays fixed instead of chasing incidental motion.
                 continuity_weight = 0.52 - current_audio * 0.30
-                score = area_quality * 0.14 + continuity * continuity_weight + mouth_score * current_audio * 0.88
-                scored_faces.append((score, mouth_score, face))
+                observation_bonus = 0.04 if observed else 0.0
+                score = area_quality * 0.14 + continuity * continuity_weight + mouth_score * current_audio * 0.88 + observation_bonus
+                scored_faces.append((score, mouth_score, face, track_id))
             scored_faces.sort(key=lambda item: item[0], reverse=True)
-            candidate_score, candidate_mouth, candidate_box = scored_faces[0]
+            candidate_score, candidate_mouth, candidate_box, candidate_track_id = scored_faces[0]
             active_match = box_match_score(candidate_box, active_box, source_w, source_h)
-            should_switch = active_box is not None and active_match < 0.48
-            active_face = max(faces, key=lambda face: box_match_score(face, active_box, source_w, source_h)) if active_box is not None else None
-            active_face_index = faces.index(active_face) if active_face in faces else -1
+            should_switch = active_track_id is not None and candidate_track_id != active_track_id
+            active_face_index = face_track_ids.index(active_track_id) if active_track_id in face_track_ids else -1
             active_mouth = mouth_scores[active_face_index] if active_face_index >= 0 else 0.0
             strong_speaker_evidence = (
                 current_audio >= 0.28
@@ -370,6 +541,7 @@ def main():
                     shot_id += 1
                     speaker_switches += 1
                 active_box = candidate_box
+                active_track_id = candidate_track_id
                 pending_box = None
                 pending_count = 0
             elif should_switch and strong_speaker_evidence:
@@ -380,20 +552,26 @@ def main():
                     pending_count = 1
                 if pending_count >= SPEAKER_SWITCH_CONFIRM_SAMPLES:
                     active_box = candidate_box
+                    active_track_id = candidate_track_id
                     pending_box = None
                     pending_count = 0
                     shot_id += 1
                     speaker_switches += 1
             else:
-                # Refresh the tracked box using the best match to its previous location.
-                best_continuation = max(faces, key=lambda face: box_match_score(face, active_box, source_w, source_h))
-                if box_match_score(best_continuation, active_box, source_w, source_h) >= 0.32:
-                    active_box = best_continuation
+                # Refresh from the same persistent track, including Kalman
+                # predictions while a face is briefly turned or occluded.
+                if active_track_id in face_track_ids:
+                    active_box = faces[face_track_ids.index(active_track_id)]
+                else:
+                    best_continuation_index = max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], active_box, source_w, source_h))
+                    if box_match_score(faces[best_continuation_index], active_box, source_w, source_h) >= 0.32:
+                        active_box = faces[best_continuation_index]
+                        active_track_id = face_track_ids[best_continuation_index]
                 pending_box = None
                 pending_count = 0
 
             selected_box = active_box
-            selected_index = max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], selected_box, source_w, source_h))
+            selected_index = face_track_ids.index(active_track_id) if active_track_id in face_track_ids else max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], selected_box, source_w, source_h))
             selected_mouth_score = mouth_scores[selected_index]
             if strong_speaker_evidence:
                 confident_speaker_samples += 1
@@ -404,7 +582,20 @@ def main():
 
         detected_faces.append({
             'timestamp': round(sample_t - start_sec, 3),
-            'faces': [{'x': f[0], 'y': f[1], 'w': f[2], 'h': f[3], 'cx': center(f)[0], 'cy': center(f)[1]} for f in faces[:4]],
+            'multi_person_checked': multi_person_checked,
+            'faces': [
+                {
+                    'x': face[0],
+                    'y': face[1],
+                    'w': face[2],
+                    'h': face[3],
+                    'cx': center(face)[0],
+                    'cy': center(face)[1],
+                    'track_id': track_id,
+                    'predicted': not observed,
+                }
+                for face, track_id, observed in list(zip(faces, face_track_ids, face_observed))[:4]
+            ],
         })
 
         chosen_center_x, motion_fallback_used = merge_subject_and_motion(selected_box, motion_box, source_w)
@@ -508,7 +699,7 @@ def main():
         })
 
         prev_gray = gray
-        previous_faces = faces
+        previous_track_boxes = {track_id: face for face, track_id in zip(faces, face_track_ids)}
 
         if first_debug_frame is None:
             first_debug_frame = frame.copy()
@@ -532,7 +723,10 @@ def main():
         save_debug_frame(cv2, first_debug_frame, debug_dir / f'{clip_id}-{DEBUG_FRAME_NAME}', first_box, first_motion_box, crop_box)
 
     dual_frames = 0
+    dual_observation_opportunities = 0
     for frame in detected_faces:
+        if frame.get('multi_person_checked'):
+            dual_observation_opportunities += 1
         faces = frame.get('faces', [])
         if len(faces) >= 2:
             faces = sorted(faces[:2], key=lambda f: f['cx'])
@@ -541,13 +735,12 @@ def main():
             if separation >= 0.18 and size_ratio >= 0.38:
                 dual_frames += 1
 
-    # Preserve the legacy two-up layout only when active-speaker evidence is not
-    # available. With reliable audio/visual evidence, speaker-directed cuts are
-    # more natural and retain more detail than permanently shrinking both faces.
-    split_stack = (
-        dual_frames >= max(2, math.ceil(len(detected_faces) * 0.35))
-        and (not audio_available or confident_speaker_samples < max(3, len(points) * 0.08))
-    )
+    dual_frame_ratio = dual_frames / max(1, dual_observation_opportunities)
+    # A stable two-person source should use the stacked conversation layout even
+    # when active-speaker evidence is strong. Speaker confidence still drives
+    # single-person shots; it must not disable a layout that safely shows both
+    # participants throughout a podcast/debate clip.
+    split_stack = dual_frames >= 3 and dual_frame_ratio >= 0.45
 
     result = {
         'ok': True,
@@ -583,6 +776,9 @@ def main():
             'confident_speaker_samples': confident_speaker_samples,
             'wide_context_samples': wide_context_samples,
             'analysis_rate_fps': sample_count / duration,
+            'dual_frames': dual_frames,
+            'dual_observation_opportunities': dual_observation_opportunities,
+            'dual_frame_ratio': round(dual_frame_ratio, 4),
         },
         'detected_faces': detected_faces,
         'ffmpeg_crop': f'crop={int(round(crop_w))}:{int(round(crop_h))}:{int(round(crop_x))}:{int(round(crop_y))},scale=1080:1920',

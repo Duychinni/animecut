@@ -8,12 +8,10 @@ type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'r
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
 
 type ReframeMode = 'off' | 'basic' | 'smart';
-type LayoutMode = 'single' | 'split_stack';
-
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v8-adaptive-wide';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v9-conversation-stack';
 const DEFAULT_X264_CRF = '12';
 const DEFAULT_X264_MAXRATE = '50M';
 const DEFAULT_X264_BUFSIZE = '100M';
@@ -541,28 +539,56 @@ function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox |
   return { x, y, w, h, cx: Number(box.cx ?? (x + w / 2)), cy: Number(box.cy ?? (y + h / 2)) };
 }
 
-function averageSubjectBoxes(items: SubjectBox[]): SubjectBox | undefined {
+function medianSubjectBoxes(items: SubjectBox[]): SubjectBox | undefined {
   if (!items.length) return undefined;
-  const total = items.reduce(
-    (acc, item) => ({
-      x: acc.x + item.x,
-      y: acc.y + item.y,
-      w: acc.w + item.w,
-      h: acc.h + item.h,
-      cx: (acc.cx ?? 0) + (item.cx ?? (item.x + item.w / 2)),
-      cy: (acc.cy ?? 0) + (item.cy ?? (item.y + item.h / 2)),
-    }),
-    { x: 0, y: 0, w: 0, h: 0, cx: 0, cy: 0 },
-  );
-  const count = items.length;
-  return { x: total.x / count, y: total.y / count, w: total.w / count, h: total.h / count, cx: (total.cx ?? 0) / count, cy: (total.cy ?? 0) / count };
+  const median = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  };
+  return {
+    x: median(items.map((item) => item.x)),
+    y: median(items.map((item) => item.y)),
+    w: median(items.map((item) => item.w)),
+    h: median(items.map((item) => item.h)),
+    cx: median(items.map((item) => item.cx ?? (item.x + item.w / 2))),
+    cy: median(items.map((item) => item.cy ?? (item.y + item.h / 2))),
+  };
+}
+
+function strongestSeparatedFacePair(faces: SubjectBox[], sourceW: number, sourceH: number) {
+  let best: [SubjectBox, SubjectBox] | undefined;
+  let bestScore = -1;
+  const sourceArea = Math.max(1, sourceW * sourceH);
+
+  for (let firstIndex = 0; firstIndex < faces.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < faces.length; secondIndex += 1) {
+      const first = faces[firstIndex];
+      const second = faces[secondIndex];
+      const firstCenter = first.cx ?? (first.x + first.w / 2);
+      const secondCenter = second.cx ?? (second.x + second.w / 2);
+      const separation = Math.abs(secondCenter - firstCenter) / Math.max(1, sourceW);
+      if (separation < 0.14) continue;
+      const firstArea = first.w * first.h;
+      const secondArea = second.w * second.h;
+      const sizeBalance = Math.min(firstArea, secondArea) / Math.max(1, Math.max(firstArea, secondArea));
+      const pairPresence = Math.sqrt(firstArea * secondArea) / sourceArea;
+      const score = pairPresence * (0.55 + separation) * (0.4 + sizeBalance * 0.6);
+      if (score > bestScore) {
+        bestScore = score;
+        best = firstCenter <= secondCenter ? [first, second] : [second, first];
+      }
+    }
+  }
+
+  return best;
 }
 
 function maybeBuildSplitStackLayout(raw: {
   mode?: string;
   source_w?: number;
   source_h?: number;
-  detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number; cx?: number; cy?: number }> }>;
+  detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number; cx?: number; cy?: number; track_id?: number; predicted?: boolean }> }>;
 }): SplitStackLayout | undefined {
   if (raw.mode !== 'split_stack') return undefined;
   const sourceW = Number(raw.source_w ?? 0);
@@ -571,16 +597,52 @@ function maybeBuildSplitStackLayout(raw: {
 
   const leftFaces: SubjectBox[] = [];
   const rightFaces: SubjectBox[] = [];
+  const boxesByTrack = new Map<number, SubjectBox[]>();
   for (const frame of raw.detected_faces ?? []) {
-    const faces = (frame.faces ?? []).map((face) => normalizeBox(face)).filter(Boolean) as SubjectBox[];
+    const faces = (frame.faces ?? []).map((face) => {
+      const box = normalizeBox(face);
+      const trackId = Number(face.track_id);
+      if (box && Number.isFinite(trackId)) {
+        const existing = boxesByTrack.get(trackId) ?? [];
+        existing.push(box);
+        boxesByTrack.set(trackId, existing);
+      }
+      return box;
+    }).filter(Boolean) as SubjectBox[];
     if (faces.length < 2) continue;
-    faces.sort((a, b) => (a.cx ?? (a.x + a.w / 2)) - (b.cx ?? (b.x + b.w / 2)));
-    leftFaces.push(faces[0]);
-    rightFaces.push(faces[1]);
+    const pair = strongestSeparatedFacePair(faces, sourceW, sourceH);
+    if (!pair) continue;
+    leftFaces.push(pair[0]);
+    rightFaces.push(pair[1]);
   }
 
-  const topBox = averageSubjectBoxes(leftFaces);
-  const bottomBox = averageSubjectBoxes(rightFaces);
+  const stableTracks = [...boxesByTrack.entries()]
+    .map(([trackId, boxes]) => ({ trackId, boxes, median: medianSubjectBoxes(boxes) }))
+    .filter((track): track is { trackId: number; boxes: SubjectBox[]; median: SubjectBox } => Boolean(track.median))
+    .sort((a, b) => b.boxes.length - a.boxes.length);
+
+  let stablePair: [SubjectBox, SubjectBox] | undefined;
+  let stablePairScore = -1;
+  for (let firstIndex = 0; firstIndex < stableTracks.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < stableTracks.length; secondIndex += 1) {
+      const first = stableTracks[firstIndex];
+      const second = stableTracks[secondIndex];
+      const firstCenter = first.median.cx ?? (first.median.x + first.median.w / 2);
+      const secondCenter = second.median.cx ?? (second.median.x + second.median.w / 2);
+      const separation = Math.abs(secondCenter - firstCenter) / Math.max(1, sourceW);
+      if (separation < 0.14) continue;
+      const score = Math.min(first.boxes.length, second.boxes.length) * (0.6 + separation);
+      if (score > stablePairScore) {
+        stablePairScore = score;
+        stablePair = firstCenter <= secondCenter
+          ? [first.median, second.median]
+          : [second.median, first.median];
+      }
+    }
+  }
+
+  const topBox = stablePair?.[0] ?? medianSubjectBoxes(leftFaces);
+  const bottomBox = stablePair?.[1] ?? medianSubjectBoxes(rightFaces);
   if (!topBox || !bottomBox) return undefined;
 
   return {
@@ -681,6 +743,9 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         speaker_switches?: number;
         confident_speaker_samples?: number;
         wide_context_samples?: number;
+        dual_frames?: number;
+        dual_observation_opportunities?: number;
+        dual_frame_ratio?: number;
         analysis_rate_fps?: number;
       };
       detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number }> }>;
@@ -751,6 +816,9 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         mode: splitStackLayout.mode,
         topBox: splitStackLayout.topBox,
         bottomBox: splitStackLayout.bottomBox,
+        dualFrames: raw.meta?.dual_frames ?? null,
+        dualObservationOpportunities: raw.meta?.dual_observation_opportunities ?? null,
+        dualFrameRatio: raw.meta?.dual_frame_ratio ?? null,
       });
       return { layout: splitStackLayout };
     }
@@ -995,8 +1063,8 @@ function buildSplitStackFilter(
   escapedPath?: string,
   captionPath?: string,
 ) {
-  const paneHeight = 850;
-  const seamHeight = layout.outputHeight - paneHeight * 2;
+  const seamHeight = 16;
+  const paneHeight = Math.floor((layout.outputHeight - seamHeight) / 2);
   const paneAspect = layout.outputWidth / paneHeight;
   const cropWidth = floorEven(Math.min(layout.sourceW, layout.sourceH * paneAspect));
   const paneSourceHeight = floorEven(Math.min(layout.sourceH, cropWidth / paneAspect));
@@ -1015,7 +1083,8 @@ function buildSplitStackFilter(
     `color=c=black:s=${layout.outputWidth}x${layout.outputHeight}:d=1[base]`,
     `[base][topv]overlay=0:0[tmp1]`,
     `[tmp1][bottomv]overlay=0:${paneHeight + seamHeight}[tmp2]`,
-    `[tmp2]drawbox=x=0:y=${paneHeight}:w=${layout.outputWidth}:h=${seamHeight}:color=black@0.88:t=fill[tmp3]`,
+    `[tmp2]drawbox=x=0:y=${paneHeight}:w=${layout.outputWidth}:h=${seamHeight}:color=black@0.96:t=fill[tmpDivider]`,
+    `[tmpDivider]drawbox=x=0:y=${paneHeight + Math.floor(seamHeight / 2) - 1}:w=${layout.outputWidth}:h=2:color=white@0.20:t=fill[tmp3]`,
   ];
 
   let videoLabel = 'tmp3';
