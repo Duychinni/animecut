@@ -14,6 +14,9 @@ MOTION_MIN_AREA_RATIO = 0.0035
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_WINDOW_SEC = 0.18
 SPEAKER_SWITCH_CONFIRM_SAMPLES = 2
+FRAMING_SWITCH_CONFIRM_SAMPLES = 2
+WIDE_FACE_HEIGHT_RATIO = 0.22
+WIDE_FACE_WIDTH_RATIO = 0.105
 
 
 def fail(code: int, error: str):
@@ -40,10 +43,11 @@ def box_match_score(a, b, width: float, height: float) -> float:
     return clamp(1.0 - distance * 3.5, 0.0, 1.0) * 0.72 + size_ratio * 0.28
 
 
-def mouth_motion_score(cv2, previous_gray, gray, face) -> float:
+def mouth_motion_score(cv2, previous_gray, gray, face, previous_face=None) -> float:
     if previous_gray is None or face is None:
         return 0.0
     x, y, w, h = face
+    px, py, pw, ph = previous_face if previous_face is not None else face
     # The lower-center face region captures lips/jaw while avoiding most eye and
     # hair movement. Comparing the same screen-space ROI also makes head motion
     # useful evidence without allowing it to decide the speaker by itself.
@@ -52,9 +56,15 @@ def mouth_motion_score(cv2, previous_gray, gray, face) -> float:
     y1 = int(clamp(y + h * 0.52, 0, gray.shape[0] - 1))
     y2 = int(clamp(y + h * 0.94, y1 + 1, gray.shape[0]))
     current = gray[y1:y2, x1:x2]
-    previous = previous_gray[y1:y2, x1:x2]
+    px1 = int(clamp(px + pw * 0.18, 0, previous_gray.shape[1] - 1))
+    px2 = int(clamp(px + pw * 0.82, px1 + 1, previous_gray.shape[1]))
+    py1 = int(clamp(py + ph * 0.52, 0, previous_gray.shape[0] - 1))
+    py2 = int(clamp(py + ph * 0.94, py1 + 1, previous_gray.shape[0]))
+    previous = previous_gray[py1:py2, px1:px2]
     if current.size == 0 or previous.size == 0:
         return 0.0
+    if previous.shape != current.shape:
+        previous = cv2.resize(previous, (current.shape[1], current.shape[0]), interpolation=cv2.INTER_LINEAR)
     diff = cv2.absdiff(current, previous)
     return clamp(float(diff.mean()) / 28.0, 0.0, 1.0)
 
@@ -281,9 +291,14 @@ def main():
     active_box = None
     pending_box = None
     pending_count = 0
+    active_framing = 'single'
+    pending_framing = None
+    pending_framing_count = 0
     shot_id = 0
     speaker_switches = 0
     confident_speaker_samples = 0
+    wide_context_samples = 0
+    previous_faces = []
 
     for sample_index, sample_t in enumerate(sample_times):
         cap.set(cv2.CAP_PROP_POS_MSEC, sample_t * 1000.0)
@@ -318,7 +333,14 @@ def main():
 
         current_audio = audio_activity[sample_index] if sample_index < len(audio_activity) else 0.0
         scene_change = scene_change_score(cv2, prev_gray, gray)
-        mouth_scores = [mouth_motion_score(cv2, prev_gray, gray, face) for face in faces]
+        mouth_scores = []
+        for face in faces:
+            previous_match = max(previous_faces, key=lambda old: box_match_score(face, old, source_w, source_h)) if previous_faces else None
+            if previous_match is not None and box_match_score(face, previous_match, source_w, source_h) < 0.24:
+                previous_match = None
+            mouth_scores.append(mouth_motion_score(cv2, prev_gray, gray, face, previous_match))
+
+        selected_mouth_score = 0.0
 
         if faces:
             scored_faces = []
@@ -327,13 +349,21 @@ def main():
                 continuity = box_match_score(face, active_box, source_w, source_h)
                 # Audio gates the mouth evidence. During silence continuity wins,
                 # so the crop stays fixed instead of chasing incidental motion.
-                score = area_quality * 0.18 + continuity * 0.42 + mouth_score * current_audio * 0.72
+                continuity_weight = 0.52 - current_audio * 0.30
+                score = area_quality * 0.14 + continuity * continuity_weight + mouth_score * current_audio * 0.88
                 scored_faces.append((score, mouth_score, face))
             scored_faces.sort(key=lambda item: item[0], reverse=True)
             candidate_score, candidate_mouth, candidate_box = scored_faces[0]
             active_match = box_match_score(candidate_box, active_box, source_w, source_h)
             should_switch = active_box is not None and active_match < 0.48
-            strong_speaker_evidence = current_audio >= 0.28 and candidate_mouth >= 0.12
+            active_face = max(faces, key=lambda face: box_match_score(face, active_box, source_w, source_h)) if active_box is not None else None
+            active_face_index = faces.index(active_face) if active_face in faces else -1
+            active_mouth = mouth_scores[active_face_index] if active_face_index >= 0 else 0.0
+            strong_speaker_evidence = (
+                current_audio >= 0.28
+                and candidate_mouth >= 0.12
+                and (active_box is None or active_match >= 0.48 or candidate_mouth >= active_mouth + 0.045)
+            )
 
             if active_box is None or scene_change >= 0.72:
                 if active_box is not None:
@@ -363,6 +393,8 @@ def main():
                 pending_count = 0
 
             selected_box = active_box
+            selected_index = max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], selected_box, source_w, source_h))
+            selected_mouth_score = mouth_scores[selected_index]
             if strong_speaker_evidence:
                 confident_speaker_samples += 1
 
@@ -393,7 +425,31 @@ def main():
             subject_w = selected_box[2]
             subject_h = selected_box[3]
             mode = 'face'
-            framing = 'single'
+            face_height_ratio = selected_box[3] / max(source_h, 1.0)
+            face_width_ratio = selected_box[2] / max(source_w, 1.0)
+            desired_framing = 'wide_context' if (
+                face_height_ratio <= WIDE_FACE_HEIGHT_RATIO
+                or face_width_ratio <= WIDE_FACE_WIDTH_RATIO
+            ) else 'single'
+
+            if desired_framing == active_framing:
+                pending_framing = None
+                pending_framing_count = 0
+            else:
+                if desired_framing == pending_framing:
+                    pending_framing_count += 1
+                else:
+                    pending_framing = desired_framing
+                    pending_framing_count = 1
+                if pending_framing_count >= FRAMING_SWITCH_CONFIRM_SAMPLES:
+                    active_framing = desired_framing
+                    pending_framing = None
+                    pending_framing_count = 0
+                    shot_id += 1
+
+            framing = active_framing
+            if framing == 'wide_context':
+                wide_context_samples += 1
             normalized_x = chosen_center_x / max(source_w, 1.0)
             face_top = selected_box[1] / max(source_h, 1.0)
             normalized_y = face_top + 0.08
@@ -447,11 +503,12 @@ def main():
             'shot_id': shot_id,
             'cut': bool(points and points[-1].get('shot_id') != shot_id),
             'audio_activity': round(current_audio, 4),
-            'speaker_confidence': round((max(mouth_scores) if mouth_scores else 0.0) * current_audio, 4),
+            'speaker_confidence': round(selected_mouth_score * current_audio, 4),
             'scene_change': round(scene_change, 4),
         })
 
         prev_gray = gray
+        previous_faces = faces
 
         if first_debug_frame is None:
             first_debug_frame = frame.copy()
@@ -524,6 +581,7 @@ def main():
             'audio_available': audio_available,
             'speaker_switches': speaker_switches,
             'confident_speaker_samples': confident_speaker_samples,
+            'wide_context_samples': wide_context_samples,
             'analysis_rate_fps': sample_count / duration,
         },
         'detected_faces': detected_faces,

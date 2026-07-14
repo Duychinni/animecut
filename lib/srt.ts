@@ -205,13 +205,36 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
   };
 }
 
-function buildHighlightedLine(words: string[], activeWordIdx: number, colors?: { primary: string; secondary: string }) {
-  const primary = colors?.primary ?? '&H00FFFFFF';
-  const secondary = colors?.secondary ?? '&H0000FFFF';
+function buildHighlightedLine(
+  words: string[],
+  activeWordIdx: number,
+  options?: {
+    primary: string;
+    secondary: string;
+    scaleX: number;
+    scaleY: number;
+  },
+) {
+  const primary = options?.primary ?? '&H00FFFFFF';
+  const secondary = options?.secondary ?? '&H0000FFFF';
   const primaryOverride = primary.endsWith('&') ? primary : `${primary}&`;
   const secondaryOverride = secondary.endsWith('&') ? secondary : `${secondary}&`;
+  const baseScaleX = options?.scaleX ?? 100;
+  const baseScaleY = options?.scaleY ?? 100;
+  const popScaleX = Math.round(baseScaleX * 1.08);
+  const popScaleY = Math.round(baseScaleY * 1.08);
+  const settleScaleX = Math.round(baseScaleX * 1.04);
+  const settleScaleY = Math.round(baseScaleY * 1.04);
+
   return words
-    .map((w, idx) => (idx === activeWordIdx ? `{\\c${secondaryOverride}}${w}{\\c${primaryOverride}}` : w))
+    .map((w, idx) => {
+      if (idx !== activeWordIdx) return w;
+
+      // Give the spoken word a quick, restrained pop, then leave it slightly
+      // enlarged for the rest of its audio interval. The following reset keeps
+      // every other word at the caption template's normal scale.
+      return `{\\c${secondaryOverride}\\fscx${baseScaleX}\\fscy${baseScaleY}\\t(0,80,\\fscx${popScaleX}\\fscy${popScaleY})\\t(80,180,\\fscx${settleScaleX}\\fscy${settleScaleY})}${w}{\\c${primaryOverride}\\fscx${baseScaleX}\\fscy${baseScaleY}}`;
+    })
     .join(' ');
 }
 
@@ -300,7 +323,12 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
         if (e - s < 0.05) continue;
 
         const activeInLine = i - windowStart;
-        const text = buildHighlightedLine(lineWords, activeInLine, { primary: style.primary, secondary: style.secondary });
+        const text = buildHighlightedLine(lineWords, activeInLine, {
+          primary: style.primary,
+          secondary: style.secondary,
+          scaleX: style.scaleX,
+          scaleY: style.scaleY,
+        });
         if (!text) continue;
 
         events.push({ start: s, end: e, text });

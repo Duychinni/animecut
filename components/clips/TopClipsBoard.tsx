@@ -51,6 +51,21 @@ type PlaybackState = {
   volume: number;
 };
 
+type SocialPostPlatform = 'youtube' | 'tiktok' | 'facebook' | 'instagram' | 'x';
+
+const SOCIAL_POST_PLATFORMS: Array<{
+  id: SocialPostPlatform;
+  name: string;
+  detail: string;
+  destinationUrl: string;
+}> = [
+  { id: 'youtube', name: 'YouTube', detail: 'Channel or Shorts', destinationUrl: 'https://www.youtube.com/upload' },
+  { id: 'tiktok', name: 'TikTok', detail: 'Feed or drafts', destinationUrl: 'https://www.tiktok.com/upload' },
+  { id: 'facebook', name: 'Facebook', detail: 'Page or Reels', destinationUrl: 'https://www.facebook.com/reels/create' },
+  { id: 'instagram', name: 'Instagram', detail: 'Reels or feed', destinationUrl: 'https://www.instagram.com/' },
+  { id: 'x', name: 'X', detail: 'Profile post', destinationUrl: 'https://x.com/compose/post' },
+];
+
 function formatDuration(startSec: number | null, endSec: number | null) {
   if (startSec == null || endSec == null) return null;
   const total = Math.max(0, Math.round(endSec - startSec));
@@ -306,6 +321,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const router = useRouter();
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
+  const [shareClip, setShareClip] = useState<ClipItem | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
@@ -468,34 +484,30 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }
   }
 
-  async function handleShare(clip: ClipItem) {
-    if (!clip.signedUrl || sharingId) return;
+  function openShareModal(clip: ClipItem) {
+    for (const video of Object.values(videoRefs.current)) video?.pause();
+    setShareClip(clip);
+  }
+
+  async function handlePlatformPost(platform: SocialPostPlatform) {
+    if (!shareClip?.signedUrl || sharingId) return;
+
+    const destination = SOCIAL_POST_PLATFORMS.find((item) => item.id === platform);
+    if (!destination) return;
+
+    window.open(destination.destinationUrl, '_blank', 'noopener,noreferrer');
 
     try {
-      setSharingId(clip.exportId);
-      const response = await fetch(clip.signedUrl);
+      setSharingId(shareClip.exportId);
+      const response = await fetch(shareClip.signedUrl);
       if (!response.ok) throw new Error('Could not prepare this reel for sharing');
 
       const blob = await response.blob();
-      const fileName = getClipFileName(clip);
-      const file = new File([blob], fileName, { type: blob.type || 'video/mp4' });
-      const shareData: ShareData = {
-        files: [file],
-        title: clip.title || 'AnimaCut reel',
-        text: 'Created with AnimaCut',
-      };
-
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
-        await navigator.share(shareData);
-        return;
-      }
-
-      downloadClipBlob(blob, fileName);
-      window.alert('This browser cannot send video files to social apps directly. The reel was downloaded so you can upload it to your social account.');
+      downloadClipBlob(blob, getClipFileName(shareClip));
+      setShareClip(null);
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error(error);
-      window.alert('Could not open social sharing for this reel. Try again.');
+      window.alert('The posting page opened, but the reel download failed. Download it from the clip card and try again.');
     } finally {
       setSharingId(null);
     }
@@ -694,7 +706,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           <div className="group/share relative">
                             <button
                               type="button"
-                              onClick={() => void handleShare(clip)}
+                              onClick={() => openShareModal(clip)}
                               disabled={Boolean(sharingId) || editRendering}
                               className="inline-flex items-center justify-center text-white/90 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                               aria-label="Share or publish clip"
@@ -844,7 +856,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                               <div className="group/share relative">
                                 <button
                                   type="button"
-                                  onClick={() => void handleShare(clip)}
+                                  onClick={() => openShareModal(clip)}
                                   disabled={Boolean(sharingId)}
                                   className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/90 transition hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                                   aria-label="Share or publish clip"
@@ -1028,7 +1040,116 @@ export function TopClipsBoard({ projectId, clips }: Props) {
           onApply={applyPreset}
         />
       ) : null}
+
+      {shareClip ? (
+        <SocialPostModal
+          clip={shareClip}
+          posting={sharingId === shareClip.exportId}
+          onClose={() => {
+            if (!sharingId) setShareClip(null);
+          }}
+          onSelect={handlePlatformPost}
+        />
+      ) : null}
     </>
+  );
+}
+
+function SocialPlatformIcon({ platform }: { platform: SocialPostPlatform }) {
+  if (platform === 'youtube') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-[#ff0033] text-white shadow-[0_10px_24px_rgba(255,0,51,.25)]">
+        <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current" aria-hidden="true"><path d="M8.6 7.2v9.6L17 12 8.6 7.2Z" /></svg>
+      </span>
+    );
+  }
+
+  if (platform === 'tiktok') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-black ring-1 ring-white/15">
+        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" aria-hidden="true">
+          <path d="M13.8 4.2v9.2a4 4 0 1 1-3.5-4" stroke="#25f4ee" strokeWidth="3" strokeLinecap="round" /><path d="M13.8 4.2c.5 2.4 2 3.9 4.4 4.4" stroke="#fe2c55" strokeWidth="3" strokeLinecap="round" /><path d="M13.2 4.7v9.2a4 4 0 1 1-3.5-4" stroke="white" strokeWidth="2" strokeLinecap="round" /><path d="M13.2 4.7c.5 2.4 2 3.9 4.4 4.4" stroke="white" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (platform === 'facebook') {
+    return <span className="grid h-10 w-10 place-items-center rounded-full bg-[#1877f2] text-2xl font-black text-white">f</span>;
+  }
+
+  if (platform === 'instagram') {
+    return (
+      <span className="grid h-10 w-10 place-items-center rounded-xl bg-[radial-gradient(circle_at_30%_105%,#feda75_0%,#fa7e1e_28%,#d62976_52%,#962fbf_74%,#4f5bd5_100%)] text-white">
+        <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="4.5" y="4.5" width="15" height="15" rx="5" /><circle cx="12" cy="12" r="3.5" /><circle cx="17" cy="7" r="1" fill="currentColor" stroke="none" /></svg>
+      </span>
+    );
+  }
+
+  return <span className="grid h-10 w-10 place-items-center rounded-full bg-black text-xl font-semibold text-white ring-1 ring-white/15">X</span>;
+}
+
+function SocialPostModal({
+  clip,
+  posting,
+  onClose,
+  onSelect,
+}: {
+  clip: ClipItem;
+  posting: boolean;
+  onClose: () => void;
+  onSelect: (platform: SocialPostPlatform) => Promise<void>;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !posting) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose, posting]);
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/80 px-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="social-post-title" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !posting) onClose();
+    }}>
+      <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#0c0d11] p-6 shadow-[0_30px_100px_rgba(0,0,0,.7)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 id="social-post-title" className="text-xl font-bold text-white">Post your reel</h3>
+            <p className="mt-1 line-clamp-1 text-sm text-white/55">{clip.title}</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={posting} className="grid h-9 w-9 place-items-center rounded-full text-xl text-white/55 transition hover:bg-white/10 hover:text-white disabled:opacity-35" aria-label="Close social posting">
+            ×
+          </button>
+        </div>
+
+        <p className="mt-5 text-sm leading-6 text-white/65">Choose a platform. AnimaCut will download the MP4 and open that platform&apos;s posting page.</p>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {SOCIAL_POST_PLATFORMS.map((platform) => (
+            <button
+              key={platform.id}
+              type="button"
+              onClick={() => void onSelect(platform.id)}
+              disabled={posting}
+              className="group flex min-h-24 items-center gap-4 rounded-xl border border-white/12 bg-white/[0.025] p-4 text-left transition hover:border-white/30 hover:bg-white/[0.07] disabled:cursor-wait disabled:opacity-45"
+            >
+              <SocialPlatformIcon platform={platform.id} />
+              <span className="min-w-0">
+                <span className="block font-bold text-white">{platform.name}</span>
+                <span className="mt-0.5 block text-xs text-white/50">{platform.detail}</span>
+              </span>
+              <svg viewBox="0 0 24 24" className="ml-auto h-4 w-4 shrink-0 text-white/35 transition group-hover:translate-x-0.5 group-hover:text-white/75" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/45">
+          <span>{posting ? 'Preparing your reel download...' : 'Select the downloaded MP4 in the platform uploader.'}</span>
+          <button type="button" onClick={onClose} disabled={posting} className="shrink-0 rounded-lg bg-white/10 px-3 py-2 font-semibold text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-35">Skip</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

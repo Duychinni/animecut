@@ -13,7 +13,7 @@ type LayoutMode = 'single' | 'split_stack';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v7-source-fps';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v8-adaptive-wide';
 const DEFAULT_X264_CRF = '12';
 const DEFAULT_X264_MAXRATE = '50M';
 const DEFAULT_X264_BUFSIZE = '100M';
@@ -412,6 +412,12 @@ type SplitStackLayout = {
   outputWidth: number;
   outputHeight: number;
 };
+type FramingInterval = { start: number; end: number };
+type SmartReframeResult = {
+  cropExpr?: string;
+  layout?: SplitStackLayout;
+  wideIntervals?: FramingInterval[];
+};
 
 function clamp01(v: number) {
   return Math.max(0, Math.min(1, v));
@@ -465,6 +471,25 @@ function stabilizeReframePoints(points: ReframePoint[], maxPoints = 48) {
     if (sampled.length) sampled[0] = { ...sampled[0], cut: shot[0].cut };
     return sampled;
   });
+}
+
+function collectFramingIntervals(points: ReframePoint[], clipDuration: number): FramingInterval[] {
+  const intervals: FramingInterval[] = [];
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    if (point.framing !== 'wide_context') continue;
+
+    const start = Math.max(0, point.t - 0.18);
+    const end = Math.min(clipDuration, points[index + 1]?.t ?? clipDuration);
+    if (end - start < 0.12) continue;
+
+    const previous = intervals[intervals.length - 1];
+    if (previous && start <= previous.end + 0.3) previous.end = Math.max(previous.end, end);
+    else intervals.push({ start, end });
+  }
+
+  return intervals.filter((interval) => interval.end - interval.start >= 0.35);
 }
 
 function buildTimelineExpr(points: ReframePoint[], pick: (p: ReframePoint) => string, fallback: string) {
@@ -591,7 +616,7 @@ function largestSourceCropForOutput(sourceW: number, sourceH: number, outputW: n
   };
 }
 
-async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropExpr?: string; layout?: SplitStackLayout }> {
+async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartReframeResult> {
   if (opts.framingMode && opts.framingMode !== 'auto') {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -655,6 +680,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
         audio_available?: boolean;
         speaker_switches?: number;
         confident_speaker_samples?: number;
+        wide_context_samples?: number;
         analysis_rate_fps?: number;
       };
       detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number }> }>;
@@ -886,6 +912,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     }
 
     const stabilized = stabilizeReframePoints(points, 48);
+    const wideIntervals = collectFramingIntervals(stabilized, Math.max(0.01, opts.endSec - opts.startSec));
 
     console.log('[smart-reframe-active-speaker]', {
       clipId,
@@ -897,6 +924,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
       sourcePoints: points.length,
       stabilizedPoints: stabilized.length,
       framingShots: new Set(stabilized.map((point) => point.shotId ?? 0)).size,
+      wideContextSamples: raw.meta?.wide_context_samples ?? null,
+      wideIntervals,
     });
 
     const preset = opts.reframePreset ?? 'auto';
@@ -933,7 +962,10 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<{ cropEx
     const xExpr = escapeFfmpegExpr(xExprRaw);
     const yExpr = escapeFfmpegExpr(yExprRaw);
 
-    return { cropExpr: `crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:${xExpr}:${yExpr}` };
+    return {
+      cropExpr: `crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:${xExpr}:${yExpr}`,
+      wideIntervals,
+    };
   } catch (error) {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -1136,7 +1168,7 @@ function buildHookAss(hookText: string) {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 68 : 76;
+  const hookFontSize = twoLine ? 76 : 84;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1148,7 +1180,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Arial Black,${hookFontSize},&H00000000,&H00000000,&H00111111,&H55000000,-1,0,0,0,100,106,0,0,1,1,1,5,80,80,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1162,19 +1194,22 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
   const source = hookTextFilePath
     ? `textfile='${escapeDrawtextPathForFilter(hookTextFilePath)}':reload=0`
     : `text='${escapeDrawtextText(wrapped)}'`;
+  const bundledFontPath = path.join(process.cwd(), 'public', 'fonts', 'Poppins-ExtraBold.ttf');
+  const fontSource = existsSync(bundledFontPath)
+    ? `fontfile='${escapeDrawtextPathForFilter(bundledFontPath)}'`
+    : "font='Arial Black'";
   return [
     `drawtext=${source}`,
-    "font='Arial Black'",
+    fontSource,
     'fontcolor=black',
-    'fontsize=74',
+    'fontsize=82',
     'box=1',
-    'boxcolor=white@0.98',
+    'boxcolor=white',
     'boxborderw=30',
-    'borderw=1',
-    'bordercolor=black@0.72',
-    'shadowx=1',
-    'shadowy=2',
-    'shadowcolor=black@0.28',
+    'borderw=0',
+    'shadowx=0',
+    'shadowy=0',
+    'ft_load_flags=force_autohint',
     'line_spacing=9',
     'fix_bounds=1',
     'x=(w-text_w)/2',
@@ -1185,7 +1220,7 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
 
 function buildHookFilter(opts: RenderOpts) {
   if (opts.hookRenderMode !== 'drawtext' && opts.hookAssPath) {
-    return `subtitles=filename='${escapeSubtitlesPathForFilter(opts.hookAssPath)}'`;
+    return `subtitles=filename='${escapeSubtitlesPathForFilter(opts.hookAssPath)}'${captionFontsDirOption()}`;
   }
   return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath);
 }
@@ -1223,29 +1258,13 @@ function buildBaseVideoFilters(
   return filters;
 }
 
-function buildFilter(
+function appendPresentationFilters(
+  filterParts: string[],
   opts: RenderOpts,
   includeCaptions: boolean,
   escapedPath?: string,
-  escapedMotionTransformPath?: string,
   captionPath?: string,
-  smartCropExpr?: string,
 ) {
-  const outputHeight = resolveOutputHeight();
-  const outputWidth = resolveOutputWidth(outputHeight);
-  const safeFitFallback = shouldUseSafeFitFallback(opts, smartCropExpr);
-  const filterParts = buildBaseVideoFilters(opts, outputWidth, outputHeight, escapedMotionTransformPath, smartCropExpr);
-
-  if (safeFitFallback) {
-    console.log('[smart-reframe-fallback]', {
-      clipId: opts.debugClipId ?? null,
-      candidateId: opts.debugCandidateId ?? null,
-      reason: 'smart_tracker_unavailable_safe_full_frame',
-      outputWidth,
-      outputHeight,
-    });
-  }
-
   if (opts.debugReframeOverlay) {
     filterParts.push(
       "drawbox=x=iw/2-6:y=0:w=12:h=ih:color=yellow@0.65:t=fill",
@@ -1381,7 +1400,64 @@ function buildFilter(
     }
   }
 
-  return filterParts.join(',');
+  return filterParts;
+}
+
+function buildFilter(
+  opts: RenderOpts,
+  includeCaptions: boolean,
+  escapedPath?: string,
+  escapedMotionTransformPath?: string,
+  captionPath?: string,
+  smartCropExpr?: string,
+) {
+  const outputHeight = resolveOutputHeight();
+  const outputWidth = resolveOutputWidth(outputHeight);
+  const safeFitFallback = shouldUseSafeFitFallback(opts, smartCropExpr);
+  const filterParts = buildBaseVideoFilters(opts, outputWidth, outputHeight, escapedMotionTransformPath, smartCropExpr);
+
+  if (safeFitFallback) {
+    console.log('[smart-reframe-fallback]', {
+      clipId: opts.debugClipId ?? null,
+      candidateId: opts.debugCandidateId ?? null,
+      reason: 'smart_tracker_unavailable_safe_full_frame',
+      outputWidth,
+      outputHeight,
+    });
+  }
+
+  return appendPresentationFilters(filterParts, opts, includeCaptions, escapedPath, captionPath).join(',');
+}
+
+function buildAdaptiveWideFilter(
+  opts: RenderOpts,
+  wideIntervals: FramingInterval[],
+  includeCaptions: boolean,
+  escapedPath?: string,
+  escapedMotionTransformPath?: string,
+  captionPath?: string,
+  smartCropExpr?: string,
+) {
+  const outputHeight = resolveOutputHeight();
+  const outputWidth = resolveOutputWidth(outputHeight);
+  const closeFilters = buildBaseVideoFilters(opts, outputWidth, outputHeight, escapedMotionTransformPath, smartCropExpr);
+  const enableExpr = wideIntervals
+    .map((interval) => `between(t,${interval.start.toFixed(3)},${interval.end.toFixed(3)})`)
+    .join('+');
+
+  const graph = [
+    '[0:v]split=3[closein][widebgin][widefgin]',
+    `[closein]${closeFilters.join(',')}[close]`,
+    `[widebgin]scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${outputWidth}:${outputHeight},boxblur=24:2[widebg]`,
+    `[widefgin]scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS}[widefg]`,
+    `[widebg][widefg]overlay=(W-w)/2:(H-h)/2:format=auto[wide]`,
+    `[close][wide]overlay=0:0:enable='${enableExpr}'[adaptive]`,
+  ];
+  const presentationFilters = appendPresentationFilters([], opts, includeCaptions, escapedPath, captionPath);
+  graph.push(presentationFilters.length
+    ? `[adaptive]${presentationFilters.join(',')}[outv]`
+    : '[adaptive]null[outv]');
+  return graph.join(';');
 }
 
 export async function renderVerticalClip(opts: RenderOpts) {
@@ -1441,6 +1517,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const smartReframe = await maybeBuildSmartCropExpression(effectiveOpts);
   const smartCropExpr = smartReframe.cropExpr;
   const splitStackLayout = smartReframe.layout;
+  const adaptiveWideIntervals = smartReframe.wideIntervals ?? [];
 
   if (effectiveOpts.captionsEnabled !== false && effectiveOpts.srtPath) {
     try {
@@ -1519,6 +1596,25 @@ export async function renderVerticalClip(opts: RenderOpts) {
         buildSplitStackFilter(effectiveOpts, splitStackLayout, includeCaptions, escapedPath, effectiveOpts.srtPath),
         '-map',
         '[outv]',
+        '-map',
+        '0:a?',
+      );
+    } else if (adaptiveWideIntervals.length > 0) {
+      common.push(
+        '-filter_complex',
+        buildAdaptiveWideFilter(
+          effectiveOpts,
+          adaptiveWideIntervals,
+          includeCaptions,
+          escapedPath,
+          escapedMotionTransformPath,
+          effectiveOpts.srtPath,
+          smartCropExpr,
+        ),
+        '-map',
+        '[outv]',
+        '-map',
+        '0:a?',
       );
     } else {
       common.push(
@@ -1579,7 +1675,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   };
 
   try {
-    console.log('[render] output-path', { clipId: debugClipId, localMp4Path: effectiveOpts.outputPath, inputPath: effectiveOpts.inputPath, startSec: effectiveOpts.startSec, endSec: effectiveOpts.endSec, smartCropExpr: smartCropExpr ?? null, splitStack: Boolean(splitStackLayout) });
+    console.log('[render] output-path', { clipId: debugClipId, localMp4Path: effectiveOpts.outputPath, inputPath: effectiveOpts.inputPath, startSec: effectiveOpts.startSec, endSec: effectiveOpts.endSec, smartCropExpr: smartCropExpr ?? null, splitStack: Boolean(splitStackLayout), adaptiveWideIntervals });
     await runFfmpeg(buildArgs(canUseCaptions), { clipId: debugClipId, outputPath: effectiveOpts.outputPath });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
