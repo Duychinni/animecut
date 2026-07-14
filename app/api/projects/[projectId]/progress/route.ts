@@ -446,9 +446,11 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const hasPlayableExports = doneExports > 0;
     const frozenCompletedProject = projectMarkedCompleted && hasPlayableExports;
     const hasSettledPlayableExports = activeExports === 0 && hasPlayableExports;
-    const isReallyCompleted =
-      frozenCompletedProject
-      || (hasSettledPlayableExports && (projectMarkedCompleted || doneExports >= targetCount || storedPipelineStatus === 'error' || heartbeatExpired));
+    // Once every queued render has settled and at least one playable reel is
+    // stored, the project is terminal even if the candidate pool produced
+    // fewer reels than today's target policy. A later policy change or failed
+    // optional export must never reopen an already usable project.
+    const isReallyCompleted = frozenCompletedProject || hasSettledPlayableExports;
 
     const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && activeExports > 0;
     let effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
@@ -523,7 +525,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         });
       }
     }
-    if (!isReallyCompleted && retryableErroredExportIds.length) {
+    if (!isReallyCompleted && doneExports === 0 && retryableErroredExportIds.length) {
       try {
         recoveredErrorExportCount = await recoverErroredProjectExports(projectId, retryableErroredExportIds);
         renderRecoveryQueued = recoveredErrorExportCount > 0 || renderRecoveryQueued;

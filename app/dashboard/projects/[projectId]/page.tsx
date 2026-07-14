@@ -277,8 +277,11 @@ export default async function ProjectDetailPage({
   const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
   const playableExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
   const hasPlayableExports = playableExportItems.length > 0;
-  const shouldShowResults = hasPlayableExports && (hasActiveEditRenders || activeExports === 0 || projectMarkedCompleted || projectHasTerminalIssue);
-  const displayExportItems = shouldShowResults ? playableExportItems : [];
+  // Never hide reels that have already been uploaded successfully. Remaining
+  // queued/processing exports belong on the clips board as individual status
+  // cards instead of sending the whole project back to the processing hero.
+  const shouldShowResults = hasPlayableExports;
+  const displayExportItems = shouldShowResults ? filteredExportItems : [];
   const isCompletedFromRows = doneExports > 0 && (
     projectMarkedCompleted
     || (activeExports === 0 && (projectHasTerminalIssue || doneExports >= targetCount))

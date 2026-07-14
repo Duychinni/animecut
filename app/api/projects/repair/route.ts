@@ -117,7 +117,31 @@ export async function POST() {
         continue;
       }
 
-      const retryableErrors = frozenCompletedProject
+      // A settled partial batch is a valid finished project. Do not repeatedly
+      // requeue failed optional exports after usable reels have been stored.
+      // This also permanently latches projects created under an older target
+      // count so refreshing cannot send them back to processing.
+      if (hasSavedReels && activeRows.length === 0) {
+        await admin
+          .from('projects')
+          .update({
+            status: 'completed',
+            pipeline_status: 'completed',
+            pipeline_stage: 'completed',
+            pipeline_stage_label: 'Completed',
+            pipeline_progress_percent: 100,
+            pipeline_error: null,
+            pipeline_completed_at: project.pipeline_completed_at || new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', project.id)
+          .eq('user_id', user.id);
+
+        repaired += 1;
+        continue;
+      }
+
+      const retryableErrors = frozenCompletedProject || hasSavedReels
         ? []
         : rows.filter((r) => r.id && r.status === 'error' && !hasPlayableOutput(r) && isRetryableRenderError(r.error_message));
 
