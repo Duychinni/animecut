@@ -3,6 +3,7 @@
 import json
 import math
 import sys
+from pathlib import Path
 
 
 def clamp(value, low, high):
@@ -15,11 +16,21 @@ def fail(message):
 
 
 def main():
-    if len(sys.argv) != 4:
-        fail('usage: select_thumbnail.py <input_mp4> <output_jpg> <duration_seconds>')
+    if len(sys.argv) not in (4, 5):
+        fail('usage: select_thumbnail.py <input_mp4> <output_jpg> <duration_seconds> [editorial_plan_json]')
 
     input_path, output_path = sys.argv[1], sys.argv[2]
     duration = max(0.25, float(sys.argv[3]))
+    editorial_plan = {}
+    if len(sys.argv) == 5 and sys.argv[4]:
+        try:
+            editorial_plan = json.loads(Path(sys.argv[4]).read_text(encoding='utf-8'))
+        except Exception as exc:
+            fail(f'editorial_plan_invalid:{exc}')
+    scene_type = str(editorial_plan.get('scene_type', 'UNKNOWN')).upper()
+    expected_faces = {
+        'SINGLE_SPEAKER': 1, 'TWO_PERSON': 2, 'THREE_PERSON': 3, 'FOUR_PERSON': 4,
+    }.get(scene_type)
 
     try:
         import cv2  # type: ignore
@@ -65,6 +76,8 @@ def main():
         result = detector.process(rgb)
         mesh_result = face_mesh.process(rgb)
         eye_openness = []
+        expression_scores = []
+        eye_contact_scores = []
         if mesh_result.multi_face_landmarks:
             for landmarks in mesh_result.multi_face_landmarks:
                 points = landmarks.landmark
@@ -73,7 +86,14 @@ def main():
                 left_ratio = distance(159, 145) / max(distance(33, 133), 1e-6)
                 right_ratio = distance(386, 374) / max(distance(362, 263), 1e-6)
                 eye_openness.append((left_ratio + right_ratio) / 2.0)
+                mouth_open = distance(13, 14) / max(distance(61, 291), 1e-6)
+                expression_scores.append(clamp((mouth_open - 0.025) / 0.16, 0.0, 1.0))
+                eye_mid_x = (points[33].x + points[263].x) / 2.0
+                eye_span = max(abs(points[263].x - points[33].x), 1e-6)
+                eye_contact_scores.append(1.0 - clamp(abs(points[1].x - eye_mid_x) / (eye_span * 0.34), 0.0, 1.0))
         open_eye_score = clamp((max(eye_openness, default=0.0) - 0.12) / 0.10, 0.0, 1.0)
+        expression_score = max(expression_scores, default=0.0)
+        eye_contact_score = max(eye_contact_scores, default=0.0)
         face_scores = []
         if result.detections:
             for detection in result.detections:
@@ -99,13 +119,20 @@ def main():
 
         face_score = max(face_scores, default=0.0)
         face_bonus = min(0.12, max(0, len(face_scores) - 1) * 0.04)
+        participant_match_score = (
+            1.0 - clamp(abs(len(face_scores) - expected_faces) / max(1, expected_faces), 0.0, 1.0)
+            if expected_faces is not None else 0.5
+        )
         time_position = timestamp / duration
         time_score = 1.0 - clamp(abs(time_position - 0.42) / 0.48, 0.0, 1.0)
         score = (
-            face_score * 0.46
-            + sharpness_score * 0.25
-            + exposure_score * 0.17
-            + time_score * 0.12
+            face_score * 0.32
+            + sharpness_score * 0.20
+            + exposure_score * 0.12
+            + expression_score * 0.12
+            + eye_contact_score * 0.10
+            + participant_match_score * 0.08
+            + time_score * 0.06
             + face_bonus
         )
         sample = {
@@ -113,6 +140,9 @@ def main():
             'score': round(score, 4),
             'faces': len(face_scores),
             'eye_openness': round(max(eye_openness, default=0.0), 4),
+            'expression_score': round(expression_score, 4),
+            'eye_contact_score': round(eye_contact_score, 4),
+            'participant_match_score': round(participant_match_score, 4),
             'sharpness': round(sharpness, 2),
             'brightness': round(brightness, 2),
         }
@@ -134,6 +164,8 @@ def main():
         'selected_timestamp': best['timestamp'],
         'selected_score': round(float(best['score']), 4),
         'selected_faces': best['faces'],
+        'editorial_scene_type': scene_type,
+        'selection_reason': 'Highest combined expression, eye-contact, sharpness, exposure, composition, and editorial participant-match score.',
         'samples': samples,
     }))
 

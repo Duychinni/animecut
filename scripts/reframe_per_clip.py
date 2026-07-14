@@ -8,6 +8,9 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple
 
+from editorial_layout_planner import plan_editorial_timeline
+from layout_qa import validate_layout_timeline
+
 DEBUG_FRAME_NAME = 'debug-still.jpg'
 SAFE_EDGE_MARGIN_X = 0.10
 MOTION_MIN_AREA_RATIO = 0.0035
@@ -698,6 +701,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'stacked_score': round(stacked_score, 4),
             'stack_eligible': stack_eligible,
             'wide_kind': wide_kind if current_mode == 'wide_context' else None,
+            'visible_count': len(visible_faces),
             'editorial_signals': {
                 'two_stable_speakers': two_stable_speakers,
                 'both_actively_participating': both_actively_participating,
@@ -802,6 +806,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 '_bottom_boxes': [],
                 '_single_scores': [],
                 '_stacked_scores': [],
+                '_visible_counts': [],
             })
             if len(segments) > 1:
                 segments[-2]['end'] = float(decision['timestamp'])
@@ -824,6 +829,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             segment['_bottom_boxes'].append(decision['bottom_face'])
         segment['_single_scores'].append(float(decision.get('single_score', 0.0)))
         segment['_stacked_scores'].append(float(decision.get('stacked_score', 0.0)))
+        segment['_visible_counts'].append(int(decision.get('visible_count', 0)))
 
     def median_dict_box(items):
         if not items:
@@ -841,6 +847,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         segment['bottomBox'] = median_dict_box(segment.pop('_bottom_boxes'))
         segment['singleScore'] = round(statistics.mean(segment.pop('_single_scores')), 4)
         segment['stackedScore'] = round(statistics.mean(segment.pop('_stacked_scores')), 4)
+        visible_counts = segment.pop('_visible_counts')
+        segment['visibleCount'] = int(round(statistics.median(visible_counts))) if visible_counts else 0
+        segment['visibleCountMax'] = max(visible_counts, default=0)
         segment.pop('_key', None)
         segment['start'] = round(float(segment['start']), 3)
         segment['end'] = round(float(segment['end']), 3)
@@ -1050,6 +1059,12 @@ def main():
     input_path = sys.argv[1]
     start_sec = float(sys.argv[2])
     end_sec = float(sys.argv[3])
+    editorial_plan = None
+    if len(sys.argv) >= 6 and sys.argv[5]:
+        try:
+            editorial_plan = json.loads(Path(sys.argv[5]).read_text(encoding='utf-8'))
+        except Exception as exc:
+            fail(2, f'editorial_plan_invalid:{exc}')
 
     try:
         import cv2  # type: ignore
@@ -1463,6 +1478,10 @@ def main():
     # Produce timed layout decisions after tracking/speaker evidence is known.
     # Never collapse a multi-person reel into one whole-clip layout.
     reframe_timeline = build_reframe_timeline(points, detected_faces, source_w, source_h, duration)
+    reframe_timeline, editorial_summary = plan_editorial_timeline(reframe_timeline, editorial_plan)
+    reframe_timeline, layout_qa_summary = validate_layout_timeline(
+        reframe_timeline, detected_faces, source_w, source_h
+    )
 
     unique_track_ids = sorted({
         int(face['track_id'])
@@ -1528,6 +1547,8 @@ def main():
             'dual_frame_ratio': round(dual_frame_ratio, 4),
             'timeline_segments': len(reframe_timeline),
             'layout_modes': layout_modes,
+            'editorial_planner': editorial_summary,
+            'layout_qa': layout_qa_summary,
         },
         'reframe_timeline': reframe_timeline,
         'detected_faces': detected_faces,

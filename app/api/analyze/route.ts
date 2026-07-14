@@ -7,10 +7,11 @@ import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
+import { buildCandidateEditorialPlan, type CandidateEditorialPlan } from '@/lib/editorial-plan';
 
 export const maxDuration = 60;
 
-type RawCandidate = Record<string, string | number | null | undefined>;
+type RawCandidate = Record<string, unknown>;
 
 const GLOBAL_MAX_CLIP_SEC = 120;
 const GLOBAL_MIN_CLIP_SEC = 30;
@@ -48,9 +49,10 @@ type RankedCandidate = {
   reject_reason: string | null;
   rank: number;
   passes_quality: boolean;
+  editorial_plan: CandidateEditorialPlan;
 };
 
-function num(v: string | number | null | undefined): number {
+function num(v: unknown): number {
   return Number(v ?? 0);
 }
 
@@ -126,6 +128,14 @@ function closingLineForWindow(startSec: number, endSec: number, segments: Transc
   const inRange = segments.filter((s) => segmentOverlapsWindow(s, startSec, endSec));
   const last = inRange[inRange.length - 1];
   return last ? textOf(last) : '';
+}
+
+function transcriptTextForWindow(startSec: number, endSec: number, segments: TranscriptSegment[]): string {
+  return segments
+    .filter((segment) => segmentOverlapsWindow(segment, startSec, endSec))
+    .map(textOf)
+    .filter(Boolean)
+    .join(' ');
 }
 
 function startsLikeNaturalBoundary(text: string): boolean {
@@ -453,8 +463,11 @@ function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
     && pickedTitle.length > 10
     && curTitle === pickedTitle
     && !isGenericEditorialTitle(curTitle)
-    && similarity >= 0.45;
-  const sameStory = similarity >= 0.82 || (similarity >= 0.58 && overlapRatio > 0.2);
+    && similarity >= 0.45
+    && overlapRatio >= 0.55;
+  // Similar subject matter is not enough to delete a clip. A debate can revisit
+  // the same matchup with a different claim, payoff, or challenge minutes later.
+  const sameStory = similarity >= 0.9 && overlapRatio >= 0.35;
   const sameWindow = isNearDuplicateWindow(
     Number(cur.start_sec ?? 0),
     Number(cur.end_sec ?? 0),
@@ -538,6 +551,20 @@ function buildTranscriptCoverageCandidates(params: {
 
       const index = pass * params.desiredCount + bucket;
       const title = keywordDisplayTitle(openingLine, closingLine, 'Transcript coverage moment', index);
+      const hookText = resolveCandidateHookText({
+        rawHookText: null,
+        title,
+        openingLine,
+        segments: params.segments,
+        startSec: cleaned.start_sec,
+        endSec: cleaned.end_sec,
+      });
+      const editorialPlan = buildCandidateEditorialPlan({
+        transcriptText: transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, params.segments),
+        raw: {},
+        fallbackTitle: title,
+        fallbackHook: hookText,
+      });
       const passesQuality = startsLikeNaturalBoundary(openingLine) && cleaned.end_complete;
       const overallScore = passesQuality ? 76 : 71;
       candidates.push({
@@ -547,15 +574,8 @@ function buildTranscriptCoverageCandidates(params: {
         start_sec: cleaned.start_sec,
         end_sec: cleaned.end_sec,
         duration_seconds: Number((cleaned.end_sec - cleaned.start_sec).toFixed(2)),
-        title,
-        hook_text: resolveCandidateHookText({
-          rawHookText: null,
-          title,
-          openingLine,
-          segments: params.segments,
-          startSec: cleaned.start_sec,
-          endSec: cleaned.end_sec,
-        }),
+        title: editorialPlan.title,
+        hook_text: editorialPlan.selected_hook,
         reason: `Independent transcript coverage fallback for bucket ${bucket + 1}/${params.desiredCount}. Boundary pass: ${cleaned.reason}`,
         self_contained_confidence: passesQuality ? 0.72 : 0.62,
         boundary_adjustment_reason: cleaned.reason,
@@ -571,6 +591,7 @@ function buildTranscriptCoverageCandidates(params: {
         reject_reason: null,
         rank: index + 1,
         passes_quality: passesQuality,
+        editorial_plan: editorialPlan,
       });
     }
   }
@@ -802,6 +823,11 @@ function adjustBoundaries(
   };
 }
 
+function isMissingEditorialPlanColumnError(error: unknown) {
+  const text = errorText(error);
+  return /editorial_plan/i.test(text) && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
+}
+
 async function runProjectAnalysis(project_id: string, options: { forceLocal?: boolean } = {}) {
     const supabase = createAdminClient();
 
@@ -863,6 +889,21 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         const openingLine = openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.opening_line ?? '');
         const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.closing_line ?? '');
         const displayTitle = buildDisplayTitle(c.title, openingLine, closingLine, c.reason_selected ?? c.reason, idx);
+        const resolvedHook = resolveCandidateHookText({
+          rawHookText: c.hook_text,
+          title: displayTitle,
+          openingLine,
+          segments,
+          startSec: cleaned.start_sec,
+          endSec: cleaned.end_sec,
+        });
+        const editorialPlan = buildCandidateEditorialPlan({
+          transcriptText: transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, segments),
+          globalContext: String(transcriptRow.full_text ?? ''),
+          raw: c,
+          fallbackTitle: displayTitle,
+          fallbackHook: resolvedHook,
+        });
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const payoffStrong = hasStrongPayoff(closingLine);
         const cleanEnding = !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
@@ -909,15 +950,8 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           start_sec: cleaned.start_sec,
           end_sec: cleaned.end_sec,
           duration_seconds: Number(duration.toFixed(2)),
-          title: displayTitle,
-          hook_text: resolveCandidateHookText({
-            rawHookText: c.hook_text,
-            title: displayTitle,
-            openingLine,
-            segments,
-            startSec: cleaned.start_sec,
-            endSec: cleaned.end_sec,
-          }),
+          title: editorialPlan.title,
+          hook_text: editorialPlan.selected_hook,
           reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${cleaned.reason} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
           self_contained_confidence: Math.max(0, Math.min(1, num(c.standalone_confidence) || cleaned.confidence)),
           boundary_adjustment_reason: cleaned.reason,
@@ -943,6 +977,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
                   : null,
           rank: idx + 1,
           passes_quality: passesQuality,
+          editorial_plan: editorialPlan,
         };
       });
 
@@ -1086,6 +1121,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         title: candidate.title,
         hook: candidate.hook_text,
         score: Number(candidate.overall_score ?? 0),
+        editorial_plan: candidate.editorial_plan,
       })),
       rejected_candidates: rejectedCandidateReport,
     };
@@ -1149,6 +1185,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       rewatch_potential: toLegacyTenPoint(Number(item.retention_potential ?? 0)),
       overall_score: Number((item.overall_score ?? 0) / 10),
       rank: item.rank,
+      editorial_plan: item.editorial_plan,
     }));
 
     await supabase.from('exports').delete().eq('project_id', project_id).in('status', ['queued', 'processing']);
@@ -1170,10 +1207,18 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       return { ok: true, count: 0, candidates: [], reason: 'not_enough_content', diagnostics: productionDiagnostics };
     }
 
-    let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(dbRows).select('id, start_sec, end_sec, title');
+    let rowsForInsert: Array<Record<string, unknown>> = dbRows;
+    let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(rowsForInsert).select('id, start_sec, end_sec, title');
+    if (insErr && isMissingEditorialPlanColumnError(insErr)) {
+      console.warn('[analyze] editorial_plan column missing; retrying clip candidate insert without editorial_plan');
+      rowsForInsert = rowsForInsert.map(({ editorial_plan: _editorialPlan, ...row }) => row);
+      const retry = await supabase.from('clip_candidates').insert(rowsForInsert).select('id, start_sec, end_sec, title');
+      insertedRows = retry.data;
+      insErr = retry.error;
+    }
     if (insErr && isMissingHookTextColumnError(insErr)) {
       console.warn('[analyze] hook_text column missing; retrying clip candidate insert without hook_text');
-      const legacyRows = dbRows.map(({ hook_text: _hookText, ...row }) => row);
+      const legacyRows = rowsForInsert.map(({ hook_text: _hookText, ...row }) => row);
       const retry = await supabase.from('clip_candidates').insert(legacyRows).select('id, start_sec, end_sec, title');
       insertedRows = retry.data;
       insErr = retry.error;

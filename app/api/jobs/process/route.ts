@@ -200,6 +200,7 @@ type ExportBundle = {
     start_sec: number;
     end_sec: number;
     title?: string | null;
+    editorial_plan?: Record<string, unknown> | null;
   };
   transcript: {
     segments_json: Array<{ start?: number; end?: number; text?: string; words?: Array<{ start?: number; end?: number; word?: string }> }> | null;
@@ -580,7 +581,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       .single(),
     supabase
       .from('clip_candidates')
-      .select('start_sec, end_sec, title')
+      .select('*')
       .eq('id', exportCandidateId)
       .single(),
     supabase
@@ -614,6 +615,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       start_sec: Number(clip.start_sec),
       end_sec: Number(clip.end_sec),
       title: typeof clip.title === 'string' ? clip.title : null,
+      editorial_plan: typeof clip.editorial_plan === 'object' && clip.editorial_plan
+        ? clip.editorial_plan as Record<string, unknown>
+        : null,
     },
     transcript: transcript
       ? {
@@ -765,6 +769,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     zoom: useEditSettings ? editSettings.zoom : undefined,
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
+    editorialPlan: bundle.clip.editorial_plan,
     fastRender: options?.fast_edit_render === true,
   });
 
@@ -777,7 +782,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
     const clipDuration = Math.max(0.25, effectiveRenderEnd - effectiveRenderStart);
-    const thumbnailSelection = await extractBestVideoThumbnail(outPath, posterPath, clipDuration);
+    const thumbnailSelection = await extractBestVideoThumbnail(outPath, posterPath, clipDuration, bundle.clip.editorial_plan);
     console.log('[jobs/process] export-thumbnail-selected', {
       export_id: bundle.id,
       ...thumbnailSelection,

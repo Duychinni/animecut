@@ -1,5 +1,6 @@
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 import { generateHookTextFromText } from '@/lib/hook-text';
+import { buildCandidateEditorialPlan } from '@/lib/editorial-plan';
 
 type TranscriptSegment = {
   start?: number;
@@ -183,7 +184,7 @@ function overlapsSelected(start: number, end: number, selected: Array<{ start: n
   return selected.some((item) => {
     const overlap = Math.max(0, Math.min(end, item.end) - Math.max(start, item.start));
     const minDur = Math.max(1, Math.min(end - start, item.end - item.start));
-    return overlap >= 12 && overlap / minDur >= 0.32;
+    return overlap >= 12 && overlap / minDur >= 0.78;
   });
 }
 
@@ -269,11 +270,33 @@ export function analyzeTranscriptLocally(
     const text = textForWindow(realSegments, start, end, transcript);
     const duration = Math.max(1, end - start);
     const score = scoreWindow(text, duration, hasFillerStart(text));
-    const title = titleFromTranscript(text, index);
+    const legacyTitle = titleFromTranscript(text, index);
+    const legacyHook = hookTextFromTranscript(text, legacyTitle);
+    const editorialPlan = buildCandidateEditorialPlan({
+      transcriptText: text,
+      globalContext: transcript,
+      fallbackTitle: legacyTitle,
+      fallbackHook: legacyHook,
+    });
 
     return {
-      title,
-      hook_text: hookTextFromTranscript(text, title),
+      title: editorialPlan.title,
+      hook_text: editorialPlan.selected_hook,
+      hook_options: editorialPlan.hook_options,
+      hook_supporting_quote: editorialPlan.hook_options[0].supporting_quote,
+      hook_selection_reason: editorialPlan.hook_options[0].reason,
+      story: editorialPlan.story,
+      conflict: editorialPlan.conflict,
+      primary_speaker: editorialPlan.primary_speaker,
+      supporting_speakers: editorialPlan.supporting_speakers,
+      visual_context_required: editorialPlan.visual_context_required,
+      scene_type: editorialPlan.scene_type,
+      recommended_layout: editorialPlan.recommended_layout,
+      recommended_thumbnail: editorialPlan.recommended_thumbnail,
+      topic: editorialPlan.topic,
+      moment_type: editorialPlan.moment_type,
+      virality_reason: editorialPlan.virality_reason,
+      editorial_plan: editorialPlan,
       raw_start: start,
       raw_end: end,
       adjusted_start: start,
@@ -305,7 +328,6 @@ export function analyzeTranscriptLocally(
     .filter((candidate) => {
       const key = `${Math.round(candidate.adjusted_start / 8)}:${candidate.title.toLowerCase()}`;
       if (seen.has(key)) return false;
-      if (punctuationReliable && !endsSentence(candidate.closing_line)) return false;
       if (overlapsSelected(candidate.adjusted_start, candidate.adjusted_end, selectedWindows)) return false;
       seen.add(key);
       const keep = candidate.duration_seconds >= Math.min(policy.minSec, windowSeconds);

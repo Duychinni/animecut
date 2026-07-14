@@ -200,6 +200,16 @@ TITLE / HOOK PAIR EXAMPLES:
 - title: "The Cost Of Posting Only Highlights"; hook_text: "You're Hiding The Real Work"
 - title: "Steve-O's Flat Earth Debate"; hook_text: "Can You Actually Prove It?"
 
+EDITORIAL PLAN (ANALYSIS ONLY IN THIS PHASE):
+- Treat every candidate as a story, not merely a timestamp window.
+- State the story and central conflict in plain English.
+- Identify the primary speaker only when the transcript supports the identity; otherwise use null.
+- List supporting speakers only when their identities are transcript-proven.
+- Set visual_context_required when reactions, B-roll, a grid, or another participant is necessary to understand the moment.
+- Classify scene_type as SINGLE_SPEAKER, TWO_PERSON, THREE_PERSON, FOUR_PERSON, BROLL, PICTURE_IN_PICTURE, or UNKNOWN. Use UNKNOWN when transcript evidence alone cannot prove the visual scene.
+- Recommend a layout only when the transcript supports it: SINGLE_SPEAKER_CROP, TWO_PERSON_CONVERSATION, THREE_PERSON_COMPOSITION, PRESERVE_GRID, BROLL_FILL, PICTURE_IN_PICTURE, SPEAKER_WITH_CONTEXT, or SAFE_ORIGINAL.
+- The renderer will validate visual facts later. Do not invent people or scene geometry from transcript text.
+
 VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 - Generate at least ${targetCandidates} candidate clips.
 - Target final clip range: ${policy.targetMin}-${policy.targetMax}, but never more than 20 final clips.
@@ -248,6 +258,18 @@ Return ONLY valid JSON in this exact shape:
       "topic": string,
       "moment_type": string,
       "virality_reason": string,
+      "story": string,
+      "conflict": string,
+      "primary_speaker": string | null,
+      "supporting_speakers": string[],
+      "visual_context_required": boolean,
+      "scene_type": "SINGLE_SPEAKER" | "TWO_PERSON" | "THREE_PERSON" | "FOUR_PERSON" | "BROLL" | "PICTURE_IN_PICTURE" | "UNKNOWN",
+      "recommended_layout": "SINGLE_SPEAKER_CROP" | "TWO_PERSON_CONVERSATION" | "THREE_PERSON_COMPOSITION" | "PRESERVE_GRID" | "BROLL_FILL" | "PICTURE_IN_PICTURE" | "SPEAKER_WITH_CONTEXT" | "SAFE_ORIGINAL",
+      "recommended_thumbnail": {
+        "subject": string | null,
+        "emotion": string,
+        "selection_reason": string
+      },
       "opening_line": string,
       "closing_line": string
     }
@@ -361,14 +383,14 @@ export async function analyzeClipCandidates(
       }
 
       const refinePrompt = `Review the selected clips again and improve boundaries where needed, but do NOT collapse the list to only a tiny top set.
-Return at least ${Math.max(policy.targetMin * 2, policy.targetMax)} distinct candidates when the transcript contains that many complete moments. The route will perform final ranking and deduplication later.
+Preserve up to ${targetCandidates} distinct candidates and return at least ${Math.max(policy.targetMin * 3, policy.targetMax * 2)} when the transcript contains that many complete moments. The route will perform final ranking and deduplication later.
 Keep a broad candidate pool, but remove near-duplicate or overlapping clips that use the same transcript section.
 Every remaining clip must end on a complete sentence, punchline, answer, or clear statement.
 If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
 Rewrite every title as a concise subject label that explains what its reel is about, not as an attention hook. Rewrite every hook_text as a transcript-proven, reader-stopping curiosity gap, tension, high-stakes consequence, specific result, question, or surprising claim. The hook must make sense before playback and create a reason to keep watching; reject vague hype and incomplete transcript fragments. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
-For every candidate, retain five hook_options, one hook_supporting_quote, a hook_selection_reason, topic, moment_type, and virality_reason.
+For every candidate, retain five hook_options, one hook_supporting_quote, a hook_selection_reason, topic, moment_type, virality_reason, story, conflict, primary_speaker, supporting_speakers, visual_context_required, scene_type, recommended_layout, and recommended_thumbnail.
 Return revised JSON only.`;
 
       const refineRes = await createAnalysisResponse({

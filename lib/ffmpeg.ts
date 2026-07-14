@@ -56,6 +56,7 @@ type RenderOpts = {
   debugReframeOverlay?: boolean;
   debugClipId?: string;
   debugCandidateId?: string;
+  editorialPlan?: Record<string, unknown> | null;
 };
 
 export async function extractVideoThumbnail(inputPath: string, outputPath: string, atSeconds = 5) {
@@ -151,14 +152,20 @@ export async function validateRenderedVideo(outputPath: string) {
   };
 }
 
-export async function extractBestVideoThumbnail(inputPath: string, outputPath: string, durationSeconds: number) {
+export async function extractBestVideoThumbnail(inputPath: string, outputPath: string, durationSeconds: number, editorialPlan?: Record<string, unknown> | null) {
   const script = process.env.THUMBNAIL_SELECTOR_SCRIPT || path.join(process.cwd(), 'scripts', 'select_thumbnail.py');
   try {
+    let editorialPlanPath: string | null = null;
+    if (editorialPlan) {
+      editorialPlanPath = `${outputPath}.editorial-plan.json`;
+      await writeFile(editorialPlanPath, JSON.stringify(editorialPlan, null, 2), 'utf8');
+    }
     const result = await runJsonCommand(resolveSmartReframePython(), [
       script,
       inputPath,
       outputPath,
       String(Math.max(0.25, durationSeconds)),
+      ...(editorialPlanPath ? [editorialPlanPath] : []),
     ]);
     const payload = result.json as { ok?: boolean; selected_timestamp?: number; selected_score?: number; selected_faces?: number };
     if (!payload.ok || !existsSync(outputPath)) throw new Error('Thumbnail selector did not produce an image');
@@ -483,6 +490,9 @@ type ReframeTimelineSegment = {
   wideKind?: WideContextKind;
   topBox?: SubjectBox;
   bottomBox?: SubjectBox;
+  editorialSceneType?: string;
+  editorialLayout?: string;
+  editorialReason?: string;
   points: ReframeTimelinePoint[];
 };
 type SmartReframeResult = {
@@ -664,6 +674,9 @@ function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): R
       wideKind,
       topBox: normalizeBox(item.topBox as Partial<SubjectBox> | null | undefined),
       bottomBox: normalizeBox(item.bottomBox as Partial<SubjectBox> | null | undefined),
+      editorialSceneType: typeof item.editorialSceneType === 'string' ? item.editorialSceneType : undefined,
+      editorialLayout: typeof item.editorialLayout === 'string' ? item.editorialLayout : undefined,
+      editorialReason: typeof item.editorialReason === 'string' ? item.editorialReason : undefined,
       points,
     }];
   }).sort((a, b) => a.start - b.start);
@@ -841,6 +854,13 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
   }
 
   try {
+    let editorialPlanPath: string | null = null;
+    if (opts.editorialPlan) {
+      const plannerDir = path.join(process.cwd(), 'tmp', 'editorial-plans');
+      await mkdir(plannerDir, { recursive: true });
+      editorialPlanPath = path.join(plannerDir, `${opts.debugCandidateId ?? opts.debugClipId ?? 'clip'}.json`);
+      await writeFile(editorialPlanPath, JSON.stringify(opts.editorialPlan, null, 2), 'utf8');
+    }
     let script = resolveSmartReframeScript();
     let probe = await runJsonCommand(resolveSmartReframePython(), [
       script,
@@ -848,6 +868,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
       String(opts.startSec),
       String(opts.endSec),
       '2.0',
+      ...(editorialPlanPath ? [editorialPlanPath] : []),
     ]);
     let raw = probe.json as {
       ok?: boolean;
@@ -969,6 +990,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
           primaryTrackId: segment.primaryTrackId ?? null,
           topTrackId: segment.topTrackId ?? null,
           bottomTrackId: segment.bottomTrackId ?? null,
+          editorialSceneType: segment.editorialSceneType ?? null,
+          editorialLayout: segment.editorialLayout ?? null,
         })),
         identities: reframeTimeline.map((segment) => ({
           primaryTrackId: segment.primaryTrackId ?? null,
