@@ -17,6 +17,8 @@ type ExportRow = {
   created_at: string;
   updated_at?: string | null;
   caption_preset_id: string | null;
+  hook_text_enabled?: boolean | null;
+  hook_text?: string | null;
   clip_edit_settings?: {
     clip_start_seconds?: number;
     clip_end_seconds?: number;
@@ -106,7 +108,7 @@ function isMissingEditColumnError(error: unknown) {
 async function loadProjectExports(supabase: SupabaseServerClient, projectId: string): Promise<ExportRow[]> {
   const withEditFields = await supabase
     .from('exports')
-    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id, clip_edit_settings, edit_status')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id, hook_text_enabled, hook_text, clip_edit_settings, edit_status')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -117,7 +119,7 @@ async function loadProjectExports(supabase: SupabaseServerClient, projectId: str
   console.warn('[project/detail] edit columns missing; loading exports with legacy schema', { project_id: projectId });
   const legacyExports = await supabase
     .from('exports')
-    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id, hook_text_enabled, hook_text')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -353,6 +355,8 @@ export default async function ProjectDetailPage({
               reason: row.reason,
               rank: row.rank,
               captionPresetId: row.caption_preset_id,
+              hookTextEnabled: row.hook_text_enabled !== false,
+              hookText: typeof row.hook_text === 'string' ? row.hook_text.trim() : null,
               captionsEnabled: row.clip_edit_settings?.captions_enabled !== false,
               captionHighlightColor: row.clip_edit_settings?.caption_highlight_color ?? null,
               editStatus: row.edit_status ?? null,

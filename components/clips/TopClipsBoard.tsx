@@ -20,6 +20,8 @@ type ClipItem = {
   reason?: string | null;
   rank: number | null;
   captionPresetId?: string | null;
+  hookTextEnabled?: boolean;
+  hookText?: string | null;
   captionsEnabled?: boolean;
   captionHighlightColor?: string | null;
   editStatus?: string | null;
@@ -244,6 +246,23 @@ function formatMockHook(title: string) {
     .filter(Boolean)
     .slice(0, 7);
   return words.length ? words.join(' ') : 'Top Moment';
+}
+
+function getSavedHookText(clip: ClipItem) {
+  if (clip.hookTextEnabled === false || typeof clip.hookText !== 'string') return null;
+  const text = clip.hookText.replace(/\s+/g, ' ').trim();
+  return text.length ? text : null;
+}
+
+function PosterHookOverlay({ text }: { text: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-x-[8.3%] top-[2.8%] z-20 flex min-h-[9%] items-center justify-center rounded-[8px] bg-white px-2.5 py-2 text-center text-[12px] font-black leading-[1.08] tracking-[-0.025em] text-black shadow-[0_3px_12px_rgba(0,0,0,.34)] ring-1 ring-black/10"
+    >
+      <span className="line-clamp-3">{text}</span>
+    </div>
+  );
 }
 
 function getMockCaption(title: string) {
@@ -686,6 +705,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
               const primaryBadge = getPrimaryClipBadge(clip);
+              const savedHookText = getSavedHookText(clip);
+              const showPosterHook = Boolean(savedHookText) && paused && current <= 0.05;
               const editRendering = clip.editStatus === 'rendering' || optimisticEditIds.has(clip.exportId);
               const pendingCaptionPreset =
                 mediaUrl && clip.status !== 'done'
@@ -844,6 +865,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         >
                           Your browser does not support the video tag.
                         </video>
+
+                        {showPosterHook && savedHookText ? <PosterHookOverlay text={savedHookText} /> : null}
 
                         {editRendering ? <ReelEditProcessingOverlay clip={clip} /> : null}
 
