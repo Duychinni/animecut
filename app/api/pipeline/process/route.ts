@@ -262,6 +262,30 @@ export async function POST() {
     return NextResponse.json({ error: 'Pipeline job missing project_id' }, { status: 400 });
   }
 
+  const { data: savedProject } = await supabase
+    .from('projects')
+    .select('status, pipeline_status, pipeline_completed_at, exports(status, output_storage_path)')
+    .eq('id', projectId)
+    .maybeSingle();
+  const savedProjectExports = Array.isArray(savedProject?.exports)
+    ? savedProject.exports as Array<{ status?: string | null; output_storage_path?: string | null }>
+    : [];
+  const savedProjectHasPlayableOutput = savedProjectExports.some((row) => row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://'));
+  const savedProjectIsCompleted = savedProject?.status === 'completed'
+    || savedProject?.pipeline_status === 'completed'
+    || Boolean(savedProject?.pipeline_completed_at);
+
+  if (savedProjectIsCompleted && savedProjectHasPlayableOutput) {
+    await supabase
+      .from('jobs')
+      .update({ status: 'done', updated_at: new Date().toISOString() })
+      .eq('id', job.id);
+    return NextResponse.json({ ok: true, processed: 0, skipped: 'project_already_completed', project_id: projectId });
+  }
+
   const processingTimestamp = new Date().toISOString();
   const attemptNumber = Number(job.attempts ?? 0) + 1;
   const { data: claimedJobs, error: claimError } = await supabase
@@ -462,6 +486,11 @@ export async function POST() {
 
     if (finalExportCounts.done === 0) {
       throw new Error('Rendering finished with no playable clips. No completed exports were found.');
+    }
+
+    const requiredExportCount = getClipPolicy(transcriptStats.policyDurationSeconds).targetMin;
+    if (finalExportCounts.done < requiredExportCount) {
+      throw new Error(`Rendering produced only ${finalExportCounts.done} of ${requiredExportCount} required playable reels.`);
     }
 
     await supabase

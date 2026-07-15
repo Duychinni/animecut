@@ -278,9 +278,10 @@ export default async function ProjectDetailPage({
   const activeExports = activeExportItems.length;
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
-  // Partial and failed renders stay internal. The customer sees the project
-  // only after the requested number of playable MP4s has finished.
-  const shouldShowResults = projectMarkedCompleted && activeExports === 0 && doneExports >= targetCount;
+  // Completion is durable. Clip-count policy can change over time, so never
+  // reopen a finalized saved project merely because today's target is higher
+  // than the target used when that project was rendered.
+  const shouldShowResults = projectMarkedCompleted && doneExports > 0;
   const displayExportItems = shouldShowResults ? savedExportItems : [];
   const isCompletedFromRows = shouldShowResults;
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
@@ -306,9 +307,12 @@ export default async function ProjectDetailPage({
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
   const hasActiveExports = activeExports > 0;
   const hasExportRows = displayExportItems.length > 0;
+  // Only repair a completed marker that has no playable output at all. A
+  // completed project with saved reels is immutable until the user explicitly
+  // requests a new render.
   const needsCoverageRepair = projectMarkedCompleted
     && totalSeconds > 0
-    && doneExports < targetCount;
+    && doneExports === 0;
   const waitingForPlayableReels =
     !shouldShowResults &&
     !hasExportRows &&

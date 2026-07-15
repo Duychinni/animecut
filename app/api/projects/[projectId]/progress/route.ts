@@ -444,10 +444,11 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasTargetCoverage = doneExports >= targetCount;
-    const frozenCompletedProject = projectMarkedCompleted && activeExports === 0 && hasTargetCoverage;
+    const frozenCompletedProject = projectMarkedCompleted && doneExports > 0;
     const hasSettledPlayableExports = activeExports === 0 && hasTargetCoverage;
-    // A project is publishable only when its duration-based target count is
-    // backed by playable MP4s. Partial success remains an internal render state.
+    // Explicit completion is a durable latch for saved projects. The target
+    // count still gates new projects that have not been finalized yet, but a
+    // later policy change must never reopen an older completed project.
     const isReallyCompleted = frozenCompletedProject || hasSettledPlayableExports;
 
     const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && doneExports < targetCount;
@@ -480,12 +481,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'processing'
       && storedPipelineStage === 'finding_hooks'
       && (!latestPipelineJob || latestPipelineJob.status !== 'processing');
-    const completedWithoutTargetCoverage = !isReallyCompleted
+    const completedWithoutPlayableExports = !isReallyCompleted
       && projectMarkedCompleted
       && activeExports === 0
-      && doneExports < targetCount
+      && doneExports === 0
       && (hasTranscript || analyzedCandidates > 0);
-    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker || completedWithoutTargetCoverage;
+    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker || completedWithoutPlayableExports;
     let recoveryQueued = false;
     if (shouldRecoverPipeline) {
       try {
@@ -654,8 +655,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         ? 'A stale render export was requeued by the progress check.'
       : staleWorker
         ? 'Worker heartbeat expired while this project was processing.'
-      : completedWithoutTargetCoverage
-        ? 'Project was marked complete before the target reel count was available; export recovery was queued.'
+      : completedWithoutPlayableExports
+        ? 'Project was marked complete without a playable saved reel; export recovery was queued.'
       : analyzedCandidates === 0 && hasTranscript && pipelineStage === 'finding_hooks'
         ? 'Transcript exists, but no clip candidates have been saved yet. The analysis step is still running or was interrupted.'
       : visibleActiveExports > 0

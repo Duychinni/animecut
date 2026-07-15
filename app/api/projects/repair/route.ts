@@ -58,7 +58,7 @@ export async function POST() {
     const admin = createAdminClient();
     const { data: projects, error } = await admin
       .from('projects')
-      .select('id, user_id, status, pipeline_status, pipeline_completed_at, exports(id, status, output_storage_path, error_message, updated_at)')
+      .select('id, user_id, status, pipeline_status, pipeline_stage_label, pipeline_completed_at, exports(id, status, output_storage_path, error_message, updated_at)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -79,7 +79,14 @@ export async function POST() {
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r));
       const readyExports = rows.filter(hasPlayableOutput).length;
       const hasSavedReels = readyExports > 0;
-      const frozenCompletedProject = hasSavedReels && projectAlreadyCompleted;
+      const recoveryLabel = String(project.pipeline_stage_label ?? '').toLowerCase();
+      // Releases before the durable-completion fix could clear the completion
+      // marker while auto-requeueing an already-finished project. Recognize
+      // that exact recovery state once, cancel its synthetic work, and restore
+      // the immutable completed latch.
+      const wasReopenedByRecovery = hasSavedReels
+        && (recoveryLabel.includes('reconnecting worker') || recoveryLabel.includes('retrying processing'));
+      const frozenCompletedProject = hasSavedReels && (projectAlreadyCompleted || wasReopenedByRecovery);
 
       if (frozenCompletedProject) {
         if (activeRows.length) {
@@ -95,7 +102,17 @@ export async function POST() {
           repaired += 1;
         }
 
-        if (project.status !== 'completed' || project.pipeline_status !== 'completed') {
+        await admin
+          .from('jobs')
+          .update({
+            status: 'done',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('project_id', project.id)
+          .in('type', ['pipeline', 'export'])
+          .in('status', ['queued', 'processing']);
+
+        if (project.status !== 'completed' || project.pipeline_status !== 'completed' || !project.pipeline_completed_at) {
           await admin
             .from('projects')
             .update({
