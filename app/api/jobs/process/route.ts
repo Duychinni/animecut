@@ -357,6 +357,21 @@ function normalizeRenderErrorMessage(message: string) {
   return 'Render failed. Please retry the export.';
 }
 
+function renderFailureDiagnostics(message: string) {
+  const category =
+    /crop=.*(?:negative|invalid)|Invalid too big or non positive size|crop area/i.test(message) ? 'invalid_crop_coordinates' :
+    /filter|filtergraph|subtitles|drawtext/i.test(message) ? 'ffmpeg_filter_graph' :
+    /No such file|could not be read|download raw media|source_storage_path/i.test(message) ? 'missing_or_unreadable_input' :
+    /python|mediapipe|detector|reframe_per_clip/i.test(message) ? 'python_detector' :
+    /timeout|timed out|SIGTERM/i.test(message) ? 'timeout' :
+    /out of memory|ENOMEM|Cannot allocate memory|killed/i.test(message) ? 'memory_or_resource_failure' :
+    /upload|storage|R2|Supabase/i.test(message) ? 'upload_or_storage_failure' :
+    /encoder|ffmpeg|Invalid NAL|missing picture/i.test(message) ? 'ffmpeg_render' :
+    'unknown';
+  const stderrTail = message.split(/\r?\n/).slice(-80).join('\n').slice(-8000);
+  return { category, stderrTail };
+}
+
 async function validateRemoteExport(objectPath: string) {
   const signedUrl = await createExportSignedUrl(objectPath, 60 * 10);
   const res = await fetch(signedUrl);
@@ -1123,10 +1138,13 @@ export async function POST(req: Request) {
       processed += 1;
     } catch (e: unknown) {
       const rawMessage = e instanceof Error ? e.message : 'Job failed';
+      const failureDiagnostics = renderFailureDiagnostics(rawMessage);
       console.error('[jobs/process] export-failed', {
         export_id: item.exportId,
         job_id: item.jobId,
         raw_error: rawMessage,
+        failure_category: failureDiagnostics.category,
+        ffmpeg_stderr_tail: failureDiagnostics.stderrTail,
         payload: item.payload,
       });
       const exportId = item.exportId;
@@ -1151,7 +1169,13 @@ export async function POST(req: Request) {
           .update({
             status: 'queued',
             updated_at: new Date().toISOString(),
-            payload: { ...item.payload, retry_of_error: message, repair: item.payload?.repair === true },
+            payload: {
+              ...item.payload,
+              retry_of_error: message,
+              render_failure_category: failureDiagnostics.category,
+              ffmpeg_stderr_tail: failureDiagnostics.stderrTail,
+              repair: item.payload?.repair === true,
+            },
           })
           .eq('id', item.jobId);
 
@@ -1183,7 +1207,16 @@ export async function POST(req: Request) {
       if (item.jobId) {
         await supabase
           .from('jobs')
-          .update({ status: 'error', updated_at: new Date().toISOString(), payload: { ...item.payload, error: message } })
+          .update({
+            status: 'error',
+            updated_at: new Date().toISOString(),
+            payload: {
+              ...item.payload,
+              error: message,
+              render_failure_category: failureDiagnostics.category,
+              ffmpeg_stderr_tail: failureDiagnostics.stderrTail,
+            },
+          })
           .eq('id', item.jobId);
       }
 

@@ -35,6 +35,28 @@ def _nearest_point(segment, timestamp):
     return min(points, key=lambda point: abs(float(point.get('t', 0.0)) - timestamp)) if points else None
 
 
+def _nearest_frame(frames, timestamp):
+    return min(frames, key=lambda frame: abs(float(frame.get('timestamp', 0.0)) - timestamp)) if frames else None
+
+
+def _panel_crop_for_face(face, source_w, source_h, panel_left, panel_right):
+    panel_width = max(2.0, float(panel_right) - float(panel_left))
+    crop_h = float(source_h)
+    crop_w = min(panel_width, crop_h * 9.0 / 16.0)
+    if crop_w >= panel_width:
+        crop_h = min(float(source_h), crop_w * 16.0 / 9.0)
+    face_cx = float(face.get('cx', float(face['x']) + float(face['w']) / 2.0))
+    crop_x = max(float(panel_left), min(float(panel_right) - crop_w, face_cx - crop_w / 2.0))
+    crop_y = max(0.0, min(float(source_h) - crop_h, float(face['y']) - crop_h * 0.08))
+    return {
+        'cropX': round(crop_x, 3), 'cropY': round(crop_y, 3),
+        'cropW': round(crop_w, 3), 'cropH': round(crop_h, 3),
+        'cropCenterX': round(crop_x + crop_w / 2.0, 3),
+        'cropCenterY': round(crop_y + crop_h / 2.0, 3),
+        'zoom': round(float(source_h) / max(crop_h, 1.0), 4),
+    }
+
+
 def validate_layout_timeline(timeline, frames, source_w, source_h):
     """Reject crops that cut a primary head/shoulders or partially show a face."""
     validated = []
@@ -52,6 +74,8 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
 
         if segment.get('mode') == 'single':
             primary_id = segment.get('primaryTrackId')
+            fixed_two_panel = segment.get('sourceLayout') == 'FIXED_TWO_PANEL_INTERVIEW'
+            panel_boundary = float(segment.get('panelBoundaryX') or source_w / 2.0)
             for frame in segment_frames:
                 point = _nearest_point(segment, float(frame.get('timestamp', 0.0)))
                 if not point:
@@ -69,6 +93,9 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                 if not _contains(crop, safe_subject, margin=max(2.0, crop['w'] * 0.025)):
                     issues['primary_head_shoulders_cut'] += 1
 
+                if fixed_two_panel and crop['x'] < panel_boundary < crop['x'] + crop['w']:
+                    issues['crop_crosses_panel_boundary'] += 1
+
                 for face in faces:
                     if face.get('track_id') == primary_id:
                         continue
@@ -80,11 +107,53 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
         invalid_ratio = invalid_samples / max(1, checked)
         if segment.get('mode') == 'single' and checked > 0 and invalid_ratio > 0.20:
             rejected_segments += 1
-            segment['mode'] = 'wide_context'
-            segment['wideKind'] = 'safe_wide'
-            segment['editorialLayout'] = 'SAFE_ORIGINAL'
-            segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA rejected the crop."
-            segment['qaFallbackApplied'] = True
+            if segment.get('sourceLayout') == 'FIXED_TWO_PANEL_INTERVIEW':
+                regions = segment.get('panelRegions') or {}
+                primary_panel = segment.get('primaryPanel')
+                region = regions.get(primary_panel) if primary_panel in ('left', 'right') else None
+                primary_id = segment.get('primaryTrackId')
+                corrected = 0
+                if region and len(region) == 2:
+                    for point in segment.get('points') or []:
+                        frame = _nearest_frame(segment_frames, float(point.get('t', 0.0)))
+                        primary = next(
+                            (face for face in (frame or {}).get('faces', []) if face.get('track_id') == primary_id),
+                            None,
+                        )
+                        if primary is None:
+                            continue
+                        point.update(_panel_crop_for_face(primary, source_w, source_h, float(region[0]), float(region[1])))
+                        corrected += 1
+                if corrected:
+                    segment['editorialLayout'] = 'SINGLE_SPEAKER_CROP'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA constrained the crop to the active source panel."
+                    segment['qaFallbackApplied'] = 'panel_bounded_crop'
+                elif segment.get('topBox') and segment.get('bottomBox'):
+                    segment['mode'] = 'wide_context'
+                    segment['wideKind'] = 'two_person'
+                    segment['editorialLayout'] = 'TWO_PERSON_CONVERSATION'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA preserved both source panels because active-speaker identity was uncertain."
+                    segment['qaFallbackApplied'] = 'safe_two_panel'
+                else:
+                    # Last resort remains one explicit panel. Never return to a
+                    # full-frame center crop for a detected split interview.
+                    fallback_panel = primary_panel if primary_panel in ('left', 'right') else 'left'
+                    fallback_region = regions.get(fallback_panel) or [0.0, float(segment.get('panelBoundaryX') or source_w / 2.0)]
+                    for point in segment.get('points') or []:
+                        crop_w = min(float(fallback_region[1]) - float(fallback_region[0]), float(source_h) * 9.0 / 16.0)
+                        point.update({
+                            'cropX': round(float(fallback_region[0]), 3), 'cropY': 0.0,
+                            'cropW': round(crop_w, 3), 'cropH': round(float(source_h), 3),
+                            'cropCenterX': round(float(fallback_region[0]) + crop_w / 2.0, 3),
+                            'cropCenterY': round(float(source_h) / 2.0, 3), 'zoom': 1.0,
+                        })
+                    segment['qaFallbackApplied'] = 'explicit_panel_fallback'
+            else:
+                segment['mode'] = 'wide_context'
+                segment['wideKind'] = 'safe_wide'
+                segment['editorialLayout'] = 'SAFE_ORIGINAL'
+                segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA rejected the crop."
+                segment['qaFallbackApplied'] = 'safe_original'
 
         segment['qaStatus'] = 'fallback' if segment.get('qaFallbackApplied') else 'pass'
         segment['qaIssues'] = dict(issues)

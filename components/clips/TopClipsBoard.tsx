@@ -331,6 +331,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   });
   const [loadingCaptionSettings, setLoadingCaptionSettings] = useState(false);
   const [applyingPreset, setApplyingPreset] = useState(false);
+  const [retryingExportIds, setRetryingExportIds] = useState<Set<string>>(() => new Set());
   const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
   const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
@@ -465,6 +466,31 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function openClipEditor(clip: ClipItem) {
     router.push(`/dashboard/projects/${projectId}/clips/${clip.exportId}/edit`);
+  }
+
+  async function retryFailedExport(clip: ClipItem) {
+    if (retryingExportIds.has(clip.exportId)) return;
+    setRetryingExportIds((current) => new Set(current).add(clip.exportId));
+    try {
+      const response = await fetch(`/api/clips/${clip.exportId}/rerender`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const payload = await readJsonSafe(response);
+      if (!response.ok) throw new Error(String(payload?.detail || payload?.error || 'Could not retry this reel'));
+      setOptimisticEditIds((current) => new Set(current).add(clip.exportId));
+      void fetch(`/api/jobs/process?exportId=${encodeURIComponent(clip.exportId)}`, { method: 'POST', cache: 'no-store' }).catch(() => null);
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not retry this reel');
+    } finally {
+      setRetryingExportIds((current) => {
+        const next = new Set(current);
+        next.delete(clip.exportId);
+        return next;
+      });
+    }
   }
 
   async function handleDownload(clip: ClipItem) {
@@ -1015,8 +1041,21 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                     </div>
                   ) : (
                     <div className="flex justify-center px-2">
-                      <div className={`flex aspect-[9/16] w-full max-w-[270px] items-center justify-center rounded-[8px] border px-4 text-center text-sm ${clip.status === 'error' ? 'border-red-400/20 bg-red-500/[0.06] text-red-200/85' : 'border-dashed border-white/15 bg-[#121419] text-white/50'}`}>
-                        {getFriendlyStatus(clip.status)}
+                      <div className={`flex aspect-[9/16] w-full max-w-[270px] flex-col items-center justify-center gap-3 rounded-[8px] border px-4 text-center text-sm ${clip.status === 'error' ? 'border-red-400/20 bg-red-500/[0.06] text-red-200/85' : 'border-dashed border-white/15 bg-[#121419] text-white/50'}`}>
+                        <p className="font-bold">{getFriendlyStatus(clip.status)}</p>
+                        {clip.status === 'error' && clip.errorMessage ? (
+                          <p className="line-clamp-4 text-xs leading-5 text-red-100/70" title={clip.errorMessage}>{clip.errorMessage}</p>
+                        ) : null}
+                        {clip.status === 'error' ? (
+                          <button
+                            type="button"
+                            onClick={() => void retryFailedExport(clip)}
+                            disabled={retryingExportIds.has(clip.exportId)}
+                            className="cursor-pointer rounded-full border border-red-200/25 bg-white/10 px-4 py-2 text-xs font-black text-white transition hover:bg-white/16 disabled:cursor-wait disabled:opacity-55"
+                          >
+                            {retryingExportIds.has(clip.exportId) ? 'Retrying…' : 'Retry render'}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   )}

@@ -319,6 +319,101 @@ def portrait_crop_for_face(face, source_w: float, source_h: float):
     }
 
 
+def portrait_crop_for_face_in_panel(face, source_w: float, source_h: float, panel_left: float, panel_right: float):
+    """Build a source-coordinate crop that can never cross a fixed panel boundary."""
+    panel_left = clamp(float(panel_left), 0.0, source_w)
+    panel_right = clamp(float(panel_right), panel_left + 2.0, source_w)
+    panel_width = panel_right - panel_left
+    crop_h = source_h
+    crop_w = min(panel_width, crop_h * 9.0 / 16.0)
+    if crop_w >= panel_width:
+        crop_w = panel_width
+        crop_h = min(source_h, crop_w * 16.0 / 9.0)
+    face_cx, _ = center(face)
+    crop_x = clamp(face_cx - crop_w * 0.5, panel_left, max(panel_left, panel_right - crop_w))
+    crop_y = clamp(face[1] - crop_h * 0.08, 0.0, max(0.0, source_h - crop_h))
+    return {
+        'x': round(float(crop_x), 3),
+        'y': round(float(crop_y), 3),
+        'w': round(float(crop_w), 3),
+        'h': round(float(crop_h), 3),
+        'cx': round(float(crop_x + crop_w / 2.0), 3),
+        'cy': round(float(crop_y + crop_h / 2.0), 3),
+        'zoom': round(float(source_h / max(crop_h, 1.0)), 4),
+    }
+
+
+def vertical_divider_candidate(cv2, np, gray):
+    """Return the strongest central, full-height vertical divider candidate."""
+    if gray is None or gray.size == 0:
+        return None, 0.0
+    reduced_h = min(360, gray.shape[0])
+    scale = reduced_h / max(1.0, float(gray.shape[0]))
+    reduced = cv2.resize(gray, (max(2, int(round(gray.shape[1] * scale))), reduced_h), interpolation=cv2.INTER_AREA)
+    gradient = np.abs(cv2.Sobel(reduced, cv2.CV_32F, 1, 0, ksize=3))
+    profile = np.mean(gradient, axis=0)
+    lo = int(round(reduced.shape[1] * 0.30))
+    hi = int(round(reduced.shape[1] * 0.70))
+    if hi - lo < 4:
+        return None, 0.0
+    central = profile[lo:hi]
+    peak_offset = int(np.argmax(central))
+    peak = float(central[peak_offset])
+    baseline = float(np.median(central))
+    spread = float(np.std(central))
+    confidence = max(0.0, (peak - baseline) / max(1.0, spread))
+    return float((lo + peak_offset) / max(scale, 1e-6)), confidence
+
+
+def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
+    """Detect a persistent split interview without treating any two faces as panels."""
+    divider_samples = [
+        (float(frame.get('divider_x')), float(frame.get('divider_confidence', 0.0)))
+        for frame in frames
+        if frame.get('divider_x') is not None and float(frame.get('divider_confidence', 0.0)) >= 2.0
+    ]
+    if len(divider_samples) < max(3, int(len(frames) * 0.35)):
+        return None
+    divider_x = float(statistics.median(sample[0] for sample in divider_samples))
+    divider_mad = float(statistics.median(abs(sample[0] - divider_x) for sample in divider_samples))
+    if not (source_w * 0.30 <= divider_x <= source_w * 0.70) or divider_mad > source_w * 0.018:
+        return None
+
+    both_sides = 0
+    eligible = 0
+    left_ids = set()
+    right_ids = set()
+    for frame in frames:
+        faces = [
+            face for face in frame.get('faces', [])
+            if not face.get('predicted') and float(face.get('h', 0.0)) >= source_h * 0.13
+        ]
+        if not faces:
+            continue
+        eligible += 1
+        left = [face for face in faces if float(face.get('cx', 0.0)) < divider_x - source_w * 0.025]
+        right = [face for face in faces if float(face.get('cx', 0.0)) > divider_x + source_w * 0.025]
+        if left and right:
+            both_sides += 1
+            left_ids.update(int(face['track_id']) for face in left if face.get('track_id') is not None)
+            right_ids.update(int(face['track_id']) for face in right if face.get('track_id') is not None)
+    persistence = both_sides / max(1, eligible)
+    if persistence < 0.45 or not left_ids or not right_ids:
+        return None
+
+    gutter = max(4.0, source_w * 0.012)
+    return {
+        'mode': 'FIXED_TWO_PANEL_INTERVIEW',
+        'divider_x': round(divider_x, 3),
+        'divider_mad': round(divider_mad, 3),
+        'left_region': [0.0, round(max(2.0, divider_x - gutter), 3)],
+        'right_region': [round(min(source_w - 2.0, divider_x + gutter), 3), round(source_w, 3)],
+        'dual_face_persistence': round(persistence, 4),
+        'left_track_ids': sorted(left_ids),
+        'right_track_ids': sorted(right_ids),
+    }
+
+
 def dict_box(box):
     if box is None:
         return None
@@ -385,6 +480,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         audio_activity = float(point.get('audio_activity', 0.0))
         scene_cut = bool(frame.get('scene_cut'))
         selected = frame.get('selected_box')
+        fixed_two_panel = frame.get('fixed_two_panel')
         pair = strongest_face_pair(faces, source_w)
         pair_ids = None if pair is None else tuple(int(face.get('track_id')) for face in pair)
 
@@ -578,8 +674,23 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 contextual_shot_latched = False
                 talking_head_release_streak = 0
 
+        fixed_panel_exchange = bool(
+            fixed_two_panel
+            and visual_pair is not None
+            and (recent_switches >= 2 or speaker_confidence < 0.10)
+        )
+
         if portrait_source:
             desired_mode = 'source_vertical'
+        elif fixed_two_panel and fixed_panel_exchange:
+            desired_mode = 'wide_context'
+        elif fixed_two_panel and selected is not None:
+            # A fixed split interview is edited as hard cuts between explicit
+            # source panels. Never allow small-face/context heuristics to pull
+            # the crop back to the center divider.
+            desired_mode = 'single'
+            contextual_shot_latched = False
+            talking_head_release_streak = 0
         elif contextual_shot_latched:
             desired_mode = 'wide_context'
         elif wide_context_trigger:
@@ -598,7 +709,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 - min(float(face.get('cy', 0.0)) for face in visible_faces)
             ) >= source_h * 0.25
         )
-        if two_person_context:
+        if fixed_panel_exchange:
+            wide_kind = 'two_person'
+        elif two_person_context:
             wide_kind = 'two_person'
         elif grid_like_context:
             wide_kind = 'safe_wide'
@@ -673,20 +786,41 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                     wide_pair_ids = (ordered_people[0][0], ordered_people[1][0])
                     top_face, bottom_face = ordered_people[0][1], ordered_people[1][1]
 
-        crop = portrait_crop_for_face(
-            (
-                float(primary_face.get('x', 0)), float(primary_face.get('y', 0)),
-                float(primary_face.get('w', 1)), float(primary_face.get('h', 1)),
-            ), source_w, source_h,
-        ) if primary_face is not None else {
-            'x': round(max(0.0, (source_w - source_h * 9.0 / 16.0) / 2.0), 3),
-            'y': 0.0,
-            'w': round(min(source_w, source_h * 9.0 / 16.0), 3),
-            'h': round(source_h, 3),
-            'cx': round(source_w / 2.0, 3),
-            'cy': round(source_h / 2.0, 3),
-            'zoom': 1.0,
-        }
+        primary_panel = None
+        primary_tuple = None if primary_face is None else (
+            float(primary_face.get('x', 0)), float(primary_face.get('y', 0)),
+            float(primary_face.get('w', 1)), float(primary_face.get('h', 1)),
+        )
+        if fixed_two_panel and primary_tuple is not None:
+            divider_x = float(fixed_two_panel['divider_x'])
+            primary_panel = 'left' if center(primary_tuple)[0] < divider_x else 'right'
+            region = fixed_two_panel['left_region'] if primary_panel == 'left' else fixed_two_panel['right_region']
+            crop = portrait_crop_for_face_in_panel(primary_tuple, source_w, source_h, float(region[0]), float(region[1]))
+        elif primary_tuple is not None:
+            crop = portrait_crop_for_face(primary_tuple, source_w, source_h)
+        elif fixed_two_panel:
+            # No active identity is preferable to a divider crop. The renderer
+            # receives a safe panel anchor while the two-person mode preserves
+            # both participants whenever both boxes are available.
+            region = fixed_two_panel['left_region']
+            crop_w = min(float(region[1]) - float(region[0]), source_h * 9.0 / 16.0)
+            crop = {
+                'x': round(float(region[0]), 3), 'y': 0.0,
+                'w': round(crop_w, 3), 'h': round(source_h, 3),
+                'cx': round(float(region[0]) + crop_w / 2.0, 3),
+                'cy': round(source_h / 2.0, 3), 'zoom': 1.0,
+            }
+            primary_panel = 'left'
+        else:
+            crop = {
+                'x': round(max(0.0, (source_w - source_h * 9.0 / 16.0) / 2.0), 3),
+                'y': 0.0,
+                'w': round(min(source_w, source_h * 9.0 / 16.0), 3),
+                'h': round(source_h, 3),
+                'cx': round(source_w / 2.0, 3),
+                'cy': round(source_h / 2.0, 3),
+                'zoom': 1.0,
+            }
 
         decision = {
             'timestamp': round(now, 3),
@@ -701,6 +835,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'stacked_score': round(stacked_score, 4),
             'stack_eligible': stack_eligible,
             'wide_kind': wide_kind if current_mode == 'wide_context' else None,
+            'source_layout': None if not fixed_two_panel else fixed_two_panel['mode'],
+            'panel_boundary_x': None if not fixed_two_panel else fixed_two_panel['divider_x'],
+            'panel_regions': None if not fixed_two_panel else {
+                'left': fixed_two_panel['left_region'],
+                'right': fixed_two_panel['right_region'],
+            },
+            'primary_panel': primary_panel,
             'visible_count': len(visible_faces),
             'editorial_signals': {
                 'two_stable_speakers': two_stable_speakers,
@@ -800,6 +941,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'topTrackId': decision['top_track_id'],
                 'bottomTrackId': decision['bottom_track_id'],
                 'wideKind': decision['wide_kind'],
+                'sourceLayout': decision.get('source_layout'),
+                'panelBoundaryX': decision.get('panel_boundary_x'),
+                'panelRegions': decision.get('panel_regions'),
+                'primaryPanel': decision.get('primary_panel'),
                 'sceneCutStart': force_boundary,
                 'points': [],
                 '_top_boxes': [],
@@ -1135,6 +1280,7 @@ def main():
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         result = detector.process(rgb)
         scene_change = scene_change_score(cv2, prev_gray, gray)
+        divider_x, divider_confidence = vertical_divider_candidate(cv2, np, gray)
 
         selected_box: Optional[Tuple[float, float, float, float]] = None
         motion_box: Optional[Tuple[float, float, float, float]] = None
@@ -1304,6 +1450,8 @@ def main():
         detected_faces.append({
             'timestamp': round(sample_t - start_sec, 3),
             'multi_person_checked': multi_person_checked,
+            'divider_x': None if divider_x is None else round(divider_x, 3),
+            'divider_confidence': round(float(divider_confidence), 4),
             'faces': [
                 {
                     'x': face[0],
@@ -1475,6 +1623,18 @@ def main():
                 dual_frames += 1
 
     dual_frame_ratio = dual_frames / max(1, dual_observation_opportunities)
+    fixed_two_panel = detect_fixed_two_panel_layout(detected_faces, source_w, source_h)
+    if fixed_two_panel is not None:
+        divider_x = float(fixed_two_panel['divider_x'])
+        for frame in detected_faces:
+            frame['fixed_two_panel'] = fixed_two_panel
+            active_id = frame.get('active_track_id')
+            active_face = next(
+                (face for face in frame.get('faces', []) if face.get('track_id') == active_id),
+                None,
+            )
+            if active_face is not None:
+                frame['active_panel'] = 'left' if float(active_face.get('cx', 0.0)) < divider_x else 'right'
     # Produce timed layout decisions after tracking/speaker evidence is known.
     # Never collapse a multi-person reel into one whole-clip layout.
     reframe_timeline = build_reframe_timeline(points, detected_faces, source_w, source_h, duration)
@@ -1545,6 +1705,8 @@ def main():
             'dual_frames': dual_frames,
             'dual_observation_opportunities': dual_observation_opportunities,
             'dual_frame_ratio': round(dual_frame_ratio, 4),
+            'source_layout': None if fixed_two_panel is None else fixed_two_panel['mode'],
+            'fixed_two_panel': fixed_two_panel,
             'timeline_segments': len(reframe_timeline),
             'layout_modes': layout_modes,
             'editorial_planner': editorial_summary,
