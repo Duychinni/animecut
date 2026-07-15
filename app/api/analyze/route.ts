@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { analyzeClipCandidates } from '@/lib/openai';
-import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
+import { getClipPolicy, getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
 import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
@@ -339,19 +339,6 @@ function looksLikeTranscriptTitle(title: string, openingLine: string) {
 
 function keywordDisplayTitle(openingLine: string, closingLine: string, reason: unknown, index: number) {
   const source = normalizeDisplayTitle(`${openingLine} ${closingLine} ${String(reason ?? '')}`);
-  if (/\b(flat earth|earth|planet|moon|space|gravity)\b/i.test(source)) return 'The Evidence Behind the Flat Earth Debate';
-  if (/\b(fight|ufc|boxing|knockout|rematch|fighter|opponent|challenge)\b/i.test(source)) {
-    if (/\b(bet|money|odds|wager)\b/i.test(source)) return 'The Fight Bet They Could Not Agree On';
-    if (/\b(knockout|knock out|ko)\b/i.test(source)) return 'The Knockout Claim Behind the Debate';
-    if (/\b(duck|soft|scared|afraid|avoid)\b/i.test(source)) return 'The Accusation Dividing the Fight Debate';
-    return 'The Fight Prediction They Disagree On';
-  }
-  if (/\b(song|music|producer|album|record|studio)\b/i.test(source)) return 'The Decision That Changed the Music Story';
-  if (/\b(podcast|interview|question|answer)\b/i.test(source)) return 'The Question That Changed the Conversation';
-  if (/\b(truth|secret|mistake|problem|wrong|realized)\b/i.test(source)) return 'The Realization That Changed Their View';
-  if (/\b(funny|laugh|joke|hilarious)\b/i.test(source)) return 'The Joke That Broke the Conversation';
-  if (/\b(emotional|daughter|family|memory|lost|honest)\b/i.test(source)) return 'The Personal Story Behind the Reaction';
-
   const words = source
     .toLowerCase()
     .replace(/[^a-z0-9'\s-]/g, ' ')
@@ -831,6 +818,13 @@ function isMissingEditorialPlanColumnError(error: unknown) {
 async function runProjectAnalysis(project_id: string, options: { forceLocal?: boolean } = {}) {
     const supabase = createAdminClient();
 
+    const { data: projectRow, error: projectError } = await supabase
+      .from('projects')
+      .select('source_duration_seconds')
+      .eq('id', project_id)
+      .single();
+    if (projectError) throw projectError;
+
     const { data: transcriptRow, error: tErr } = await supabase
       .from('transcripts')
       .select('full_text, segments_json')
@@ -850,13 +844,24 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     }
 
     const transcriptMaxEnd = segments.reduce((acc, s) => Math.max(acc, segEnd(s)), 0);
-    const effectiveGlobalMinClipSec = transcriptMaxEnd < 60 ? 20 : GLOBAL_MIN_CLIP_SEC;
-    const policy = getClipPolicy(transcriptMaxEnd);
+    const sourceDurationSeconds = Math.max(0, num(projectRow?.source_duration_seconds));
+    const transcriptCoverageRatio = sourceDurationSeconds > 0
+      ? Math.min(1, transcriptMaxEnd / sourceDurationSeconds)
+      : 1;
+    if (sourceDurationSeconds >= 4 * 60 && transcriptCoverageRatio < 0.8) {
+      throw new Error(
+        `Transcript coverage is incomplete (${Math.round(transcriptCoverageRatio * 100)}% of the source). `
+        + 'The project must be retranscribed before clip analysis; refusing to silently produce too few reels.',
+      );
+    }
+    const policyDurationSeconds = Math.max(transcriptMaxEnd, sourceDurationSeconds);
+    const effectiveGlobalMinClipSec = policyDurationSeconds < 60 ? 20 : GLOBAL_MIN_CLIP_SEC;
+    const policy = getClipPolicy(policyDurationSeconds);
     const analysisMinClipSec = Math.max(policy.minSec, Math.min(effectiveGlobalMinClipSec, policy.expectedMinSec));
     const minimumWordCount = strictWordFloor(transcriptMaxEnd);
     const fallbackMinimumWordCount = fallbackWordFloor(transcriptMaxEnd);
     const punctuationReliable = hasReliableSentencePunctuation(segments);
-    const targetClipCount = getTargetClipCount(transcriptMaxEnd);
+    const targetClipCount = getTargetClipCount(policyDurationSeconds);
     const minimumCandidatePool = Math.max(policy.candidateCount, targetClipCount * 4);
     const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
 
@@ -992,7 +997,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const deduped = distinctCandidates(filteredCandidates);
     const selected = deduped.slice(0, targetClipCount);
-    const minimumFinalCount = Math.min(policy.targetMin, targetClipCount);
+    const minimumFinalCount = getRequiredClipCount(policyDurationSeconds);
 
     if (selected.length < minimumFinalCount) {
       const fallbackPool = distinctCandidates(allScoredCandidates)
@@ -1076,6 +1081,13 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const ranked = calibrateFinalScores(selected.slice(0, targetClipCount)).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
+    if (policyDurationSeconds > 4 * 60 && ranked.length < minimumFinalCount) {
+      throw new Error(
+        `Analysis under-produced clips (${ranked.length}/${minimumFinalCount}). `
+        + 'The project was not finalized so the worker can retry instead of presenting an incomplete result.',
+      );
+    }
+
     const sameCandidate = (left: RankedCandidate, right: RankedCandidate) => (
       Math.abs(left.start_sec - right.start_sec) < 0.05
       && Math.abs(left.end_sec - right.end_sec) < 0.05
@@ -1105,6 +1117,9 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       project_id,
       transcript_segments: segments.length,
       transcript_duration_seconds: Number(transcriptMaxEnd.toFixed(2)),
+      source_duration_seconds: Number(sourceDurationSeconds.toFixed(2)),
+      transcript_coverage_ratio: Number(transcriptCoverageRatio.toFixed(4)),
+      required_final_clip_count: minimumFinalCount,
       analysis_provider: analysisDiagnostics.provider ?? 'unknown',
       openai_timed_out: analysisDiagnostics.openai_timed_out === true,
       fallback_analysis_used: analysisDiagnostics.fallback_used === true,
@@ -1144,7 +1159,10 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     console.log('[analyze] counts', {
       project_id,
-      videoDurationSeconds: Number(transcriptMaxEnd.toFixed(2)),
+      videoDurationSeconds: Number(policyDurationSeconds.toFixed(2)),
+      transcriptDurationSeconds: Number(transcriptMaxEnd.toFixed(2)),
+      sourceDurationSeconds: Number(sourceDurationSeconds.toFixed(2)),
+      transcriptCoverageRatio: Number(transcriptCoverageRatio.toFixed(4)),
       targetClipCount: targetClipCount,
       targetMin: policy.targetMin,
       minimumCandidatePool,

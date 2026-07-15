@@ -51,3 +51,11 @@ export function getTargetClipCount(totalSeconds: number) {
   if (minutes > 4 && minutes <= 7) return 8;
   return Math.min(20, policy.targetMax);
 }
+
+export function getRequiredClipCount(totalSeconds: number) {
+  const policy = getClipPolicy(totalSeconds);
+  const target = getTargetClipCount(totalSeconds);
+  const minutes = totalSeconds / 60;
+  if (minutes > 4 && minutes <= 7) return 8;
+  return Math.min(policy.targetMin, target);
+}
