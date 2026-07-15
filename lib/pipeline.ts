@@ -1,11 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getRequiredClipCount } from '@/lib/clip-policy';
 
 export async function ensurePipelineJob(projectId: string) {
   const supabase = createAdminClient();
 
   const { data: project } = await supabase
     .from('projects')
-    .select('status, pipeline_status, pipeline_completed_at, exports(status, output_storage_path)')
+    .select('status, pipeline_status, pipeline_completed_at, source_duration_seconds, exports(status, output_storage_path)')
     .eq('id', projectId)
     .maybeSingle();
   const savedExports = Array.isArray(project?.exports)
@@ -15,12 +16,27 @@ export async function ensurePipelineJob(projectId: string) {
     && typeof row.output_storage_path === 'string'
     && row.output_storage_path.length > 0
     && !row.output_storage_path.startsWith('mock://'));
+  const playableOutputCount = savedExports.filter((row) => row.status !== 'error'
+    && typeof row.output_storage_path === 'string'
+    && row.output_storage_path.length > 0
+    && !row.output_storage_path.startsWith('mock://')).length;
+  const sourceDurationSeconds = Math.max(0, Number(project?.source_duration_seconds ?? 0));
+  const requiredOutputCount = sourceDurationSeconds > 0 ? getRequiredClipCount(sourceDurationSeconds) : 1;
   const completionLatched = project?.status === 'completed'
     || project?.pipeline_status === 'completed'
     || Boolean(project?.pipeline_completed_at);
 
-  if (completionLatched && hasPlayableOutput) {
+  if (completionLatched && hasPlayableOutput && playableOutputCount >= requiredOutputCount) {
     return { id: `completed:${projectId}`, status: 'completed' };
+  }
+
+  if (completionLatched && hasPlayableOutput && playableOutputCount < requiredOutputCount) {
+    console.warn('[pipeline/job] reopening-underproduced-project', {
+      projectId,
+      sourceDurationSeconds,
+      playableOutputCount,
+      requiredOutputCount,
+    });
   }
 
   const { data: existing, error: existingError } = await supabase
@@ -57,6 +73,7 @@ export async function ensurePipelineJob(projectId: string) {
   await supabase
     .from('projects')
     .update({
+      status: completionLatched ? 'analyzed' : project?.status,
       pipeline_status: 'queued',
       pipeline_error: null,
       pipeline_started_at: new Date().toISOString(),

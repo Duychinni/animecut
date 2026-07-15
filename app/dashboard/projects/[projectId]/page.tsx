@@ -3,7 +3,7 @@ import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
-import { getTargetClipCount } from '@/lib/clip-policy';
+import { getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { PROJECT_RETENTION_DAYS, getProjectExpiryInfo } from '@/lib/project-retention';
@@ -268,8 +268,11 @@ export default async function ProjectDetailPage({
   const transcriptSegments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
   const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
   const sourceDurationSeconds = Number(projectRow?.source_duration_seconds ?? 0);
-  const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
+  // A partial or stale transcript must never make a long project look short and
+  // suppress the duration-based reel floor.
+  const totalSeconds = Math.max(transcriptSeconds, sourceDurationSeconds);
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
+  const requiredCount = Math.max(1, getRequiredClipCount(totalSeconds));
   const doneExports = savedExportItems.length;
   const activeExports = activeExportItems.length;
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
@@ -309,6 +312,10 @@ export default async function ProjectDetailPage({
   const hasMockResults = doneResultItems.some((row) => row.output_storage_path?.startsWith('mock://'));
   const hasActiveExports = activeExports > 0;
   const hasExportRows = displayExportItems.length > 0;
+  const needsCoverageRepair = projectMarkedCompleted
+    && totalSeconds > 0
+    && doneExports > 0
+    && doneExports < requiredCount;
   const waitingForPlayableReels =
     !shouldShowResults &&
     !hasExportRows &&
@@ -326,7 +333,7 @@ export default async function ProjectDetailPage({
         </div>
 
         <div className="sr-only">
-          <PipelineRunner projectId={projectId} autoStart={autoStart} />
+          <PipelineRunner projectId={projectId} autoStart={autoStart || needsCoverageRepair} />
         </div>
 
         {shouldShowResults ? (

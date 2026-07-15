@@ -105,25 +105,38 @@ async function getExportCounts(projectId: string) {
 
 async function getTranscriptStats(projectId: string) {
   const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('transcripts')
-    .select('segments_json')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [transcriptResult, projectResult] = await Promise.all([
+    supabase
+      .from('transcripts')
+      .select('segments_json')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('projects')
+      .select('source_duration_seconds')
+      .eq('id', projectId)
+      .maybeSingle(),
+  ]);
+
+  const { data, error } = transcriptResult;
 
   if (error) throw error;
+  if (projectResult.error) throw projectResult.error;
 
   const segments = Array.isArray(data?.segments_json)
     ? (data?.segments_json as Array<{ end?: number }>)
     : [];
   const durationSeconds = segments.reduce((acc, segment) => Math.max(acc, Number(segment?.end ?? 0)), 0);
+  const sourceDurationSeconds = Math.max(0, Number(projectResult.data?.source_duration_seconds ?? 0));
 
   return {
     exists: segments.length > 0,
     segmentCount: segments.length,
     durationSeconds,
+    sourceDurationSeconds,
+    policyDurationSeconds: Math.max(durationSeconds, sourceDurationSeconds),
   };
 }
 
@@ -286,7 +299,7 @@ export async function POST() {
     }
 
     let candidateCount = await getCandidateCount(projectId);
-    const expectedCandidateMinimum = getClipPolicy(transcriptStats.durationSeconds).targetMin;
+    const expectedCandidateMinimum = getClipPolicy(transcriptStats.policyDurationSeconds).targetMin;
     let analyzeData: Record<string, unknown> = { ok: true, count: candidateCount, resumed: true };
     if (candidateCount >= expectedCandidateMinimum) {
       console.log('[pipeline] resume-after-analyze', { projectId, candidateCount, expectedCandidateMinimum });
