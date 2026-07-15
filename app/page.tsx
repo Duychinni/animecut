@@ -6,7 +6,7 @@ import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type MeResponse = {
@@ -529,8 +529,13 @@ export default function Home() {
     }
 
     try {
-      setLoading(true);
-      setMsg('Creating project from link...');
+      // This page has a large animated showcase. Schedule its loading-state
+      // rerender as non-urgent so the button interaction can paint immediately
+      // instead of making the click wait for the whole page to reconcile.
+      startTransition(() => {
+        setLoading(true);
+        setMsg('Checking video length...');
+      });
       const projectId = await createProject({
         title: makeProjectTitle(),
         source_type: 'youtube',
@@ -549,7 +554,7 @@ export default function Home() {
       }
       setMsg(`Error: ${text}`);
     } finally {
-      setLoading(false);
+      startTransition(() => setLoading(false));
     }
   }
 

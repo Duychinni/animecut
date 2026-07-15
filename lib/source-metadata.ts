@@ -41,6 +41,40 @@ function parseIso8601Duration(input: string): number | null {
   return hours * 3600 + mins * 60 + secs;
 }
 
+function parseYouTubeDurationFromHtml(html: string): number | null {
+  const lengthSeconds = html.match(/"lengthSeconds"\s*:\s*"?(\d+)"?/i)?.[1];
+  if (lengthSeconds) {
+    const seconds = Number(lengthSeconds);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  }
+
+  const approxDurationMs = html.match(/"approxDurationMs"\s*:\s*"?(\d+)"?/i)?.[1];
+  if (approxDurationMs) {
+    const seconds = Math.round(Number(approxDurationMs) / 1000);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  }
+
+  const isoDuration = html.match(/(?:itemprop=["']duration["'][^>]*content=|"duration"\s*:\s*)["'](PT[^"']+)["']/i)?.[1];
+  return isoDuration ? parseIso8601Duration(isoDuration) : null;
+}
+
+async function fetchYouTubeWatchPageDuration(videoId: string): Promise<number | null> {
+  try {
+    const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&hl=en`, {
+      cache: 'no-store',
+      headers: {
+        'accept-language': 'en-US,en;q=0.9',
+        'user-agent': 'Mozilla/5.0 (compatible; AnimaCut/1.0; +https://animacut.app)',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    return parseYouTubeDurationFromHtml(await res.text());
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchYouTubeSourceMetadata(url: string): Promise<SourceMetadata> {
   const videoId = extractYouTubeVideoId(url);
   const base: SourceMetadata = {
@@ -96,6 +130,13 @@ export async function fetchYouTubeSourceMetadata(url: string): Promise<SourceMet
         }
       }
     } catch {}
+  }
+
+  // oEmbed has no duration, and serverless deployments generally do not have
+  // yt-dlp installed. The watch page contains the same player duration and is
+  // a safe fallback when the optional YouTube Data API key is not configured.
+  if (!base.sourceDurationSeconds) {
+    base.sourceDurationSeconds = await fetchYouTubeWatchPageDuration(videoId);
   }
 
   return base;
