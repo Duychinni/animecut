@@ -31,24 +31,6 @@ function getAvatarUrl(user: ProfileLike | null) {
   );
 }
 
-function getTokenBalance(user: ProfileLike | null) {
-  if (!user) return 0;
-
-  const raw =
-    user.user_metadata?.token_balance ??
-    user.user_metadata?.tokens ??
-    user.user_metadata?.credits ??
-    user.user_metadata?.tokenBalance;
-
-  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
-  if (typeof raw === 'string') {
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed)) return Math.max(0, parsed);
-  }
-
-  return 0;
-}
-
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
   const {
@@ -56,7 +38,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
   } = await supabase.auth.getUser();
   const displayName = getDisplayName(user);
   const avatarUrl = getAvatarUrl(user);
-  const tokenBalance = getTokenBalance(user);
+  const { data: profile } = user
+    ? await supabase
+        .from('profiles')
+        .select('subscription_plan, processing_minutes_remaining, free_uploads_remaining')
+        .eq('id', user.id)
+        .maybeSingle()
+    : { data: null };
+  const subscriptionPlan = profile?.subscription_plan ?? 'free';
+  const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1));
+  const processingMinutesRemaining = Math.max(0, Math.floor(Number(profile?.processing_minutes_remaining ?? 0)));
+  const allowanceLabel = subscriptionPlan === 'free'
+    ? freeUploadsRemaining > 0 ? '1 free test · up to 20 min' : 'Free test used'
+    : `${processingMinutesRemaining.toLocaleString()} min left`;
 
   return (
     <div className="app-shell min-h-screen text-white">
@@ -80,7 +74,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <div className="flex items-center justify-end gap-2">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
                 <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
-                <span>{tokenBalance.toLocaleString()}</span>
+                <span>{allowanceLabel}</span>
               </div>
               <div className="group relative">
                 {avatarUrl ? (
@@ -104,6 +98,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
                   {displayName}
                 </span>
               </div>
+              <Link href="/dashboard" className="hidden max-w-28 truncate text-sm font-semibold text-white/80 transition hover:text-white lg:block">
+                {displayName}
+              </Link>
               <SignOutButton />
             </div>
           </div>

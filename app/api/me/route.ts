@@ -52,6 +52,19 @@ export async function GET() {
     return NextResponse.json({ authenticated: false, user: null });
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('subscription_plan, processing_minutes_remaining, free_uploads_remaining')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  const subscriptionPlan = profile?.subscription_plan ?? 'free';
+  const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1));
+  const processingMinutesRemaining = Math.max(0, Math.floor(Number(profile?.processing_minutes_remaining ?? 0)));
+  const allowanceLabel = subscriptionPlan === 'free'
+    ? freeUploadsRemaining > 0 ? '1 free test · up to 20 min' : 'Free test used'
+    : `${processingMinutesRemaining.toLocaleString()} min left`;
+
   return NextResponse.json({
     authenticated: true,
     user: {
@@ -59,6 +72,10 @@ export async function GET() {
       displayName: getDisplayName(user),
       avatarUrl: getAvatarUrl(user),
       tokenBalance: getTokenBalance(user),
+      subscriptionPlan,
+      processingMinutesRemaining,
+      freeUploadsRemaining,
+      allowanceLabel,
     },
   });
 }

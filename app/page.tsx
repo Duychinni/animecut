@@ -16,6 +16,7 @@ type MeResponse = {
     displayName?: string | null;
     avatarUrl?: string | null;
     tokenBalance?: number;
+    allowanceLabel?: string;
   };
 };
 
@@ -341,7 +342,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [tokenBalance, setTokenBalance] = useState<number>(0);
+  const [allowanceLabel, setAllowanceLabel] = useState('1 free test · up to 20 min');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
@@ -440,12 +441,11 @@ export default function Home() {
           setIsAuthenticated(true);
           setUserLabel(data.user?.displayName ?? data.user?.email ?? 'User');
           setAvatarUrl(data.user?.avatarUrl ?? null);
-          setTokenBalance(data.user?.tokenBalance ?? 0);
+          setAllowanceLabel(data.user?.allowanceLabel ?? '1 free test · up to 20 min');
         } else {
           setIsAuthenticated(false);
           setUserLabel(null);
           setAvatarUrl(null);
-          setTokenBalance(0);
         }
       } catch {
         // best-effort only
@@ -674,7 +674,7 @@ export default function Home() {
               <>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
                   <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
-                  <span>{tokenBalance.toLocaleString()}</span>
+                  <span>{allowanceLabel}</span>
                 </div>
                 <div className="group relative">
                   {avatarUrl ? (
@@ -701,12 +701,20 @@ export default function Home() {
                 <SignOutButton className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-60" />
               </>
             ) : (
-              <Link
-                href={`/auth/login?next=${encodeURIComponent('/dashboard')}`}
-                className="cursor-pointer rounded-xl border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white/85 transition hover:border-white/30 hover:bg-white/[0.06]"
-              >
-                Login
-              </Link>
+              <div className="flex items-center justify-end gap-2">
+                <Link
+                  href={`/auth/login?next=${encodeURIComponent('/dashboard')}`}
+                  className="cursor-pointer rounded-xl px-3 py-2 text-sm font-semibold text-white/65 transition hover:text-white"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href={`/auth/signup?next=${encodeURIComponent('/dashboard')}`}
+                  className="cursor-pointer whitespace-nowrap rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:-translate-y-0.5 hover:bg-white/90"
+                >
+                  Sign up – It&apos;s FREE
+                </Link>
+              </div>
             )}
           </div>
         </header>
