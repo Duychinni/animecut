@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 import { getClipPolicy } from '@/lib/clip-policy';
+import { ensureSourceDiarization, isDiarizationEnabled } from '@/lib/media-intelligence/diarization';
 
 export const maxDuration = 300;
 
@@ -10,6 +11,7 @@ const STEP_PROGRESS: Record<string, number> = {
   downloading: 5,
   extracting_audio: 10,
   transcribing: 25,
+  diarizing: 32,
   finding_hooks: 40,
   creating_clips: 55,
   face_tracking_crop: 70,
@@ -296,6 +298,20 @@ export async function POST() {
       await callInternalJson('/api/transcribe', { project_id: projectId });
       console.log('[pipeline] after transcribe', { projectId });
       transcriptStats = await getTranscriptStats(projectId);
+    }
+
+    if (isDiarizationEnabled(projectId)) {
+      await updateProjectProgress(projectId, 'diarizing', 'Identifying anonymous speakers');
+      const diarization = await ensureSourceDiarization(projectId);
+      console.log('[pipeline:diarization]', {
+        projectId,
+        analysisRunId: diarization.analysisRunId,
+        mode: diarization.mode,
+        reused: diarization.reused,
+        speakerCount: diarization.speakerCount,
+        turnCount: diarization.turnCount,
+        errorCategory: diarization.errorCategory ?? null,
+      });
     }
 
     let candidateCount = await getCandidateCount(projectId);

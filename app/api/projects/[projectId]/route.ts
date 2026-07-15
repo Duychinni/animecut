@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { deleteProjectAnalysisArtifacts } from '@/lib/media-intelligence/storage';
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -61,6 +62,9 @@ export async function DELETE(_: Request, context: { params: Promise<{ projectId:
     if (pErr || !project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
+
+    // Remove encrypted server-only embedding objects before cascading database rows.
+    await deleteProjectAnalysisArtifacts(projectId);
 
     const deletions = await Promise.all([
       supabase.from('jobs').delete().eq('project_id', projectId),

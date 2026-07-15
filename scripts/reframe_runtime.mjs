@@ -8,6 +8,11 @@ const mode = process.argv[2] ?? 'check';
 const isWindows = process.platform === 'win32';
 const venvPython = path.join(root, '.venv', isWindows ? 'Scripts/python.exe' : 'bin/python');
 const healthScript = path.join(root, 'scripts', 'reframe_per_clip.py');
+const diarizationHealthScript = path.join(root, 'scripts', 'diarize_source.py');
+
+function envTrue(name) {
+  return ['1', 'true', 'yes', 'on'].includes((process.env[name] ?? '').trim().toLowerCase());
+}
 
 function mediaBinary(name) {
   const configured = process.env[name === 'ffmpeg' ? 'FFMPEG_PATH' : 'FFPROBE_PATH']?.trim();
@@ -66,8 +71,20 @@ function mediaHealth() {
   return false;
 }
 
+function diarizationHealth() {
+  if (!envTrue('DIARIZATION_ENABLED')) return true;
+  if (!existsSync(venvPython)) return false;
+  const result = run(venvPython, [diarizationHealthScript, '--health']);
+  if (result.status !== 0) {
+    process.stderr.write(result.stderr || result.stdout || 'Diarization health check failed.\n');
+    return false;
+  }
+  process.stdout.write(`${result.stdout.trim()}\n`);
+  return true;
+}
+
 if (mode === 'check') {
-  if (!health() || !mediaHealth()) {
+  if (!health() || !mediaHealth() || !diarizationHealth()) {
     console.error('Subject-aware reframing is not ready. Run: npm run reframe:setup');
     process.exit(1);
   }
@@ -92,5 +109,14 @@ if (install.status !== 0) process.exit(install.status ?? 1);
 const dependencies = run(venvPython, ['-m', 'pip', 'install', '-r', requirements], { inherit: true });
 if (dependencies.status !== 0) process.exit(dependencies.status ?? 1);
 
-if (!health() || !mediaHealth()) process.exit(1);
+if (mode === 'worker' && envTrue('DIARIZATION_ENABLED')) {
+  const diarizationDependencies = run(
+    venvPython,
+    ['-m', 'pip', 'install', '-r', 'requirements-diarization.txt'],
+    { inherit: true },
+  );
+  if (diarizationDependencies.status !== 0) process.exit(diarizationDependencies.status ?? 1);
+}
+
+if (!health() || !mediaHealth() || !diarizationHealth()) process.exit(1);
 console.log(`Subject-aware reframing is ready: ${venvPython}`);

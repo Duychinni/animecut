@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { processJobs } from '@/workers/processJobs';
+import { cleanupExpiredAnalysisArtifacts } from '@/lib/media-intelligence/storage';
 
 export async function GET(req: Request) {
   const auth = req.headers.get('authorization') || '';
@@ -10,5 +11,6 @@ export async function GET(req: Request) {
   }
 
   const data = await processJobs();
-  return NextResponse.json({ ok: true, data });
+  const analysisArtifactCleanup = await cleanupExpiredAnalysisArtifacts();
+  return NextResponse.json({ ok: true, data, analysisArtifactCleanup });
 }
