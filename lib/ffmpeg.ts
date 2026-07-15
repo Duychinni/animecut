@@ -299,6 +299,15 @@ async function writeDebugCommandFile(clipId: string, commandText: string, output
 async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outputPath?: string | null }) {
   const ffmpegCommand = resolveMediaBinary('ffmpeg');
   const commandText = formatCommand(ffmpegCommand, args);
+  const configuredTimeoutSeconds = Number(process.env.FFMPEG_RENDER_TIMEOUT_SECONDS ?? 0);
+  const startIndex = args.indexOf('-ss');
+  const endIndex = args.indexOf('-to');
+  const startSec = startIndex >= 0 ? Number(args[startIndex + 1] ?? 0) : 0;
+  const endSec = endIndex >= 0 ? Number(args[endIndex + 1] ?? 0) : 0;
+  const expectedDuration = Number.isFinite(endSec - startSec) ? Math.max(1, endSec - startSec) : 60;
+  const timeoutSeconds = Number.isFinite(configuredTimeoutSeconds) && configuredTimeoutSeconds > 0
+    ? Math.max(60, Math.min(1800, configuredTimeoutSeconds))
+    : Math.max(240, Math.min(900, Math.ceil(expectedDuration * 12 + 120)));
   console.log('[ffmpeg] command', { clipId: debug?.clipId ?? null, outputPath: debug?.outputPath ?? null, command: commandText });
   if (debug?.clipId && debug?.outputPath) {
     await writeDebugCommandFile(debug.clipId, commandText, debug.outputPath, args);
@@ -306,20 +315,33 @@ async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outpu
   await new Promise<void>((resolve, reject) => {
     const p = spawn(ffmpegCommand, args);
     let stderr = '';
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      p.kill('SIGKILL');
+    }, timeoutSeconds * 1000);
 
     p.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr += chunk.toString();
+      stderr = `${stderr}${chunk.toString()}`.slice(-128_000);
     });
 
     p.on('close', (code) => {
+      clearTimeout(timeout);
+      const tail = stderr.trim().split('\n').slice(-12).join('\n');
+      if (timedOut) {
+        reject(new Error(`ffmpeg timed out after ${timeoutSeconds}s${tail ? `\n${tail}` : ''}`));
+        return;
+      }
       if (code === 0) {
         resolve();
         return;
       }
-      const tail = stderr.trim().split('\n').slice(-12).join('\n');
       reject(new Error(`ffmpeg failed: ${code}${tail ? `\n${tail}` : ''}`));
     });
-    p.on('error', reject);
+    p.on('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
   });
 }
 
@@ -2117,6 +2139,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
     const subtitlesUnavailable = /No such filter: 'subtitles'/i.test(msg);
     const textOverlayFailed = /drawtext|Cannot find a valid font|Error initializing filter|No such filter: '[0-9.]+|No such filter: 'between|Filter not found/i.test(msg);
     const encoderUnavailable = /Unknown encoder|Error while opening encoder|Encoder .* not found|Invalid argument/i.test(msg);
+    const smartLayoutFailed = effectiveMode === 'smart'
+      && Boolean(smartCropExpr || splitStackLayout || adaptiveWideIntervals.length || reframeTimeline.length)
+      && /crop|filtergraph|Error reinitializing filters|Failed to inject frame|Error while filtering|Invalid too big or non positive size/i.test(msg);
 
     if (configuredEncoder !== 'libx264' && encoderUnavailable) {
       // Server-safe fallback: if requested hardware encoder is unavailable on this host,
@@ -2140,6 +2165,20 @@ export async function renderVerticalClip(opts: RenderOpts) {
       await renderVerticalClip({
         ...effectiveOpts,
         hookTextEnabled: false,
+      });
+      return;
+    }
+
+    if (smartLayoutFailed) {
+      console.warn('[render] smart-layout-safe-fallback', {
+        clipId: debugClipId,
+        reason: msg.split('\n').slice(-6).join(' | '),
+      });
+      await renderVerticalClip({
+        ...effectiveOpts,
+        autoReframe: false,
+        reframeMode: 'off',
+        framingMode: 'fit',
       });
       return;
     }

@@ -60,23 +60,6 @@ async function maybeFinalizeProject(projectId: string) {
         pipeline_stage: 'completed',
         pipeline_stage_label: 'Completed',
         pipeline_progress_percent: 100,
-        pipeline_error: failedCount > 0 ? 'Some exports failed, but target reel count was reached.' : null,
-        pipeline_completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', projectId);
-    return true;
-  }
-
-  if (allAttemptsSettled && doneCount > 0) {
-    await supabase
-      .from('projects')
-      .update({
-        status: 'completed',
-        pipeline_status: 'completed',
-        pipeline_stage: 'completed',
-        pipeline_stage_label: 'Completed',
-        pipeline_progress_percent: 100,
         pipeline_error: null,
         pipeline_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -88,16 +71,18 @@ async function maybeFinalizeProject(projectId: string) {
   const candidatePoolExhausted = totalCount >= availableCandidates && availableCandidates > 0;
 
   if (allAttemptsSettled && candidatePoolExhausted) {
-    const terminalStatus = doneCount > 0 ? 'completed' : 'error';
     await supabase
       .from('projects')
       .update({
-        status: terminalStatus,
-        pipeline_status: terminalStatus === 'completed' ? 'completed' : 'error',
+        status: 'error',
+        pipeline_status: 'error',
+        pipeline_stage: 'error',
+        pipeline_stage_label: 'Could not finish every reel',
+        pipeline_progress_percent: Math.min(98, Math.round((doneCount / targetCount) * 100)),
         pipeline_error: doneCount > 0
           ? `Only ${doneCount} of ${targetCount} target reels were rendered before candidate pool was exhausted.`
           : 'All export attempts failed and no backup candidates remained.',
-        pipeline_completed_at: new Date().toISOString(),
+        pipeline_completed_at: null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
@@ -220,6 +205,7 @@ type ExportRenderOptions = {
   reframe_preset?: 'auto' | 'tight' | 'left' | 'center' | 'right';
   edit_rerender?: boolean;
   fast_edit_render?: boolean;
+  safe_layout_fallback?: boolean;
 };
 
 type ExportLookupRow = {
@@ -762,6 +748,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     || usableHookText(bundle.hook_text, bundle.clip.title)
     || normalizeHookCandidate(generatedHookText)
     || null;
+  const safeLayoutFallback = options?.safe_layout_fallback === true;
 
   await renderVerticalClip({
     inputPath: renderInputPath,
@@ -775,10 +762,10 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     hookTextEnabled,
     hookText,
     motionTracking: options?.motion_tracking === true,
-    autoReframe: useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
-    reframeMode: options?.reframe_mode ?? getFallbackReframeMode(),
+    autoReframe: safeLayoutFallback ? false : useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
+    reframeMode: safeLayoutFallback ? 'off' : options?.reframe_mode ?? getFallbackReframeMode(),
     reframePreset: options?.reframe_preset ?? 'auto',
-    framingMode: useEditSettings ? editSettings.framing_mode : 'auto',
+    framingMode: safeLayoutFallback ? 'fit' : useEditSettings ? editSettings.framing_mode : 'auto',
     cropX: useEditSettings ? editSettings.crop_x : undefined,
     cropY: useEditSettings ? editSettings.crop_y : undefined,
     zoom: useEditSettings ? editSettings.zoom : undefined,
@@ -817,6 +804,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     .update({
       status: 'done',
       output_storage_path: objectPath,
+      hook_text: hookText,
       error_message: null,
       edit_status: useEditSettings ? 'rendered' : 'idle',
       updated_at: new Date().toISOString(),
@@ -831,6 +819,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       .update({
         status: 'done',
         output_storage_path: objectPath,
+        hook_text: hookText,
         error_message: null,
         updated_at: new Date().toISOString(),
       })
@@ -1097,6 +1086,7 @@ export async function POST(req: Request) {
         reframe_mode: item.payload?.reframe_mode as 'off' | 'basic' | 'smart' | undefined,
         reframe_preset: item.payload?.reframe_preset as 'auto' | 'tight' | 'left' | 'center' | 'right' | undefined,
         edit_rerender: isEditRerender,
+        safe_layout_fallback: item.payload?.safe_layout_fallback === true,
       });
 
       if (item.jobId) {
@@ -1201,6 +1191,48 @@ export async function POST(req: Request) {
           }
         }
 
+        continue;
+      }
+
+      const safeFallbackEligible = Boolean(
+        item.jobId
+        && exportId
+        && !isEditRerender
+        && item.payload?.safe_layout_fallback !== true
+        && !['missing_or_unreadable_input', 'upload_or_storage_failure'].includes(failureDiagnostics.category),
+      );
+
+      if (safeFallbackEligible && item.jobId && exportId) {
+        await supabase
+          .from('jobs')
+          .update({
+            status: 'queued',
+            attempts: 0,
+            updated_at: new Date().toISOString(),
+            payload: {
+              ...item.payload,
+              safe_layout_fallback: true,
+              retry_of_error: message,
+              render_failure_category: failureDiagnostics.category,
+              ffmpeg_stderr_tail: failureDiagnostics.stderrTail,
+            },
+          })
+          .eq('id', item.jobId);
+
+        await supabase
+          .from('exports')
+          .update({
+            status: 'queued',
+            error_message: 'Finishing this reel with a safe alternate layout.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', exportId);
+
+        console.warn('[jobs/process] safe-layout-fallback-queued', {
+          export_id: exportId,
+          job_id: item.jobId,
+          failure_category: failureDiagnostics.category,
+        });
         continue;
       }
 

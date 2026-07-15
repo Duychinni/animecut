@@ -3,7 +3,7 @@ import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportSignedUrl } from '@/lib/storage';
-import { getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
+import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { PROJECT_RETENTION_DAYS, getProjectExpiryInfo } from '@/lib/project-retention';
@@ -274,25 +274,17 @@ export default async function ProjectDetailPage({
   // suppress the duration-based reel floor.
   const totalSeconds = Math.max(transcriptSeconds, sourceDurationSeconds);
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
-  const requiredCount = Math.max(1, getRequiredClipCount(totalSeconds));
   const doneExports = savedExportItems.length;
   const activeExports = activeExportItems.length;
   const rawProgressPercent = Number(projectRow?.pipeline_progress_percent ?? 0);
   const pipelineStatus = String(projectRow?.pipeline_status ?? 'idle');
-  const projectHasTerminalIssue = String(projectRow?.status ?? '') === 'error' || pipelineStatus === 'error';
-  const playableExportItems = filteredExportItems.filter(hasSavedPlayableOutput);
-  const hasPlayableExports = playableExportItems.length > 0;
-  // Never hide reels that have already been uploaded successfully. Remaining
-  // queued/processing exports belong on the clips board as individual status
-  // cards instead of sending the whole project back to the processing hero.
-  const shouldShowResults = hasPlayableExports;
-  const displayExportItems = shouldShowResults ? filteredExportItems : [];
-  const isCompletedFromRows = doneExports > 0 && (
-    projectMarkedCompleted
-    || (activeExports === 0 && (projectHasTerminalIssue || doneExports >= targetCount))
-  );
+  // Partial and failed renders stay internal. The customer sees the project
+  // only after the requested number of playable MP4s has finished.
+  const shouldShowResults = projectMarkedCompleted && activeExports === 0 && doneExports >= targetCount;
+  const displayExportItems = shouldShowResults ? savedExportItems : [];
+  const isCompletedFromRows = shouldShowResults;
   const effectiveStatus = isCompletedFromRows ? 'completed' : activeExports > 0 ? 'analyzed' : String(projectRow?.status ?? 'created');
-  const progressPercent = isCompletedFromRows || (pipelineStatus === 'completed' && doneExports > 0)
+  const progressPercent = isCompletedFromRows
     ? 100
     : Math.max(0, Math.min(98, Number.isFinite(rawProgressPercent) ? rawProgressPercent : 0));
 
@@ -316,8 +308,7 @@ export default async function ProjectDetailPage({
   const hasExportRows = displayExportItems.length > 0;
   const needsCoverageRepair = projectMarkedCompleted
     && totalSeconds > 0
-    && doneExports > 0
-    && doneExports < requiredCount;
+    && doneExports < targetCount;
   const waitingForPlayableReels =
     !shouldShowResults &&
     !hasExportRows &&
@@ -325,7 +316,7 @@ export default async function ProjectDetailPage({
     !hasRenderableResults &&
     !hasMockResults &&
     (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
-  const showProcessingHero = !shouldShowResults && (!projectMarkedCompleted || hasActiveExports || !hasRenderableResults || hasMockResults || waitingForPlayableReels);
+  const showProcessingHero = !shouldShowResults;
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
