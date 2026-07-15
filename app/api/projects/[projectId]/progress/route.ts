@@ -443,16 +443,14 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'processing'
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
-    const hasPlayableExports = doneExports > 0;
-    const frozenCompletedProject = projectMarkedCompleted && hasPlayableExports;
-    const hasSettledPlayableExports = activeExports === 0 && hasPlayableExports;
-    // Once every queued render has settled and at least one playable reel is
-    // stored, the project is terminal even if the candidate pool produced
-    // fewer reels than today's target policy. A later policy change or failed
-    // optional export must never reopen an already usable project.
+    const hasTargetCoverage = doneExports >= targetCount;
+    const frozenCompletedProject = projectMarkedCompleted && activeExports === 0 && hasTargetCoverage;
+    const hasSettledPlayableExports = activeExports === 0 && hasTargetCoverage;
+    // A project is publishable only when its duration-based target count is
+    // backed by playable MP4s. Partial success remains an internal render state.
     const isReallyCompleted = frozenCompletedProject || hasSettledPlayableExports;
 
-    const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && activeExports > 0;
+    const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && doneExports < targetCount;
     let effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);
     let pipelineStatus = isReallyCompleted ? 'completed' : storedPipelineStatus;
     const storedPipelineStage = (project as { pipeline_stage?: string | null }).pipeline_stage ?? null;
@@ -482,13 +480,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'processing'
       && storedPipelineStage === 'finding_hooks'
       && (!latestPipelineJob || latestPipelineJob.status !== 'processing');
-    const completedWithoutPlayableExports = !isReallyCompleted
+    const completedWithoutTargetCoverage = !isReallyCompleted
       && projectMarkedCompleted
       && activeExports === 0
-      && doneExports === 0
-      && retryableErroredExportIds.length === 0
+      && doneExports < targetCount
       && (hasTranscript || analyzedCandidates > 0);
-    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker || completedWithoutPlayableExports;
+    const shouldRecoverPipeline = staleWorker || recoverableErrorState || missingAnalysisWorker || completedWithoutTargetCoverage;
     let recoveryQueued = false;
     if (shouldRecoverPipeline) {
       try {
@@ -525,7 +522,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         });
       }
     }
-    if (!isReallyCompleted && doneExports === 0 && retryableErroredExportIds.length) {
+    if (!isReallyCompleted && doneExports < targetCount && retryableErroredExportIds.length) {
       try {
         recoveredErrorExportCount = await recoverErroredProjectExports(projectId, retryableErroredExportIds);
         renderRecoveryQueued = recoveredErrorExportCount > 0 || renderRecoveryQueued;
@@ -657,8 +654,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
         ? 'A stale render export was requeued by the progress check.'
       : staleWorker
         ? 'Worker heartbeat expired while this project was processing.'
-      : completedWithoutPlayableExports
-        ? 'Project was marked complete before playable reels were available; export recovery was queued.'
+      : completedWithoutTargetCoverage
+        ? 'Project was marked complete before the target reel count was available; export recovery was queued.'
       : analyzedCandidates === 0 && hasTranscript && pipelineStage === 'finding_hooks'
         ? 'Transcript exists, but no clip candidates have been saved yet. The analysis step is still running or was interrupted.'
       : visibleActiveExports > 0
