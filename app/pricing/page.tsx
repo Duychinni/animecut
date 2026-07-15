@@ -111,7 +111,7 @@ export default async function PricingPage({
             CHOOSE A PLAN
           </p>
           <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.8rem]">
-            Try one video up to 30 minutes free.
+            Try one video up to 20 minutes free.
             <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent">
               Upgrade when you like the results.
             </span>

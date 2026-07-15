@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { fetchYouTubeSourceMetadata, stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { FREE_TRIAL_MAX_UPLOAD_MINUTES, FREE_TRIAL_UPLOADS, PLAN_LOOKUP, type PlanId } from '@/lib/plans';
-import { minutesRequiredFromSeconds } from '@/lib/billing';
+import { getOrCreateProfile, minutesRequiredFromSeconds } from '@/lib/billing';
 import { isMockAiEnabled } from '@/lib/dev-ai';
 import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
@@ -123,11 +123,10 @@ export async function POST(req: Request) {
           };
 
     const admin = createAdminClient();
-    const { data: profile } = await admin
-      .from('profiles')
-      .select('subscription_plan, processing_minutes_remaining, processing_minutes_used, free_uploads_remaining')
-      .eq('id', user.id)
-      .maybeSingle();
+    // Ensure every authenticated user has the persisted one-time allowance.
+    // Falling back to an in-memory default when a profile row is missing would
+    // let the same account create more than one free project.
+    const profile = await getOrCreateProfile(user.id);
 
     const planId = (profile?.subscription_plan ?? 'free') as PlanId;
     const configuredPlan = planId === 'starter' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;

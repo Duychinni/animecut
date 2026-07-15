@@ -389,7 +389,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function pauseOtherVideos(activeId: string) {
     for (const [id, video] of Object.entries(videoRefs.current)) {
-      if (!video || id === activeId) continue;
+      if (!video || id === activeId || video.paused) continue;
       playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
       video.pause();
       updatePlayback(id, { paused: true });
@@ -611,6 +611,23 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     return [...clips].sort((a, b) => b.score - a.score);
   }, [clips]);
 
+  useEffect(() => {
+    // Warm the highest-ranked reels during idle time. Preloading every export
+    // at once competes for bandwidth and makes the whole grid slower; warming
+    // a small leading set makes the most likely first interactions immediate.
+    const warm = () => visible.slice(0, 3).forEach((clip) => primeVideo(clip.exportId, 'auto'));
+    const windowWithIdle = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (windowWithIdle.requestIdleCallback) {
+      const idleId = windowWithIdle.requestIdleCallback(warm, { timeout: 1200 });
+      return () => windowWithIdle.cancelIdleCallback?.(idleId);
+    }
+    const timer = window.setTimeout(warm, 250);
+    return () => window.clearTimeout(timer);
+  }, [visible]);
+
   function stableMediaUrl(clip: ClipItem) {
     const nextUrl = clip.signedUrl ?? null;
     const currentUrl = stableMediaUrlsRef.current.get(clip.exportId) ?? null;
@@ -692,7 +709,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
         <div className="px-4 pb-2">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
-            {visible.slice(0, 10).map((clip) => {
+            {visible.slice(0, 10).map((clip, clipIndex) => {
               const mediaUrl = stableMediaUrl(clip);
               const durationLabel = formatDuration(clip.startSec, clip.endSec);
               const playbackState = playback[clip.exportId];
@@ -822,6 +839,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                       <div
                         data-clip-frame="true"
                         onPointerEnter={() => primeVideo(clip.exportId, 'auto')}
+                        onPointerDown={() => primeVideo(clip.exportId, 'auto')}
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
                         className="relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22"
                       >
@@ -829,7 +847,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload="metadata"
+                          preload={clipIndex < 3 ? 'auto' : 'metadata'}
                           playsInline
                           controls={false}
                           disablePictureInPicture

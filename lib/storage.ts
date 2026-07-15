@@ -37,7 +37,9 @@ export async function uploadExportObject(objectPath: string, bytes: Buffer) {
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
     contentType: 'video/mp4',
-    cacheControl: '0',
+    // Signed URLs already protect access. Allow the browser/CDN to reuse the
+    // same reel while users switch between clips instead of fetching it again.
+    cacheControl: '3600',
   });
   if (error) throw error;
 }
@@ -47,7 +49,7 @@ export async function uploadExportThumbnailObject(objectPath: string, bytes: Buf
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
     contentType: 'image/jpeg',
-    cacheControl: '0',
+    cacheControl: '3600',
   });
   if (error) throw error;
 }

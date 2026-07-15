@@ -2,7 +2,7 @@ export type BillingInterval = 'monthly' | 'yearly';
 export type PlanId = 'free' | 'starter' | 'pro' | 'business';
 
 export const FREE_TRIAL_UPLOADS = 1;
-export const FREE_TRIAL_MAX_UPLOAD_MINUTES = 30;
+export const FREE_TRIAL_MAX_UPLOAD_MINUTES = 20;
 
 export type PlanConfig = {
   id: Exclude<PlanId, 'free'>;
