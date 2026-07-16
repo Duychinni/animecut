@@ -26,7 +26,7 @@ function resolveMediaBinary(name: 'ffmpeg' | 'ffprobe') {
   const configured = process.env[name === 'ffmpeg' ? 'FFMPEG_PATH' : 'FFPROBE_PATH']?.trim();
   if (configured) return configured;
   const executable = process.platform === 'win32' ? `${name}.exe` : name;
-  const localBinary = path.join(process.cwd(), '.tools', 'ffmpeg', 'bin', executable);
+  const localBinary = path.join(/* turbopackIgnore: true */ process.cwd(), '.tools', 'ffmpeg', 'bin', executable);
   return existsSync(localBinary) ? localBinary : name;
 }
 
@@ -153,7 +153,7 @@ export async function validateRenderedVideo(outputPath: string) {
 }
 
 export async function extractBestVideoThumbnail(inputPath: string, outputPath: string, durationSeconds: number, editorialPlan?: Record<string, unknown> | null) {
-  const script = process.env.THUMBNAIL_SELECTOR_SCRIPT || path.join(process.cwd(), 'scripts', 'select_thumbnail.py');
+  const script = process.env.THUMBNAIL_SELECTOR_SCRIPT || path.join(/* turbopackIgnore: true */ process.cwd(), 'scripts', 'select_thumbnail.py');
   try {
     let editorialPlanPath: string | null = null;
     if (editorialPlan) {
@@ -267,7 +267,7 @@ export async function renderCutVideo(
 
 function captionFontsDirOption() {
   const configuredDir = process.env.CAPTION_FONTS_DIR?.trim();
-  const fontsDir = configuredDir || path.join(process.cwd(), 'public', 'fonts');
+  const fontsDir = configuredDir || path.join(/* turbopackIgnore: true */ process.cwd(), 'public', 'fonts');
   return existsSync(fontsDir) ? `:fontsdir='${escapeSubtitlesPathForFilter(fontsDir)}'` : '';
 }
 
@@ -280,7 +280,7 @@ function formatCommand(cmd: string, args: string[]) {
 }
 
 async function writeDebugCommandFile(clipId: string, commandText: string, outputPath: string, args: string[]) {
-  const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || path.join(process.cwd(), 'tmp', 'reframe-debug');
+  const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || path.join(/* turbopackIgnore: true */ process.cwd(), 'tmp', 'reframe-debug');
   await mkdir(debugDir, { recursive: true });
   const filterIndex = args.indexOf('-filter_complex');
   const filterGraph = filterIndex >= 0 ? args[filterIndex + 1] ?? null : null;
@@ -625,17 +625,17 @@ function resolveSmartReframePython() {
   }
 
   const localCandidates = process.platform === 'win32'
-    ? [path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')]
-    : [path.join(process.cwd(), '.venv', 'bin', 'python')];
+    ? [path.join(/* turbopackIgnore: true */ process.cwd(), '.venv', 'Scripts', 'python.exe')]
+    : [path.join(/* turbopackIgnore: true */ process.cwd(), '.venv', 'bin', 'python')];
   return localCandidates.find((candidate) => existsSync(candidate)) ?? (process.platform === 'win32' ? 'python' : 'python3');
 }
 
 function resolveSmartReframeScript() {
-  return process.env.SMART_REFRAME_SCRIPT || `${process.cwd()}/scripts/reframe_per_clip.py`;
+  return process.env.SMART_REFRAME_SCRIPT || path.join(/* turbopackIgnore: true */ process.cwd(), 'scripts', 'reframe_per_clip.py');
 }
 
 function resolveSmartReframeCvScript() {
-  return process.env.SMART_REFRAME_CV_SCRIPT || `${process.cwd()}/scripts/reframe_cv.py`;
+  return process.env.SMART_REFRAME_CV_SCRIPT || path.join(/* turbopackIgnore: true */ process.cwd(), 'scripts', 'reframe_cv.py');
 }
 
 function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox | undefined {
@@ -878,7 +878,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
   try {
     let editorialPlanPath: string | null = null;
     if (opts.editorialPlan) {
-      const plannerDir = path.join(process.cwd(), 'tmp', 'editorial-plans');
+      const plannerDir = path.join(/* turbopackIgnore: true */ process.cwd(), 'tmp', 'editorial-plans');
       await mkdir(plannerDir, { recursive: true });
       editorialPlanPath = path.join(plannerDir, `${opts.debugCandidateId ?? opts.debugClipId ?? 'clip'}.json`);
       await writeFile(editorialPlanPath, JSON.stringify(opts.editorialPlan, null, 2), 'utf8');
@@ -989,7 +989,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
     let jsonSaved = false;
 
     if (process.env.DEBUG_REFRAME_SAVE_JSON === 'true') {
-      const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || `${process.cwd()}/tmp/reframe-debug`;
+      const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || path.join(/* turbopackIgnore: true */ process.cwd(), 'tmp', 'reframe-debug');
       await mkdir(debugDir, { recursive: true });
       await writeFile(`${debugDir}/${clipId}.json`, JSON.stringify(raw, null, 2), 'utf8');
       jsonSaved = true;
@@ -1468,7 +1468,7 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
   const source = hookTextFilePath
     ? `textfile='${escapeDrawtextPathForFilter(hookTextFilePath)}':reload=0`
     : `text='${escapeDrawtextText(wrapped)}'`;
-  const bundledFontPath = path.join(process.cwd(), 'public', 'fonts', 'Poppins-ExtraBold.ttf');
+  const bundledFontPath = path.join(/* turbopackIgnore: true */ process.cwd(), 'public', 'fonts', 'Poppins-ExtraBold.ttf');
   const fontSource = existsSync(bundledFontPath)
     ? `fontfile='${escapeDrawtextPathForFilter(bundledFontPath)}'`
     : "font='Arial Black'";
