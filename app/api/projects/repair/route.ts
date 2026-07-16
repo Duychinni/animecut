@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 
 type ExportRepairRow = {
   id?: string | null;
@@ -58,7 +59,7 @@ export async function POST() {
     const admin = createAdminClient();
     const { data: projects, error } = await admin
       .from('projects')
-      .select('id, user_id, status, pipeline_status, pipeline_stage_label, pipeline_completed_at, exports(id, status, output_storage_path, error_message, updated_at)')
+      .select('id, user_id, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_error, pipeline_completed_at, exports(id, status, output_storage_path, error_message, updated_at)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -132,6 +133,68 @@ export async function POST() {
         }
 
         continue;
+      }
+
+      // Heal projects stranded by the former synchronous render orchestrator.
+      // Only do this once: a genuinely failing source must not be retried on
+      // every dashboard visit forever.
+      const pipelineErrorInfo = getPipelineErrorInfo(project.pipeline_error);
+      const canRepairInterruptedPipeline = readyExports === 0
+        && activeRows.length === 0
+        && project.pipeline_status === 'error'
+        && pipelineErrorInfo.code === 'pipeline_paused';
+
+      if (canRepairInterruptedPipeline) {
+        const { data: latestPipelineJob } = await admin
+          .from('jobs')
+          .select('id, payload')
+          .eq('project_id', project.id)
+          .eq('type', 'pipeline')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const existingPayload = latestPipelineJob?.payload && typeof latestPipelineJob.payload === 'object'
+          ? latestPipelineJob.payload as Record<string, unknown>
+          : {};
+
+        if (existingPayload.repaired_after_async_render_fix !== true) {
+          const repairPayload = {
+            ...existingPayload,
+            project_id: project.id,
+            repaired_after_async_render_fix: true,
+          };
+
+          if (latestPipelineJob?.id) {
+            await admin
+              .from('jobs')
+              .update({ status: 'queued', attempts: 0, payload: repairPayload, updated_at: new Date().toISOString() })
+              .eq('id', latestPipelineJob.id);
+          } else {
+            await admin.from('jobs').insert({
+              project_id: project.id,
+              type: 'pipeline',
+              payload: repairPayload,
+              status: 'queued',
+            });
+          }
+
+          await admin
+            .from('projects')
+            .update({
+              status: 'processing',
+              pipeline_status: 'queued',
+              pipeline_stage: 'queued',
+              pipeline_stage_label: 'Resuming processing',
+              pipeline_error: null,
+              worker_last_log_message: 'Resuming after render orchestration update',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', project.id)
+            .eq('user_id', user.id);
+
+          repaired += 1;
+          continue;
+        }
       }
 
       // A settled partial batch is a valid finished project. Do not repeatedly

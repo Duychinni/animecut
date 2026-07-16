@@ -156,6 +156,7 @@ export default function ProjectsPage() {
             : p.pipeline_stage === 'downloading' ? 'Preparing source video'
             : p.pipeline_stage === 'extracting_audio' ? 'Extracting audio'
             : p.pipeline_stage === 'transcribing' ? 'Transcribing audio'
+            : p.pipeline_stage === 'diarizing' ? 'Identifying speakers'
             : p.pipeline_stage === 'finding_hooks' ? 'Finding hooks'
             : p.pipeline_stage === 'creating_clips' ? 'Creating top clip candidates'
             : p.pipeline_stage === 'rendering' ? 'Rendering clips'
@@ -163,7 +164,7 @@ export default function ProjectsPage() {
             : 'Processing');
           const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
           const etaLabel = showProcessing && typeof p.eta_seconds === 'number' && Number.isFinite(p.eta_seconds) && p.eta_seconds > 0
-            ? `ETA ${fmtDuration(p.eta_seconds)}`
+            ? `Approx. ETA ${fmtDuration(p.eta_seconds)}`
             : null;
 
           const cardBody = (

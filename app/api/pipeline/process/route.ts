@@ -21,7 +21,11 @@ const STEP_PROGRESS: Record<string, number> = {
 };
 
 const PIPELINE_MAX_ATTEMPTS = 3;
-const STALE_PIPELINE_JOB_MS = 90 * 1000;
+// Analysis can legitimately spend several minutes transcribing and scoring a
+// long source. A 90-second lease caused a second request to reclaim a healthy
+// job while the first request was still running. Keep this beyond the route's
+// maximum lifetime; genuinely abandoned jobs are recovered on the next pass.
+const STALE_PIPELINE_JOB_MS = 6 * 60 * 1000;
 
 function getInternalBaseUrls() {
   return [
@@ -406,115 +410,55 @@ export async function POST() {
 
     await updateProjectProgress(projectId, 'creating_clips', 'Creating top clip candidates');
 
-    for (let round = 0; round < 8; round += 1) {
-      await updateProjectProgress(projectId, 'rendering', `Queueing/rendering clips (pass ${round + 1})`);
-      let queueData: Record<string, unknown> = {};
-      try {
-        queueData = await callInternalJson('/api/clips/export', { project_id: projectId });
-        console.log('[pipeline] export-response', { projectId, round: round + 1, queueData });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Pipeline step failed: /api/clips/export';
-        console.error('[pipeline] export-call-failed', { projectId, round: round + 1, message, stack: error instanceof Error ? error.stack : null });
-        const alreadyQueuedLike = /duplicate|already exists|already queued|unique/i.test(message);
-        if (!alreadyQueuedLike) {
-          throw error;
-        }
-        queueData = { queued: 0, recovered: true };
-      }
-      const queued = Number(queueData?.queued ?? 0);
-      if (queued === 0 && queueData?.reason === 'no_valid_clips') {
-        const exportCounts = await getExportCounts(projectId);
-        if (exportCounts.done === 0 && exportCounts.active === 0) {
-          throw new Error('Analysis completed, but no exportable clips were queued for rendering.');
-        }
-      }
-
-      let idlePasses = 0;
-      for (let i = 0; i < 10; i += 1) {
-        let processed = 0;
-        let processOk = false;
-        let processError = 'Export processing failed';
-
-        for (const baseUrl of getInternalBaseUrls()) {
-          try {
-            const processRes = await fetch(`${baseUrl}/api/jobs/process`, {
-              method: 'POST',
-              cache: 'no-store',
-            });
-            const processData = await processRes.json().catch(() => ({}));
-            if (!processRes.ok) {
-              processError = typeof processData?.error === 'string' ? processData.error : 'Export processing failed';
-              continue;
-            }
-
-            processed = Number(processData?.processed ?? 0);
-            processOk = true;
-            break;
-          } catch (error: unknown) {
-            processError = error instanceof Error ? error.message : 'Export processing failed';
-          }
-        }
-
-        if (!processOk) {
-          throw new Error(processError);
-        }
-        if (processed === 0) {
-          idlePasses += 1;
-          if (idlePasses >= 3) break;
-        } else {
-          idlePasses = 0;
-        }
-      }
-
-      if (queued === 0) break;
+    await updateProjectProgress(projectId, 'rendering', 'Queueing reels for rendering');
+    let queueData: Record<string, unknown> = {};
+    try {
+      queueData = await callInternalJson('/api/clips/export', { project_id: projectId });
+      console.log('[pipeline] export-response', { projectId, queueData });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Pipeline step failed: /api/clips/export';
+      console.error('[pipeline] export-call-failed', { projectId, message, stack: error instanceof Error ? error.stack : null });
+      const alreadyQueuedLike = /duplicate|already exists|already queued|unique/i.test(message);
+      if (!alreadyQueuedLike) throw error;
+      queueData = { queued: 0, recovered: true };
     }
 
-    await updateProjectProgress(projectId, 'uploading_outputs', 'Finalizing reels');
-
-    const finalExportCounts = await getExportCounts(projectId);
-    if (finalExportCounts.active > 0) {
-      await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id);
-      return NextResponse.json({
-        ok: true,
-        processed: 1,
-        project_id: projectId,
-        waiting_for_exports: true,
-        export_counts: finalExportCounts,
-        analysis_diagnostics: analyzeData?.diagnostics ?? null,
-      });
+    const queued = Number(queueData?.queued ?? 0);
+    const exportCounts = await getExportCounts(projectId);
+    if (queued === 0 && exportCounts.done === 0 && exportCounts.active === 0) {
+      throw new Error('Analysis completed, but no exportable clips were queued for rendering.');
     }
 
-    if (finalExportCounts.done === 0) {
-      throw new Error('Rendering finished with no playable clips. No completed exports were found.');
-    }
-
-    const requiredExportCount = getClipPolicy(transcriptStats.policyDurationSeconds).targetMin;
-    if (finalExportCounts.done < requiredExportCount) {
-      throw new Error(`Rendering produced only ${finalExportCounts.done} of ${requiredExportCount} required playable reels.`);
-    }
-
+    // Rendering is intentionally not performed inside this request. A single
+    // project can contain many expensive FFmpeg jobs, which previously made
+    // this route exceed Vercel's request lifetime and left the project in an
+    // ambiguous error/processing state. Export workers own those jobs and
+    // maybeFinalizeProject durably completes the project after they settle.
+    const now = new Date().toISOString();
     await supabase
       .from('projects')
       .update({
-        pipeline_status: 'completed',
-        pipeline_stage: 'completed',
-        pipeline_stage_label: 'Completed',
-        pipeline_progress_percent: 100,
+        status: 'analyzed',
+        pipeline_status: 'processing',
+        pipeline_stage: 'rendering',
+        pipeline_stage_label: 'Rendering reels',
+        pipeline_progress_percent: 72,
         pipeline_error: null,
-        pipeline_completed_at: new Date().toISOString(),
-        worker_last_seen_at: new Date().toISOString(),
-        worker_last_log_message: 'Completed',
-        updated_at: new Date().toISOString(),
+        worker_last_seen_at: now,
+        worker_last_log_message: `Queued ${queued || exportCounts.active} reels for rendering`,
+        updated_at: now,
       })
       .eq('id', projectId);
 
-    await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', job.id);
+    await supabase.from('jobs').update({ status: 'done', updated_at: now }).eq('id', job.id);
 
     return NextResponse.json({
       ok: true,
       processed: 1,
       project_id: projectId,
-      export_counts: finalExportCounts,
+      waiting_for_exports: true,
+      queued_exports: queued,
+      export_counts: exportCounts,
       analysis_diagnostics: analyzeData?.diagnostics ?? null,
     });
   } catch (e: unknown) {

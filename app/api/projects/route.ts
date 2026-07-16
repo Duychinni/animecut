@@ -8,6 +8,7 @@ import { getOrCreateProfile, minutesRequiredFromSeconds } from '@/lib/billing';
 import { isMockAiEnabled } from '@/lib/dev-ai';
 import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
+import { getTargetClipCount } from '@/lib/clip-policy';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -46,6 +47,72 @@ function parseYouTubeId(url: string | null | undefined): string | null {
   }
 }
 
+function estimateDashboardEtaSeconds(params: {
+  status: string | null;
+  pipelineStatus: string | null;
+  pipelineStage: string | null;
+  progressPercent: number;
+  sourceDurationSeconds: number | null;
+  readyExports: number;
+  activeExports: number;
+  exportCount: number;
+}) {
+  const {
+    status,
+    pipelineStatus,
+    pipelineStage,
+    progressPercent,
+    sourceDurationSeconds,
+    readyExports,
+    activeExports,
+    exportCount,
+  } = params;
+
+  if (status === 'completed' || pipelineStatus === 'completed') return 0;
+  if (status === 'failed' || status === 'error' || pipelineStatus === 'error') return null;
+  if (pipelineStatus !== 'queued' && pipelineStatus !== 'processing') return null;
+
+  const sourceSeconds = Math.max(60, Number(sourceDurationSeconds) || 600);
+  const targetCount = Math.max(1, exportCount || getTargetClipCount(sourceSeconds));
+  const remainingExports = Math.max(0, targetCount - readyExports);
+  const renderParallelism = Math.max(1, Math.min(3, activeExports || 2));
+  const renderBudget = Math.max(35, Math.round((Math.max(1, remainingExports) * 50) / renderParallelism));
+  const stageBudgets: Record<string, number> = {
+    queued: 20,
+    downloading: Math.max(25, Math.min(90, Math.round(sourceSeconds * 0.06))),
+    extracting_audio: Math.max(20, Math.min(80, Math.round(sourceSeconds * 0.08))),
+    transcribing: Math.max(45, Math.min(240, Math.round(sourceSeconds * 0.22))),
+    diarizing: Math.max(25, Math.min(150, Math.round(sourceSeconds * 0.12))),
+    finding_hooks: Math.max(30, Math.min(120, Math.round(sourceSeconds * 0.1))),
+    creating_clips: 18,
+    face_tracking_crop: Math.max(15, Math.min(80, remainingExports * 8)),
+    rendering: renderBudget,
+    uploading_outputs: 12,
+  };
+  const stageStarts: Record<string, number> = {
+    queued: 0,
+    downloading: 5,
+    extracting_audio: 10,
+    transcribing: 25,
+    diarizing: 32,
+    finding_hooks: 40,
+    creating_clips: 55,
+    face_tracking_crop: 70,
+    rendering: 85,
+    uploading_outputs: 95,
+  };
+  const stageOrder = ['queued', 'downloading', 'extracting_audio', 'transcribing', 'diarizing', 'finding_hooks', 'creating_clips', 'face_tracking_crop', 'rendering', 'uploading_outputs'];
+  const effectiveStage = pipelineStage && stageBudgets[pipelineStage] ? pipelineStage : pipelineStatus === 'queued' ? 'queued' : 'transcribing';
+  const currentIndex = Math.max(0, stageOrder.indexOf(effectiveStage));
+  const stageStart = stageStarts[effectiveStage] ?? 0;
+  const nextStageStart = currentIndex + 1 < stageOrder.length ? (stageStarts[stageOrder[currentIndex + 1]] ?? 100) : 100;
+  const stageFraction = Math.max(0, Math.min(0.95, (progressPercent - stageStart) / Math.max(1, nextStageStart - stageStart)));
+  const currentRemaining = Math.max(5, Math.round((stageBudgets[effectiveStage] ?? 30) * (1 - stageFraction)));
+  const futureSeconds = stageOrder.slice(currentIndex + 1).reduce((total, stage) => total + (stageBudgets[stage] ?? 0), 0);
+
+  return Math.max(8, currentRemaining + futureSeconds);
+}
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -76,12 +143,27 @@ export async function GET() {
         ? stableYouTubeThumbnail(project.source_thumbnail_url, parseYouTubeId(project.source_url))
         : uploadThumbnailUrl || project.source_thumbnail_url;
       const expiryInfo = getProjectExpiryInfo(isCompleted ? (project.pipeline_completed_at || project.created_at) : null);
+      const progressPercent = isCompleted ? 100 : Number(project.pipeline_progress_percent ?? 0);
+      const normalizedStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'analyzed' : project.status;
+      const normalizedPipelineStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'processing' : project.pipeline_status;
+      const etaSeconds = estimateDashboardEtaSeconds({
+        status: normalizedStatus,
+        pipelineStatus: normalizedPipelineStatus,
+        pipelineStage: project.pipeline_stage,
+        progressPercent,
+        sourceDurationSeconds: project.source_duration_seconds,
+        readyExports,
+        activeExports,
+        exportCount: rows.length,
+      });
 
       return {
         ...project,
-        status: isCompleted ? 'completed' : needsExportCompletion ? 'analyzed' : project.status,
-        pipeline_status: isCompleted ? 'completed' : needsExportCompletion ? 'processing' : project.pipeline_status,
-        progress_percent: isCompleted ? 100 : Number(project.pipeline_progress_percent ?? 0),
+        status: normalizedStatus,
+        pipeline_status: normalizedPipelineStatus,
+        pipeline_error: activeExports > 0 || isCompleted ? null : project.pipeline_error,
+        progress_percent: progressPercent,
+        eta_seconds: etaSeconds,
         source_thumbnail_url: sourceThumbnailUrl,
         expires_at: expiryInfo.expires_at,
         days_until_expiring: expiryInfo.days_until_expiring,

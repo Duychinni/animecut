@@ -232,16 +232,6 @@ export default function DashboardPage() {
         const merged = projects.map((project) => {
           const previous = prev.find((p) => p.id === project.id);
           const update = progressUpdates.find((u) => u?.id === project.id);
-          const activeLive = previous && isActiveProject(previous);
-
-          if (activeLive && !update) {
-            return {
-              ...project,
-              ...previous,
-              optimistic: false,
-            } as ProjectListItem;
-          }
-
           if (update) {
             const previousProgress = previous ? getFlooredProgress(previous) : 0;
             const incomingProgress = Number(update.progress_percent ?? 0);
@@ -571,6 +561,7 @@ export default function DashboardPage() {
               ? (p.pipeline_stage === 'downloading' ? 'Preparing source video'
                 : p.pipeline_stage === 'extracting_audio' ? 'Extracting audio'
                 : p.pipeline_stage === 'transcribing' ? 'Transcribing audio'
+                : p.pipeline_stage === 'diarizing' ? 'Identifying speakers'
                 : p.pipeline_stage === 'finding_hooks' ? 'Finding hooks'
                 : p.pipeline_stage === 'creating_clips' ? 'Creating top clip candidates'
                 : p.pipeline_stage === 'rendering' ? 'Rendering clips'
@@ -582,7 +573,7 @@ export default function DashboardPage() {
           const pipelineJob = diagnostics?.latest_pipeline_job ?? null;
           const showDebug = false;
           const etaLabel = showProcessing && typeof p.eta_seconds === 'number' && Number.isFinite(p.eta_seconds) && p.eta_seconds > 0
-            ? `ETA ${fmtDuration(p.eta_seconds)}`
+            ? `Approx. ETA ${fmtDuration(p.eta_seconds)}`
             : null;
           const debugLine = diagnostics
             ? `${diagnostics.message || 'Waiting for backend update'} Last worker ${fmtDebugDuration(diagnostics.seconds_since_worker_heartbeat)} ago. Job ${pipelineJob?.status || 'none'}${pipelineJob?.attempts ? ` a${pipelineJob.attempts}` : ''}.`
