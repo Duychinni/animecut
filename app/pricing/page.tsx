@@ -129,7 +129,7 @@ export default async function PricingPage() {
 
         <section className="mx-auto mt-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5 text-center sm:flex-row sm:text-left">
           <div>
-            <p className="text-lg font-bold text-white">Need team access or more than 1,000 minutes?</p>
+            <p className="text-lg font-bold text-white">Need team access or more than 1,500 minutes?</p>
             <p className="mt-1 text-sm text-white/55">Talk with us about a custom plan for agencies and high-volume production.</p>
           </div>
           <Link href="/contact" className="shrink-0 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-sm font-bold text-white transition hover:border-white/30 hover:bg-white/[0.09]">
