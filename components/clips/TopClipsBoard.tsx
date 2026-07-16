@@ -717,6 +717,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const duration = playbackState?.duration ?? 0;
               const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
               const currentLabel = formatClock(current);
+              const paused = playbackState?.paused ?? true;
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
