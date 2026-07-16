@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-import { EXTRA_USAGE_PRICE_PER_MINUTE, FREE_TRIAL_MAX_UPLOAD_MINUTES, PLAN_CONFIG, type BillingInterval } from '@/lib/plans';
+import { PLAN_CONFIG, type BillingInterval } from '@/lib/plans';
 import { PricingCards } from '@/components/billing/PricingCards';
 import { createClient } from '@/lib/supabase/server';
 import { SignOutButton } from '@/components/auth/SignOutButton';
@@ -73,10 +73,14 @@ export default async function PricingPage() {
           <div className="flex items-center justify-end gap-2">
             {user ? (
               <>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
+                <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 lg:inline-flex">
                   <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">&#10022;</span>
                   <span>{minuteBalance.toLocaleString()} min</span>
                 </div>
+                <Link href="#plans" className="whitespace-nowrap rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-black transition hover:-translate-y-0.5 hover:bg-white/90">
+                  <span className="hidden xl:inline">Add more credits</span>
+                  <span className="xl:hidden">Add credits</span>
+                </Link>
                 <div className="group relative">
                   {avatarUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -111,21 +115,11 @@ export default async function PricingPage() {
             </span>
           </h1>
 
-          <div className="mx-auto mt-8 grid max-w-3xl gap-3 text-left sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ff8bd9]">Free test</p>
-              <p className="mt-2 text-lg font-bold text-white">One source video up to {FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes</p>
-              <p className="mt-1 text-sm text-white/55">No subscription required. Sign in and see your clips first.</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ffb45f]">Need more?</p>
-              <p className="mt-2 text-lg font-bold text-white">Extra usage at ${EXTRA_USAGE_PRICE_PER_MINUTE.toFixed(2)} per minute</p>
-              <p className="mt-1 text-sm text-white/55">A consistent additional-usage rate across every paid plan.</p>
-            </div>
-          </div>
         </section>
 
-        <PricingCards plans={PLAN_CONFIG} interval={interval} />
+        <div id="plans" className="scroll-mt-8">
+          <PricingCards plans={PLAN_CONFIG} interval={interval} />
+        </div>
 
         <section className="mx-auto mt-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5 text-center sm:flex-row sm:text-left">
           <div>

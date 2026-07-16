@@ -74,9 +74,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </nav>
 
             <div className="flex items-center justify-end gap-2">
-              <Link href="/pricing" className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 transition hover:border-[#ff7bd8]/55 hover:bg-[#ff7bd8]/10 hover:text-white">
+              <Link href="/pricing" className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 transition hover:border-[#ff7bd8]/55 hover:bg-[#ff7bd8]/10 hover:text-white xl:inline-flex">
                 <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                 <span>{allowanceLabel}</span>
+              </Link>
+              <Link href="/pricing#plans" className="whitespace-nowrap rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-black transition hover:-translate-y-0.5 hover:bg-white/90">
+                <span className="hidden xl:inline">Add more credits</span>
+                <span className="xl:hidden">Add credits</span>
               </Link>
               <div className="group relative">
                 {avatarUrl ? (

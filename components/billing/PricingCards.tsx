@@ -47,22 +47,17 @@ function PlanCard({
         {suffix ? <span className="pb-1 text-sm text-white/60">{suffix}</span> : null}
       </div>
 
-      <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-        <p className="text-3xl font-black tracking-tight text-white">{plan.processingMinutes.toLocaleString()}</p>
-        <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-white/50">source-video minutes / month</p>
-      </div>
-
-      <div className="mt-3 min-h-[64px]">
+      <div className="mt-5 min-h-[48px]">
         {plan.secondaryCta ? <p className="text-sm text-white/58">{plan.secondaryCta}</p> : null}
       </div>
 
       <PricingActions plan={plan} interval={interval} selected={selected} onSelect={onSelect} />
 
       <ul className="mt-6 space-y-3 text-sm text-white/80">
-        {features.map((feature) => (
-          <li key={feature} className="flex gap-3">
-            <span className="mt-[2px] text-[#ffd84d]">✓</span>
-            <span>{feature}</span>
+        {features.map((feature, index) => (
+          <li key={feature} className={`flex gap-3 ${index === 0 ? 'font-extrabold text-white' : ''}`}>
+            <span className={`mt-[2px] ${index === 0 ? 'text-white' : 'text-[#ffd84d]'}`}>&#10003;</span>
+            <span className={index === 0 ? 'drop-shadow-[0_0_12px_rgba(255,255,255,0.28)]' : undefined}>{feature}</span>
           </li>
         ))}
       </ul>

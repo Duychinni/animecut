@@ -136,6 +136,7 @@ export default function DashboardPage() {
   const progressFloorRef = useRef<Map<string, number>>(new Map());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const repairRanRef = useRef(false);
+  const loadInFlightRef = useRef(false);
 
   function persistProgressFloor() {
     try {
@@ -144,16 +145,6 @@ export default function DashboardPage() {
     } catch {
       // ignore persistence errors
     }
-  }
-
-  function applyProgressFloor(projectId: string, nextPercent: number, status?: string | null) {
-    const normalized = Math.max(0, Math.min(100, Number.isFinite(nextPercent) ? nextPercent : 0));
-    const isCompleted = status === 'completed' || normalized >= 100;
-    const previous = isCompleted ? (progressFloorRef.current.get(projectId) ?? 0) : Math.min(98, progressFloorRef.current.get(projectId) ?? 0);
-    const floored = isCompleted ? 100 : Math.min(98, Math.max(previous, normalized));
-    progressFloorRef.current.set(projectId, isCompleted ? 100 : floored);
-    persistProgressFloor();
-    return isCompleted ? 100 : floored;
   }
 
   function getFlooredProgress(project: ProjectListItem) {
@@ -179,11 +170,13 @@ export default function DashboardPage() {
   }, []);
 
   async function loadProjects(initial = false) {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     if (initial) setLoadingProjects(true);
     try {
       if (initial && !repairRanRef.current) {
         repairRanRef.current = true;
-        await fetch('/api/projects/repair', { method: 'POST', credentials: 'include', cache: 'no-store' }).catch(() => null);
+        void fetch('/api/projects/repair', { method: 'POST', credentials: 'include', cache: 'no-store' }).catch(() => null);
       }
 
       const res = await fetch('/api/projects', { credentials: 'include', cache: 'no-store' });
@@ -211,37 +204,29 @@ export default function DashboardPage() {
       };
 
       const baseProjects = (initial || recentProjects.length === 0)
-        ? (projects.map((p) => ({
-            ...p,
-            thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
-            progress_percent: isCompletedProject(p) ? 100 : Math.min(98, Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0))),
-          })) as ProjectListItem[])
+        ? (projects.map((p) => {
+            const progressPercent = isCompletedProject(p)
+              ? 100
+              : Math.min(98, Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0)));
+            progressFloorRef.current.set(p.id, progressPercent);
+            return {
+              ...p,
+              thumbnail_url: p.source_thumbnail_url ?? p.thumbnail_url ?? null,
+              progress_percent: progressPercent,
+            };
+          }) as ProjectListItem[])
         : recentProjects;
+
+      persistProgressFloor();
 
       if (initial || recentProjects.length === 0) {
         const sortedSeeded = sortByQueue(baseProjects);
         setRecentProjects(sortedSeeded);
       }
 
-      const processingIds = (baseProjects.length ? baseProjects : projects)
-        .filter((p) => isActiveProject(p) || (!isCompletedProject(p) && !p.optimistic))
-        .slice(0, 6)
-        .map((p) => p.id);
-
-      const progressUpdates = await Promise.all(
-        processingIds.map(async (id) => {
-          const live = await fetchProjectProgress(id);
-          if (!live) return null;
-          return {
-            ...live,
-            progress_percent: applyProgressFloor(
-              id,
-              Number(live.progress_percent ?? 0),
-              typeof live.status === 'string' ? live.status : null,
-            ),
-          };
-        }),
-      );
+      // The project list endpoint already returns status, stage, progress, and
+      // thumbnails. Avoid a second request per project on every dashboard poll.
+      const progressUpdates: Array<Awaited<ReturnType<typeof fetchProjectProgress>>> = [];
 
       setRecentProjects((prev) => {
         const merged = projects.map((project) => {
@@ -288,6 +273,7 @@ export default function DashboardPage() {
         return sortedMerged;
       });
     } finally {
+      loadInFlightRef.current = false;
       if (initial) setLoadingProjects(false);
     }
   }
@@ -335,9 +321,11 @@ export default function DashboardPage() {
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
       if (!hasProcessingRef.current) return;
-      await fetch('/api/pipeline/process', { method: 'POST' }).catch(() => null);
-      await fetch('/api/jobs/process', { method: 'POST' }).catch(() => null);
       await loadProjects();
+      void Promise.allSettled([
+        fetch('/api/pipeline/process', { method: 'POST' }),
+        fetch('/api/jobs/process', { method: 'POST' }),
+      ]);
     };
 
     const onVisibility = () => {
@@ -350,7 +338,7 @@ export default function DashboardPage() {
 
     const timer = setInterval(() => {
       void tick();
-    }, 3500);
+    }, 5000);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {

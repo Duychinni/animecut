@@ -6,7 +6,7 @@ import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
-import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type MeResponse = {
@@ -195,25 +195,6 @@ function makeProjectTitle() {
   return 'MAIN PROJECTS';
 }
 
-function shuffleAllShowcaseCards(previous: number[]) {
-  if (previous.length <= 1) return previous;
-
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const next = [...previous];
-    for (let i = next.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [next[i], next[j]] = [next[j], next[i]];
-    }
-
-    if (next.every((value, index) => value !== previous[index])) {
-      return next;
-    }
-  }
-
-  const shift = 1 + Math.floor(Math.random() * (previous.length - 1));
-  return [...previous.slice(shift), ...previous.slice(0, shift)];
-}
-
 function getPlatformTone(platform: ShowcaseClip['platform']) {
   switch (platform) {
     case 'TikTok':
@@ -347,9 +328,6 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [liveShowcaseClips, setLiveShowcaseClips] = useState<ShowcaseClip[]>([]);
-  const [showcaseOrder, setShowcaseOrder] = useState(() => Array.from({ length: SHOWCASE_CARD_COUNT }, (_, index) => index));
-  const showcaseCardRefs = useRef(new Map<string, HTMLDivElement>());
-  const previousShowcaseRectsRef = useRef<Map<string, DOMRect> | null>(null);
   const activeShowcaseClips = useMemo(() => {
     if (!liveShowcaseClips.length) return showcaseClips;
 
@@ -367,67 +345,6 @@ export default function Home() {
   function getShowcaseKey(clip: ShowcaseClip) {
     return clip.id ?? clip.title;
   }
-
-  function captureShowcaseRects() {
-    const rects = new Map<string, DOMRect>();
-    showcaseCardRefs.current.forEach((element, key) => {
-      rects.set(key, element.getBoundingClientRect());
-    });
-    return rects;
-  }
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      previousShowcaseRectsRef.current = captureShowcaseRects();
-      setShowcaseOrder(shuffleAllShowcaseCards);
-    }, 5000);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useLayoutEffect(() => {
-    const previousRects = previousShowcaseRectsRef.current;
-    if (!previousRects) return;
-    previousShowcaseRectsRef.current = null;
-
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    const frameIds: number[] = [];
-    const timeoutIds: number[] = [];
-
-    showcaseCardRefs.current.forEach((element, key) => {
-      const previousRect = previousRects.get(key);
-      if (!previousRect) return;
-
-      const nextRect = element.getBoundingClientRect();
-      const deltaX = previousRect.left - nextRect.left;
-      const deltaY = previousRect.top - nextRect.top;
-      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
-
-      element.style.transition = 'none';
-      element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-      element.style.zIndex = '20';
-      element.getBoundingClientRect();
-
-      const frameId = window.requestAnimationFrame(() => {
-        element.style.transition = 'transform 900ms cubic-bezier(0.22, 1, 0.36, 1), border-color 240ms ease, box-shadow 240ms ease';
-        element.style.transform = 'translate(0, 0)';
-
-        const timeoutId = window.setTimeout(() => {
-          element.style.transition = '';
-          element.style.transform = '';
-          element.style.zIndex = '';
-        }, 950);
-        timeoutIds.push(timeoutId);
-      });
-      frameIds.push(frameId);
-    });
-
-    return () => {
-      frameIds.forEach((id) => window.cancelAnimationFrame(id));
-      timeoutIds.forEach((id) => window.clearTimeout(id));
-    };
-  }, [showcaseOrder]);
 
   useEffect(() => {
     let isMounted = true;
@@ -464,8 +381,7 @@ export default function Home() {
 
   useEffect(() => {
     let isMounted = true;
-
-    (async () => {
+    const loadShowcase = async () => {
       try {
         const res = await fetch('/api/showcase', { credentials: 'include', cache: 'no-store' });
         if (!res.ok) return;
@@ -476,10 +392,18 @@ export default function Home() {
       } catch {
         // fall back to static showcase cards
       }
-    })();
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(() => void loadShowcase(), { timeout: 1200 });
+    const timer = idleId == null ? window.setTimeout(() => void loadShowcase(), 600) : null;
 
     return () => {
       isMounted = false;
+      if (idleId != null) idleWindow.cancelIdleCallback?.(idleId);
+      if (timer != null) window.clearTimeout(timer);
     };
   }, []);
 
@@ -672,10 +596,14 @@ export default function Home() {
           <div className="flex items-center justify-end gap-2">
             {userLabel ? (
               <>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
+                <div className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 xl:inline-flex">
                   <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                   <span>{allowanceLabel}</span>
                 </div>
+                <Link href="/pricing#plans" className="whitespace-nowrap rounded-lg bg-white px-3 py-2 text-xs font-extrabold text-black transition hover:-translate-y-0.5 hover:bg-white/90">
+                  <span className="hidden xl:inline">Add more credits</span>
+                  <span className="xl:hidden">Add credits</span>
+                </Link>
                 <div className="group relative">
                   {avatarUrl ? (
                     <Image
@@ -814,18 +742,9 @@ export default function Home() {
           <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
               {activeShowcaseClips.map((clip, clipIndex) => {
                 const clipKey = getShowcaseKey(clip);
-                const displayPosition = showcaseOrder.indexOf(clipIndex);
                 return (
                 <div
                   key={clipKey}
-                  style={{ order: displayPosition === -1 ? clipIndex : displayPosition }}
-                  ref={(element) => {
-                    if (element) {
-                      showcaseCardRefs.current.set(clipKey, element);
-                    } else {
-                      showcaseCardRefs.current.delete(clipKey);
-                    }
-                  }}
                   className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-500 ease-out hover:-translate-y-3 hover:scale-[1.025] hover:border-white/28 hover:shadow-[0_26px_70px_rgba(139,124,255,0.2)]"
                 >
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
@@ -844,6 +763,7 @@ export default function Home() {
                             src={clip.mediaUrl}
                             title={clip.title}
                             allow="autoplay; encrypted-media"
+                            loading="lazy"
                             tabIndex={-1}
                             aria-hidden="true"
                             className="hero-showcase-youtube pointer-events-none absolute left-1/2 top-[54%] h-[122%] w-[350%] -translate-x-1/2 -translate-y-1/2 border-0"
@@ -851,14 +771,14 @@ export default function Home() {
                         ) : (
                           <video
                             src={clip.mediaUrl}
-                            autoPlay
+                            autoPlay={clipIndex < 2}
                             muted
                             loop
                             playsInline
                             disablePictureInPicture
                             controls={false}
                             controlsList="nofullscreen nodownload noremoteplayback"
-                            preload="auto"
+                            preload={clipIndex < 2 ? 'auto' : 'metadata'}
                             onLoadedMetadata={(event) => {
                               const start = Math.max(0, Number(clip.startSeconds ?? 0));
                               if (start > 0 && Number.isFinite(event.currentTarget.duration)) {
@@ -867,10 +787,14 @@ export default function Home() {
                               for (let index = 0; index < event.currentTarget.textTracks.length; index += 1) {
                                 event.currentTarget.textTracks[index].mode = 'disabled';
                               }
-                              void event.currentTarget.play().catch(() => undefined);
+                              if (clipIndex < 2) void event.currentTarget.play().catch(() => undefined);
                             }}
                             onCanPlay={(event) => {
-                              void event.currentTarget.play().catch(() => undefined);
+                              if (clipIndex < 2) void event.currentTarget.play().catch(() => undefined);
+                            }}
+                            onPointerEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
+                            onPointerLeave={(event) => {
+                              if (clipIndex >= 2) event.currentTarget.pause();
                             }}
                             onPlaying={(event) => {
                               event.currentTarget.style.opacity = '1';
