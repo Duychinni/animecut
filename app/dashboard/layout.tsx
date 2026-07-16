@@ -51,6 +51,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const allowanceLabel = subscriptionPlan === 'free'
     ? freeUploadsRemaining > 0 ? '1 free test · up to 20 min' : 'Free test used'
     : `${processingMinutesRemaining.toLocaleString()} min left`;
+  const showUpgradeNotice = subscriptionPlan === 'free' && freeUploadsRemaining === 0;
+  const showLowMinutesNotice = subscriptionPlan !== 'free' && processingMinutesRemaining <= 10;
 
   return (
     <div className="app-shell min-h-screen text-white">
@@ -72,10 +74,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </nav>
 
             <div className="flex items-center justify-end gap-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
+              <Link href="/pricing" className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 transition hover:border-[#ff7bd8]/55 hover:bg-[#ff7bd8]/10 hover:text-white">
                 <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                 <span>{allowanceLabel}</span>
-              </div>
+              </Link>
               <div className="group relative">
                 {avatarUrl ? (
                   <Image
@@ -108,6 +110,27 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="mt-5 flex justify-center">
             <ProjectQuickStart compact />
           </div>
+
+          {(showUpgradeNotice || showLowMinutesNotice) ? (
+            <div className="mx-auto mt-4 flex max-w-2xl flex-col items-center justify-between gap-3 rounded-2xl border border-[#ff7bd8]/25 bg-[linear-gradient(110deg,rgba(181,109,255,0.12),rgba(255,99,195,0.10),rgba(255,179,71,0.08))] px-4 py-3 text-center shadow-[0_16px_42px_rgba(0,0,0,0.22)] sm:flex-row sm:text-left">
+              <div>
+                <p className="text-sm font-bold text-white">
+                  {showUpgradeNotice ? 'Ready to create more clips?' : 'Your processing minutes are running low.'}
+                </p>
+                <p className="mt-0.5 text-xs leading-5 text-white/65">
+                  {showUpgradeNotice
+                    ? 'Subscribe to unlock more video processing minutes and keep creating reels.'
+                    : `You have ${processingMinutesRemaining.toLocaleString()} minutes remaining. Add more by upgrading your plan.`}
+                </p>
+              </div>
+              <Link
+                href="/pricing"
+                className="shrink-0 rounded-xl bg-white px-4 py-2 text-sm font-bold text-black transition hover:-translate-y-0.5 hover:bg-white/90"
+              >
+                View plans
+              </Link>
+            </div>
+          ) : null}
         </div>
       </header>
       {children}

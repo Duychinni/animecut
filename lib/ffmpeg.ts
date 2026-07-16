@@ -12,12 +12,15 @@ const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
 const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v12-full-canvas-context';
-const DEFAULT_X264_CRF = '12';
-const DEFAULT_X264_MAXRATE = '50M';
-const DEFAULT_X264_BUFSIZE = '100M';
-const DEFAULT_HW_VIDEO_BITRATE = '50M';
-const DEFAULT_HW_MAXRATE = '60M';
-const DEFAULT_HW_BUFSIZE = '120M';
+// Customer exports are streamed directly in the browser. The former 50-60 Mbps
+// envelope created unnecessarily large reels that buffered between card clicks.
+// Keep the 1080x1920 frame while using a web/social-video-friendly bitrate.
+const DEFAULT_X264_CRF = '20';
+const DEFAULT_X264_MAXRATE = '8M';
+const DEFAULT_X264_BUFSIZE = '16M';
+const DEFAULT_HW_VIDEO_BITRATE = '8M';
+const DEFAULT_HW_MAXRATE = '10M';
+const DEFAULT_HW_BUFSIZE = '20M';
 const HIGH_QUALITY_SCALE_FLAGS = 'lanczos+accurate_rnd+full_chroma_int';
 const SHARPEN_AFTER_UPSCALE_FILTER = 'unsharp=5:5:0.55:3:3:0.25';
 const MAX_EXTRA_SMART_CROP_UPSCALE = 1.04;
@@ -2002,9 +2005,10 @@ export async function renderVerticalClip(opts: RenderOpts) {
 
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || 'libx264').trim();
   const configuredPreset = (opts.fastRender ? process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast' : process.env.FFMPEG_X264_PRESET || 'medium').trim();
-  const configuredCrf = (process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF).trim();
-  const configuredX264Maxrate = (process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE).trim();
-  const configuredX264Bufsize = (process.env.FFMPEG_X264_BUFSIZE || DEFAULT_X264_BUFSIZE).trim();
+  const allowOversizedExports = process.env.FFMPEG_ALLOW_OVERSIZED_EXPORTS === 'true';
+  const configuredCrf = (allowOversizedExports ? process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF : DEFAULT_X264_CRF).trim();
+  const configuredX264Maxrate = (allowOversizedExports ? process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE : DEFAULT_X264_MAXRATE).trim();
+  const configuredX264Bufsize = (allowOversizedExports ? process.env.FFMPEG_X264_BUFSIZE || DEFAULT_X264_BUFSIZE : DEFAULT_X264_BUFSIZE).trim();
 
   const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
   if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
@@ -2100,7 +2104,11 @@ export async function renderVerticalClip(opts: RenderOpts) {
         '-profile:v',
         'high',
         '-level',
-        '5.1',
+        '4.2',
+        '-g',
+        '60',
+        '-keyint_min',
+        '30',
         '-threads',
         '0',
       );
@@ -2108,11 +2116,11 @@ export async function renderVerticalClip(opts: RenderOpts) {
       // Hardware encoders (nvenc/qsv/videotoolbox) usually ignore CRF/preset semantics.
       common.push(
         '-b:v',
-        process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE,
+        allowOversizedExports ? process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE : DEFAULT_HW_VIDEO_BITRATE,
         '-maxrate',
-        process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE,
+        allowOversizedExports ? process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE : DEFAULT_HW_MAXRATE,
         '-bufsize',
-        process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE,
+        allowOversizedExports ? process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE : DEFAULT_HW_BUFSIZE,
       );
     }
 
@@ -2122,7 +2130,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
       '-c:a',
       'aac',
       '-b:a',
-      '192k',
+      '128k',
       '-movflags',
       '+faststart',
       effectiveOpts.outputPath,

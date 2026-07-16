@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
-import { createExportSignedUrl } from '@/lib/storage';
+import { createExportSignedUrls } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -170,27 +170,19 @@ export default async function ProjectDetailPage({
 
   const candidatesById = new Map<string, CandidateRow>(((candidateRows ?? []) as CandidateRow[]).map((c) => [String(c.id), c]));
 
-  const exportItems = await Promise.all(
-    ((exportsRows ?? []) as ExportRow[]).map(async (row) => {
-      let signedUrl: string | null = null;
-      let posterUrl: string | null = null;
-      const isMockExport = Boolean(row.output_storage_path?.startsWith('mock://'));
-      if (row.output_storage_path && !row.output_storage_path.startsWith('/') && !isMockExport) {
-        try {
-          signedUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
-        } catch {
-          signedUrl = null;
-        }
+  const exportRows = (exportsRows ?? []) as ExportRow[];
+  const signablePaths = exportRows.flatMap((row) => {
+    const outputPath = row.output_storage_path;
+    if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return [];
+    const posterPath = getExportPosterPath(outputPath);
+    return posterPath ? [outputPath, posterPath] : [outputPath];
+  });
+  const signedUrls = await createExportSignedUrls(signablePaths, 60 * 60).catch(() => new Map<string, string>());
 
-        const posterPath = getExportPosterPath(row.output_storage_path);
-        if (posterPath) {
-          try {
-            posterUrl = await createExportSignedUrl(posterPath, 60 * 60);
-          } catch {
-            posterUrl = null;
-          }
-        }
-      }
+  const exportItems = exportRows.map((row) => {
+    const signedUrl = row.output_storage_path ? signedUrls.get(row.output_storage_path) ?? null : null;
+    const posterPath = row.output_storage_path ? getExportPosterPath(row.output_storage_path) : null;
+    const posterUrl = posterPath ? signedUrls.get(posterPath) ?? null : null;
 
       const candidate = row.clip_candidate_id ? candidatesById.get(String(row.clip_candidate_id)) : undefined;
 
@@ -217,8 +209,7 @@ export default async function ProjectDetailPage({
         hookStrength: candidate ? Number(candidate.hook_strength) : null,
         rank: candidate?.rank ?? null,
       };
-    }),
-  );
+  });
 
   const filteredExportItems = exportItems
     .filter((row, index, arr) => {

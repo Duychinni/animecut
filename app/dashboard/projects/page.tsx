@@ -20,6 +20,7 @@ type ProjectListItem = {
   source_url?: string | null;
   created_at: string;
   thumbnail_url?: string | null;
+  source_thumbnail_url?: string | null;
   progress_percent?: number;
   eta_seconds?: number | null;
   pipeline_status?: string | null;
@@ -52,44 +53,29 @@ export default function ProjectsPage() {
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
   const repairRanRef = useRef(false);
+  const loadInFlightRef = useRef(false);
 
-  async function loadProjects() {
-    setLoadingProjects(true);
+  async function loadProjects(background = false) {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+    if (!background) setLoadingProjects(true);
     try {
       if (!repairRanRef.current) {
         repairRanRef.current = true;
-        await fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+        void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
       }
 
-      const res = await fetch('/api/projects');
+      const res = await fetch('/api/projects', { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
         setMsg(`Could not load projects: ${data.error || 'unknown'}`);
         return;
       }
 
-      const projects = ((data.projects ?? []) as ProjectListItem[]).slice(0, 24);
-      const enriched = await Promise.all(
-        projects.map(async (p) => {
-          try {
-            const pr = await fetch(`/api/projects/${p.id}/progress`, { cache: 'no-store' });
-            const prData = await pr.json();
-            if (!pr.ok) return p;
-            return {
-              ...p,
-              status: String(prData?.project?.status ?? p.status),
-              thumbnail_url: prData?.project?.thumbnail_url ?? null,
-              progress_percent: Number(prData?.progress?.percent ?? 0),
-              eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
-              pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
-              pipeline_stage: typeof prData?.project?.pipeline_stage === 'string' ? prData.project.pipeline_stage : null,
-              pipeline_stage_label: typeof prData?.project?.pipeline_stage_label === 'string' ? prData.project.pipeline_stage_label : null,
-            } as ProjectListItem;
-          } catch {
-            return p;
-          }
-        }),
-      );
+      const enriched = ((data.projects ?? []) as ProjectListItem[]).slice(0, 24).map((project) => ({
+        ...project,
+        thumbnail_url: project.thumbnail_url ?? project.source_thumbnail_url ?? null,
+      }));
 
       hasProcessingRef.current = enriched.some((p) => {
         const pct = Number(p.progress_percent ?? (isCompletedProject(p) ? 100 : 0));
@@ -98,7 +84,8 @@ export default function ProjectsPage() {
 
       setRecentProjects(enriched);
     } finally {
-      setLoadingProjects(false);
+      loadInFlightRef.current = false;
+      if (!background) setLoadingProjects(false);
     }
   }
 
@@ -106,7 +93,7 @@ export default function ProjectsPage() {
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
       if (!hasProcessingRef.current) return;
-      await loadProjects();
+      await loadProjects(true);
     };
 
     void loadProjects();

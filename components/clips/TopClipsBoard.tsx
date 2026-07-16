@@ -614,8 +614,14 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   useEffect(() => {
     // Warm the highest-ranked reels during idle time. Preloading every export
     // at once competes for bandwidth and makes the whole grid slower; warming
-    // a small leading set makes the most likely first interactions immediate.
-    const warm = () => visible.slice(0, 3).forEach((clip) => primeVideo(clip.exportId, 'auto'));
+    // only the first two prevents large MP4s from saturating the connection.
+    const warm = () => {
+      // Give the first reel priority, then warm its nearest neighbor. Remaining
+      // reels switch to auto preload on hover, focus, or pointer-down.
+      visible.slice(0, 2).forEach((clip, index) => {
+        window.setTimeout(() => primeVideo(clip.exportId, 'auto'), index * 350);
+      });
+    };
     const windowWithIdle = window as Window & {
       requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -851,7 +857,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload={clipIndex < 3 ? 'auto' : 'metadata'}
+                          preload={clipIndex < 2 ? 'auto' : 'metadata'}
                           playsInline
                           controls={false}
                           disablePictureInPicture
@@ -866,6 +872,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                               paused: v.paused,
                               volume: v.volume ?? 1,
                             });
+                          }}
+                          onCanPlay={() => {
+                            const nextClip = visible[clipIndex + 1];
+                            if (nextClip && clipIndex === 0) primeVideo(nextClip.exportId, 'auto');
                           }}
                           onTimeUpdate={(e) => {
                             const v = e.currentTarget;

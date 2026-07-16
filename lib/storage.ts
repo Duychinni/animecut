@@ -143,6 +143,22 @@ export async function createExportSignedUrl(objectPath: string, expiresIn = 60 *
   return data.signedUrl;
 }
 
+export async function createExportSignedUrls(objectPaths: string[], expiresIn = 60 * 60) {
+  const paths = [...new Set(objectPaths.filter(Boolean))];
+  const signedUrls = new Map<string, string>();
+  if (paths.length === 0) return signedUrls;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.storage.from(EXPORT_BUCKET).createSignedUrls(paths, expiresIn);
+  if (error) throw error;
+
+  for (const item of data ?? []) {
+    if (item.path && item.signedUrl) signedUrls.set(item.path, item.signedUrl);
+  }
+
+  return signedUrls;
+}
+
 export async function createRawMediaSignedUrl(objectPath: string, expiresIn = 60 * 60) {
   if (getUploadProvider() === 'r2' && isR2Configured()) {
     return createSignedR2GetUrl(objectPath, expiresIn);
