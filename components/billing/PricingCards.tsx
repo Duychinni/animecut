@@ -16,36 +16,40 @@ function PlanCard({
   selected: boolean;
   onSelect: (planId: string) => void;
 }) {
-  const showingYearly = interval === 'yearly' && plan.yearlyPrice;
-  const price = showingYearly ? plan.yearlyPrice : plan.monthlyPrice;
-  const suffix = plan.isSalesOnly ? '' : showingYearly ? '/yr' : '/mo';
+  const price = plan.monthlyPrice;
+  const suffix = '/month';
   const features = buildPlanFeatures(plan);
   const emphasized = selected;
 
   return (
     <article
       onClick={() => onSelect(plan.id)}
-      className={`flex h-full cursor-pointer flex-col rounded-[28px] border p-6 backdrop-blur-sm transition duration-200 ${
+      className={`relative flex h-full cursor-pointer flex-col overflow-hidden rounded-[28px] border p-6 backdrop-blur-sm transition duration-200 ${
         emphasized
-          ? 'scale-[1.02] border-white/30 bg-white/[0.07] shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_30px_80px_rgba(0,0,0,0.35)]'
+          ? 'scale-[1.02] border-[#ff7bd8]/45 bg-[linear-gradient(160deg,rgba(181,109,255,0.13),rgba(255,99,195,0.08),rgba(255,255,255,0.04))] shadow-[0_0_0_1px_rgba(255,123,216,0.10),0_30px_80px_rgba(0,0,0,0.35)]'
           : 'border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
       }`}
     >
+      {plan.highlighted ? (
+        <div className="absolute right-5 top-5 rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#ff9bdf]">
+          Most popular
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white">{plan.name}</h2>
           <p className="mt-2 text-sm text-white/60">{plan.subtitle}</p>
         </div>
-        {showingYearly && plan.yearlyBadge ? (
-          <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-            {plan.yearlyBadge}
-          </span>
-        ) : null}
       </div>
 
       <div className="mt-6 flex items-end gap-1">
         <span className="text-5xl font-black tracking-tight text-white">{price}</span>
         {suffix ? <span className="pb-1 text-sm text-white/60">{suffix}</span> : null}
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+        <p className="text-3xl font-black tracking-tight text-white">{plan.processingMinutes.toLocaleString()}</p>
+        <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-white/50">source-video minutes / month</p>
       </div>
 
       <div className="mt-3 min-h-[64px]">
@@ -70,7 +74,7 @@ export function PricingCards({ plans, interval }: { plans: PlanConfig[]; interva
   const [selectedPlanId, setSelectedPlanId] = useState(plans.find((plan) => plan.highlighted)?.id ?? plans[0]?.id ?? '');
 
   return (
-    <section className="mt-14 grid items-stretch gap-6 lg:grid-cols-3">
+    <section className="mt-10 grid items-stretch gap-6 lg:grid-cols-3">
       {plans.map((plan) => (
         <PlanCard
           key={plan.id}

@@ -49,7 +49,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1));
   const processingMinutesRemaining = Math.max(0, Math.floor(Number(profile?.processing_minutes_remaining ?? 0)));
   const allowanceLabel = subscriptionPlan === 'free'
-    ? freeUploadsRemaining > 0 ? '1 free test · up to 20 min' : 'Free test used'
+    ? freeUploadsRemaining > 0 ? '1 free test · up to 10 min' : 'Free test used'
     : `${processingMinutesRemaining.toLocaleString()} min left`;
   const showUpgradeNotice = subscriptionPlan === 'free' && freeUploadsRemaining === 0;
   const showLowMinutesNotice = subscriptionPlan !== 'free' && processingMinutesRemaining <= 10;

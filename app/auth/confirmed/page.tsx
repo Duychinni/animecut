@@ -27,7 +27,7 @@ export default async function EmailConfirmedPage() {
             <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Your AnimaCut account is ready.</h1>
             <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-white/65 sm:text-base">
               {user?.email
-                ? `${user.email} has been verified. You can now use your free test project with up to 20 minutes of source video.`
+                ? `${user.email} has been verified. You can now use your free test project with up to 10 minutes of source video.`
                 : 'Your email confirmation link was accepted. Sign in to start your free test project.'}
             </p>
 

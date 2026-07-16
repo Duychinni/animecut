@@ -129,7 +129,7 @@ export async function POST(req: Request) {
     const profile = await getOrCreateProfile(user.id);
 
     const planId = (profile?.subscription_plan ?? 'free') as PlanId;
-    const configuredPlan = planId === 'starter' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;
+    const configuredPlan = planId === 'starter' || planId === 'creator' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;
     if (planId === 'free' && parsed.source_type === 'youtube' && !sourceMeta.sourceDurationSeconds && parsed.source_url) {
       sourceMeta.sourceDurationSeconds = await fetchYouTubeDurationSeconds(parsed.source_url);
     }

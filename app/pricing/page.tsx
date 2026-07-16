@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
-import { PLAN_CONFIG, type BillingInterval } from '@/lib/plans';
+import { EXTRA_USAGE_PRICE_PER_MINUTE, FREE_TRIAL_MAX_UPLOAD_MINUTES, PLAN_CONFIG, type BillingInterval } from '@/lib/plans';
 import { PricingCards } from '@/components/billing/PricingCards';
 import { createClient } from '@/lib/supabase/server';
 import { SignOutButton } from '@/components/auth/SignOutButton';
@@ -33,14 +33,8 @@ function getInitials(name: string) {
   return name.charAt(0).toUpperCase();
 }
 
-export default async function PricingPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ interval?: string }>;
-}) {
-  const { interval: rawInterval } = await searchParams;
-  const interval: BillingInterval = rawInterval === 'yearly' ? 'yearly' : 'monthly';
-
+export default async function PricingPage() {
+  const interval: BillingInterval = 'monthly';
   const supabase = await createClient();
   const {
     data: { user },
@@ -49,7 +43,7 @@ export default async function PricingPage({
   const displayName = getDisplayName(user);
   const avatarUrl = getAvatarUrl(user);
 
-  let tokenBalance = 0;
+  let minuteBalance = 0;
   if (user) {
     try {
       const admin = createAdminClient();
@@ -58,9 +52,9 @@ export default async function PricingPage({
         .select('processing_minutes_remaining')
         .eq('id', user.id)
         .maybeSingle();
-      tokenBalance = Number(profile?.processing_minutes_remaining ?? 0);
+      minuteBalance = Number(profile?.processing_minutes_remaining ?? 0);
     } catch {
-      tokenBalance = 0;
+      minuteBalance = 0;
     }
   }
 
@@ -80,8 +74,8 @@ export default async function PricingPage({
             {user ? (
               <>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85">
-                  <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
-                  <span>{tokenBalance.toLocaleString()}</span>
+                  <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">&#10022;</span>
+                  <span>{minuteBalance.toLocaleString()} min</span>
                 </div>
                 <div className="group relative">
                   {avatarUrl ? (
@@ -106,33 +100,42 @@ export default async function PricingPage({
           </div>
         </header>
 
-        <section className="mx-auto mt-16 max-w-6xl text-center">
+        <section className="mx-auto mt-14 max-w-5xl text-center">
           <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">
-            CHOOSE A PLAN
+            SIMPLE MONTHLY PRICING
           </p>
-          <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.8rem]">
-            Try one video up to 20 minutes free.
+          <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.6rem]">
+            Plans based on source-video minutes.
             <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent">
-              Upgrade when you like the results.
+              Create more. Pay only for what you need.
             </span>
           </h1>
 
-          <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] p-1 text-sm text-white/75 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-            <Link href="/pricing?interval=monthly" className={`rounded-full px-4 py-2 font-medium transition ${interval === 'monthly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'}`}>
-              Monthly
-            </Link>
-            <Link href="/pricing?interval=yearly" className={`rounded-full px-4 py-2 font-medium transition ${interval === 'yearly' ? 'bg-white text-black shadow-sm' : 'text-white/70 hover:text-white'}`}>
-              Yearly
-              <span className="ml-2 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
-                Save 20%
-              </span>
-            </Link>
+          <div className="mx-auto mt-8 grid max-w-3xl gap-3 text-left sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ff8bd9]">Free test</p>
+              <p className="mt-2 text-lg font-bold text-white">One source video up to {FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes</p>
+              <p className="mt-1 text-sm text-white/55">No subscription required. Sign in and see your clips first.</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#ffb45f]">Need more?</p>
+              <p className="mt-2 text-lg font-bold text-white">Extra usage at ${EXTRA_USAGE_PRICE_PER_MINUTE.toFixed(2)} per minute</p>
+              <p className="mt-1 text-sm text-white/55">A consistent additional-usage rate across every paid plan.</p>
+            </div>
           </div>
-
-          <p className="mt-3 text-sm text-white/55">{interval === 'monthly' ? 'Monthly billing selected' : 'Yearly billing selected — save 20%'}</p>
         </section>
 
         <PricingCards plans={PLAN_CONFIG} interval={interval} />
+
+        <section className="mx-auto mt-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5 text-center sm:flex-row sm:text-left">
+          <div>
+            <p className="text-lg font-bold text-white">Need team access or more than 1,000 minutes?</p>
+            <p className="mt-1 text-sm text-white/55">Talk with us about a custom plan for agencies and high-volume production.</p>
+          </div>
+          <Link href="/contact" className="shrink-0 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-sm font-bold text-white transition hover:border-white/30 hover:bg-white/[0.09]">
+            Contact us
+          </Link>
+        </section>
       </div>
     </main>
   );

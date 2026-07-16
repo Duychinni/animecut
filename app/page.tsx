@@ -342,7 +342,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [allowanceLabel, setAllowanceLabel] = useState('1 free test · up to 20 min');
+  const [allowanceLabel, setAllowanceLabel] = useState('1 free test · up to 10 min');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
@@ -441,7 +441,7 @@ export default function Home() {
           setIsAuthenticated(true);
           setUserLabel(data.user?.displayName ?? data.user?.email ?? 'User');
           setAvatarUrl(data.user?.avatarUrl ?? null);
-          setAllowanceLabel(data.user?.allowanceLabel ?? '1 free test · up to 20 min');
+          setAllowanceLabel(data.user?.allowanceLabel ?? '1 free test · up to 10 min');
         } else {
           setIsAuthenticated(false);
           setUserLabel(null);

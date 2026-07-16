@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { headers } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { PLAN_LOOKUP, type BillingInterval, type PlanId } from '@/lib/plans';
+import { PLAN_LOOKUP, type BillingInterval, type PlanId, type SelfServePlanId } from '@/lib/plans';
 
 export type ProfileRow = {
   id: string;
@@ -67,20 +67,15 @@ export async function getOrCreateProfile(userId: string) {
   return created as ProfileRow;
 }
 
-export function getPlanPriceId(planId: Exclude<PlanId, 'free' | 'business'>, interval: BillingInterval) {
+export function getPlanPriceId(planId: SelfServePlanId, interval: BillingInterval) {
   if (interval !== 'monthly') {
     throw new Error('Yearly Stripe pricing is not configured yet. Please use monthly billing for now.');
   }
 
   const envName = `STRIPE_PRICE_${planId.toUpperCase()}_${interval.toUpperCase()}`;
-  const fallbackMap: Record<'starter' | 'pro', string> = {
-    starter: 'price_1Tq4Lt13vP4goRmyNYUGDzWR',
-    pro: 'price_1Tq4ME13vP4goRmyUVvZqGD0',
-  };
-
-  const priceId = process.env[envName] || fallbackMap[planId];
+  const priceId = process.env[envName];
   if (!priceId) {
-    throw new Error(`Missing ${envName}. Add the Stripe monthly price ID to .env.local.`);
+    throw new Error(`Missing ${envName}. Add the matching Stripe monthly price ID to the deployment environment.`);
   }
   return priceId;
 }

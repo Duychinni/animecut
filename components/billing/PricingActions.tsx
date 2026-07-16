@@ -24,11 +24,6 @@ export function PricingActions({
   }, [onSelect, plan.id, selected]);
 
   async function onClick() {
-    if (plan.isSalesOnly) {
-      router.push('/contact');
-      return;
-    }
-
     try {
       setLoading(true);
       const res = await fetch('/api/billing/checkout', {

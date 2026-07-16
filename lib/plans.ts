@@ -1,110 +1,91 @@
 export type BillingInterval = 'monthly' | 'yearly';
-export type PlanId = 'free' | 'starter' | 'pro' | 'business';
+export type PlanId = 'free' | 'starter' | 'creator' | 'pro' | 'business';
+export type SelfServePlanId = Exclude<PlanId, 'free' | 'business'>;
 
 export const FREE_TRIAL_UPLOADS = 1;
-export const FREE_TRIAL_MAX_UPLOAD_MINUTES = 20;
+export const FREE_TRIAL_MAX_UPLOAD_MINUTES = 10;
+export const EXTRA_USAGE_PRICE_PER_MINUTE = 0.1;
 
 export type PlanConfig = {
-  id: Exclude<PlanId, 'free'>;
+  id: SelfServePlanId;
   name: string;
   subtitle: string;
   monthlyPrice: string;
   yearlyPrice?: string;
   yearlyBadge?: string;
   highlighted?: boolean;
-  processingMinutes: number | null;
-  maxUploadLengthMinutes: number | null;
-  maxGeneratedClips: number | null;
+  processingMinutes: number;
+  maxUploadLengthMinutes: number;
+  maxGeneratedClips: number;
   featureLabels?: string[];
   cta: string;
   secondaryCta?: string;
-  isSalesOnly?: boolean;
 };
 
 export const PLAN_CONFIG: PlanConfig[] = [
   {
     id: 'starter',
     name: 'Starter',
-    subtitle: 'For creators testing short-form repurposing',
-    monthlyPrice: '$14.99',
-    yearlyPrice: '$144',
-    yearlyBadge: 'Save 20%',
-    processingMinutes: 300,
+    subtitle: 'For occasional creators getting started',
+    monthlyPrice: '$9',
+    processingMinutes: 120,
     maxUploadLengthMinutes: 60,
-    maxGeneratedClips: 15,
-    featureLabels: ['HD exports', 'Premium captions', 'Speaker detection', 'No watermark'],
-    cta: 'Choose Starter',
-    secondaryCta: 'Then upgrade when you like the results',
+    maxGeneratedClips: 12,
+    featureLabels: ['1080p exports', 'Dynamic captions', 'Speaker-aware reframing', 'No watermark'],
+    cta: 'Start with Starter',
+    secondaryCta: 'Up to 2 hours of source video each month',
+  },
+  {
+    id: 'creator',
+    name: 'Creator',
+    subtitle: 'For consistent weekly short-form content',
+    monthlyPrice: '$19',
+    highlighted: true,
+    processingMinutes: 400,
+    maxUploadLengthMinutes: 120,
+    maxGeneratedClips: 20,
+    featureLabels: ['Everything in Starter', 'Advanced AI clip scoring', 'Caption presets', 'Faster processing queue'],
+    cta: 'Choose Creator',
+    secondaryCta: 'Best value for active creators',
   },
   {
     id: 'pro',
     name: 'Pro',
-    subtitle: 'For serious creators, marketers, and power users',
-    monthlyPrice: '$29.99',
-    yearlyPrice: '$288',
-    yearlyBadge: 'Save 20%',
-    highlighted: true,
-    processingMinutes: 800,
+    subtitle: 'For professionals and high-volume workflows',
+    monthlyPrice: '$39',
+    processingMinutes: 1000,
     maxUploadLengthMinutes: 180,
-    maxGeneratedClips: 25,
-    featureLabels: ['Priority processing', 'Advanced AI scoring', 'Caption presets', 'Priority queue'],
-    cta: 'Get Started',
-    secondaryCta: 'Best for consistent weekly clip output',
-  },
-  {
-    id: 'business',
-    name: 'Contact Us',
-    subtitle: 'For teams, agencies, and high-volume workflows',
-    monthlyPrice: "Let's Talk",
-    processingMinutes: null,
-    maxUploadLengthMinutes: null,
-    maxGeneratedClips: null,
-    featureLabels: ['Dedicated infrastructure', 'API access', 'Team members', 'Priority support'],
-    cta: 'Contact Sales',
-    secondaryCta: 'Need higher limits? Let’s talk.',
-    isSalesOnly: true,
+    maxGeneratedClips: 30,
+    featureLabels: ['Everything in Creator', 'Priority processing', 'Highest monthly allowance', 'Priority support'],
+    cta: 'Choose Pro',
+    secondaryCta: 'Built for daily publishing and client work',
   },
 ];
 
-export const PLAN_LOOKUP = Object.fromEntries(PLAN_CONFIG.map((plan) => [plan.id, plan])) as Record<Exclude<PlanId, 'free'>, PlanConfig>;
+export const PLAN_LOOKUP = Object.fromEntries(PLAN_CONFIG.map((plan) => [plan.id, plan])) as Record<SelfServePlanId, PlanConfig>;
 
-export function formatMinutesLabel(minutes: number | null) {
-  if (minutes == null) return 'Custom processing minutes';
-  return `${minutes} AI Processing Minutes / Month`;
+export function formatMinutesLabel(minutes: number) {
+  return `${minutes.toLocaleString()} source-video minutes / month`;
 }
 
-export function formatUploadLengthLabel(minutes: number | null) {
-  if (minutes == null) return 'Custom upload limits';
+export function formatUploadLengthLabel(minutes: number) {
   if (minutes >= 60) {
     const hours = minutes / 60;
-    return `Maximum upload length: ${Number.isInteger(hours) ? `${hours} hour${hours === 1 ? '' : 's'}` : `${minutes} minutes`}`;
+    return `Maximum source length: ${Number.isInteger(hours) ? `${hours} hour${hours === 1 ? '' : 's'}` : `${minutes} minutes`}`;
   }
-  return `Maximum upload length: ${minutes} minutes`;
+  return `Maximum source length: ${minutes} minutes`;
 }
 
-export function formatGeneratedClipsLabel(clips: number | null) {
-  if (clips == null) return 'Custom generated clip limits';
-  return `Maximum generated clips: ${clips} per upload`;
+export function formatGeneratedClipsLabel(clips: number) {
+  return `Up to ${clips} generated clips per source video`;
 }
 
 export function buildPlanFeatures(plan: PlanConfig) {
-  const base = [] as string[];
-
-  if (plan.id !== 'business') {
-    base.push(`1 free video up to ${FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes to test the product first`);
-  }
-
-  base.push(formatMinutesLabel(plan.processingMinutes));
-  base.push(formatUploadLengthLabel(plan.maxUploadLengthMinutes));
-  base.push(formatGeneratedClipsLabel(plan.maxGeneratedClips));
-
-  if (plan.featureLabels?.length) {
-    base.push(...plan.featureLabels);
-  }
-
-  if (plan.id === 'business') {
-    base.push('Need higher limits? Let’s talk.');
-  }
-
-  return base;
+  return [
+    formatMinutesLabel(plan.processingMinutes),
+    formatUploadLengthLabel(plan.maxUploadLengthMinutes),
+    formatGeneratedClipsLabel(plan.maxGeneratedClips),
+    `Additional source-video minutes: $${EXTRA_USAGE_PRICE_PER_MINUTE.toFixed(2)} per minute`,
+    ...(plan.featureLabels ?? []),
+  ];
 }
