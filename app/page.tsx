@@ -32,6 +32,7 @@ type ShowcaseClip = {
   gradient: string;
   mediaType?: 'video' | 'image' | 'youtube';
   mediaUrl?: string | null;
+  posterUrl?: string | null;
   startSeconds?: number;
   endSeconds?: number;
 };
@@ -329,6 +330,10 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
   const [liveShowcaseClips, setLiveShowcaseClips] = useState<ShowcaseClip[]>([]);
+  const [showcaseLoaded, setShowcaseLoaded] = useState(false);
+  const [showcaseVisible, setShowcaseVisible] = useState(false);
+  const [activeShowcaseMediaKey, setActiveShowcaseMediaKey] = useState<string | null>(null);
+  const showcaseSectionRef = useRef<HTMLElement | null>(null);
   const activeShowcaseClips = useMemo(() => {
     if (!liveShowcaseClips.length) return showcaseClips;
 
@@ -381,10 +386,26 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const section = showcaseSectionRef.current;
+    if (!section) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const visible = Boolean(entry?.isIntersecting);
+        setShowcaseVisible(visible);
+        if (visible) setShowcaseLoaded(true);
+      },
+      { rootMargin: '180px 0px' },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!showcaseLoaded) return;
     let isMounted = true;
     const loadShowcase = async () => {
       try {
-        const res = await fetch('/api/showcase', { credentials: 'include', cache: 'no-store' });
+        const res = await fetch('/api/showcase');
         if (!res.ok) return;
         const data = (await res.json()) as ShowcaseResponse;
         if (!isMounted) return;
@@ -406,7 +427,14 @@ export default function Home() {
       if (idleId != null) idleWindow.cancelIdleCallback?.(idleId);
       if (timer != null) window.clearTimeout(timer);
     };
-  }, []);
+  }, [showcaseLoaded]);
+
+  function activateShowcaseMedia(clipKey: string) {
+    // Keep one decoder active at a time. Accumulating six simultaneous video
+    // decoders made scrolling and playback compete for the main/compositor
+    // threads on lower-powered devices.
+    setActiveShowcaseMediaKey(clipKey);
+  }
 
   async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string; source_duration_seconds?: number }) {
     const res = await fetch('/api/projects', {
@@ -581,9 +609,6 @@ export default function Home() {
       `}</style>
 
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-24 top-14 h-[22rem] w-[22rem] rounded-full bg-[#8a4dff]/14 blur-[110px]" style={{ animation: 'driftOrb 28s ease-in-out infinite' }} />
-        <div className="absolute right-[-6rem] top-[18rem] h-[26rem] w-[26rem] rounded-full bg-[#ff52c4]/10 blur-[120px]" style={{ animation: 'driftOrb 34s ease-in-out infinite reverse' }} />
-        <div className="absolute bottom-[-8rem] left-[20%] h-[24rem] w-[24rem] rounded-full bg-[#ffb347]/8 blur-[120px]" style={{ animation: 'driftOrb 40s ease-in-out infinite' }} />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.12),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.08),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.06),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.02),transparent_36%)]" />
       </div>
 
@@ -673,7 +698,7 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="mx-auto mt-8 w-full max-w-3xl rounded-[28px] border border-white/12 bg-black/25 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+            <div className="mx-auto mt-8 w-full max-w-3xl rounded-[28px] border border-white/12 bg-[#08080f]/88 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
                 <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
                   <input
@@ -744,7 +769,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="demo" className="relative left-1/2 -mt-4 w-screen -translate-x-1/2 pt-8 pb-10 lg:-mt-8">
+        <section ref={showcaseSectionRef} id="demo" className="relative left-1/2 -mt-4 w-screen -translate-x-1/2 pt-8 pb-10 lg:-mt-8">
           <div className="mx-auto mb-12 max-w-7xl px-6 text-center">
             <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">Real examples of what Animacut can turn long-form into.</h2>
           </div>
@@ -752,22 +777,31 @@ export default function Home() {
           <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
               {activeShowcaseClips.map((clip, clipIndex) => {
                 const clipKey = getShowcaseKey(clip);
+                const firstClipKey = activeShowcaseClips[0] ? getShowcaseKey(activeShowcaseClips[0]) : null;
+                const requestedKeyExists = activeShowcaseClips.some((item) => getShowcaseKey(item) === activeShowcaseMediaKey);
+                const selectedMediaKey = requestedKeyExists ? activeShowcaseMediaKey : firstClipKey;
+                const mediaActive = showcaseVisible && selectedMediaKey === clipKey;
                 return (
                 <div
                   key={clipKey}
+                  onPointerEnter={() => activateShowcaseMedia(clipKey)}
+                  onFocus={() => activateShowcaseMedia(clipKey)}
                   className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-500 ease-out hover:-translate-y-3 hover:scale-[1.025] hover:border-white/28 hover:shadow-[0_26px_70px_rgba(139,124,255,0.2)]"
                 >
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
                     <PlatformLogo platform={clip.platform} />
                   </div>
                   <div className={`aspect-[9/16] overflow-hidden rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
-                    <div className="relative h-full overflow-hidden rounded-[16px] border border-white/8 bg-black/18 p-2.5 backdrop-blur">
+                    <div className="relative h-full overflow-hidden rounded-[16px] border border-white/8 bg-[#090910] p-2.5">
                       {clip.mediaUrl ? (
                         (clip.mediaType ?? 'video') === 'image' ? (
                           <div
                             className="absolute inset-0 bg-cover bg-center"
                             style={{ backgroundImage: `url("${clip.mediaUrl}")` }}
                           />
+                        ) : !mediaActive && clip.posterUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={clip.posterUrl} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
                         ) : clip.mediaType === 'youtube' ? (
                           <iframe
                             src={clip.mediaUrl}
@@ -781,14 +815,15 @@ export default function Home() {
                         ) : (
                           <video
                             src={clip.mediaUrl}
-                            autoPlay={clipIndex < 2}
+                            autoPlay={mediaActive}
                             muted
                             loop
                             playsInline
                             disablePictureInPicture
                             controls={false}
                             controlsList="nofullscreen nodownload noremoteplayback"
-                            preload={clipIndex < 2 ? 'auto' : 'metadata'}
+                            preload={mediaActive ? 'auto' : 'none'}
+                            poster={clip.posterUrl ?? undefined}
                             onLoadedMetadata={(event) => {
                               const start = Math.max(0, Number(clip.startSeconds ?? 0));
                               if (start > 0 && Number.isFinite(event.currentTarget.duration)) {
@@ -797,15 +832,12 @@ export default function Home() {
                               for (let index = 0; index < event.currentTarget.textTracks.length; index += 1) {
                                 event.currentTarget.textTracks[index].mode = 'disabled';
                               }
-                              if (clipIndex < 2) void event.currentTarget.play().catch(() => undefined);
+                              if (mediaActive) void event.currentTarget.play().catch(() => undefined);
                             }}
                             onCanPlay={(event) => {
-                              if (clipIndex < 2) void event.currentTarget.play().catch(() => undefined);
+                              if (mediaActive) void event.currentTarget.play().catch(() => undefined);
                             }}
                             onPointerEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
-                            onPointerLeave={(event) => {
-                              if (clipIndex >= 2) event.currentTarget.pause();
-                            }}
                             onPlaying={(event) => {
                               event.currentTarget.style.opacity = '1';
                             }}
@@ -840,7 +872,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="feature-showcase" className="relative left-1/2 w-screen -translate-x-1/2 pt-6 pb-2">
+        <section id="feature-showcase" className="home-deferred-section relative left-1/2 w-screen -translate-x-1/2 pt-6 pb-2">
           <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-10 lg:grid-cols-[1.08fr_0.92fr]">
             <div className="relative order-2 lg:order-1">
               <div className="absolute -left-8 top-10 h-36 w-36 rounded-full bg-[#8b7cff]/16 blur-3xl" />
@@ -915,7 +947,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="faq" className="mt-8 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm md:p-8">
+        <section id="faq" className="home-deferred-section mt-8 rounded-[30px] border border-white/10 bg-white/[0.03] p-6 md:p-8">
           <div className="max-w-3xl">
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">FAQ</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-white md:text-4xl">Questions creators ask before they upload.</h2>

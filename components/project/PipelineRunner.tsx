@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { readJsonSafe } from '@/lib/safe-json';
 import { formatLivePercent, useLiveProgress } from '@/components/project/LiveProgress';
 
+const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
+
 type ProgressPayload = {
   project?: {
     id: string;
@@ -77,6 +79,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const [log, setLog] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
+  const progressRef = useRef<ProgressPayload | null>(null);
   const autoRanRef = useRef(false);
   const processingKickInFlightRef = useRef(false);
 
@@ -90,6 +93,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
       const res = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
       const data = (await readJsonSafe(res)) as ProgressPayload;
       if (res.ok) {
+        progressRef.current = data;
         setProgress(data);
         return data;
       }
@@ -100,6 +104,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }, [projectId]);
 
   const kickBackgroundProcessing = useCallback(async () => {
+    if (!CLIENT_WORKER_KICKS_ENABLED) return;
     if (processingKickInFlightRef.current) return;
     processingKickInFlightRef.current = true;
     try {
@@ -120,7 +125,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     const tick = async () => {
       if (document.visibilityState !== 'visible') return;
       const latestProgress = await refreshProgress();
-      const snapshot = latestProgress ?? progress;
+      const snapshot = latestProgress ?? progressRef.current;
 
       const pipelineStatus = snapshot?.project?.pipeline_status ?? 'idle';
       const activeExports = Number(snapshot?.progress?.active_exports ?? 0);
@@ -134,12 +139,12 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     void tick();
     timer = setInterval(() => {
       void tick();
-    }, 4000);
+    }, 8000);
 
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [activeExportCount, kickBackgroundProcessing, refreshProgress, progressPct, progress]);
+  }, [kickBackgroundProcessing, refreshProgress]);
 
   useEffect(() => {
     if (!autoStart || autoRanRef.current || loading) return;
@@ -149,7 +154,9 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }, [autoStart]);
 
   useEffect(() => {
-    void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+    if (CLIENT_WORKER_KICKS_ENABLED) {
+      void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
+    }
   }, []);
 
   useEffect(() => {

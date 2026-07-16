@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 
+const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
+
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
   const s = Math.max(0, Math.round(totalSec));
@@ -174,7 +176,7 @@ export default function DashboardPage() {
     loadInFlightRef.current = true;
     if (initial) setLoadingProjects(true);
     try {
-      if (initial && !repairRanRef.current) {
+      if (CLIENT_WORKER_KICKS_ENABLED && initial && !repairRanRef.current) {
         repairRanRef.current = true;
         void fetch('/api/projects/repair', { method: 'POST', credentials: 'include', cache: 'no-store' }).catch(() => null);
       }
@@ -312,10 +314,12 @@ export default function DashboardPage() {
       if (document.visibilityState !== 'visible') return;
       if (!hasProcessingRef.current) return;
       await loadProjects();
-      void Promise.allSettled([
-        fetch('/api/pipeline/process', { method: 'POST' }),
-        fetch('/api/jobs/process', { method: 'POST' }),
-      ]);
+      if (CLIENT_WORKER_KICKS_ENABLED) {
+        void Promise.allSettled([
+          fetch('/api/pipeline/process', { method: 'POST' }),
+          fetch('/api/jobs/process', { method: 'POST' }),
+        ]);
+      }
     };
 
     const onVisibility = () => {
@@ -328,7 +332,7 @@ export default function DashboardPage() {
 
     const timer = setInterval(() => {
       void tick();
-    }, 5000);
+    }, 8000);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
@@ -635,7 +639,7 @@ export default function DashboardPage() {
                   )}
                   {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
                   {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found · open project for details</p> : null}
-                  {isFailed ? <p className="mt-1 text-xs text-red-300/85">Rendering stopped · open project to review or retry</p> : null}
+                  {isFailed ? <p className="mt-1 text-xs text-red-300/85">Rendering could not finish automatically · open project for details</p> : null}
                   {isPaused ? <p className="mt-1 text-xs text-amber-200/75">Project paused · open project to continue</p> : null}
                   {showProcessing ? <p className="mt-1 text-xs text-white/55">{processingStage} · {percent}%{etaLabel ? ` · ${etaLabel}` : ''}</p> : null}
                   {showDebug ? (

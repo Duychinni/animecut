@@ -157,6 +157,14 @@ body {
   pointer-events: none;
   -webkit-appearance: none;
   appearance: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: opacity;
+}
+
+.home-deferred-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 760px;
 }
 
 .hero-showcase-video::-webkit-media-controls,

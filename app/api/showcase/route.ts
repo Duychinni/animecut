@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createRawMediaSignedUrl } from '@/lib/storage';
+import { createExportSignedUrl } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +60,7 @@ type ShowcaseApiClip = {
   gradient: string;
   mediaType: 'video' | 'image' | 'youtube';
   mediaUrl: string;
+  posterUrl?: string;
   startSeconds?: number;
   endSeconds?: number;
 };
@@ -144,6 +145,7 @@ function buildFallbackClips(): ShowcaseApiClip[] {
     gradient: gradients[index % gradients.length],
     mediaType: 'image' as const,
     mediaUrl,
+    posterUrl: mediaUrl,
   }));
 }
 
@@ -158,18 +160,9 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
         const start = Number(candidate?.start_sec ?? 0);
         const end = Number(candidate?.end_sec ?? 0);
         const length = end > start ? formatClock(end - start) : '0:30';
-        const videoId = youtubeVideoId(project);
-        let mediaType: ShowcaseApiClip['mediaType'] = 'video';
-        let mediaUrl: string;
-
-        if (project?.source_storage_path) {
-          mediaUrl = await createRawMediaSignedUrl(project.source_storage_path, 60 * 60);
-        } else if (videoId) {
-          mediaType = 'youtube';
-          mediaUrl = youtubeShowcaseUrl(videoId, start, end > start ? end : start + 30);
-        } else {
-          return null;
-        }
+        const mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
+        const posterObjectPath = row.output_storage_path.replace(/\.mp4$/i, '.jpg');
+        const posterUrl = await createExportSignedUrl(posterObjectPath, 60 * 60).catch(() => undefined);
 
         return {
           id: row.id,
@@ -180,8 +173,9 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
           length,
           source: project?.source_channel_name?.trim() || project?.source_title?.trim() || 'Animacut export',
           gradient: gradients[index % gradients.length],
-          mediaType,
+          mediaType: 'video' as const,
           mediaUrl,
+          posterUrl,
           startSeconds: start,
           endSeconds: end > start ? end : start + 30,
         };
@@ -298,8 +292,8 @@ export async function GET() {
     const configuredClips = projectClips.length ? projectClips : await getConfiguredShowcaseClips(getPublicExportIds());
     const recentClips = configuredClips.length ? [] : await getRecentProjectShowcaseClips();
     const clips = configuredClips.length ? configuredClips : recentClips.length ? recentClips : buildFallbackClips();
-    return NextResponse.json({ clips }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ clips }, { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=900' } });
   } catch {
-    return NextResponse.json({ clips: buildFallbackClips() }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ clips: buildFallbackClips() }, { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=900' } });
   }
 }

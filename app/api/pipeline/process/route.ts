@@ -165,6 +165,12 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message: string):
 }
 
 export async function POST() {
+  // Source download, transcription, analysis, and rendering belong on the
+  // persistent media worker. Running them inside Vercel can terminate healthy
+  // work at the serverless timeout and create duplicate retries.
+  if (process.env.VERCEL && process.env.ALLOW_SERVERLESS_MEDIA_PROCESSING !== 'true') {
+    return NextResponse.json({ ok: true, processed: 0, delegated_to_external_worker: true });
+  }
   const supabase = createAdminClient();
 
   const { data: processingJobs, error: processingError } = await supabase

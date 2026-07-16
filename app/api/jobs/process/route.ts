@@ -71,7 +71,7 @@ async function maybeFinalizeProject(projectId: string) {
   const candidatePoolExhausted = totalCount >= availableCandidates && availableCandidates > 0;
 
   if (allAttemptsSettled && candidatePoolExhausted) {
-    if (doneCount > 0) {
+    if (doneCount > 0 && failedCount === 0) {
       await supabase
         .from('projects')
         .update({
@@ -83,7 +83,7 @@ async function maybeFinalizeProject(projectId: string) {
           pipeline_error: null,
           pipeline_completed_at: new Date().toISOString(),
           worker_last_seen_at: new Date().toISOString(),
-          worker_last_log_message: `Completed with ${doneCount} playable reels`,
+          worker_last_log_message: `Completed with ${doneCount} playable reels and no failed exports`,
           updated_at: new Date().toISOString(),
         })
         .eq('id', projectId);
@@ -98,7 +98,9 @@ async function maybeFinalizeProject(projectId: string) {
         pipeline_stage: 'error',
         pipeline_stage_label: 'Could not finish every reel',
         pipeline_progress_percent: Math.min(98, Math.round((doneCount / targetCount) * 100)),
-        pipeline_error: 'All export attempts failed and no backup candidates remained.',
+        pipeline_error: failedCount > 0
+          ? `${failedCount} reel${failedCount === 1 ? '' : 's'} could not be rendered after all automatic compatibility fallbacks.`
+          : 'All export attempts failed and no backup candidates remained.',
         pipeline_completed_at: null,
         updated_at: new Date().toISOString(),
       })
@@ -223,6 +225,7 @@ type ExportRenderOptions = {
   edit_rerender?: boolean;
   fast_edit_render?: boolean;
   safe_layout_fallback?: boolean;
+  compatibility_fallback?: boolean;
 };
 
 type ExportLookupRow = {
@@ -235,16 +238,93 @@ type ExportLookupRow = {
   hook_text?: unknown;
 };
 
-const EXPORT_MAX_RENDER_ATTEMPTS = 3;
+const TRANSIENT_RENDER_ATTEMPTS = 2;
 const REPAIR_SCAN_LIMIT = 6;
 const STALE_PROCESSING_MINUTES = 4;
+const EXPORT_HEARTBEAT_INTERVAL_MS = 20_000;
 const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY !== 'false';
 
 function getWorkerBatchLimit() {
-  const defaultLimit = process.env.VERCEL ? 1 : 2;
-  const raw = Number(process.env.EXPORT_WORKER_BATCH_SIZE ?? defaultLimit);
-  if (!Number.isFinite(raw)) return defaultLimit;
-  return Math.max(1, Math.min(process.env.VERCEL ? 2 : 4, Math.round(raw)));
+  // One claim per worker keeps every claimed render actively heartbeating.
+  // Run two worker processes for two-way concurrency instead of letting one
+  // request claim a second export that sits idle behind its first FFmpeg job.
+  return 1;
+}
+
+function startExportHeartbeat(params: {
+  supabase: ReturnType<typeof createAdminClient>;
+  projectId: string;
+  exportId: string;
+  jobId: string | null;
+}) {
+  const { supabase, projectId, exportId, jobId } = params;
+  let stopped = false;
+  let heartbeatInFlight: Promise<void> = Promise.resolve();
+
+  const touch = async () => {
+    if (stopped) return;
+    const now = new Date().toISOString();
+    const updates = [
+      supabase
+        .from('projects')
+        .update({
+          pipeline_status: 'processing',
+          pipeline_stage: 'rendering',
+          pipeline_stage_label: 'Rendering reels',
+          pipeline_error: null,
+          worker_last_seen_at: now,
+          worker_last_log_message: `Rendering export ${exportId}`,
+        })
+        .eq('id', projectId),
+      supabase
+        .from('exports')
+        .update({ updated_at: now })
+        .eq('id', exportId)
+        .eq('status', 'processing'),
+    ];
+
+    if (jobId) {
+      updates.push(
+        supabase
+          .from('jobs')
+          .update({ updated_at: now })
+          .eq('id', jobId)
+          .eq('status', 'processing'),
+      );
+    }
+
+    const results = await Promise.all(updates);
+    const firstError = results.find((result) => result.error)?.error;
+    if (firstError) {
+      console.warn('[jobs/process] render heartbeat failed', {
+        project_id: projectId,
+        export_id: exportId,
+        error: firstError.message,
+      });
+    }
+  };
+
+  const scheduleTouch = () => {
+    heartbeatInFlight = heartbeatInFlight
+      .then(touch)
+      .catch((error) => {
+        console.warn('[jobs/process] render heartbeat threw', {
+          project_id: projectId,
+          export_id: exportId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  };
+
+  scheduleTouch();
+  const timer = setInterval(scheduleTouch, EXPORT_HEARTBEAT_INTERVAL_MS);
+  timer.unref?.();
+
+  return async () => {
+    stopped = true;
+    clearInterval(timer);
+    await heartbeatInFlight;
+  };
 }
 
 function errorText(error: unknown) {
@@ -346,18 +426,18 @@ function normalizeRenderErrorMessage(message: string) {
   }
 
   if (/Invalid NAL unit|missing picture|Error splitting the input into NAL units|Missing reference picture|mmco:|Rendered export is corrupted/i.test(message)) {
-    return 'Render failed because the source video stream was corrupted or unreadable in this segment. Please retry the export.';
+    return 'The source video stream was unreadable in this segment.';
   }
 
   if (/No such filter: 'subtitles'|No such filter: 'drawtext'|Filter not found/i.test(message)) {
-    return 'Render failed because this server is missing a required video filter. Please contact support.';
+    return 'A required video filter was unavailable on the render worker.';
   }
 
   if (/Unknown encoder|Error while opening encoder|Encoder .* not found/i.test(message)) {
-    return 'Render failed because the video encoder was unavailable on the server. Please retry.';
+    return 'The video encoder was unavailable on the render worker.';
   }
 
-  return 'Render failed. Please retry the export.';
+  return 'The render worker could not finish this reel.';
 }
 
 function renderFailureDiagnostics(message: string) {
@@ -457,6 +537,91 @@ async function ensureQueuedExportJobs(limit = REPAIR_SCAN_LIMIT) {
   }
 
   return created;
+}
+
+async function recoverTerminalRenderErrors(limit = REPAIR_SCAN_LIMIT) {
+  const supabase = createAdminClient();
+  const { data: failedJobs, error } = await supabase
+    .from('jobs')
+    .select('id, project_id, payload, updated_at')
+    .eq('type', 'export')
+    .eq('status', 'error')
+    .order('updated_at', { ascending: false })
+    .limit(Math.max(50, limit * 10));
+
+  if (error) throw error;
+
+  let recovered = 0;
+
+  for (const row of failedJobs ?? []) {
+    if (recovered >= limit) break;
+    const payload = row.payload && typeof row.payload === 'object'
+      ? row.payload as Record<string, unknown>
+      : {};
+    const exportId = typeof payload.export_id === 'string' ? payload.export_id : '';
+    const projectId = String(row.project_id ?? '');
+    if (!exportId || !projectId) continue;
+    if (payload.edit_rerender === true || payload.compatibility_fallback === true) continue;
+    if (['missing_or_unreadable_input', 'upload_or_storage_failure'].includes(String(payload.render_failure_category ?? ''))) continue;
+    if (await isFrozenCompletedProject(projectId)) continue;
+
+    const { data: exportRow, error: exportError } = await supabase
+      .from('exports')
+      .select('status, output_storage_path')
+      .eq('id', exportId)
+      .maybeSingle();
+    if (exportError) throw exportError;
+    if (!exportRow || hasPlayableOutput(exportRow) || exportRow.status !== 'error') continue;
+
+    const now = new Date().toISOString();
+    const recoveryPayload = {
+      ...payload,
+      safe_layout_fallback: true,
+      compatibility_fallback: true,
+      automatic_recovery: true,
+      recovered_at: now,
+    };
+
+    const [{ error: jobUpdateError }, { error: exportUpdateError }, { error: projectUpdateError }] = await Promise.all([
+      supabase
+        .from('jobs')
+        .update({ status: 'queued', attempts: 0, payload: recoveryPayload, updated_at: now })
+        .eq('id', row.id),
+      supabase
+        .from('exports')
+        .update({
+          status: 'queued',
+          output_storage_path: null,
+          error_message: 'Automatically recovering this reel with a compatible render.',
+          updated_at: now,
+        })
+        .eq('id', exportId),
+      supabase
+        .from('projects')
+        .update({
+          status: 'analyzed',
+          pipeline_status: 'processing',
+          pipeline_stage: 'rendering',
+          pipeline_stage_label: 'Rendering reels',
+          pipeline_error: null,
+          pipeline_completed_at: null,
+          worker_last_log_message: `Automatically recovering export ${exportId}`,
+          updated_at: now,
+        })
+        .eq('id', projectId),
+    ]);
+
+    const updateError = jobUpdateError || exportUpdateError || projectUpdateError;
+    if (updateError) throw updateError;
+    recovered += 1;
+    console.warn('[jobs/process] terminal-export-auto-recovered', {
+      project_id: projectId,
+      export_id: exportId,
+      job_id: row.id,
+    });
+  }
+
+  return recovered;
 }
 
 async function repairBrokenCompletedExports() {
@@ -760,12 +925,16 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     startSec: effectiveRenderStart,
     endSec: effectiveRenderEnd,
   });
-  const hookTextEnabled = HOOK_TEXT_OVERLAY_ENABLED && bundle.hook_text_enabled !== false && options?.hook_text_enabled !== false;
+  const compatibilityFallback = options?.compatibility_fallback === true;
+  const hookTextEnabled = !compatibilityFallback
+    && HOOK_TEXT_OVERLAY_ENABLED
+    && bundle.hook_text_enabled !== false
+    && options?.hook_text_enabled !== false;
   const hookText = usableHookText(options?.hook_text, bundle.clip.title)
     || usableHookText(bundle.hook_text, bundle.clip.title)
     || normalizeHookCandidate(generatedHookText)
     || null;
-  const safeLayoutFallback = options?.safe_layout_fallback === true;
+  const safeLayoutFallback = options?.safe_layout_fallback === true || compatibilityFallback;
 
   await renderVerticalClip({
     inputPath: renderInputPath,
@@ -773,7 +942,11 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     startSec: effectiveRenderStart,
     endSec: effectiveRenderEnd,
     srtPath,
-    captionsEnabled: useEditSettings ? editSettings.captions_enabled : options?.captions_enabled !== false,
+    captionsEnabled: compatibilityFallback
+      ? false
+      : useEditSettings
+        ? editSettings.captions_enabled
+        : options?.captions_enabled !== false,
     captionTemplate,
     captionFont,
     hookTextEnabled,
@@ -848,6 +1021,12 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 }
 
 export async function POST(req: Request) {
+  // Vercel requests are intentionally not render workers. Long FFmpeg jobs can
+  // exceed the serverless request lifetime and leave exports in a retry loop.
+  // The persistent Mac/VM worker calls this route on its own local Next server.
+  if (process.env.VERCEL && process.env.ALLOW_SERVERLESS_MEDIA_PROCESSING !== 'true') {
+    return NextResponse.json({ ok: true, processed: 0, delegated_to_external_worker: true });
+  }
   const supabase = createAdminClient();
   const focusedExportId = new URL(req.url).searchParams.get('exportId')?.trim() || null;
   const stale = await requeueStaleProcessingWork().catch((error) => {
@@ -856,6 +1035,10 @@ export async function POST(req: Request) {
   });
   const repaired = await repairBrokenCompletedExports().catch((error) => {
     console.warn('[jobs/process] repair scan failed', error);
+    return 0;
+  });
+  const recoveredTerminalErrors = await recoverTerminalRenderErrors().catch((error) => {
+    console.warn('[jobs/process] terminal render recovery scan failed', error);
     return 0;
   });
   const ensuredQueuedJobs = await ensureQueuedExportJobs().catch((error) => {
@@ -948,6 +1131,7 @@ export async function POST(req: Request) {
     work_items_selected: workItems.length,
     focused_export_id: focusedExportId,
     repaired_done_exports: repaired,
+    recovered_terminal_errors: recoveredTerminalErrors,
     stale_jobs_requeued: stale.staleJobs,
     stale_exports_requeued: stale.staleExports,
     ensured_queued_jobs: ensuredQueuedJobs,
@@ -1074,37 +1258,49 @@ export async function POST(req: Request) {
         continue;
       }
 
-      await processExportJob(exportId, {
-        captions_enabled: item.payload?.captions_enabled as boolean | undefined,
-        caption_preset_id: item.payload?.caption_preset_id as string | undefined,
-        caption_template: item.payload?.caption_template as
-          | 'clean'
-          | 'bold'
-          | 'viral'
-          | 'karaoke'
-          | 'cinematic'
-          | 'rage'
-          | 'minimal'
-          | 'capcut'
-          | undefined,
-        caption_font: item.payload?.caption_font as
-          | 'arial'
-          | 'montserrat'
-          | 'impact'
-          | 'bangers'
-          | 'anton'
-          | 'bebas'
-          | 'poppins'
-          | undefined,
-        hook_text_enabled: item.payload?.hook_text_enabled as boolean | undefined,
-        hook_text: item.payload?.hook_text as string | undefined,
-        motion_tracking: item.payload?.motion_tracking as boolean | undefined,
-        auto_reframe: item.payload?.auto_reframe as boolean | undefined,
-        reframe_mode: item.payload?.reframe_mode as 'off' | 'basic' | 'smart' | undefined,
-        reframe_preset: item.payload?.reframe_preset as 'auto' | 'tight' | 'left' | 'center' | 'right' | undefined,
-        edit_rerender: isEditRerender,
-        safe_layout_fallback: item.payload?.safe_layout_fallback === true,
+      const renderProjectId = String(currentExport?.project_id ?? '');
+      const stopHeartbeat = startExportHeartbeat({
+        supabase,
+        projectId: renderProjectId,
+        exportId,
+        jobId: item.jobId,
       });
+      try {
+        await processExportJob(exportId, {
+          captions_enabled: item.payload?.captions_enabled as boolean | undefined,
+          caption_preset_id: item.payload?.caption_preset_id as string | undefined,
+          caption_template: item.payload?.caption_template as
+            | 'clean'
+            | 'bold'
+            | 'viral'
+            | 'karaoke'
+            | 'cinematic'
+            | 'rage'
+            | 'minimal'
+            | 'capcut'
+            | undefined,
+          caption_font: item.payload?.caption_font as
+            | 'arial'
+            | 'montserrat'
+            | 'impact'
+            | 'bangers'
+            | 'anton'
+            | 'bebas'
+            | 'poppins'
+            | undefined,
+          hook_text_enabled: item.payload?.hook_text_enabled as boolean | undefined,
+          hook_text: item.payload?.hook_text as string | undefined,
+          motion_tracking: item.payload?.motion_tracking as boolean | undefined,
+          auto_reframe: item.payload?.auto_reframe as boolean | undefined,
+          reframe_mode: item.payload?.reframe_mode as 'off' | 'basic' | 'smart' | undefined,
+          reframe_preset: item.payload?.reframe_preset as 'auto' | 'tight' | 'left' | 'center' | 'right' | undefined,
+          edit_rerender: isEditRerender,
+          safe_layout_fallback: item.payload?.safe_layout_fallback === true,
+          compatibility_fallback: item.payload?.compatibility_fallback === true,
+        });
+      } finally {
+        await stopHeartbeat();
+      }
 
       if (item.jobId) {
         await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', item.jobId);
@@ -1168,7 +1364,18 @@ export async function POST(req: Request) {
         currentAttempts = Number(jobRow?.attempts ?? 1);
       }
 
-      const shouldRetry = Boolean(item.jobId && exportId && currentAttempts < EXPORT_MAX_RENDER_ATTEMPTS);
+      const transientFailure = [
+        'timeout',
+        'memory_or_resource_failure',
+        'missing_or_unreadable_input',
+        'upload_or_storage_failure',
+      ].includes(failureDiagnostics.category);
+      const shouldRetry = Boolean(
+        item.jobId
+        && exportId
+        && transientFailure
+        && currentAttempts < TRANSIENT_RENDER_ATTEMPTS,
+      );
 
       if (shouldRetry && item.jobId) {
         await supabase
@@ -1192,7 +1399,7 @@ export async function POST(req: Request) {
               .from('exports')
               .update({
                 edit_status: 'rendering',
-                error_message: `Retrying clip update (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
+                error_message: `Recovering clip update (${currentAttempts}/${TRANSIENT_RENDER_ATTEMPTS}): ${message}`,
                 updated_at: new Date().toISOString(),
               })
               .eq('id', exportId);
@@ -1201,7 +1408,7 @@ export async function POST(req: Request) {
               .from('exports')
               .update({
                 status: 'queued',
-                error_message: `Retrying render (${currentAttempts}/${EXPORT_MAX_RENDER_ATTEMPTS}): ${message}`,
+                error_message: `Recovering render (${currentAttempts}/${TRANSIENT_RENDER_ATTEMPTS}): ${message}`,
                 updated_at: new Date().toISOString(),
               })
               .eq('id', exportId);
@@ -1246,6 +1453,51 @@ export async function POST(req: Request) {
           .eq('id', exportId);
 
         console.warn('[jobs/process] safe-layout-fallback-queued', {
+          export_id: exportId,
+          job_id: item.jobId,
+          failure_category: failureDiagnostics.category,
+        });
+        continue;
+      }
+
+      const compatibilityFallbackEligible = Boolean(
+        item.jobId
+        && exportId
+        && !isEditRerender
+        && item.payload?.safe_layout_fallback === true
+        && item.payload?.compatibility_fallback !== true
+        && !['missing_or_unreadable_input', 'upload_or_storage_failure'].includes(failureDiagnostics.category),
+      );
+
+      if (compatibilityFallbackEligible && item.jobId && exportId) {
+        await supabase
+          .from('jobs')
+          .update({
+            status: 'queued',
+            attempts: 0,
+            updated_at: new Date().toISOString(),
+            payload: {
+              ...item.payload,
+              safe_layout_fallback: true,
+              compatibility_fallback: true,
+              automatic_recovery: true,
+              retry_of_error: message,
+              render_failure_category: failureDiagnostics.category,
+              ffmpeg_stderr_tail: failureDiagnostics.stderrTail,
+            },
+          })
+          .eq('id', item.jobId);
+
+        await supabase
+          .from('exports')
+          .update({
+            status: 'queued',
+            error_message: 'Finishing this reel with a compatible render.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', exportId);
+
+        console.warn('[jobs/process] compatibility-fallback-queued', {
           export_id: exportId,
           job_id: item.jobId,
           failure_category: failureDiagnostics.category,
@@ -1309,5 +1561,18 @@ export async function POST(req: Request) {
     processed,
   });
 
-  return NextResponse.json({ ok: true, processed, repaired, ensuredQueuedJobs, counts: { work_items_selected: workItems.length, processed, repaired, ensured_queued_jobs: ensuredQueuedJobs } });
+  return NextResponse.json({
+    ok: true,
+    processed,
+    repaired,
+    recoveredTerminalErrors,
+    ensuredQueuedJobs,
+    counts: {
+      work_items_selected: workItems.length,
+      processed,
+      repaired,
+      recovered_terminal_errors: recoveredTerminalErrors,
+      ensured_queued_jobs: ensuredQueuedJobs,
+    },
+  });
 }

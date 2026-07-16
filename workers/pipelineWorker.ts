@@ -1,7 +1,7 @@
 import process from 'node:process';
 
 function getBaseUrl() {
-  return process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000';
+  return process.env.WORKER_API_URL || process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000';
 }
 
 function sleep(ms: number) {
@@ -44,7 +44,11 @@ async function runOnce() {
 
 async function main() {
   const once = process.argv.includes('--once');
-  console.log('[worker] starting', { baseUrl: getBaseUrl(), once });
+  const baseUrl = getBaseUrl();
+  console.log('[worker] starting', { baseUrl, once });
+  if (/\.vercel\.app\b/i.test(baseUrl)) {
+    console.warn('[worker] WARNING: render worker is calling Vercel. FFmpeg will run inside the serverless request and can time out. Point WORKER_API_URL at the local Mac render API, normally http://127.0.0.1:3000.');
+  }
 
   if (once) {
     await runOnce();

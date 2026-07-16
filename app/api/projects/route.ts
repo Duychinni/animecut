@@ -132,7 +132,10 @@ export async function GET() {
     const projects = await Promise.all((data ?? []).map(async (project) => {
       const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
       const readyExports = rows.filter(hasPlayableOutput).length;
-      const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
+      const queuedExports = rows.filter((r) => r.status === 'queued' && !hasPlayableOutput(r)).length;
+      const processingExports = rows.filter((r) => r.status === 'processing' && !hasPlayableOutput(r)).length;
+      const activeExports = queuedExports + processingExports;
+      const targetExports = Math.max(1, rows.length || getTargetClipCount(Math.max(60, Number(project.source_duration_seconds) || 600)));
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const completionLatched = markedCompleted || Boolean(project.pipeline_completed_at);
       // Completion must be an explicit durable backend decision. Inferring it
@@ -151,7 +154,13 @@ export async function GET() {
       const normalizedStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'analyzed' : project.status;
       const normalizedPipelineStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'processing' : project.pipeline_status;
       const normalizedPipelineStage = isCompleted ? 'completed' : activeExports > 0 ? 'rendering' : project.pipeline_stage;
-      const normalizedPipelineStageLabel = isCompleted ? 'Completed' : activeExports > 0 ? 'Rendering reels' : project.pipeline_stage_label;
+      const normalizedPipelineStageLabel = isCompleted
+        ? 'Completed'
+        : processingExports > 0
+          ? `Rendering reels (${readyExports}/${targetExports} ready)`
+          : queuedExports > 0
+            ? `Waiting for render worker (${readyExports}/${targetExports} ready)`
+            : project.pipeline_stage_label;
       const etaSeconds = estimateDashboardEtaSeconds({
         status: normalizedStatus,
         pipelineStatus: normalizedPipelineStatus,
@@ -160,7 +169,7 @@ export async function GET() {
         sourceDurationSeconds: project.source_duration_seconds,
         readyExports,
         activeExports,
-        exportCount: rows.length,
+        exportCount: targetExports,
       });
 
       return {
@@ -171,7 +180,12 @@ export async function GET() {
         pipeline_stage_label: normalizedPipelineStageLabel,
         pipeline_error: activeExports > 0 || isCompleted ? null : project.pipeline_error,
         progress_percent: progressPercent,
-        eta_seconds: etaSeconds,
+        eta_seconds: processingExports > 0 ? etaSeconds : null,
+        done_exports: readyExports,
+        active_exports: activeExports,
+        queued_exports: queuedExports,
+        processing_exports: processingExports,
+        target_exports: targetExports,
         source_thumbnail_url: sourceThumbnailUrl,
         expires_at: expiryInfo.expires_at,
         days_until_expiring: expiryInfo.days_until_expiring,
