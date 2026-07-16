@@ -6,6 +6,7 @@ import { readJsonSafe } from '@/lib/safe-json';
 
 const OTP_EXPIRY_SECONDS = 60 * 60;
 const RESEND_COOLDOWN_SECONDS = 60;
+const OTP_LENGTH = 8;
 
 function formatRemainingTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -25,30 +26,46 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
 
   function updateCodeDigit(index: number, value: string) {
     const digit = value.replace(/\D/g, '').slice(-1);
-    const digits = code.padEnd(6, ' ').split('');
+    const digits = code.padEnd(OTP_LENGTH, ' ').split('');
     digits[index] = digit || ' ';
     setCode(digits.join('').trimEnd());
-    if (digit && index < 5) codeInputRefs.current[index + 1]?.focus();
+    if (digit && index < OTP_LENGTH - 1) codeInputRefs.current[index + 1]?.focus();
   }
 
   function handleCodeKeyDown(index: number, event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Backspace' && !code[index] && index > 0) {
       event.preventDefault();
-      const digits = code.padEnd(6, ' ').split('');
+      const digits = code.padEnd(OTP_LENGTH, ' ').split('');
       digits[index - 1] = ' ';
       setCode(digits.join('').trimEnd());
       codeInputRefs.current[index - 1]?.focus();
     }
     if (event.key === 'ArrowLeft' && index > 0) codeInputRefs.current[index - 1]?.focus();
-    if (event.key === 'ArrowRight' && index < 5) codeInputRefs.current[index + 1]?.focus();
+    if (event.key === 'ArrowRight' && index < OTP_LENGTH - 1) codeInputRefs.current[index + 1]?.focus();
   }
 
   function handleCodePaste(event: React.ClipboardEvent<HTMLDivElement>) {
-    const pastedCode = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    const pastedCode = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
     if (!pastedCode) return;
     event.preventDefault();
     setCode(pastedCode);
-    codeInputRefs.current[Math.min(pastedCode.length, 6) - 1]?.focus();
+    codeInputRefs.current[Math.min(pastedCode.length, OTP_LENGTH) - 1]?.focus();
+  }
+
+  async function pasteCodeFromClipboard() {
+    setError(null);
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      const pastedCode = clipboardText.replace(/\D/g, '').slice(0, OTP_LENGTH);
+      if (pastedCode.length !== OTP_LENGTH) {
+        setError(`Copy the complete ${OTP_LENGTH}-digit code from your email, then select Paste code.`);
+        return;
+      }
+      setCode(pastedCode);
+      codeInputRefs.current[OTP_LENGTH - 1]?.focus();
+    } catch {
+      setError('Clipboard access was blocked. Paste the code into the first slot instead.');
+    }
   }
 
   useEffect(() => {
@@ -123,7 +140,7 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
       <div className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-fuchsia-300/25 bg-fuchsia-400/10 text-2xl">&#9993;</div>
       <h1 className="mt-5 text-2xl font-bold tracking-tight text-white">Enter your verification code</h1>
       <p className="mt-2 text-sm leading-6 text-white/60">
-        We sent a six-digit code to<br />
+        We sent an {OTP_LENGTH}-digit code to<br />
         <strong className="font-semibold text-white">{email || 'your email address'}</strong>
       </p>
 
@@ -134,11 +151,11 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
         </div>
         <div
           onPaste={handleCodePaste}
-          className="flex items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-4"
+          className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-4 sm:gap-3 sm:px-4"
           role="group"
-          aria-label="Six-digit verification code"
+          aria-label={`${OTP_LENGTH}-digit verification code`}
         >
-          {Array.from({ length: 6 }, (_, index) => (
+          {Array.from({ length: OTP_LENGTH }, (_, index) => (
             <input
               key={index}
               ref={(element) => { codeInputRefs.current[index] = element; }}
@@ -152,10 +169,18 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
               required
               autoFocus={index === 0}
               aria-label={`Verification code digit ${index + 1}`}
-              className="h-12 w-10 border-x-0 border-t-0 border-b-2 border-white/35 bg-transparent text-center text-2xl font-bold text-white caret-fuchsia-300 outline-none transition focus:border-fuchsia-300"
+              className="h-12 w-7 border-x-0 border-t-0 border-b-2 border-white/35 bg-transparent text-center text-2xl font-bold text-white caret-fuchsia-300 outline-none transition focus:border-fuchsia-300 sm:w-10"
             />
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={() => void pasteCodeFromClipboard()}
+          className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-center text-xs font-semibold text-white/70 transition hover:border-fuchsia-300/30 hover:text-white"
+        >
+          Paste code from clipboard
+        </button>
 
         <div className="flex items-center justify-between text-xs">
           <span className="border-b-2 border-emerald-400 pb-1 text-white/55">
@@ -175,7 +200,7 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
 
         <button
           type="submit"
-          disabled={loading || code.length !== 6 || expiresIn <= 0}
+          disabled={loading || code.length !== OTP_LENGTH || expiresIn <= 0}
           className="w-full rounded-2xl bg-white px-4 py-3.5 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? 'Verifying...' : 'Continue'}
