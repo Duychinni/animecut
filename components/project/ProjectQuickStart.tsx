@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { readJsonSafe } from '@/lib/safe-json';
+import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 
 type ProjectCreatedPayload = {
   id: string;
@@ -73,7 +74,14 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
 
   async function onAnalyzeLink(e: React.FormEvent) {
     e.preventDefault();
-    if (!sourceUrl.trim()) return;
+    if (!sourceUrl.trim()) {
+      setMsg('Paste a YouTube link first, or use Upload file.');
+      return;
+    }
+    if (!isSupportedYouTubeVideoUrl(sourceUrl)) {
+      setMsg(YOUTUBE_LINK_ERROR);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -197,7 +205,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
             <input
               type="url"
               name="sourceUrl"
-              placeholder="Drop a video link"
+              placeholder="Paste a YouTube video link"
               value={sourceUrl}
               onChange={(e) => setSourceUrl(e.target.value)}
               className="h-8 min-w-0 flex-1 bg-transparent px-3 text-sm text-white placeholder:text-white/35 outline-none"

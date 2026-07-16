@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { fetchYouTubeSourceMetadata } from '@/lib/source-metadata';
+import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 
 export async function POST(req: Request) {
   try {
     const { project_id, source_url } = await req.json();
     if (!project_id || !source_url) {
       return NextResponse.json({ error: 'project_id and source_url are required' }, { status: 400 });
+    }
+    if (!isSupportedYouTubeVideoUrl(source_url)) {
+      return NextResponse.json({ error: YOUTUBE_LINK_ERROR }, { status: 400 });
     }
 
     const supabase = await createClient();

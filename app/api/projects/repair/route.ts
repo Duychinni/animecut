@@ -197,11 +197,10 @@ export async function POST() {
         }
       }
 
-      // A settled partial batch is a valid finished project. Do not repeatedly
-      // requeue failed optional exports after usable reels have been stored.
-      // This also permanently latches projects created under an older target
-      // count so refreshing cannot send them back to processing.
-      if (hasSavedReels && activeRows.length === 0) {
+      // Recover legacy partial batches that were already placed in a terminal
+      // error state. Do not infer completion merely from a temporary gap with
+      // zero active rows while a healthy project is still rendering.
+      if (hasSavedReels && activeRows.length === 0 && project.pipeline_status === 'error') {
         await admin
           .from('projects')
           .update({
@@ -221,7 +220,7 @@ export async function POST() {
         continue;
       }
 
-      const retryableErrors = frozenCompletedProject || hasSavedReels
+      const retryableErrors = frozenCompletedProject
         ? []
         : rows.filter((r) => r.id && r.status === 'error' && !hasPlayableOutput(r) && isRetryableRenderError(r.error_message));
 
@@ -267,7 +266,7 @@ export async function POST() {
 
       const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length + retryableErrors.length;
 
-      if (readyExports === 0 && activeExports > 0 && (project.status !== 'processing' || project.pipeline_status !== 'processing')) {
+      if (activeExports > 0 && (project.status !== 'processing' || project.pipeline_status !== 'processing' || project.pipeline_stage !== 'rendering')) {
         await admin
           .from('projects')
           .update({

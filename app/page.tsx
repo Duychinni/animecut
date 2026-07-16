@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { SignOutButton } from '@/components/auth/SignOutButton';
@@ -451,6 +452,10 @@ export default function Home() {
       setMsg('Paste a YouTube link first, or use Upload files.');
       return;
     }
+    if (!isSupportedYouTubeVideoUrl(sourceUrl)) {
+      setMsg(`Error: ${YOUTUBE_LINK_ERROR}`);
+      return;
+    }
 
     try {
       // This page has a large animated showcase. Schedule its loading-state
@@ -674,7 +679,7 @@ export default function Home() {
                   <input
                     type="url"
                     name="sourceUrl"
-                    placeholder="Drop a video link"
+                    placeholder="Paste a YouTube video link"
                     value={sourceUrl}
                     onChange={(e) => setSourceUrl(e.target.value)}
                     className="h-12 min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/40 outline-none ring-0 transition focus:border-[#8B7CFF]/60 focus:shadow-[0_0_0_1px_rgba(139,124,255,0.25),0_0_30px_rgba(139,124,255,0.16)]"
@@ -690,6 +695,11 @@ export default function Home() {
                   ) : (
                     <Link
                       href={`/auth/signup?next=${encodeURIComponent(sourceUrl.trim() ? `/?sourceUrl=${encodeURIComponent(sourceUrl.trim())}` : '/dashboard')}`}
+                      onClick={(event) => {
+                        if (isSupportedYouTubeVideoUrl(sourceUrl)) return;
+                        event.preventDefault();
+                        setMsg(`Error: ${sourceUrl.trim() ? YOUTUBE_LINK_ERROR : 'Paste a YouTube link first, or use Upload files.'}`);
+                      }}
                       className="grid h-12 shrink-0 cursor-pointer place-items-center rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)]"
                     >
                       Get Free Clips

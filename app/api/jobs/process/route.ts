@@ -71,6 +71,25 @@ async function maybeFinalizeProject(projectId: string) {
   const candidatePoolExhausted = totalCount >= availableCandidates && availableCandidates > 0;
 
   if (allAttemptsSettled && candidatePoolExhausted) {
+    if (doneCount > 0) {
+      await supabase
+        .from('projects')
+        .update({
+          status: 'completed',
+          pipeline_status: 'completed',
+          pipeline_stage: 'completed',
+          pipeline_stage_label: 'Completed',
+          pipeline_progress_percent: 100,
+          pipeline_error: null,
+          pipeline_completed_at: new Date().toISOString(),
+          worker_last_seen_at: new Date().toISOString(),
+          worker_last_log_message: `Completed with ${doneCount} playable reels`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', projectId);
+      return true;
+    }
+
     await supabase
       .from('projects')
       .update({
@@ -79,9 +98,7 @@ async function maybeFinalizeProject(projectId: string) {
         pipeline_stage: 'error',
         pipeline_stage_label: 'Could not finish every reel',
         pipeline_progress_percent: Math.min(98, Math.round((doneCount / targetCount) * 100)),
-        pipeline_error: doneCount > 0
-          ? `Only ${doneCount} of ${targetCount} target reels were rendered before candidate pool was exhausted.`
-          : 'All export attempts failed and no backup candidates remained.',
+        pipeline_error: 'All export attempts failed and no backup candidates remained.',
         pipeline_completed_at: null,
         updated_at: new Date().toISOString(),
       })

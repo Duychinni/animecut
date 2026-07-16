@@ -9,6 +9,7 @@ import { isMockAiEnabled } from '@/lib/dev-ai';
 import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
 import { getTargetClipCount } from '@/lib/clip-policy';
+import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -134,7 +135,10 @@ export async function GET() {
       const activeExports = rows.filter((r) => (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r)).length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const completionLatched = markedCompleted || Boolean(project.pipeline_completed_at);
-      const isCompleted = readyExports > 0 && (completionLatched || activeExports === 0);
+      // Completion must be an explicit durable backend decision. Inferring it
+      // from a moment with zero active exports made cards briefly look ready
+      // between render/refill jobs, then return to processing after opening.
+      const isCompleted = readyExports > 0 && completionLatched;
       const needsExportCompletion = markedCompleted && readyExports === 0;
       const uploadThumbnailUrl = project.source_type === 'upload'
         ? project.source_thumbnail_url
@@ -146,10 +150,12 @@ export async function GET() {
       const progressPercent = isCompleted ? 100 : Number(project.pipeline_progress_percent ?? 0);
       const normalizedStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'analyzed' : project.status;
       const normalizedPipelineStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'processing' : project.pipeline_status;
+      const normalizedPipelineStage = isCompleted ? 'completed' : activeExports > 0 ? 'rendering' : project.pipeline_stage;
+      const normalizedPipelineStageLabel = isCompleted ? 'Completed' : activeExports > 0 ? 'Rendering reels' : project.pipeline_stage_label;
       const etaSeconds = estimateDashboardEtaSeconds({
         status: normalizedStatus,
         pipelineStatus: normalizedPipelineStatus,
-        pipelineStage: project.pipeline_stage,
+        pipelineStage: normalizedPipelineStage,
         progressPercent,
         sourceDurationSeconds: project.source_duration_seconds,
         readyExports,
@@ -161,6 +167,8 @@ export async function GET() {
         ...project,
         status: normalizedStatus,
         pipeline_status: normalizedPipelineStatus,
+        pipeline_stage: normalizedPipelineStage,
+        pipeline_stage_label: normalizedPipelineStageLabel,
         pipeline_error: activeExports > 0 || isCompleted ? null : project.pipeline_error,
         progress_percent: progressPercent,
         eta_seconds: etaSeconds,
@@ -185,6 +193,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const parsed = createProjectSchema.parse(body);
+    if (parsed.source_type === 'youtube' && !isSupportedYouTubeVideoUrl(parsed.source_url)) {
+      return NextResponse.json({ error: YOUTUBE_LINK_ERROR }, { status: 400 });
+    }
     const supabase = await createClient();
 
     const { data: userRes } = await supabase.auth.getUser();

@@ -1,3 +1,5 @@
+import { extractYouTubeVideoId } from '@/lib/youtube-url';
+
 type SourceMetadata = {
   sourceUrl: string | null;
   sourcePlatform: 'youtube' | 'upload' | null;
@@ -15,21 +17,6 @@ export function stableYouTubeThumbnail(url: string | null | undefined, videoId: 
 
   if (!videoId) return null;
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-}
-
-function extractYouTubeVideoId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes('youtu.be')) {
-      return u.pathname.split('/').filter(Boolean)[0] ?? null;
-    }
-    if (u.hostname.includes('youtube.com')) {
-      return u.searchParams.get('v');
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 function parseIso8601Duration(input: string): number | null {
