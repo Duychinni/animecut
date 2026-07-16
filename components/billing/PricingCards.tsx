@@ -42,7 +42,18 @@ function PlanCard({
         </div>
       </div>
 
-      <div className="mt-6 flex items-end gap-1">
+      <div className="mt-6 flex min-h-6 items-center gap-2 text-sm">
+        {plan.originalMonthlyPrice ? (
+          <>
+            <span className="font-semibold text-white/45 line-through decoration-white/60 decoration-2">{plan.originalMonthlyPrice}</span>
+            <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-emerald-200">
+              {plan.discountLabel}
+            </span>
+          </>
+        ) : null}
+      </div>
+
+      <div className="mt-1 flex items-end gap-1">
         <span className="text-5xl font-black tracking-tight text-white">{price}</span>
         {suffix ? <span className="pb-1 text-sm text-white/60">{suffix}</span> : null}
       </div>

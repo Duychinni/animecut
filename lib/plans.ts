@@ -11,6 +11,8 @@ export type PlanConfig = {
   name: string;
   subtitle: string;
   monthlyPrice: string;
+  originalMonthlyPrice?: string;
+  discountLabel?: string;
   yearlyPrice?: string;
   yearlyBadge?: string;
   highlighted?: boolean;
@@ -39,7 +41,9 @@ export const PLAN_CONFIG: PlanConfig[] = [
     id: 'creator',
     name: 'Creator',
     subtitle: 'For consistent weekly short-form content',
-    monthlyPrice: '$29.99',
+    monthlyPrice: '$19.99',
+    originalMonthlyPrice: '$29.99',
+    discountLabel: '33% off',
     highlighted: true,
     processingMinutes: 800,
     maxUploadLengthMinutes: 120,
