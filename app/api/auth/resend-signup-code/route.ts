@@ -12,7 +12,11 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.resend({ type: 'signup', email });
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const isRateLimited = error.message.toLowerCase().includes('rate limit');
+      return NextResponse.json(
+        { error: isRateLimited ? 'Please wait 60 seconds before requesting another code.' : 'We could not resend the code. Please try again.' },
+        { status: isRateLimited ? 429 : 400 },
+      );
     }
 
     return NextResponse.json({ ok: true });

@@ -21,7 +21,11 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
     if (error || !data.session) {
-      return NextResponse.json({ error: error?.message || 'That verification code is invalid or expired.' }, { status: 400 });
+      const message = error?.message?.toLowerCase() || '';
+      const publicError = message.includes('expired') || message.includes('invalid')
+        ? 'That code is invalid or expired. Request a new code and use the newest email.'
+        : 'We could not verify that code. Check all six digits and try again.';
+      return NextResponse.json({ error: publicError }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true, next: safeNext(body.next) });

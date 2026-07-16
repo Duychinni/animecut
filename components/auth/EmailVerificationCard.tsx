@@ -1,22 +1,67 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { readJsonSafe } from '@/lib/safe-json';
+
+const OTP_EXPIRY_SECONDS = 60 * 60;
+const RESEND_COOLDOWN_SECONDS = 60;
+
+function formatRemainingTime(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
 
 export function EmailVerificationCard({ email, next = '/' }: { email: string; next?: string }) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [cooldown, setCooldown] = useState(30);
+  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
+  const [expiresIn, setExpiresIn] = useState(OTP_EXPIRY_SECONDS);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState('Email delivered');
+  const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  function updateCodeDigit(index: number, value: string) {
+    const digit = value.replace(/\D/g, '').slice(-1);
+    const digits = code.padEnd(6, ' ').split('');
+    digits[index] = digit || ' ';
+    setCode(digits.join('').trimEnd());
+    if (digit && index < 5) codeInputRefs.current[index + 1]?.focus();
+  }
+
+  function handleCodeKeyDown(index: number, event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Backspace' && !code[index] && index > 0) {
+      event.preventDefault();
+      const digits = code.padEnd(6, ' ').split('');
+      digits[index - 1] = ' ';
+      setCode(digits.join('').trimEnd());
+      codeInputRefs.current[index - 1]?.focus();
+    }
+    if (event.key === 'ArrowLeft' && index > 0) codeInputRefs.current[index - 1]?.focus();
+    if (event.key === 'ArrowRight' && index < 5) codeInputRefs.current[index + 1]?.focus();
+  }
+
+  function handleCodePaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    const pastedCode = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pastedCode) return;
+    event.preventDefault();
+    setCode(pastedCode);
+    codeInputRefs.current[Math.min(pastedCode.length, 6) - 1]?.focus();
+  }
 
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = window.setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [cooldown]);
+
+  useEffect(() => {
+    if (expiresIn <= 0) return;
+    const timer = window.setInterval(() => setExpiresIn((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresIn]);
 
   async function verifyCode(event: React.FormEvent) {
     event.preventDefault();
@@ -35,7 +80,7 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setError(String(data?.error || 'That verification code is invalid or expired.'));
+        setError(String(data?.error || 'That code is invalid or expired. Request a new code and try again.'));
         return;
       }
       window.location.assign(typeof data?.next === 'string' ? data.next : next);
@@ -58,11 +103,14 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
       });
       const data = await readJsonSafe(response);
       if (!response.ok) {
-        setError(String(data?.error || 'We could not resend the code yet.'));
+        setError(String(data?.error || 'Please wait before requesting another code.'));
         return;
       }
+      setCode('');
       setMessage('A new code was sent');
-      setCooldown(60);
+      setCooldown(RESEND_COOLDOWN_SECONDS);
+      setExpiresIn(OTP_EXPIRY_SECONDS);
+      codeInputRefs.current[0]?.focus();
     } catch (resendError: unknown) {
       setError(resendError instanceof Error ? resendError.message : 'We could not resend the code yet.');
     } finally {
@@ -84,22 +132,35 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
           <span className="min-w-0 flex-1 truncate">{email || 'Email address unavailable'}</span>
           <Link href="/auth/signup" className="ml-3 shrink-0 font-semibold text-white transition hover:text-fuchsia-200">Edit</Link>
         </div>
-        <input
-          value={code}
-          onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxLength={6}
-          required
-          autoFocus
-          aria-label="Verification code"
-          placeholder="Enter 6-digit verification code"
-          className="w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-center text-lg font-bold tracking-[0.32em] text-white outline-none transition placeholder:text-left placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-white/35 focus:border-fuchsia-300/45"
-        />
+        <div
+          onPaste={handleCodePaste}
+          className="flex items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-4"
+          role="group"
+          aria-label="Six-digit verification code"
+        >
+          {Array.from({ length: 6 }, (_, index) => (
+            <input
+              key={index}
+              ref={(element) => { codeInputRefs.current[index] = element; }}
+              value={code[index] || ''}
+              onChange={(event) => updateCodeDigit(index, event.target.value)}
+              onKeyDown={(event) => handleCodeKeyDown(index, event)}
+              inputMode="numeric"
+              autoComplete={index === 0 ? 'one-time-code' : 'off'}
+              pattern="[0-9]"
+              maxLength={1}
+              required
+              autoFocus={index === 0}
+              aria-label={`Verification code digit ${index + 1}`}
+              className="h-12 w-10 border-x-0 border-t-0 border-b-2 border-white/35 bg-transparent text-center text-2xl font-bold text-white caret-fuchsia-300 outline-none transition focus:border-fuchsia-300"
+            />
+          ))}
+        </div>
 
         <div className="flex items-center justify-between text-xs">
-          <span className="border-b-2 border-emerald-400 pb-1 text-white/55">{message}</span>
+          <span className="border-b-2 border-emerald-400 pb-1 text-white/55">
+            {expiresIn > 0 ? `${message} · valid for ${formatRemainingTime(expiresIn)}` : 'Code expired · request a new code'}
+          </span>
           <button
             type="button"
             onClick={() => void resendCode()}
@@ -114,7 +175,7 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
 
         <button
           type="submit"
-          disabled={loading || code.length !== 6}
+          disabled={loading || code.length !== 6 || expiresIn <= 0}
           className="w-full rounded-2xl bg-white px-4 py-3.5 font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? 'Verifying...' : 'Continue'}
