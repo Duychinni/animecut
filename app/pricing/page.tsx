@@ -109,8 +109,7 @@ export default async function PricingPage() {
             SIMPLE MONTHLY PRICING
           </p>
           <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.6rem]">
-            Plans based on source-video minutes.
-            <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent">
+            <span className="block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent">
               Create more. Pay only for what you need.
             </span>
           </h1>

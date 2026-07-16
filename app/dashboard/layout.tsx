@@ -57,11 +57,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="app-shell min-h-screen text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-6 py-6">
-          <div className="relative flex items-center justify-between gap-4">
+        <div className="mx-auto max-w-[1440px] px-6 py-6">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-6 lg:gap-10">
             <HomeLogoLink />
 
-            <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center justify-center gap-8 text-base font-medium text-white/90 md:flex">
+            <nav className="hidden min-w-0 items-center justify-center gap-8 justify-self-center text-base font-medium text-white/90 md:flex">
               <Link href="/#features" className="transition hover:text-white">
                 Features
               </Link>
@@ -73,7 +73,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               </Link>
             </nav>
 
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end">
               <Link href="/pricing" className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 transition hover:border-[#ff7bd8]/55 hover:bg-[#ff7bd8]/10 hover:text-white xl:inline-flex">
                 <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                 <span>{allowanceLabel}</span>
@@ -82,31 +82,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 <span className="hidden xl:inline">Add more credits</span>
                 <span className="xl:hidden">Add credits</span>
               </Link>
-              <div className="group relative">
+              <div className="relative shrink-0" aria-label="Account">
                 {avatarUrl ? (
                   <Image
                     src={avatarUrl}
-                    alt={`${displayName} avatar`}
-                    title={displayName}
+                    alt="Account avatar"
                     width={32}
                     height={32}
                     className="h-8 w-8 rounded-full border border-white/20 object-cover"
                   />
                 ) : (
                   <div
-                    title={displayName}
+                    aria-hidden="true"
                     className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85"
                   >
                     {displayName.charAt(0).toUpperCase()}
                   </div>
                 )}
-                <span className="pointer-events-none absolute -bottom-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/20 bg-black/90 px-2 py-1 text-xs text-white/85 group-hover:block">
-                  {displayName}
-                </span>
               </div>
-              <Link href="/dashboard" className="hidden max-w-28 truncate text-sm font-semibold text-white/80 transition hover:text-white lg:block">
-                {displayName}
-              </Link>
               <SignOutButton />
             </div>
           </div>
