@@ -104,8 +104,10 @@ export function AuthCard({
         return;
       }
 
-      const signupMsg = typeof data?.msg === 'string' ? data.msg : 'Check your email to confirm your account';
-      router.push(`/auth/login?msg=${encodeURIComponent(signupMsg)}&next=${encodeURIComponent(next || '/dashboard')}`);
+      const signupEmail = typeof data?.email === 'string' ? data.email : email;
+      router.push(
+        `/auth/check-email?email=${encodeURIComponent(signupEmail)}&next=${encodeURIComponent(next || '/dashboard')}`,
+      );
       router.refresh();
     } catch (err: unknown) {
       setLocalError(err instanceof Error ? err.message : 'Request failed');

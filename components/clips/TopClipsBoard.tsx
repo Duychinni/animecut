@@ -258,7 +258,7 @@ function PosterHookOverlay({ text }: { text: string }) {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute inset-x-[8.3%] top-[2.8%] z-20 flex min-h-[9%] items-center justify-center rounded-[8px] bg-white px-2.5 py-2 text-center text-[12px] font-black leading-[1.08] tracking-[-0.025em] text-black shadow-[0_3px_12px_rgba(0,0,0,.34)] ring-1 ring-black/10"
+      className="pointer-events-none absolute inset-x-[8.3%] top-[2.8%] z-30 flex h-[12.5%] items-center justify-center overflow-hidden rounded-[8px] bg-white px-3 py-2 text-center text-[13px] font-black leading-[1.1] tracking-[-0.025em] text-black shadow-[0_3px_12px_rgba(0,0,0,.34)] ring-1 ring-black/10"
     >
       <span className="line-clamp-3">{text}</span>
     </div>
@@ -717,13 +717,16 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const duration = playbackState?.duration ?? 0;
               const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
               const currentLabel = formatClock(current);
-              const paused = playbackState?.paused ?? true;
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
               const primaryBadge = getPrimaryClipBadge(clip);
               const savedHookText = getSavedHookText(clip);
-              const showPosterHook = Boolean(savedHookText) && paused && current <= 0.05;
+              // The production MP4 contains the same hook for its first 4.5 seconds.
+              // Keep one opaque, crisp browser layer over that exact region while it
+              // is visible. This prevents video scaling from softening the text and
+              // fully covers the burned-in card so two hooks can never appear.
+              const showPosterHook = Boolean(savedHookText) && current < 4.45;
               const editRendering = clip.editStatus === 'rendering' || optimisticEditIds.has(clip.exportId);
               const pendingCaptionPreset =
                 mediaUrl && clip.status !== 'done'
