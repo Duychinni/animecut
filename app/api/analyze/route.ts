@@ -1212,7 +1212,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     await supabase.from('clip_candidates').delete().eq('project_id', project_id);
     if (!ranked.length) {
       await supabase.from('projects').update({
-        status: 'completed',
+        status: 'exported',
         pipeline_status: 'completed',
         pipeline_stage: 'completed',
         pipeline_stage_label: 'No valid clips found',

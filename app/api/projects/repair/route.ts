@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
+import { hasSettledSuccessfulExports } from '@/lib/project-completion';
 
 type ExportRepairRow = {
   id?: string | null;
@@ -80,6 +81,20 @@ export async function POST() {
       const activeRows = rows.filter((r) => r.id && (r.status === 'queued' || r.status === 'processing') && !hasPlayableOutput(r));
       const readyExports = rows.filter(hasPlayableOutput).length;
       const hasSavedReels = readyExports > 0;
+      const failedExports = rows.filter((row) => row.status === 'error' && !hasPlayableOutput(row)).length;
+      const { count: activeJobs } = await admin
+        .from('jobs')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', project.id)
+        .in('type', ['pipeline', 'export'])
+        .in('status', ['queued', 'processing']);
+      const allCreatedExportsSucceeded = hasSettledSuccessfulExports({
+        totalExports: rows.length,
+        doneExports: readyExports,
+        failedExports,
+        activeExports: activeRows.length,
+        activeJobs: Number(activeJobs ?? 0),
+      });
       const recoveryLabel = String(project.pipeline_stage_label ?? '').toLowerCase();
       // Releases before the durable-completion fix could clear the completion
       // marker while auto-requeueing an already-finished project. Recognize
@@ -88,6 +103,26 @@ export async function POST() {
       const wasReopenedByRecovery = hasSavedReels
         && (recoveryLabel.includes('reconnecting worker') || recoveryLabel.includes('retrying processing'));
       const frozenCompletedProject = hasSavedReels && (projectAlreadyCompleted || wasReopenedByRecovery);
+
+      if (allCreatedExportsSucceeded && !projectAlreadyCompleted) {
+        await admin
+          .from('projects')
+          .update({
+            status: 'exported',
+            pipeline_status: 'completed',
+            pipeline_stage: 'completed',
+            pipeline_stage_label: 'Completed',
+            pipeline_progress_percent: 100,
+            pipeline_error: null,
+            pipeline_completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', project.id)
+          .eq('user_id', user.id);
+
+        repaired += 1;
+        continue;
+      }
 
       if (frozenCompletedProject) {
         if (activeRows.length) {
@@ -117,7 +152,7 @@ export async function POST() {
           await admin
             .from('projects')
             .update({
-              status: 'completed',
+              status: 'exported',
               pipeline_status: 'completed',
               pipeline_stage: 'completed',
               pipeline_stage_label: 'Completed',
@@ -204,7 +239,7 @@ export async function POST() {
         await admin
           .from('projects')
           .update({
-            status: 'completed',
+            status: 'exported',
             pipeline_status: 'completed',
             pipeline_stage: 'completed',
             pipeline_stage_label: 'Completed',
@@ -288,7 +323,7 @@ export async function POST() {
         await admin
           .from('projects')
           .update({
-            status: 'completed',
+            status: 'exported',
             pipeline_status: 'completed',
             pipeline_error: null,
             pipeline_completed_at: project.pipeline_completed_at || new Date().toISOString(),

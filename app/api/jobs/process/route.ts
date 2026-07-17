@@ -11,6 +11,7 @@ import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
+import { hasSettledSuccessfulExports } from '@/lib/project-completion';
 import {
   buildDefaultClipEditSettings,
   hasClipEditSettings,
@@ -32,6 +33,7 @@ async function maybeFinalizeProject(projectId: string) {
     { count: active },
     { data: transcriptRow },
     { count: candidateCount },
+    { count: activeJobs },
   ] = await Promise.all([
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).not('output_storage_path', 'is', null).neq('status', 'error'),
@@ -39,6 +41,7 @@ async function maybeFinalizeProject(projectId: string) {
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('status', ['queued', 'processing']).is('output_storage_path', null),
     supabase.from('transcripts').select('segments_json').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('clip_candidates').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
+    supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('type', ['pipeline', 'export']).in('status', ['queued', 'processing']),
   ]);
 
   const totalCount = Number(total ?? 0);
@@ -50,12 +53,19 @@ async function maybeFinalizeProject(projectId: string) {
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const availableCandidates = Number(candidateCount ?? 0);
   const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
+  const allCreatedExportsSucceeded = hasSettledSuccessfulExports({
+    totalExports: totalCount,
+    doneExports: doneCount,
+    failedExports: failedCount,
+    activeExports: activeCount,
+    activeJobs: Number(activeJobs ?? 0),
+  });
 
-  if (doneCount >= targetCount && activeCount === 0) {
+  if ((doneCount >= targetCount && activeCount === 0) || allCreatedExportsSucceeded) {
     await supabase
       .from('projects')
       .update({
-        status: 'completed',
+        status: 'exported',
         pipeline_status: 'completed',
         pipeline_stage: 'completed',
         pipeline_stage_label: 'Completed',
@@ -75,7 +85,7 @@ async function maybeFinalizeProject(projectId: string) {
       await supabase
         .from('projects')
         .update({
-          status: 'completed',
+          status: 'exported',
           pipeline_status: 'completed',
           pipeline_stage: 'completed',
           pipeline_stage_label: 'Completed',

@@ -5,6 +5,7 @@ import { getTargetClipCount } from '@/lib/clip-policy';
 import { getPipelineErrorInfo, getPublicPipelineError } from '@/lib/pipeline-errors';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
+import { hasSettledSuccessfulExports } from '@/lib/project-completion';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -383,6 +384,12 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       .eq('project_id', projectId)
       .order('updated_at', { ascending: false })
       .limit(8);
+    const { count: activeJobCount } = await admin
+      .from('jobs')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectId)
+      .in('type', ['pipeline', 'export'])
+      .in('status', ['queued', 'processing']);
 
     const rows = exportsRows ?? [];
     const processingRowsWithSavedOutput = rows
@@ -445,7 +452,14 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasTargetCoverage = doneExports >= targetCount;
     const frozenCompletedProject = projectMarkedCompleted && doneExports > 0;
-    const hasSettledPlayableExports = activeExports === 0 && hasTargetCoverage;
+    const allCreatedExportsSucceeded = hasSettledSuccessfulExports({
+      totalExports: rows.length,
+      doneExports,
+      failedExports,
+      activeExports,
+      activeJobs: Number(activeJobCount ?? 0),
+    });
+    const hasSettledPlayableExports = (activeExports === 0 && hasTargetCoverage) || allCreatedExportsSucceeded;
     // Explicit completion is a durable latch for saved projects. The target
     // count still gates new projects that have not been finalized yet, but a
     // later policy change must never reopen an older completed project.
@@ -579,7 +593,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       await supabase
         .from('projects')
         .update({
-          status: 'completed',
+          status: 'exported',
           pipeline_status: 'completed',
           pipeline_stage: 'completed',
           pipeline_stage_label: 'Completed',
