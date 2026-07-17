@@ -35,6 +35,26 @@ export type R2MultipartUploadPreparationResult = {
 
 export type UploadPreparationResult = SignedUrlUploadPreparationResult | R2MultipartUploadPreparationResult;
 
+function getSupabaseStorageContentType(filename: string, contentType: string) {
+  const extension = (filename.split('.').pop() || '').toLowerCase();
+  const normalizedType = contentType.toLowerCase().split(';', 1)[0].trim();
+
+  // Supabase validates signed uploads against the bucket MIME allow-list. Some
+  // browsers label MKV files as video/matroska (or video/x-matroska), which is
+  // commonly rejected even though FFmpeg supports the container. Keep the .mkv
+  // object extension for media probing, but use a bucket-safe video MIME for the
+  // storage request. FFmpeg identifies the input from its bytes, not this header.
+  if (
+    extension === 'mkv' ||
+    normalizedType === 'video/matroska' ||
+    normalizedType === 'video/x-matroska'
+  ) {
+    return 'video/mp4';
+  }
+
+  return contentType || 'application/octet-stream';
+}
+
 export async function prepareUploadTarget(input: UploadPreparationInput): Promise<UploadPreparationResult> {
   const ext = (input.filename.split('.').pop() || 'mp4').toLowerCase();
   const objectPath = makeRawObjectPath(input.userId, input.projectId, ext);
@@ -54,6 +74,7 @@ export async function prepareUploadTarget(input: UploadPreparationInput): Promis
   }
 
   const supabase = await createServerSupabaseClient();
+  const storageContentType = getSupabaseStorageContentType(input.filename, input.contentType);
   const { data: signed, error: signedError } = await supabase.storage
     .from('raw-media')
     .createSignedUploadUrl(objectPath);
@@ -67,7 +88,7 @@ export async function prepareUploadTarget(input: UploadPreparationInput): Promis
     uploadUrl: signed.signedUrl,
     method: 'PUT',
     headers: {
-      'content-type': input.contentType || 'application/octet-stream',
+      'content-type': storageContentType,
       'x-upsert': 'true',
     },
   };

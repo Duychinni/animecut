@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createExportSignedUrl } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -160,9 +159,15 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
         const start = Number(candidate?.start_sec ?? 0);
         const end = Number(candidate?.end_sec ?? 0);
         const length = end > start ? formatClock(end - start) : '0:30';
-        const mediaUrl = await createExportSignedUrl(row.output_storage_path, 60 * 60);
-        const posterObjectPath = row.output_storage_path.replace(/\.mp4$/i, '.jpg');
-        const posterUrl = await createExportSignedUrl(posterObjectPath, 60 * 60).catch(() => undefined);
+        const videoId = youtubeVideoId(project);
+
+        // Finished exports contain the customer's generated hook/captions in
+        // the video pixels. Homepage examples must be text-free, so use only
+        // the original public YouTube segment. Never expose a private upload
+        // as public showcase media and never fall back to the rendered export.
+        if (!videoId) return null;
+        const mediaUrl = youtubeShowcaseUrl(videoId, start, end > start ? end : start + 30);
+        const posterUrl = `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
 
         return {
           id: row.id,
@@ -173,14 +178,11 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
           length,
           source: project?.source_channel_name?.trim() || project?.source_title?.trim() || 'Animacut export',
           gradient: gradients[index % gradients.length],
-          mediaType: 'video' as const,
+          mediaType: 'youtube' as const,
           mediaUrl,
           posterUrl,
-          // This URL is the already-trimmed export, so its playback timeline
-          // starts at zero. Source timestamps here made previews seek to the
-          // end of their short MP4 and repeatedly buffer/loop.
-          startSeconds: 0,
-          endSeconds: end > start ? end - start : 30,
+          startSeconds: start,
+          endSeconds: end > start ? end : start + 30,
         };
       } catch {
         return null;

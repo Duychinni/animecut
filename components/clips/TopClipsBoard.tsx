@@ -50,6 +50,7 @@ type PlaybackState = {
   current: number;
   duration: number;
   paused: boolean;
+  buffering: boolean;
   volume: number;
 };
 
@@ -354,6 +355,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
   const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
+  const intendedPlayingIdRef = useRef<string | null>(null);
+  const primedVideoIdsRef = useRef(new Set<string>());
+  const playRecoveryTimersRef = useRef<Record<string, number>>({});
+  const playRecoveryAttemptsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const stableMediaUrlsRef = useRef(new Map<string, string>());
   const previousEditStatusesRef = useRef(new Map<string, string | null | undefined>());
@@ -366,6 +371,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
         current: prev[id]?.current ?? 0,
         duration: prev[id]?.duration ?? 0,
         paused: prev[id]?.paused ?? true,
+        buffering: prev[id]?.buffering ?? false,
         volume: prev[id]?.volume ?? 1,
         ...patch,
       },
@@ -392,7 +398,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       if (!video || id === activeId || video.paused) continue;
       playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
       video.pause();
-      updatePlayback(id, { paused: true });
+      updatePlayback(id, { paused: true, buffering: false });
     }
   }
 
@@ -402,7 +408,15 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (video.preload !== preload) {
       video.preload = preload;
     }
-    if (video.readyState === 0) {
+    // Pointer-down deliberately primes a reel before the click handler runs.
+    // Calling load() again while that first request is still opening aborts the
+    // subsequent play() promise and leaves only some cards stuck on pause.
+    if (
+      video.readyState === HTMLMediaElement.HAVE_NOTHING &&
+      video.networkState === HTMLMediaElement.NETWORK_EMPTY &&
+      !primedVideoIdsRef.current.has(id)
+    ) {
+      primedVideoIdsRef.current.add(id);
       video.load();
     }
   }
@@ -417,21 +431,46 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     const video = videoRefs.current[id];
     if (!video || !video.paused) return;
 
+    intendedPlayingIdRef.current = id;
     const requestId = (playRequestsRef.current[id] ?? 0) + 1;
     playRequestsRef.current[id] = requestId;
     primeVideo(id, 'auto');
     pauseOtherVideos(id);
+    updatePlayback(id, { buffering: video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA });
 
     try {
       await video.play();
       if (playRequestsRef.current[id] === requestId) {
-        updatePlayback(id, { paused: false });
+        updatePlayback(id, { paused: false, buffering: video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA });
       }
     } catch (error) {
-      updatePlayback(id, { paused: video.paused });
-      if (!isInterruptedPlayError(error)) {
-        console.warn('[clips] video play failed', error);
+      const interrupted = isInterruptedPlayError(error);
+      updatePlayback(id, { paused: video.paused, buffering: interrupted });
+      if (interrupted && intendedPlayingIdRef.current === id && playRequestsRef.current[id] === requestId) {
+        const attempts = (playRecoveryAttemptsRef.current[id] ?? 0) + 1;
+        playRecoveryAttemptsRef.current[id] = attempts;
+        if (attempts > 2) {
+          intendedPlayingIdRef.current = null;
+          updatePlayback(id, { buffering: false });
+          console.warn('[clips] video play recovery exhausted', error);
+          return;
+        }
+        window.clearTimeout(playRecoveryTimersRef.current[id]);
+        playRecoveryTimersRef.current[id] = window.setTimeout(() => {
+          const currentVideo = videoRefs.current[id];
+          if (
+            currentVideo?.paused &&
+            intendedPlayingIdRef.current === id &&
+            playRequestsRef.current[id] === requestId
+          ) {
+            void playVideo(id);
+          }
+        }, 180);
+        return;
       }
+      intendedPlayingIdRef.current = null;
+      updatePlayback(id, { buffering: false });
+      console.warn('[clips] video play failed', error);
     }
   }
 
@@ -444,9 +483,12 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       return;
     }
 
+    if (intendedPlayingIdRef.current === id) intendedPlayingIdRef.current = null;
+    window.clearTimeout(playRecoveryTimersRef.current[id]);
+    playRecoveryAttemptsRef.current[id] = 0;
     playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
     video.pause();
-    updatePlayback(id, { paused: true });
+    updatePlayback(id, { paused: true, buffering: false });
   }
 
   async function openCaptionTemplates(clip: ClipItem) {
@@ -612,6 +654,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }, [clips]);
 
   useEffect(() => {
+    return () => {
+      intendedPlayingIdRef.current = null;
+      Object.values(playRecoveryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+
+  useEffect(() => {
     // Warm the highest-ranked reels during idle time. Preloading every export
     // at once competes for bandwidth and makes the whole grid slower; warming
     // only the first two prevents large MP4s from saturating the connection.
@@ -724,6 +773,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const totalLabel = duration > 0 ? formatClock(duration) : durationLabel ?? '0:00';
               const currentLabel = formatClock(current);
               const paused = playbackState?.paused ?? true;
+              const buffering = playbackState?.buffering ?? false;
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
@@ -874,6 +924,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             });
                           }}
                           onCanPlay={() => {
+                            updatePlayback(clip.exportId, { buffering: false });
+                            if (intendedPlayingIdRef.current === clip.exportId && videoRefs.current[clip.exportId]?.paused) {
+                              void playVideo(clip.exportId);
+                            }
                             const nextClip = visible[clipIndex + 1];
                             if (nextClip && clipIndex === 0) primeVideo(nextClip.exportId, 'auto');
                           }}
@@ -886,9 +940,31 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           }}
                           onPlay={() => {
                             pauseOtherVideos(clip.exportId);
-                            updatePlayback(clip.exportId, { paused: false });
+                            playRecoveryAttemptsRef.current[clip.exportId] = 0;
+                            window.clearTimeout(playRecoveryTimersRef.current[clip.exportId]);
+                            updatePlayback(clip.exportId, { paused: false, buffering: false });
                           }}
-                          onPause={() => updatePlayback(clip.exportId, { paused: true })}
+                          onPlaying={() => updatePlayback(clip.exportId, { paused: false, buffering: false })}
+                          onWaiting={() => {
+                            if (intendedPlayingIdRef.current === clip.exportId) {
+                              updatePlayback(clip.exportId, { buffering: true });
+                            }
+                          }}
+                          onStalled={() => {
+                            if (intendedPlayingIdRef.current === clip.exportId) {
+                              updatePlayback(clip.exportId, { buffering: true });
+                            }
+                          }}
+                          onPause={() => updatePlayback(clip.exportId, { paused: true, buffering: false })}
+                          onEnded={() => {
+                            if (intendedPlayingIdRef.current === clip.exportId) intendedPlayingIdRef.current = null;
+                            updatePlayback(clip.exportId, { paused: true, buffering: false });
+                          }}
+                          onError={() => {
+                            primedVideoIdsRef.current.delete(clip.exportId);
+                            if (intendedPlayingIdRef.current === clip.exportId) intendedPlayingIdRef.current = null;
+                            updatePlayback(clip.exportId, { paused: true, buffering: false });
+                          }}
                           onVolumeChange={(e) => {
                             const v = e.currentTarget;
                             updatePlayback(clip.exportId, { volume: v.muted ? 0 : v.volume });
@@ -997,7 +1073,14 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           </div>
                         </div>
 
-                        {paused ? (
+                        {buffering ? (
+                          <div
+                            className="pointer-events-none absolute left-1/2 top-1/2 z-20 inline-flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white backdrop-blur-sm"
+                            aria-label="Loading clip"
+                          >
+                            <span className="h-6 w-6 animate-spin rounded-full border-2 border-white/25 border-t-white" />
+                          </div>
+                        ) : paused ? (
                           <button
                             type="button"
                             onClick={() => togglePlay(clip.exportId)}

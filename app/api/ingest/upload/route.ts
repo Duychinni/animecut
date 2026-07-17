@@ -39,6 +39,8 @@ export async function POST(req: Request) {
       bucket: target.bucket,
       hasUploadUrl: 'uploadUrl' in target,
       hasUploadId: 'uploadId' in target,
+      sourceContentType: contentType,
+      storageContentType: 'headers' in target ? target.headers['content-type'] : contentType,
     });
 
     const { error: updateError } = await supabase
