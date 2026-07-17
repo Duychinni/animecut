@@ -232,7 +232,7 @@ function getPlatformBadge(platform: ShowcaseClip['platform']) {
 }
 
 function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
-  const bubbleClass = 'grid h-11 w-11 place-items-center rounded-full border border-white/12 bg-white/10 shadow-[0_14px_30px_rgba(0,0,0,0.35)] ring-1 ring-white/10 backdrop-blur-md';
+  const bubbleClass = 'grid h-11 w-11 place-items-center rounded-full border border-white/12 bg-[#17171f] shadow-[0_10px_22px_rgba(0,0,0,0.3)] ring-1 ring-white/10';
 
   if (platform === 'Instagram') {
     return (
@@ -334,6 +334,7 @@ export default function Home() {
   const [showcaseVisible, setShowcaseVisible] = useState(false);
   const [activeShowcaseMediaKey, setActiveShowcaseMediaKey] = useState<string | null>(null);
   const showcaseSectionRef = useRef<HTMLElement | null>(null);
+  const showcaseActivationTimerRef = useRef<number | null>(null);
   const activeShowcaseClips = useMemo(() => {
     if (!liveShowcaseClips.length) return showcaseClips;
 
@@ -351,6 +352,15 @@ export default function Home() {
   function getShowcaseKey(clip: ShowcaseClip) {
     return clip.id ?? clip.title;
   }
+
+  const selectedShowcaseMediaKey = useMemo(() => {
+    const requestedKeyExists = activeShowcaseClips.some((clip) => getShowcaseKey(clip) === activeShowcaseMediaKey);
+    return requestedKeyExists
+      ? activeShowcaseMediaKey
+      : activeShowcaseClips[0]
+        ? getShowcaseKey(activeShowcaseClips[0])
+        : null;
+  }, [activeShowcaseClips, activeShowcaseMediaKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -429,12 +439,33 @@ export default function Home() {
     };
   }, [showcaseLoaded]);
 
-  function activateShowcaseMedia(clipKey: string) {
+  function activateShowcaseMedia(clipKey: string, immediate = false) {
     // Keep one decoder active at a time. Accumulating six simultaneous video
     // decoders made scrolling and playback compete for the main/compositor
     // threads on lower-powered devices.
-    setActiveShowcaseMediaKey(clipKey);
+    if (showcaseActivationTimerRef.current != null) {
+      window.clearTimeout(showcaseActivationTimerRef.current);
+      showcaseActivationTimerRef.current = null;
+    }
+    if (clipKey === selectedShowcaseMediaKey) return;
+    const selectClip = () => startTransition(() => setActiveShowcaseMediaKey(clipKey));
+    if (immediate) {
+      selectClip();
+      return;
+    }
+    // Do not churn video decoders while the pointer merely crosses the row
+    // during a page scroll.
+    showcaseActivationTimerRef.current = window.setTimeout(selectClip, 180);
   }
+
+  function cancelShowcaseActivation() {
+    if (showcaseActivationTimerRef.current != null) {
+      window.clearTimeout(showcaseActivationTimerRef.current);
+      showcaseActivationTimerRef.current = null;
+    }
+  }
+
+  useEffect(() => () => cancelShowcaseActivation(), []);
 
   async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string; source_duration_seconds?: number }) {
     const res = await fetch('/api/projects', {
@@ -592,23 +623,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#05050a] text-white">
-      <style jsx global>{`
-        @keyframes floatSlow {
-          0%, 100% { transform: translate3d(0, 0, 0); }
-          50% { transform: translate3d(0, -14px, 0); }
-        }
-        @keyframes driftOrb {
-          0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-          50% { transform: translate3d(10px, -8px, 0) scale(1.03); }
-        }
-        @keyframes glowSweep {
-          0% { transform: translateX(-10%); opacity: .45; }
-          50% { opacity: .85; }
-          100% { transform: translateX(10%); opacity: .45; }
-        }
-      `}</style>
-
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[900px] overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.12),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.08),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.06),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.02),transparent_36%)]" />
       </div>
 
@@ -777,16 +792,15 @@ export default function Home() {
           <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
               {activeShowcaseClips.map((clip, clipIndex) => {
                 const clipKey = getShowcaseKey(clip);
-                const firstClipKey = activeShowcaseClips[0] ? getShowcaseKey(activeShowcaseClips[0]) : null;
-                const requestedKeyExists = activeShowcaseClips.some((item) => getShowcaseKey(item) === activeShowcaseMediaKey);
-                const selectedMediaKey = requestedKeyExists ? activeShowcaseMediaKey : firstClipKey;
-                const mediaActive = showcaseVisible && selectedMediaKey === clipKey;
+                const mediaActive = showcaseVisible && selectedShowcaseMediaKey === clipKey;
                 return (
                 <div
                   key={clipKey}
                   onPointerEnter={() => activateShowcaseMedia(clipKey)}
-                  onFocus={() => activateShowcaseMedia(clipKey)}
-                  className="relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_18px_50px_rgba(0,0,0,0.26)] transition duration-500 ease-out hover:-translate-y-3 hover:scale-[1.025] hover:border-white/28 hover:shadow-[0_26px_70px_rgba(139,124,255,0.2)]"
+                  onPointerLeave={cancelShowcaseActivation}
+                  onClick={() => activateShowcaseMedia(clipKey, true)}
+                  onFocus={() => activateShowcaseMedia(clipKey, true)}
+                  className="home-showcase-card relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_14px_34px_rgba(0,0,0,0.24)] transition-[transform,border-color] duration-200 ease-out hover:-translate-y-1 hover:border-white/25"
                 >
                   <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
                     <PlatformLogo platform={clip.platform} />
@@ -799,9 +813,20 @@ export default function Home() {
                             className="absolute inset-0 bg-cover bg-center"
                             style={{ backgroundImage: `url("${clip.mediaUrl}")` }}
                           />
-                        ) : !mediaActive && clip.posterUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={clip.posterUrl} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                        ) : !mediaActive ? (
+                          clip.posterUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={clip.posterUrl}
+                              alt=""
+                              className="absolute inset-0 h-full w-full object-cover"
+                              loading={clipIndex === 0 ? 'eager' : 'lazy'}
+                              decoding="async"
+                              fetchPriority={clipIndex === 0 ? 'high' : 'low'}
+                            />
+                          ) : (
+                            <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(255,123,216,0.14),rgba(139,124,255,0.08),#090910)]" />
+                          )
                         ) : clip.mediaType === 'youtube' ? (
                           <iframe
                             src={clip.mediaUrl}
@@ -837,20 +862,8 @@ export default function Home() {
                             onCanPlay={(event) => {
                               if (mediaActive) void event.currentTarget.play().catch(() => undefined);
                             }}
-                            onPointerEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
                             onPlaying={(event) => {
                               event.currentTarget.style.opacity = '1';
-                            }}
-                            onWaiting={(event) => {
-                              event.currentTarget.style.opacity = '0';
-                            }}
-                            onTimeUpdate={(event) => {
-                              const start = Math.max(0, Number(clip.startSeconds ?? 0));
-                              const end = Number(clip.endSeconds ?? 0);
-                              if (end > start && event.currentTarget.currentTime >= end) {
-                                event.currentTarget.currentTime = start;
-                                void event.currentTarget.play().catch(() => undefined);
-                              }
                             }}
                             className="hero-showcase-video absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-150"
                           />
@@ -887,12 +900,12 @@ export default function Home() {
 
                   <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
                     <div className="space-y-4">
-                      <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4" style={{ animation: 'floatSlow 7s ease-in-out infinite' }}>
+                      <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">AI scoring</p>
                         <p className="mt-2 text-3xl font-semibold text-white">94</p>
                         <p className="mt-2 text-sm text-white/55">High hook retention + clarity.</p>
                       </div>
-                      <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4" style={{ animation: 'floatSlow 8s ease-in-out infinite' }}>
+                      <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/35">Caption presets</p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {['Bold Glow', 'Subtle Clean', 'Punchy Creator'].map((preset) => (

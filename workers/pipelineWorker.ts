@@ -1,7 +1,11 @@
 import process from 'node:process';
 
 function getBaseUrl() {
-  return process.env.WORKER_API_URL || process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000';
+  // APP_URL and NEXT_PUBLIC_APP_URL describe the customer-facing deployment.
+  // Media workers must call the persistent local Next server where Python and
+  // FFmpeg are installed. Calling Vercel only delegates the work back to an
+  // external worker and leaves projects permanently queued.
+  return process.env.WORKER_API_URL || 'http://127.0.0.1:3000';
 }
 
 function sleep(ms: number) {
@@ -47,7 +51,7 @@ async function main() {
   const baseUrl = getBaseUrl();
   console.log('[worker] starting', { baseUrl, once });
   if (/\.vercel\.app\b/i.test(baseUrl)) {
-    console.warn('[worker] WARNING: render worker is calling Vercel. FFmpeg will run inside the serverless request and can time out. Point WORKER_API_URL at the local Mac render API, normally http://127.0.0.1:3000.');
+    throw new Error('WORKER_API_URL must point to the persistent local render API (normally http://127.0.0.1:3000), not Vercel.');
   }
 
   if (once) {

@@ -67,13 +67,7 @@ body {
 }
 
 html {
-  scroll-behavior: smooth;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+  scroll-behavior: auto;
 }
 
 body {
@@ -157,9 +151,10 @@ body {
   pointer-events: none;
   -webkit-appearance: none;
   appearance: none;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  will-change: opacity;
+}
+
+.home-showcase-card {
+  contain: layout paint style;
 }
 
 .home-deferred-section {

@@ -1,7 +1,7 @@
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3000';
 
 function getBaseUrl() {
-  return process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || DEFAULT_BASE_URL;
+  return process.env.WORKER_API_URL || DEFAULT_BASE_URL;
 }
 
 async function postJson(path: string) {

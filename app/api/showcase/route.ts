@@ -176,8 +176,11 @@ async function mapRowsToShowcaseClips(rows: ExportShowcaseRow[]): Promise<Showca
           mediaType: 'video' as const,
           mediaUrl,
           posterUrl,
-          startSeconds: start,
-          endSeconds: end > start ? end : start + 30,
+          // This URL is the already-trimmed export, so its playback timeline
+          // starts at zero. Source timestamps here made previews seek to the
+          // end of their short MP4 and repeatedly buffer/loop.
+          startSeconds: 0,
+          endSeconds: end > start ? end - start : 30,
         };
       } catch {
         return null;

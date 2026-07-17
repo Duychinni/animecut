@@ -29,10 +29,14 @@ const STALE_PIPELINE_JOB_MS = 6 * 60 * 1000;
 
 function getInternalBaseUrls() {
   return [
-    process.env.APP_URL,
-    process.env.NEXT_PUBLIC_APP_URL,
+    // This route only performs media work on a persistent worker host. Keep
+    // its heavy internal steps on that same host instead of bouncing through
+    // the public Vercel deployment, which intentionally delegates media work.
+    process.env.WORKER_API_URL,
     'http://127.0.0.1:3000',
     'http://localhost:3000',
+    process.env.APP_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
   ].filter((v, i, arr): v is string => Boolean(v) && arr.indexOf(v) === i);
 }
 
