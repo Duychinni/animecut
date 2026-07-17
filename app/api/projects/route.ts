@@ -171,6 +171,7 @@ export async function GET() {
         activeExports,
         exportCount: targetExports,
       });
+      const hasActivePipeline = normalizedPipelineStatus === 'queued' || normalizedPipelineStatus === 'processing';
 
       return {
         ...project,
@@ -180,7 +181,10 @@ export async function GET() {
         pipeline_stage_label: normalizedPipelineStageLabel,
         pipeline_error: activeExports > 0 || isCompleted ? null : project.pipeline_error,
         progress_percent: progressPercent,
-        eta_seconds: processingExports > 0 ? etaSeconds : null,
+        // The estimator covers the full pipeline, not only FFmpeg rendering.
+        // Returning it throughout an active run keeps the dashboard ETA visible
+        // while downloading, transcribing, analyzing, queuing, and rendering.
+        eta_seconds: hasActivePipeline ? etaSeconds : null,
         done_exports: readyExports,
         active_exports: activeExports,
         queued_exports: queuedExports,

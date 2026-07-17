@@ -332,9 +332,7 @@ export default function Home() {
   const [liveShowcaseClips, setLiveShowcaseClips] = useState<ShowcaseClip[]>([]);
   const [showcaseLoaded, setShowcaseLoaded] = useState(false);
   const [showcaseVisible, setShowcaseVisible] = useState(false);
-  const [activeShowcaseMediaKey, setActiveShowcaseMediaKey] = useState<string | null>(null);
   const showcaseSectionRef = useRef<HTMLElement | null>(null);
-  const showcaseActivationTimerRef = useRef<number | null>(null);
   const activeShowcaseClips = useMemo(() => {
     if (!liveShowcaseClips.length) return showcaseClips;
 
@@ -352,15 +350,6 @@ export default function Home() {
   function getShowcaseKey(clip: ShowcaseClip) {
     return clip.id ?? clip.title;
   }
-
-  const selectedShowcaseMediaKey = useMemo(() => {
-    const requestedKeyExists = activeShowcaseClips.some((clip) => getShowcaseKey(clip) === activeShowcaseMediaKey);
-    return requestedKeyExists
-      ? activeShowcaseMediaKey
-      : activeShowcaseClips[0]
-        ? getShowcaseKey(activeShowcaseClips[0])
-        : null;
-  }, [activeShowcaseClips, activeShowcaseMediaKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -438,34 +427,6 @@ export default function Home() {
       if (timer != null) window.clearTimeout(timer);
     };
   }, [showcaseLoaded]);
-
-  function activateShowcaseMedia(clipKey: string, immediate = false) {
-    // Keep one decoder active at a time. Accumulating six simultaneous video
-    // decoders made scrolling and playback compete for the main/compositor
-    // threads on lower-powered devices.
-    if (showcaseActivationTimerRef.current != null) {
-      window.clearTimeout(showcaseActivationTimerRef.current);
-      showcaseActivationTimerRef.current = null;
-    }
-    if (clipKey === selectedShowcaseMediaKey) return;
-    const selectClip = () => startTransition(() => setActiveShowcaseMediaKey(clipKey));
-    if (immediate) {
-      selectClip();
-      return;
-    }
-    // Do not churn video decoders while the pointer merely crosses the row
-    // during a page scroll.
-    showcaseActivationTimerRef.current = window.setTimeout(selectClip, 180);
-  }
-
-  function cancelShowcaseActivation() {
-    if (showcaseActivationTimerRef.current != null) {
-      window.clearTimeout(showcaseActivationTimerRef.current);
-      showcaseActivationTimerRef.current = null;
-    }
-  }
-
-  useEffect(() => () => cancelShowcaseActivation(), []);
 
   async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string; source_duration_seconds?: number }) {
     const res = await fetch('/api/projects', {
@@ -792,17 +753,13 @@ export default function Home() {
           <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-x-4 gap-y-8 px-4 sm:grid-cols-3 xl:grid-cols-6">
               {activeShowcaseClips.map((clip, clipIndex) => {
                 const clipKey = getShowcaseKey(clip);
-                const mediaActive = showcaseVisible && selectedShowcaseMediaKey === clipKey;
+                const mediaActive = showcaseVisible;
                 return (
                 <div
                   key={clipKey}
-                  onPointerEnter={() => activateShowcaseMedia(clipKey)}
-                  onPointerLeave={cancelShowcaseActivation}
-                  onClick={() => activateShowcaseMedia(clipKey, true)}
-                  onFocus={() => activateShowcaseMedia(clipKey, true)}
-                  className="home-showcase-card relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-5 text-left shadow-[0_14px_34px_rgba(0,0,0,0.24)] transition-[transform,border-color] duration-200 ease-out hover:-translate-y-1 hover:border-white/25"
+                  className="home-showcase-card relative min-w-0 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-3 pt-7 text-left shadow-[0_14px_34px_rgba(0,0,0,0.24)] transition-[transform,border-color] duration-200 ease-out hover:-translate-y-1 hover:border-white/25"
                 >
-                  <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2">
+                  <div className="absolute left-1/2 top-1 z-20 -translate-x-1/2 -translate-y-1/2">
                     <PlatformLogo platform={clip.platform} />
                   </div>
                   <div className={`aspect-[9/16] overflow-hidden rounded-[20px] border border-white/10 bg-gradient-to-b ${clip.gradient} p-2.5`}>
@@ -847,7 +804,7 @@ export default function Home() {
                             disablePictureInPicture
                             controls={false}
                             controlsList="nofullscreen nodownload noremoteplayback"
-                            preload={mediaActive ? 'auto' : 'none'}
+                            preload={mediaActive ? 'metadata' : 'none'}
                             poster={clip.posterUrl ?? undefined}
                             onLoadedMetadata={(event) => {
                               const start = Math.max(0, Number(clip.startSeconds ?? 0));

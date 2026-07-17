@@ -154,7 +154,9 @@ body {
 }
 
 .home-showcase-card {
-  contain: layout paint style;
+  /* Paint containment clipped the platform badge that intentionally sits
+     above the card. Keep layout/style isolation without clipping children. */
+  contain: layout style;
 }
 
 .home-deferred-section {
