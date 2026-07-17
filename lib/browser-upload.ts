@@ -9,6 +9,27 @@ type MultipartPreparation = {
   completeUrl: string;
 };
 
+export async function getDirectUploadError(response: Response) {
+  const raw = await response.text().catch(() => '');
+  let message = raw;
+
+  try {
+    const parsed = JSON.parse(raw) as { message?: unknown; error?: unknown };
+    message = String(parsed.message || parsed.error || raw);
+  } catch {
+    // Storage providers may return plain text instead of JSON.
+  }
+
+  if (
+    response.status === 413 ||
+    /payload too large|maximum allowed size|object exceeded|exceeded the maximum/i.test(message)
+  ) {
+    return 'This video exceeds the current storage upload limit. Please try a smaller file or contact support.';
+  }
+
+  return message || `Upload failed (${response.status})`;
+}
+
 export async function uploadFileMultipartToR2(file: File, prep: MultipartPreparation, onProgress?: (percent: number) => void) {
   const totalParts = Math.ceil(file.size / prep.partSize);
   const completedParts: Array<{ partNumber: number; etag: string }> = [];

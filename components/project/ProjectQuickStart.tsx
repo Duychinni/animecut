@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
+import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { readJsonSafe } from '@/lib/safe-json';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 
@@ -168,8 +168,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
         });
 
         if (!uploadRes.ok) {
-          const errText = await uploadRes.text().catch(() => 'Upload failed');
-          throw new Error(errText || 'Upload failed');
+          throw new Error(await getDirectUploadError(uploadRes));
         }
 
         setUploadProgress(100);

@@ -6,7 +6,7 @@ import { readJsonSafe } from '@/lib/safe-json';
 
 const OTP_EXPIRY_SECONDS = 60 * 60;
 const RESEND_COOLDOWN_SECONDS = 60;
-const OTP_LENGTH = 8;
+const OTP_LENGTH = 6;
 
 function formatRemainingTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);

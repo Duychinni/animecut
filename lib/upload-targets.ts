@@ -35,6 +35,15 @@ export type R2MultipartUploadPreparationResult = {
 
 export type UploadPreparationResult = SignedUrlUploadPreparationResult | R2MultipartUploadPreparationResult;
 
+const DEFAULT_SUPABASE_RAW_MEDIA_MAX_BYTES = 5 * 1024 * 1024 * 1024;
+
+function getSupabaseRawMediaMaxBytes() {
+  const configured = Number(process.env.SUPABASE_RAW_MEDIA_MAX_BYTES || DEFAULT_SUPABASE_RAW_MEDIA_MAX_BYTES);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : DEFAULT_SUPABASE_RAW_MEDIA_MAX_BYTES;
+}
+
 function getSupabaseStorageContentType(filename: string, contentType: string) {
   const extension = (filename.split('.').pop() || '').toLowerCase();
   const normalizedType = contentType.toLowerCase().split(';', 1)[0].trim();
@@ -71,6 +80,15 @@ export async function prepareUploadTarget(input: UploadPreparationInput): Promis
       completeUrl: `/api/ingest/upload/complete`,
       partUrl: `/api/ingest/upload/part`,
     };
+  }
+
+  const supabaseMaxBytes = getSupabaseRawMediaMaxBytes();
+  if (typeof input.size === 'number' && input.size > supabaseMaxBytes) {
+    const maxGiB = Math.round((supabaseMaxBytes / 1024 ** 3) * 10) / 10;
+    throw new Error(
+      `This file is larger than the ${maxGiB} GB direct-upload limit. ` +
+      'Configure the R2 multipart upload provider for large source videos.',
+    );
   }
 
   const supabase = await createServerSupabaseClient();

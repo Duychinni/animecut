@@ -9,13 +9,13 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { email?: string; token?: string; next?: string };
     const email = String(body.email || '').trim().toLowerCase();
-    const token = String(body.token || '').replace(/\D/g, '').slice(0, 8);
+    const token = String(body.token || '').replace(/\D/g, '').slice(0, 6);
 
     if (!email || !email.includes('@')) {
       return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 });
     }
-    if (token.length !== 8) {
-      return NextResponse.json({ error: 'Enter the complete 8-digit verification code.' }, { status: 400 });
+    if (token.length !== 6) {
+      return NextResponse.json({ error: 'Enter the complete 6-digit verification code.' }, { status: 400 });
     }
 
     const supabase = await createClient();

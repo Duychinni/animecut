@@ -6,7 +6,7 @@ import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-ur
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { SignOutButton } from '@/components/auth/SignOutButton';
-import { uploadFileMultipartToR2 } from '@/lib/browser-upload';
+import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -551,8 +551,7 @@ export default function Home() {
         });
 
         if (!uploadRes.ok) {
-          const errText = await uploadRes.text().catch(() => 'Upload failed');
-          throw new Error(errText || 'Upload failed');
+          throw new Error(await getDirectUploadError(uploadRes));
         }
 
         setUploadProgress(100);

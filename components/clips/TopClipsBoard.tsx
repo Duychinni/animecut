@@ -928,8 +928,17 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             if (intendedPlayingIdRef.current === clip.exportId && videoRefs.current[clip.exportId]?.paused) {
                               void playVideo(clip.exportId);
                             }
+                            // Continue warming reels one at a time after the
+                            // preceding reel has enough data to play. This
+                            // avoids simultaneous 1080p downloads while making
+                            // later cards click-ready too.
                             const nextClip = visible[clipIndex + 1];
-                            if (nextClip && clipIndex === 0) primeVideo(nextClip.exportId, 'auto');
+                            if (nextClip) {
+                              window.setTimeout(
+                                () => primeVideo(nextClip.exportId, 'auto'),
+                                150,
+                              );
+                            }
                           }}
                           onTimeUpdate={(e) => {
                             const v = e.currentTarget;

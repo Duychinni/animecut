@@ -14,13 +14,15 @@ const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
 const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v12-full-canvas-context';
 // Customer exports are streamed directly in the browser. The former 50-60 Mbps
 // envelope created unnecessarily large reels that buffered between card clicks.
-// Keep the 1080x1920 frame while using a web/social-video-friendly bitrate.
-const DEFAULT_X264_CRF = '20';
-const DEFAULT_X264_MAXRATE = '8M';
-const DEFAULT_X264_BUFSIZE = '16M';
-const DEFAULT_HW_VIDEO_BITRATE = '8M';
-const DEFAULT_HW_MAXRATE = '10M';
-const DEFAULT_HW_BUFSIZE = '20M';
+// Keep the 1080x1920 frame visually clean while making progressive playback
+// practical over normal broadband and mobile connections. Short reels should
+// not require buffering an 8-10 Mbps stream before playback can begin.
+const DEFAULT_X264_CRF = '22';
+const DEFAULT_X264_MAXRATE = '5M';
+const DEFAULT_X264_BUFSIZE = '10M';
+const DEFAULT_HW_VIDEO_BITRATE = '5M';
+const DEFAULT_HW_MAXRATE = '6M';
+const DEFAULT_HW_BUFSIZE = '12M';
 const HIGH_QUALITY_SCALE_FLAGS = 'lanczos+accurate_rnd+full_chroma_int';
 const SHARPEN_AFTER_UPSCALE_FILTER = 'unsharp=5:5:0.55:3:3:0.25';
 const MAX_EXTRA_SMART_CROP_UPSCALE = 1.04;
@@ -2107,9 +2109,11 @@ export async function renderVerticalClip(opts: RenderOpts) {
         '-level',
         '4.2',
         '-g',
-        '60',
-        '-keyint_min',
         '30',
+        '-keyint_min',
+        '15',
+        '-sc_threshold',
+        '0',
         '-threads',
         '0',
       );
@@ -2122,6 +2126,8 @@ export async function renderVerticalClip(opts: RenderOpts) {
         allowOversizedExports ? process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE : DEFAULT_HW_MAXRATE,
         '-bufsize',
         allowOversizedExports ? process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE : DEFAULT_HW_BUFSIZE,
+        '-g',
+        '30',
       );
     }
 

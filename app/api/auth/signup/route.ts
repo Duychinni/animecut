@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       email: String(email || ''),
-      msg: 'We sent an 8-digit verification code to your email.',
+      msg: 'We sent a 6-digit verification code to your email.',
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Signup failed';
