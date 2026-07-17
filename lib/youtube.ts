@@ -138,23 +138,12 @@ function getYouTubeVideoFormatAttempts() {
   const override = process.env.YOUTUBE_VIDEO_FORMAT?.trim();
   if (override) return [override];
 
-  const maxHeight = getYouTubeMaxSourceHeight();
-  const attempts: string[] = [];
-
-  if (maxHeight >= 1440) {
-    attempts.push([
-      `bv*[height>=1440][height<=${maxHeight}]+ba`,
-      `b[height>=1440][height<=${maxHeight}]`,
-    ].join('/'));
-  }
-
-  attempts.push([
-    `bv*[height>=1080][height<=${maxHeight}]+ba`,
-    `b[height>=1080][height<=${maxHeight}]`,
-  ].join('/'));
-  attempts.push(getYouTubeVideoFormat());
-
-  return attempts;
+  // A minimum-height selector fails for perfectly valid sources whose highest
+  // rendition is 1080p or 720p. The general selector already asks yt-dlp for
+  // the highest available rendition up to our ceiling and carries its own
+  // merged/single-file fallbacks, so use it immediately instead of spending
+  // extra network attempts on resolutions the source may not provide.
+  return [getYouTubeVideoFormat()];
 }
 
 type DownloadedVideoInfo = {
