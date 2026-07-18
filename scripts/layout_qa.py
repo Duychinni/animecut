@@ -72,6 +72,23 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
             if float(segment.get('start', 0.0)) - 0.001 <= float(frame.get('timestamp', 0.0)) <= float(segment.get('end', 0.0)) + 0.001
         ]
 
+        if segment.get('mode') == 'stacked' and not (segment.get('topBox') and segment.get('bottomBox')):
+            issues['stacked_subject_box_missing'] += 1
+            segment['mode'] = 'wide_context'
+            segment['wideKind'] = 'safe_wide'
+            segment['qaFallbackApplied'] = 'safe_original'
+
+        if segment.get('mode') == 'grid':
+            required = 4 if segment.get('gridTemplate') == 'grid_4' else 3
+            subjects = [subject for subject in (segment.get('subjects') or []) if subject.get('box')]
+            if len(subjects) < required:
+                issues['grid_subject_box_missing'] += 1
+                segment['mode'] = 'wide_context'
+                segment['wideKind'] = 'safe_wide'
+                segment['gridTemplate'] = None
+                segment['subjects'] = []
+                segment['qaFallbackApplied'] = 'safe_original'
+
         if segment.get('mode') == 'single':
             primary_id = segment.get('primaryTrackId')
             fixed_two_panel = segment.get('sourceLayout') == 'FIXED_TWO_PANEL_INTERVIEW'
@@ -129,11 +146,11 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                     segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA constrained the crop to the active source panel."
                     segment['qaFallbackApplied'] = 'panel_bounded_crop'
                 elif segment.get('topBox') and segment.get('bottomBox'):
-                    segment['mode'] = 'wide_context'
-                    segment['wideKind'] = 'two_person'
+                    segment['mode'] = 'stacked'
+                    segment['wideKind'] = None
                     segment['editorialLayout'] = 'TWO_PERSON_CONVERSATION'
                     segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA preserved both source panels because active-speaker identity was uncertain."
-                    segment['qaFallbackApplied'] = 'safe_two_panel'
+                    segment['qaFallbackApplied'] = 'stacked_two_panel'
                 else:
                     # Last resort remains one explicit panel. Never return to a
                     # full-frame center crop for a detected split interview.

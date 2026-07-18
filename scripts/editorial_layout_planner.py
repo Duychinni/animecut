@@ -28,6 +28,7 @@ def _candidate_hint(candidate_plan, key, allowed, fallback):
 def _classify_visual_scene(segment):
     mode = str(segment.get('mode', ''))
     wide_kind = str(segment.get('wideKind', ''))
+    grid_template = str(segment.get('gridTemplate', ''))
     # Median visibility prevents one-frame logos, audience faces, or inserted
     # photos from turning an entire scene into a three/four-person discussion.
     visible_count = int(segment.get('visibleCount') or segment.get('visibleCountMax') or 0)
@@ -36,8 +37,12 @@ def _classify_visual_scene(segment):
         return 'BROLL', 'BROLL_FILL', 'Visual evidence indicates inserted footage or a context shot.'
     if mode == 'source_vertical' and visible_count <= 1:
         return 'SINGLE_SPEAKER', 'SINGLE_SPEAKER_CROP', 'Portrait source already contains one dominant subject.'
-    if wide_kind == 'two_person' and segment.get('topBox') and segment.get('bottomBox'):
+    if mode == 'stacked' and segment.get('topBox') and segment.get('bottomBox'):
         return 'TWO_PERSON', 'TWO_PERSON_CONVERSATION', 'Two independently tracked participants require conversation context.'
+    if mode == 'grid' and grid_template == 'grid_4':
+        return 'FOUR_PERSON', 'PRESERVE_GRID', 'Four tracked participants require a stable discussion grid.'
+    if mode == 'grid' and grid_template in ('hero_3', 'grid_3'):
+        return 'THREE_PERSON', 'THREE_PERSON_COMPOSITION', 'Three tracked participants require a stable group composition.'
     if visible_count >= 4:
         return 'FOUR_PERSON', 'PRESERVE_GRID', 'Four or more visible participants require the original discussion geometry.'
     if visible_count == 3:
@@ -75,9 +80,12 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
             segment['mode'] = 'wide_context'
             segment['wideKind'] = 'broll'
         elif layout == 'TWO_PERSON_CONVERSATION' and segment.get('topBox') and segment.get('bottomBox'):
-            segment['mode'] = 'wide_context'
-            segment['wideKind'] = 'two_person'
-        elif layout in ('THREE_PERSON_COMPOSITION', 'PRESERVE_GRID', 'SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL'):
+            segment['mode'] = 'stacked'
+            segment['wideKind'] = None
+        elif layout in ('THREE_PERSON_COMPOSITION', 'PRESERVE_GRID') and segment.get('subjects'):
+            segment['mode'] = 'grid'
+            segment['wideKind'] = None
+        elif layout in ('SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL'):
             segment['mode'] = 'wide_context'
             segment['wideKind'] = 'safe_wide'
         elif layout == 'SINGLE_SPEAKER_CROP' and segment.get('points') and segment.get('mode') != 'source_vertical':

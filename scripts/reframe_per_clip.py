@@ -27,8 +27,7 @@ STACK_TURN_WINDOW_SEC = 4.5
 STACK_REACTION_WINDOW_SEC = 3.0
 STACK_MIN_RAPID_SWITCHES = 2
 STACK_SCORE_MARGIN = 0.15
-STACK_MAX_DURATION_RATIO = 0.18
-STACK_LAYOUT_ENABLED = False
+STACK_LAYOUT_ENABLED = True
 SCENE_CUT_LOOKAHEAD_SEC = 0.25
 WIDE_FACE_HEIGHT_RATIO = 0.22
 WIDE_FACE_WIDTH_RATIO = 0.105
@@ -319,6 +318,117 @@ def portrait_crop_for_face(face, source_w: float, source_h: float):
     }
 
 
+def portrait_crop_for_subject(subject, source_w: float, source_h: float, subject_kind='person', face_box=None, velocity_x=0.0):
+    """Create a semantic 9:16 crop in source coordinates.
+
+    Faces target an eye line near 38% of the output. Bodies/actions keep more
+    vertical context and receive a small amount of lead room in the direction
+    of travel. The crop is always clamped to the source and never assumes that
+    the source midpoint is meaningful.
+    """
+    x, y, w, h = (float(value) for value in subject)
+    crop_h = float(source_h)
+    crop_w = min(float(source_w), crop_h * 9.0 / 16.0)
+    if crop_w >= source_w:
+        crop_w = float(source_w)
+        crop_h = min(float(source_h), crop_w * 16.0 / 9.0)
+
+    subject_cx = x + w * 0.5
+    lead = clamp(float(velocity_x) * 0.16, -crop_w * 0.12, crop_w * 0.12)
+    target_cx = subject_cx + lead
+
+    if face_box is not None:
+        fx, fy, fw, fh = (float(value) for value in face_box)
+        eye_y = fy + fh * 0.38
+        crop_y = eye_y - crop_h * 0.38
+    elif subject_kind in ('body', 'person'):
+        # Keep the top of the body comfortably below the canvas edge while
+        # preserving hands and lower-body action whenever the source permits.
+        crop_y = y - crop_h * 0.07
+    else:
+        crop_y = y + h * 0.5 - crop_h * 0.5
+
+    crop_x = clamp(target_cx - crop_w * 0.5, 0.0, max(0.0, source_w - crop_w))
+    crop_y = clamp(crop_y, 0.0, max(0.0, source_h - crop_h))
+    return {
+        'x': round(float(crop_x), 3),
+        'y': round(float(crop_y), 3),
+        'w': round(float(crop_w), 3),
+        'h': round(float(crop_h), 3),
+        'cx': round(float(crop_x + crop_w / 2.0), 3),
+        'cy': round(float(crop_y + crop_h / 2.0), 3),
+        'zoom': round(float(source_h / max(crop_h, 1.0)), 4),
+    }
+
+
+def saliency_region(cv2, np, gray, width: float, height: float):
+    """Return a conservative visual focal region without optional CV modules."""
+    if gray is None or gray.size == 0:
+        return None, 0.0
+    reduced_w = min(640, gray.shape[1])
+    scale = reduced_w / max(1.0, float(gray.shape[1]))
+    reduced = gray if scale >= 0.999 else cv2.resize(
+        gray,
+        (reduced_w, max(2, int(round(gray.shape[0] * scale)))),
+        interpolation=cv2.INTER_AREA,
+    )
+    blurred = cv2.GaussianBlur(reduced, (0, 0), 4.0)
+    detail = cv2.absdiff(reduced, blurred)
+    gx = cv2.Sobel(reduced, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(reduced, cv2.CV_32F, 0, 1, ksize=3)
+    energy = detail.astype('float32') + cv2.magnitude(gx, gy) * 0.35
+    threshold = float(np.percentile(energy, 88.0))
+    if threshold <= 1.0:
+        return None, 0.0
+    mask = (energy >= threshold).astype('uint8') * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), dtype='uint8'))
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None, 0.0
+    contour = max(contours, key=cv2.contourArea)
+    x, y, w, h = cv2.boundingRect(contour)
+    area_ratio = (w * h) / max(1.0, reduced.shape[0] * reduced.shape[1])
+    if area_ratio < 0.008:
+        return None, 0.0
+    inverse = 1.0 / max(scale, 1e-6)
+    box = (float(x * inverse), float(y * inverse), float(w * inverse), float(h * inverse))
+    confidence = clamp(area_ratio * 3.2, 0.12, 0.72)
+    return box, float(confidence)
+
+
+def screen_context_score(cv2, np, gray):
+    """Estimate whether a shot is text/UI-heavy and unsafe to crop tightly."""
+    if gray is None or gray.size == 0:
+        return 0.0
+    reduced = cv2.resize(gray, (min(640, gray.shape[1]), max(2, int(gray.shape[0] * min(640, gray.shape[1]) / gray.shape[1]))), interpolation=cv2.INTER_AREA)
+    edges = cv2.Canny(reduced, 70, 170)
+    edge_density = float(np.count_nonzero(edges)) / max(1.0, float(edges.size))
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180.0, threshold=45, minLineLength=max(20, reduced.shape[1] // 12), maxLineGap=8)
+    line_density = min(1.0, (0 if lines is None else len(lines)) / 45.0)
+    return clamp(edge_density * 3.6 + line_density * 0.42, 0.0, 1.0)
+
+
+def semantic_subject_choice(face_box=None, body_box=None, motion_box=None, saliency_box=None,
+                            speaker_confidence=0.0, saliency_confidence=0.0,
+                            screen_score=0.0, prior=None, scene_cut=False):
+    """Choose the ROI using the production semantic priority hierarchy."""
+    if screen_score >= 0.58 and face_box is None and body_box is None:
+        return {'kind': 'context', 'box': None, 'confidence': screen_score, 'reason': 'screen_or_text_context', 'predicted': False}
+    if face_box is not None:
+        confidence = max(0.62, float(speaker_confidence))
+        reason = 'confident_active_speaker' if speaker_confidence >= 0.42 else 'main_visible_face'
+        return {'kind': 'face', 'box': face_box, 'face_box': face_box, 'confidence': confidence, 'reason': reason, 'predicted': False}
+    if body_box is not None:
+        return {'kind': 'body', 'box': body_box, 'confidence': 0.58, 'reason': 'main_visible_person', 'predicted': False}
+    if motion_box is not None:
+        return {'kind': 'action', 'box': motion_box, 'confidence': 0.48, 'reason': 'primary_motion_or_action', 'predicted': False}
+    if saliency_box is not None and saliency_confidence >= 0.18:
+        return {'kind': 'saliency', 'box': saliency_box, 'confidence': saliency_confidence, 'reason': 'visual_saliency', 'predicted': False}
+    if prior is not None and not scene_cut and prior.get('box') is not None:
+        return {**prior, 'confidence': max(0.12, float(prior.get('confidence', 0.0)) * 0.82), 'reason': 'short_detection_hold', 'predicted': True}
+    return {'kind': 'context', 'box': None, 'confidence': 0.0, 'reason': 'no_reliable_visual_subject', 'predicted': False}
+
+
 def portrait_crop_for_face_in_panel(face, source_w: float, source_h: float, panel_left: float, panel_right: float):
     """Build a source-coordinate crop that can never cross a fixed panel boundary."""
     panel_left = clamp(float(panel_left), 0.0, source_w)
@@ -457,6 +567,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     portrait_source = source_h > source_w * 1.18
     decisions = []
     current_mode = 'source_vertical' if portrait_source else 'single'
+    current_grid_template = None
     current_key = None
     current_pair = None
     pending_mode = None
@@ -479,7 +590,32 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         speaker_confidence = float(point.get('speaker_confidence', 0.0))
         audio_activity = float(point.get('audio_activity', 0.0))
         scene_cut = bool(frame.get('scene_cut'))
-        selected = frame.get('selected_box')
+        semantic_subject = frame.get('semantic_subject') or {}
+        selected = semantic_subject.get('box') or frame.get('selected_box')
+        subject_kind = str(
+            point.get('subject_kind')
+            or semantic_subject.get('kind')
+            or ('face' if selected is not None else 'context')
+        )
+        subject_confidence = float(
+            point.get('subject_confidence', semantic_subject.get('confidence', speaker_confidence))
+        )
+        selection_reason = str(
+            point.get('selection_reason')
+            or semantic_subject.get('reason')
+            or ('active_face' if subject_kind == 'face' else 'safe_full_frame')
+        )
+        subject_predicted = bool(
+            point.get('subject_predicted', semantic_subject.get('predicted', False))
+        )
+        subject_velocity_x = float(
+            point.get('subject_velocity_x', semantic_subject.get('velocity_x', 0.0))
+        )
+        subject_stable_id = str(
+            point.get('subject_stable_id')
+            or semantic_subject.get('stable_id')
+            or (f'face:{active_id}' if active_id is not None else subject_kind)
+        )
         fixed_two_panel = frame.get('fixed_two_panel')
         pair = strongest_face_pair(faces, source_w)
         pair_ids = None if pair is None else tuple(int(face.get('track_id')) for face in pair)
@@ -493,11 +629,20 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             face for face in faces
             if not bool(face.get('predicted')) and face.get('track_id') is not None
         ]
-        dominant_faces = sorted(
+        layout_faces = sorted(
             (
                 face for face in visible_faces
-                if float(face.get('h', 0.0)) >= source_h * 0.15
+                if float(face.get('h', 0.0)) >= source_h * 0.085
             ),
+            key=lambda face: (
+                1 if active_id is not None and int(face.get('track_id')) == int(active_id) else 0,
+                float(face.get('active_speaker_confidence', 0.0)),
+                float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+            ),
+            reverse=True,
+        )[:4]
+        dominant_faces = sorted(
+            (face for face in layout_faces if float(face.get('h', 0.0)) >= source_h * 0.15),
             key=lambda face: float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
             reverse=True,
         )[:2]
@@ -505,7 +650,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         # A third or fourth visible participant must not automatically create a
         # two-column layout. In group shots the active-speaker crop remains the
         # default; safe-wide is reserved for genuinely tiny/uncertain faces.
-        if len(dominant_faces) == 2 and len(visible_faces) <= 2:
+        if len(dominant_faces) == 2 and len(layout_faces) == 2:
             dominant_faces = sorted(dominant_faces, key=lambda face: float(face.get('cx', 0.0)))
             horizontal_separation = abs(
                 float(dominant_faces[1].get('cx', 0.0)) - float(dominant_faces[0].get('cx', 0.0))
@@ -648,20 +793,21 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and stacked_score >= single_score + STACK_SCORE_MARGIN
         )
 
-        face_height_ratio = (
+        subject_height_ratio = (
             float(selected.get('h', 0)) / max(source_h, 1.0)
             if selected is not None
             else 0.0
         )
         wide_context_trigger = (
             selected is None
-            or (point.get('fallback_used') and speaker_confidence < 0.08)
-            or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.55
+            or subject_kind in ('context', 'screen')
+            or (subject_predicted and subject_confidence < 0.08)
         )
         strong_talking_head = (
-            selected is not None
+            subject_kind == 'face'
+            and selected is not None
             and not point.get('fallback_used')
-            and face_height_ratio > WIDE_FACE_HEIGHT_RATIO * 0.72
+            and subject_height_ratio > WIDE_FACE_HEIGHT_RATIO * 0.72
             and speaker_confidence >= 0.42
         )
 
@@ -677,13 +823,35 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         fixed_panel_exchange = bool(
             fixed_two_panel
             and visual_pair is not None
-            and (recent_switches >= 2 or speaker_confidence < 0.10)
+            and (selected is None or speaker_confidence < 0.18)
         )
+
+        active_speaker_mapped = bool(
+            subject_kind == 'face'
+            and selected is not None
+            and active_id is not None
+            and not point.get('fallback_used')
+            and speaker_confidence >= 0.18
+        )
+        participant_count = len(layout_faces)
+        desired_grid_template = None
 
         if portrait_source:
             desired_mode = 'source_vertical'
+        elif participant_count >= 4:
+            desired_mode = 'grid'
+            desired_grid_template = 'grid_4'
+        elif participant_count == 3:
+            desired_mode = 'grid'
+            desired_grid_template = 'hero_3' if active_speaker_mapped else 'grid_3'
+        elif participant_count == 2 and active_speaker_mapped:
+            desired_mode = 'single'
+        elif participant_count == 2:
+            # Two people without a trustworthy voice-to-face association are
+            # kept as independent vertical panes. Never crop their midpoint.
+            desired_mode = 'stacked'
         elif fixed_two_panel and fixed_panel_exchange:
-            desired_mode = 'wide_context'
+            desired_mode = 'stacked'
         elif fixed_two_panel and selected is not None:
             # A fixed split interview is edited as hard cuts between explicit
             # source panels. Never allow small-face/context heuristics to pull
@@ -691,6 +859,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             desired_mode = 'single'
             contextual_shot_latched = False
             talking_head_release_streak = 0
+        elif subject_kind in ('context', 'screen'):
+            desired_mode = 'wide_context'
+        elif selected is not None and subject_confidence >= 0.10:
+            # People, bodies, moving objects, and salient action all use the
+            # same semantic ROI timeline. Face detection is not required.
+            desired_mode = 'single'
         elif contextual_shot_latched:
             desired_mode = 'wide_context'
         elif wide_context_trigger:
@@ -709,24 +883,23 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 - min(float(face.get('cy', 0.0)) for face in visible_faces)
             ) >= source_h * 0.25
         )
-        if fixed_panel_exchange:
-            wide_kind = 'two_person'
-        elif two_person_context:
-            wide_kind = 'two_person'
-        elif grid_like_context:
+        if grid_like_context:
             wide_kind = 'safe_wide'
-        elif contextual_shot_latched or face_height_ratio <= WIDE_FACE_HEIGHT_RATIO * 0.55:
+        elif contextual_shot_latched or subject_kind in ('context', 'screen'):
             wide_kind = 'broll'
         else:
             wide_kind = 'safe_wide'
 
         if scene_cut:
             current_mode = desired_mode
+            current_grid_template = desired_grid_template if desired_mode == 'grid' else None
             current_pair = pair_ids if desired_mode == 'stacked' else None
             pending_mode = None
             pending_count = 0
             held_samples = 0
         elif desired_mode == current_mode:
+            if desired_mode == 'grid' and desired_grid_template:
+                current_grid_template = desired_grid_template
             pending_mode = None
             pending_count = 0
             held_samples += 1
@@ -738,9 +911,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             else:
                 pending_mode = desired_mode
                 pending_count = 1
-            required_confirmation = STACK_ENTER_CONFIRM_SAMPLES if desired_mode == 'stacked' else LAYOUT_CONFIRM_SAMPLES
+            required_confirmation = STACK_ENTER_CONFIRM_SAMPLES if desired_mode in ('stacked', 'grid') else LAYOUT_CONFIRM_SAMPLES
             if held_samples >= LAYOUT_MIN_HOLD_SAMPLES and pending_count >= required_confirmation:
                 current_mode = desired_mode
+                current_grid_template = desired_grid_template if desired_mode == 'grid' else None
                 current_pair = pair_ids if desired_mode == 'stacked' else None
                 pending_mode = None
                 pending_count = 0
@@ -749,18 +923,38 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 held_samples += 1
 
         face_by_id = {int(face.get('track_id')): face for face in faces if face.get('track_id') is not None}
-        primary_face = face_by_id.get(int(active_id)) if active_id is not None else None
-        if primary_face is None and selected is not None:
-            primary_face = {
+        layout_face_by_id = {
+            int(face.get('track_id')): face for face in layout_faces if face.get('track_id') is not None
+        }
+        layout_pair_ids = tuple(
+            int(face.get('track_id')) for face in sorted(
+                layout_faces[:2], key=lambda face: (
+                    0 if active_id is not None and int(face.get('track_id')) == int(active_id) else 1,
+                    float(face.get('cx', 0.0)),
+                )
+            )
+        ) if len(layout_faces) == 2 else None
+        primary_face = (
+            face_by_id.get(int(active_id))
+            if subject_kind == 'face' and active_id is not None
+            else None
+        )
+        primary_subject = None
+        if selected is not None:
+            primary_subject = {
                 **selected,
                 'cx': float(selected.get('x', 0)) + float(selected.get('w', 0)) / 2.0,
                 'cy': float(selected.get('y', 0)) + float(selected.get('h', 0)) / 2.0,
             }
+            if primary_face is None and subject_kind == 'face':
+                primary_face = primary_subject
 
         top_face = bottom_face = None
         wide_pair_ids = None
         if current_mode == 'stacked':
-            active_pair = current_pair if current_pair and all(track_id in face_by_id for track_id in current_pair) else pair_ids
+            active_pair = layout_pair_ids or (
+                current_pair if current_pair and all(track_id in face_by_id for track_id in current_pair) else pair_ids
+            )
             if active_pair and all(track_id in face_by_id for track_id in active_pair):
                 top_face = face_by_id[active_pair[0]]
                 bottom_face = face_by_id[active_pair[1]]
@@ -787,17 +981,28 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                     top_face, bottom_face = ordered_people[0][1], ordered_people[1][1]
 
         primary_panel = None
-        primary_tuple = None if primary_face is None else (
+        primary_tuple = None if primary_subject is None else (
+            float(primary_subject.get('x', 0)), float(primary_subject.get('y', 0)),
+            float(primary_subject.get('w', 1)), float(primary_subject.get('h', 1)),
+        )
+        face_tuple = None if primary_face is None else (
             float(primary_face.get('x', 0)), float(primary_face.get('y', 0)),
             float(primary_face.get('w', 1)), float(primary_face.get('h', 1)),
         )
-        if fixed_two_panel and primary_tuple is not None:
+        if fixed_two_panel and face_tuple is not None:
             divider_x = float(fixed_two_panel['divider_x'])
-            primary_panel = 'left' if center(primary_tuple)[0] < divider_x else 'right'
+            primary_panel = 'left' if center(face_tuple)[0] < divider_x else 'right'
             region = fixed_two_panel['left_region'] if primary_panel == 'left' else fixed_two_panel['right_region']
-            crop = portrait_crop_for_face_in_panel(primary_tuple, source_w, source_h, float(region[0]), float(region[1]))
+            crop = portrait_crop_for_face_in_panel(face_tuple, source_w, source_h, float(region[0]), float(region[1]))
         elif primary_tuple is not None:
-            crop = portrait_crop_for_face(primary_tuple, source_w, source_h)
+            crop = portrait_crop_for_subject(
+                primary_tuple,
+                source_w,
+                source_h,
+                subject_kind=subject_kind,
+                face_box=face_tuple,
+                velocity_x=subject_velocity_x,
+            )
         elif fixed_two_panel:
             # No active identity is preferable to a divider crop. The renderer
             # receives a safe panel anchor while the two-person mode preserves
@@ -812,20 +1017,44 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             }
             primary_panel = 'left'
         else:
+            # With no reliable subject, do not invent a portrait crop around
+            # the source midpoint. Preserve the source as safe context and let
+            # the renderer scale it into the vertical canvas.
+            current_mode = 'wide_context'
+            wide_kind = 'safe_wide'
+            current_grid_template = None
             crop = {
-                'x': round(max(0.0, (source_w - source_h * 9.0 / 16.0) / 2.0), 3),
+                'x': 0.0,
                 'y': 0.0,
-                'w': round(min(source_w, source_h * 9.0 / 16.0), 3),
+                'w': round(source_w, 3),
                 'h': round(source_h, 3),
                 'cx': round(source_w / 2.0, 3),
                 'cy': round(source_h / 2.0, 3),
                 'zoom': 1.0,
             }
 
+        subject_faces = []
+        if current_mode == 'grid':
+            ordered_layout_faces = sorted(
+                layout_face_by_id.values(),
+                key=lambda face: (
+                    0 if active_id is not None and int(face.get('track_id')) == int(active_id) else 1,
+                    -float(face.get('active_speaker_confidence', 0.0)),
+                    float(face.get('cy', 0.0)),
+                    float(face.get('cx', 0.0)),
+                ),
+            )
+            subject_faces = ordered_layout_faces[:4]
+
         decision = {
             'timestamp': round(now, 3),
             'mode': current_mode,
             'primary_track_id': active_id,
+            'subject_stable_id': subject_stable_id,
+            'subject_kind': subject_kind,
+            'subject_confidence': round(subject_confidence, 4),
+            'selection_reason': selection_reason,
+            'subject_predicted': subject_predicted,
             'top_track_id': wide_pair_ids[0] if wide_pair_ids else (None if current_pair is None else current_pair[0]),
             'bottom_track_id': wide_pair_ids[1] if wide_pair_ids else (None if current_pair is None else current_pair[1]),
             'speaker_confidence': round(speaker_confidence, 4),
@@ -835,6 +1064,22 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'stacked_score': round(stacked_score, 4),
             'stack_eligible': stack_eligible,
             'wide_kind': wide_kind if current_mode == 'wide_context' else None,
+            'grid_template': current_grid_template if current_mode == 'grid' else None,
+            'subjects': [
+                {
+                    'trackId': int(face.get('track_id')),
+                    'box': {
+                        key: round(float(face.get(key, 0.0)), 3)
+                        for key in ('x', 'y', 'w', 'h', 'cx', 'cy')
+                    },
+                    'score': round(
+                        float(face.get('active_speaker_confidence', 0.0))
+                        + (1.0 if active_id is not None and int(face.get('track_id')) == int(active_id) else 0.0),
+                        4,
+                    ),
+                }
+                for face in subject_faces
+            ],
             'source_layout': None if not fixed_two_panel else fixed_two_panel['mode'],
             'panel_boundary_x': None if not fixed_two_panel else fixed_two_panel['divider_x'],
             'panel_regions': None if not fixed_two_panel else {
@@ -855,6 +1100,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'dominant_share': round(dominant_share, 4),
             },
             'crop': crop,
+            'primary_subject': primary_subject,
             'primary_face': primary_face,
             'top_face': top_face,
             'bottom_face': bottom_face,
@@ -864,71 +1110,28 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         frame['layout_top_track_id'] = decision['top_track_id']
         frame['layout_bottom_track_id'] = decision['bottom_track_id']
         frame['layout_wide_kind'] = decision['wide_kind']
+        frame['layout_grid_template'] = decision['grid_template']
         frame['speaker_confidence'] = decision['speaker_confidence']
         point['framing'] = current_mode
 
-    # Stacked composition is an editorial exception, never the default. Keep
-    # only the strongest complete stacked runs that fit inside an 18% budget.
-    # Dropping a run returns each sample to its active-speaker crop, so speaker
-    # switches remain clean segment boundaries instead of a midpoint crop.
-    stacked_runs = []
-    run_start = None
-    for decision_index, decision in enumerate(decisions + [{'mode': None}]):
-        if decision.get('mode') == 'stacked' and run_start is None:
-            run_start = decision_index
-        elif decision.get('mode') != 'stacked' and run_start is not None:
-            run_end = decision_index
-            run_scores = [float(item.get('stacked_score', 0.0)) - float(item.get('single_score', 0.0)) for item in decisions[run_start:run_end]]
-            stacked_runs.append({
-                'start': run_start,
-                'end': run_end,
-                'samples': run_end - run_start,
-                'score': statistics.mean(run_scores) if run_scores else 0.0,
-            })
-            run_start = None
-
-    max_stacked_samples = int(math.floor(len(decisions) * STACK_MAX_DURATION_RATIO))
-    retained_stacked_indexes = set()
-    used_stacked_samples = 0
-    for run in sorted(stacked_runs, key=lambda item: float(item['score']), reverse=True):
-        run_samples = int(run['samples'])
-        remaining_budget = max_stacked_samples - used_stacked_samples
-        retained_samples = min(run_samples, remaining_budget, 16)  # at most four seconds per editorial beat
-        if retained_samples < STACK_ENTER_CONFIRM_SAMPLES:
-            continue
-        run_start_index = int(run['start'])
-        run_end_index = int(run['end'])
-        margins = [
-            float(item.get('stacked_score', 0.0)) - float(item.get('single_score', 0.0))
-            for item in decisions[run_start_index:run_end_index]
-        ]
-        best_offset = max(
-            range(0, run_samples - retained_samples + 1),
-            key=lambda offset: sum(margins[offset:offset + retained_samples]),
-        )
-        retained_start = run_start_index + best_offset
-        retained_stacked_indexes.update(range(retained_start, retained_start + retained_samples))
-        used_stacked_samples += retained_samples
-
-    for decision_index, decision in enumerate(decisions):
-        if decision.get('mode') != 'stacked' or decision_index in retained_stacked_indexes:
-            continue
-        decision['mode'] = 'single'
-        decision['top_track_id'] = None
-        decision['bottom_track_id'] = None
-        frames[decision_index]['layout_mode'] = 'single'
-        frames[decision_index]['layout_top_track_id'] = None
-        frames[decision_index]['layout_bottom_track_id'] = None
-        points[decision_index]['framing'] = 'single'
+    # The state machine already applies confidence, hysteresis, and cooldown.
+    # Keep coherent stacked runs intact instead of truncating them to a few
+    # seconds and exposing a divider-centered or incorrect single crop.
 
     segments = []
     for index, decision in enumerate(decisions):
+        grid_subject_ids = tuple(
+            int(subject['trackId']) for subject in decision.get('subjects', [])
+            if subject.get('trackId') is not None
+        )
         identity_key = (
             decision['mode'],
-            decision['primary_track_id'] if decision['mode'] == 'single' else None,
+            decision['subject_stable_id'] if decision['mode'] == 'single' else None,
             decision['wide_kind'] if decision['mode'] == 'wide_context' else None,
             decision['top_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
             decision['bottom_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
+            decision.get('grid_template') if decision['mode'] == 'grid' else None,
+            grid_subject_ids if decision['mode'] == 'grid' else None,
         )
         force_boundary = bool(decision.get('scene_cut'))
         if not segments or identity_key != segments[-1]['_key'] or force_boundary:
@@ -938,9 +1141,18 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'end': duration,
                 'mode': decision['mode'],
                 'primaryTrackId': decision['primary_track_id'],
+                'subjectStableId': decision['subject_stable_id'],
+                'subjectKind': decision['subject_kind'],
+                'selectionReason': decision['selection_reason'],
+                'fallbackReason': (
+                    decision['selection_reason']
+                    if decision['subject_kind'] in ('context', 'screen')
+                    else None
+                ),
                 'topTrackId': decision['top_track_id'],
                 'bottomTrackId': decision['bottom_track_id'],
                 'wideKind': decision['wide_kind'],
+                'gridTemplate': decision.get('grid_template'),
                 'sourceLayout': decision.get('source_layout'),
                 'panelBoundaryX': decision.get('panel_boundary_x'),
                 'panelRegions': decision.get('panel_regions'),
@@ -952,6 +1164,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 '_single_scores': [],
                 '_stacked_scores': [],
                 '_visible_counts': [],
+                '_subject_order': list(grid_subject_ids),
+                '_subject_boxes': {},
+                '_subject_scores': {},
             })
             if len(segments) > 1:
                 segments[-2]['end'] = float(decision['timestamp'])
@@ -967,11 +1182,20 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'cropCenterY': decision['crop']['cy'],
             'zoom': decision['crop']['zoom'],
             'speakerConfidence': decision['speaker_confidence'],
+            'subjectKind': decision['subject_kind'],
+            'subjectConfidence': decision['subject_confidence'],
+            'selectionReason': decision['selection_reason'],
+            'predicted': decision['subject_predicted'],
+            'subjectStableId': decision['subject_stable_id'],
         })
         if decision.get('top_face'):
             segment['_top_boxes'].append(decision['top_face'])
         if decision.get('bottom_face'):
             segment['_bottom_boxes'].append(decision['bottom_face'])
+        for subject in decision.get('subjects', []):
+            track_id = int(subject['trackId'])
+            segment['_subject_boxes'].setdefault(track_id, []).append(subject.get('box') or {})
+            segment['_subject_scores'].setdefault(track_id, []).append(float(subject.get('score', 0.0)))
         segment['_single_scores'].append(float(decision.get('single_score', 0.0)))
         segment['_stacked_scores'].append(float(decision.get('stacked_score', 0.0)))
         segment['_visible_counts'].append(int(decision.get('visible_count', 0)))
@@ -995,6 +1219,18 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         visible_counts = segment.pop('_visible_counts')
         segment['visibleCount'] = int(round(statistics.median(visible_counts))) if visible_counts else 0
         segment['visibleCountMax'] = max(visible_counts, default=0)
+        subject_order = segment.pop('_subject_order')
+        subject_boxes = segment.pop('_subject_boxes')
+        subject_scores = segment.pop('_subject_scores')
+        segment['subjects'] = [
+            {
+                'trackId': track_id,
+                'box': median_dict_box(subject_boxes.get(track_id, [])),
+                'score': round(statistics.mean(subject_scores.get(track_id, [0.0])), 4),
+            }
+            for track_id in subject_order
+            if median_dict_box(subject_boxes.get(track_id, [])) is not None
+        ]
         segment.pop('_key', None)
         segment['start'] = round(float(segment['start']), 3)
         segment['end'] = round(float(segment['end']), 3)
@@ -1011,12 +1247,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             continue
         previous = clean_segments[index - 1] if index > 0 else None
         following = clean_segments[index + 1] if index + 1 < len(clean_segments) else None
-        if segment['mode'] != 'stacked' and following is not None and following['mode'] == 'stacked' and previous is not None:
+        segment_is_multi = segment['mode'] in ('stacked', 'grid')
+        following_is_multi = following is not None and following['mode'] in ('stacked', 'grid')
+        previous_is_multi = previous is not None and previous['mode'] in ('stacked', 'grid')
+        if not segment_is_multi and following_is_multi and previous is not None:
             previous['end'] = segment['end']
             previous['points'].extend(segment['points'])
             clean_segments.pop(index)
             index = max(0, index - 1)
-        elif segment['mode'] != 'stacked' and previous is not None and previous['mode'] == 'stacked' and following is not None:
+        elif not segment_is_multi and previous_is_multi and following is not None:
             following['start'] = segment['start']
             following['points'] = segment['points'] + following['points']
             clean_segments.pop(index)
@@ -1049,30 +1288,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         else:
             index += 1
 
-    # Final defensive budget check after short-segment coalescing. If an edge
-    # transition still expanded stacked time past the budget, demote the least
-    # valuable stacked beats back to their active-speaker crop.
-    stacked_budget_seconds = duration * STACK_MAX_DURATION_RATIO
-    stacked_duration = sum(
-        float(segment['end']) - float(segment['start'])
-        for segment in clean_segments
-        if segment['mode'] == 'stacked'
-    )
-    if stacked_duration > stacked_budget_seconds:
-        for segment in sorted(
-            (item for item in clean_segments if item['mode'] == 'stacked'),
-            key=lambda item: float(item.get('stackedScore', 0.0)) - float(item.get('singleScore', 0.0)),
-        ):
-            segment_duration = float(segment['end']) - float(segment['start'])
-            segment['mode'] = 'single'
-            segment['topTrackId'] = None
-            segment['bottomTrackId'] = None
-            segment['topBox'] = None
-            segment['bottomBox'] = None
-            stacked_duration -= segment_duration
-            if stacked_duration <= stacked_budget_seconds:
-                break
-
     # Scene analysis is sampled every 250 ms. Pull hard-cut boundaries forward
     # by one sample so the incoming composition appears on the first visible
     # frame instead of holding the outgoing B-roll layout for another sample.
@@ -1091,23 +1306,47 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         leading_point['t'] = round(boundary, 3)
         segment['points'].insert(0, leading_point)
 
-    # Smooth and velocity-limit the virtual camera inside each uninterrupted
-    # single-speaker segment. Speaker/layout cuts remain hard boundaries.
+    # Smooth the semantic virtual camera inside each uninterrupted subject
+    # segment. A dead zone removes micro-jitter; velocity and acceleration
+    # limits keep walking/action tracking natural. Scene and identity changes
+    # remain hard cuts and therefore never slide from the previous shot.
     for segment in clean_segments:
         if segment['mode'] != 'single' or len(segment['points']) < 2:
             continue
         smoothed_x = float(segment['points'][0]['cropX'])
         smoothed_y = float(segment['points'][0]['cropY'])
+        velocity_x = 0.0
+        velocity_y = 0.0
         previous_t = float(segment['points'][0]['t'])
         for point in segment['points'][1:]:
             current_t = float(point['t'])
             delta_t = max(0.05, current_t - previous_t)
-            max_delta_x = float(point['cropW']) * 0.42 * delta_t
-            max_delta_y = float(point['cropH']) * 0.24 * delta_t
-            target_x = smoothed_x * 0.62 + float(point['cropX']) * 0.38
-            target_y = smoothed_y * 0.62 + float(point['cropY']) * 0.38
-            smoothed_x += clamp(target_x - smoothed_x, -max_delta_x, max_delta_x)
-            smoothed_y += clamp(target_y - smoothed_y, -max_delta_y, max_delta_y)
+            crop_w = float(point['cropW'])
+            crop_h = float(point['cropH'])
+            delta_x = float(point['cropX']) - smoothed_x
+            delta_y = float(point['cropY']) - smoothed_y
+            if abs(delta_x) <= crop_w * 0.035:
+                delta_x = 0.0
+            if abs(delta_y) <= crop_h * 0.025:
+                delta_y = 0.0
+
+            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.42, crop_w * 0.42)
+            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.24, crop_h * 0.24)
+            acceleration_x = crop_w * 1.30 * delta_t
+            acceleration_y = crop_h * 0.80 * delta_t
+            velocity_x += clamp(desired_velocity_x - velocity_x, -acceleration_x, acceleration_x)
+            velocity_y += clamp(desired_velocity_y - velocity_y, -acceleration_y, acceleration_y)
+
+            step_x = velocity_x * delta_t
+            step_y = velocity_y * delta_t
+            if abs(step_x) > abs(delta_x):
+                step_x = delta_x
+                velocity_x = 0.0
+            if abs(step_y) > abs(delta_y):
+                step_y = delta_y
+                velocity_y = 0.0
+            smoothed_x += step_x
+            smoothed_y += step_y
             point['cropX'] = round(smoothed_x, 3)
             point['cropY'] = round(smoothed_y, 3)
             point['cropCenterX'] = round(smoothed_x + float(point['cropW']) / 2.0, 3)
@@ -1176,6 +1415,89 @@ def save_debug_frame(cv2, frame, out_path: Path, detected_box, motion_box, crop_
     cv2.imwrite(str(out_path), img)
 
 
+def save_debug_video(cv2, input_path: str, out_path: Path, start_sec: float,
+                     source_w: float, source_h: float, frames, timeline, analysis_fps: float):
+    """Write a sampled planner overlay. This is never used as customer output."""
+    debug_cap = cv2.VideoCapture(input_path)
+    if not debug_cap.isOpened():
+        return None
+    scale = min(1.0, 960.0 / max(source_w, 1.0))
+    out_w = max(2, int(round(source_w * scale)) // 2 * 2)
+    out_h = max(2, int(round(source_h * scale)) // 2 * 2)
+    writer = cv2.VideoWriter(
+        str(out_path),
+        cv2.VideoWriter_fourcc(*'mp4v'),
+        max(1.0, float(analysis_fps)),
+        (out_w, out_h),
+    )
+    if not writer.isOpened():
+        debug_cap.release()
+        return None
+
+    center_path = []
+    palette = [(0, 255, 0), (255, 180, 0), (255, 0, 255), (0, 220, 255)]
+
+    def scaled_box(box):
+        if not box:
+            return None
+        return tuple(int(round(float(box.get(key, 0.0)) * scale)) for key in ('x', 'y', 'w', 'h'))
+
+    for frame_meta in frames:
+        rel_t = float(frame_meta.get('timestamp', 0.0))
+        debug_cap.set(cv2.CAP_PROP_POS_MSEC, (start_sec + rel_t) * 1000.0)
+        ok, image = debug_cap.read()
+        if not ok:
+            continue
+        image = cv2.resize(image, (out_w, out_h), interpolation=cv2.INTER_AREA)
+        active_id = frame_meta.get('active_track_id')
+        for face_index, face in enumerate(frame_meta.get('faces', [])):
+            box = scaled_box(face)
+            if box is None:
+                continue
+            x, y, w, h = box
+            track_id = face.get('track_id')
+            color = (0, 255, 255) if face.get('predicted') else palette[face_index % len(palette)]
+            thickness = 4 if track_id == active_id else 2
+            cv2.rectangle(image, (x, y), (x + w, y + h), color, thickness)
+            label = f"ID {track_id}{' ACTIVE' if track_id == active_id else ''}"
+            cv2.putText(image, label, (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+
+        segment = next(
+            (item for item in timeline if float(item.get('start', 0.0)) - 1e-3 <= rel_t < float(item.get('end', 0.0)) + 1e-3),
+            None,
+        )
+        if segment:
+            mode_label = str(segment.get('mode', 'unknown'))
+            if segment.get('gridTemplate'):
+                mode_label += f" / {segment['gridTemplate']}"
+            cv2.putText(image, mode_label, (18, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            points = segment.get('points') or []
+            if points:
+                point = min(points, key=lambda item: abs(float(item.get('t', 0.0)) - rel_t))
+                crop = {
+                    'x': point.get('cropX', 0.0), 'y': point.get('cropY', 0.0),
+                    'w': point.get('cropW', source_w), 'h': point.get('cropH', source_h),
+                }
+                crop_box = scaled_box(crop)
+                if crop_box:
+                    x, y, w, h = crop_box
+                    cv2.rectangle(image, (x, y), (x + w, y + h), (255, 80, 40), 3)
+                    center_path.append((x + w // 2, y + h // 2))
+            for subject_index, subject in enumerate(segment.get('subjects') or []):
+                subject_box = scaled_box(subject.get('box'))
+                if subject_box:
+                    x, y, w, h = subject_box
+                    cv2.rectangle(image, (x, y), (x + w, y + h), palette[subject_index % len(palette)], 3)
+        for path_index in range(1, len(center_path)):
+            cv2.line(image, center_path[path_index - 1], center_path[path_index], (255, 80, 40), 2)
+        cv2.putText(image, f"t={rel_t:.2f}s", (18, out_h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        writer.write(image)
+
+    writer.release()
+    debug_cap.release()
+    return str(out_path) if out_path.exists() else None
+
+
 def main():
     if len(sys.argv) == 2 and sys.argv[1] == '--health':
         try:
@@ -1236,8 +1558,16 @@ def main():
     duration = max(0.01, end_sec - start_sec)
     # Four observations per second is frequent enough to associate speech with
     # mouth motion and still bounded for long clips.
-    sample_count = max(2, int(math.ceil(duration / 0.25)) + 1)
-    sample_times = [start_sec + (duration * i / max(1, sample_count - 1)) for i in range(sample_count)]
+    try:
+        requested_analysis_fps = float(sys.argv[4]) if len(sys.argv) > 4 else float(
+            os.environ.get('SMART_REFRAME_ANALYSIS_FPS', '4')
+        )
+    except (TypeError, ValueError):
+        requested_analysis_fps = 4.0
+    analysis_fps = clamp(requested_analysis_fps, 1.0, 8.0)
+    sample_interval = 1.0 / analysis_fps
+    sample_count = max(2, int(math.ceil(duration * analysis_fps)) + 1)
+    sample_times = [min(end_sec, start_sec + sample_interval * i) for i in range(sample_count)]
     audio_activity, audio_available = extract_audio_activity(input_path, start_sec, duration, sample_times)
 
     mp_face = mp.solutions.face_detection
@@ -1269,6 +1599,9 @@ def main():
     next_face_track_id = 1
     previous_track_boxes = {}
     speaker_evidence_history = {}
+    last_semantic_subject = None
+    last_semantic_center_x = None
+    semantic_hold_samples = 0
 
     for sample_index, sample_t in enumerate(sample_times):
         cap.set(cv2.CAP_PROP_POS_MSEC, sample_t * 1000.0)
@@ -1283,7 +1616,9 @@ def main():
         divider_x, divider_confidence = vertical_divider_candidate(cv2, np, gray)
 
         selected_box: Optional[Tuple[float, float, float, float]] = None
+        body_box: Optional[Tuple[float, float, float, float]] = None
         motion_box: Optional[Tuple[float, float, float, float]] = None
+        saliency_box: Optional[Tuple[float, float, float, float]] = None
         fallback_used = False
 
         faces = []
@@ -1353,8 +1688,7 @@ def main():
             bodies = [] if body_cascade.empty() else list(body_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(80, 80)))
             if bodies:
                 x, y, w, h = max(bodies, key=lambda b: b[2] * b[3])
-                selected_box = (float(x), float(y), float(w), float(h))
-                fallback_used = True
+                body_box = (float(x), float(y), float(w), float(h))
 
         current_audio = audio_activity[sample_index] if sample_index < len(audio_activity) else 0.0
         mouth_scores = []
@@ -1447,6 +1781,46 @@ def main():
         if motion_boxes:
             motion_box = motion_boxes[0]
 
+        saliency_box, saliency_confidence = saliency_region(cv2, np, gray, source_w, source_h)
+        screen_score = screen_context_score(cv2, np, gray)
+        scene_cut = scene_change >= 0.72
+        max_semantic_hold_samples = max(2, int(round(analysis_fps * 0.75)))
+        prior_semantic_subject = (
+            last_semantic_subject
+            if semantic_hold_samples < max_semantic_hold_samples
+            else None
+        )
+        semantic_subject = semantic_subject_choice(
+            face_box=selected_box,
+            body_box=body_box,
+            motion_box=motion_box,
+            saliency_box=saliency_box,
+            speaker_confidence=selected_speaker_confidence,
+            saliency_confidence=saliency_confidence,
+            screen_score=screen_score,
+            prior=prior_semantic_subject,
+            scene_cut=scene_cut,
+        )
+        semantic_box = semantic_subject.get('box')
+        semantic_center_x = center(semantic_box)[0] if semantic_box is not None else source_w / 2.0
+        semantic_velocity_x = (
+            0.0
+            if last_semantic_center_x is None or scene_cut
+            else (semantic_center_x - last_semantic_center_x) * analysis_fps
+        )
+        semantic_subject['velocity_x'] = round(float(semantic_velocity_x), 4)
+        if semantic_subject.get('kind') == 'face' and active_track_id is not None:
+            semantic_subject['stable_id'] = f'face:{active_track_id}'
+        else:
+            semantic_subject['stable_id'] = str(semantic_subject.get('kind', 'context'))
+        if semantic_subject.get('predicted'):
+            semantic_hold_samples += 1
+        else:
+            semantic_hold_samples = 0
+        last_semantic_subject = dict(semantic_subject)
+        last_semantic_center_x = semantic_center_x
+        fallback_used = bool(semantic_subject.get('predicted')) or semantic_subject.get('kind') == 'context'
+
         detected_faces.append({
             'timestamp': round(sample_t - start_sec, 3),
             'multi_person_checked': multi_person_checked,
@@ -1470,29 +1844,32 @@ def main():
             ],
         })
 
-        chosen_center_x, motion_fallback_used = merge_subject_and_motion(selected_box, motion_box, source_w)
-        fallback_used = fallback_used or motion_fallback_used
+        chosen_center_x = semantic_center_x
         chosen_center_x = clamp(chosen_center_x, source_w * SAFE_EDGE_MARGIN_X, source_w * (1.0 - SAFE_EDGE_MARGIN_X))
 
-        if selected_box is not None:
-            selected_subject_boxes.append(selected_box)
-            _, cy = center(selected_box)
-            chosen_center_y = cy
-        elif motion_box is not None:
-            _, cy = center(motion_box)
+        if semantic_box is not None:
+            selected_subject_boxes.append(semantic_box)
+            _, cy = center(semantic_box)
             chosen_center_y = cy
         else:
             chosen_center_y = source_h / 2.0
 
-        if selected_box is not None:
-            subject_w = selected_box[2]
-            subject_h = selected_box[3]
-            mode = 'face'
-            face_height_ratio = selected_box[3] / max(source_h, 1.0)
-            face_width_ratio = selected_box[2] / max(source_w, 1.0)
+        semantic_kind = str(semantic_subject.get('kind', 'context'))
+        if semantic_box is not None:
+            subject_w = semantic_box[2]
+            subject_h = semantic_box[3]
+            mode = semantic_kind
+            face_height_ratio = semantic_box[3] / max(source_h, 1.0)
+            face_width_ratio = semantic_box[2] / max(source_w, 1.0)
             desired_framing = 'wide_context' if (
-                face_height_ratio <= WIDE_FACE_HEIGHT_RATIO
-                or face_width_ratio <= WIDE_FACE_WIDTH_RATIO
+                semantic_kind in {'context', 'screen'}
+                or (
+                    semantic_kind == 'face'
+                    and (
+                        face_height_ratio <= WIDE_FACE_HEIGHT_RATIO
+                        or face_width_ratio <= WIDE_FACE_WIDTH_RATIO
+                    )
+                )
             ) else 'single'
 
             if desired_framing == active_framing:
@@ -1514,15 +1891,10 @@ def main():
             if framing == 'wide_context':
                 wide_context_samples += 1
             normalized_x = chosen_center_x / max(source_w, 1.0)
-            face_top = selected_box[1] / max(source_h, 1.0)
-            normalized_y = face_top + 0.08
-        elif motion_box is not None:
-            subject_w = motion_box[2]
-            subject_h = motion_box[3]
-            mode = 'motion'
-            framing = 'single'
-            normalized_x = chosen_center_x / max(source_w, 1.0)
-            normalized_y = chosen_center_y / max(source_h, 1.0)
+            if semantic_kind == 'face':
+                normalized_y = semantic_box[1] / max(source_h, 1.0) + 0.08
+            else:
+                normalized_y = chosen_center_y / max(source_h, 1.0)
         else:
             subject_w = crop_w
             subject_h = crop_h
@@ -1553,6 +1925,16 @@ def main():
             'chosen_center_y': chosen_center_y,
             'fallback_used': fallback_used,
             'active_track_id': active_track_id,
+            'semantic_subject': {
+                'kind': semantic_kind,
+                'box': dict_box(semantic_box),
+                'confidence': round(float(semantic_subject.get('confidence', 0.0)), 4),
+                'reason': semantic_subject.get('reason'),
+                'predicted': bool(semantic_subject.get('predicted')),
+                'stable_id': semantic_subject.get('stable_id'),
+                'velocity_x': semantic_subject.get('velocity_x', 0.0),
+                'face_box': dict_box(semantic_subject.get('face_box')),
+            },
         })
         points.append({
             't': rel_t,
@@ -1571,6 +1953,12 @@ def main():
             'scene_change': round(scene_change, 4),
             'active_track_id': active_track_id,
             'fallback_used': fallback_used,
+            'subject_kind': semantic_kind,
+            'subject_confidence': round(float(semantic_subject.get('confidence', 0.0)), 4),
+            'selection_reason': semantic_subject.get('reason'),
+            'subject_predicted': bool(semantic_subject.get('predicted')),
+            'subject_stable_id': semantic_subject.get('stable_id'),
+            'subject_velocity_x': semantic_subject.get('velocity_x', 0.0),
         })
         detected_faces[-1].update({
             'active_track_id': active_track_id,
@@ -1583,6 +1971,21 @@ def main():
             'fallback_used': fallback_used,
             'scene_cut': scene_change >= 0.72,
             'audio_activity': round(current_audio, 4),
+            'body_box': dict_box(body_box),
+            'motion_box': dict_box(motion_box),
+            'saliency_box': dict_box(saliency_box),
+            'saliency_confidence': round(float(saliency_confidence), 4),
+            'screen_context_score': round(float(screen_score), 4),
+            'semantic_subject': {
+                'kind': semantic_kind,
+                'box': dict_box(semantic_box),
+                'confidence': round(float(semantic_subject.get('confidence', 0.0)), 4),
+                'reason': semantic_subject.get('reason'),
+                'predicted': bool(semantic_subject.get('predicted')),
+                'stable_id': semantic_subject.get('stable_id'),
+                'velocity_x': semantic_subject.get('velocity_x', 0.0),
+                'face_box': dict_box(semantic_subject.get('face_box')),
+            },
         })
 
         prev_gray = gray
@@ -1642,6 +2045,19 @@ def main():
     reframe_timeline, layout_qa_summary = validate_layout_timeline(
         reframe_timeline, detected_faces, source_w, source_h
     )
+    debug_overlay_path = None
+    if debug_enabled:
+        debug_overlay_path = save_debug_video(
+            cv2,
+            input_path,
+            debug_dir / f'{clip_id}-reframe-debug.mp4',
+            start_sec,
+            source_w,
+            source_h,
+            detected_faces,
+            reframe_timeline,
+            analysis_fps,
+        )
 
     unique_track_ids = sorted({
         int(face['track_id'])
@@ -1711,6 +2127,7 @@ def main():
             'layout_modes': layout_modes,
             'editorial_planner': editorial_summary,
             'layout_qa': layout_qa_summary,
+            'debug_overlay_path': debug_overlay_path,
         },
         'reframe_timeline': reframe_timeline,
         'detected_faces': detected_faces,

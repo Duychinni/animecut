@@ -524,8 +524,10 @@ type SplitStackLayout = {
   outputHeight: number;
 };
 type FramingInterval = { start: number; end: number };
-type TimelineLayoutMode = 'single' | 'stacked' | 'wide_context' | 'source_vertical';
+type TimelineLayoutMode = 'single' | 'stacked' | 'grid' | 'wide_context' | 'source_vertical';
 type WideContextKind = 'two_person' | 'broll' | 'safe_wide';
+type GridTemplate = 'stack_2' | 'hero_3' | 'grid_3' | 'grid_4';
+type TimelineSubject = { trackId: number; box: SubjectBox; score: number };
 type ReframeTimelinePoint = {
   t: number;
   cropX: number;
@@ -545,6 +547,8 @@ type ReframeTimelineSegment = {
   topTrackId?: number | null;
   bottomTrackId?: number | null;
   wideKind?: WideContextKind;
+  gridTemplate?: GridTemplate;
+  subjects?: TimelineSubject[];
   topBox?: SubjectBox;
   bottomBox?: SubjectBox;
   editorialSceneType?: string;
@@ -685,7 +689,7 @@ function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox |
 
 function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): ReframeTimelineSegment[] {
   if (!Array.isArray(rawTimeline)) return [];
-  const validModes = new Set<TimelineLayoutMode>(['single', 'stacked', 'wide_context', 'source_vertical']);
+  const validModes = new Set<TimelineLayoutMode>(['single', 'stacked', 'grid', 'wide_context', 'source_vertical']);
   const segments = rawTimeline.flatMap((raw): ReframeTimelineSegment[] => {
     if (!raw || typeof raw !== 'object') return [];
     const item = raw as Record<string, unknown>;
@@ -698,6 +702,20 @@ function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): R
     const wideKind: WideContextKind = rawWideKind === 'two_person' || rawWideKind === 'broll'
       ? rawWideKind
       : 'safe_wide';
+    const rawGridTemplate = String(item.gridTemplate ?? '');
+    const gridTemplate: GridTemplate | undefined = rawGridTemplate === 'stack_2' || rawGridTemplate === 'hero_3' || rawGridTemplate === 'grid_3' || rawGridTemplate === 'grid_4'
+      ? rawGridTemplate
+      : undefined;
+    const subjects = Array.isArray(item.subjects)
+      ? item.subjects.flatMap((rawSubject): TimelineSubject[] => {
+          if (!rawSubject || typeof rawSubject !== 'object') return [];
+          const subject = rawSubject as Record<string, unknown>;
+          const box = normalizeBox(subject.box as Partial<SubjectBox> | null | undefined);
+          const trackId = Number(subject.trackId);
+          const score = Number(subject.score ?? 0);
+          return box && Number.isFinite(trackId) ? [{ trackId, box, score: Number.isFinite(score) ? score : 0 }] : [];
+        })
+      : [];
     const points = Array.isArray(item.points)
       ? item.points.flatMap((rawPoint): ReframeTimelinePoint[] => {
           if (!rawPoint || typeof rawPoint !== 'object') return [];
@@ -729,6 +747,8 @@ function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): R
       topTrackId: item.topTrackId == null || item.topTrackId === '' ? null : Number.isFinite(Number(item.topTrackId)) ? Number(item.topTrackId) : null,
       bottomTrackId: item.bottomTrackId == null || item.bottomTrackId === '' ? null : Number.isFinite(Number(item.bottomTrackId)) ? Number(item.bottomTrackId) : null,
       wideKind,
+      gridTemplate,
+      subjects,
       topBox: normalizeBox(item.topBox as Partial<SubjectBox> | null | undefined),
       bottomBox: normalizeBox(item.bottomBox as Partial<SubjectBox> | null | undefined),
       editorialSceneType: typeof item.editorialSceneType === 'string' ? item.editorialSceneType : undefined,
@@ -924,7 +944,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
       opts.inputPath,
       String(opts.startSec),
       String(opts.endSec),
-      '2.0',
+      process.env.SMART_REFRAME_ANALYSIS_FPS || '4',
       ...(editorialPlanPath ? [editorialPlanPath] : []),
     ]);
     let raw = probe.json as {
@@ -991,7 +1011,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
           opts.inputPath,
           String(opts.startSec),
           String(opts.endSec),
-          '2.0',
+          process.env.SMART_REFRAME_ANALYSIS_FPS || '4',
         ]);
         const cvRaw = cvProbe.json as typeof raw;
         if (cvProbe.code === 0 && cvRaw?.ok) {
@@ -1810,33 +1830,66 @@ function buildTimelineStackPane(
   return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${VERTICAL_EXPORT_WIDTH}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},setsar=1${outputLabel}`;
 }
 
-function buildTwoPersonColumnPane(
+function buildTimelineGridPane(
   inputLabel: string,
   outputLabel: string,
   box: SubjectBox,
   sourceW: number,
   sourceH: number,
   paneWidth: number,
-  labelPrefix: string,
+  paneHeight: number,
 ) {
-  // Side-by-side portrait columns keep both speakers prominent without
-  // reintroducing stacked mode. A narrow full-height crop can cut through a
-  // large face, so each pane uses a face-safe foreground crop over a matching
-  // full-height background. The foreground remains centered and occupies as
-  // much of the pane height as the source geometry safely allows.
-  const paneAspect = paneWidth / VERTICAL_EXPORT_HEIGHT;
-  const cropHeight = floorEven(sourceH);
-  const backgroundCropWidth = floorEven(Math.min(sourceW, cropHeight * paneAspect));
-  const cropWidth = floorEven(clamp(box.w * 1.04, backgroundCropWidth, sourceW));
+  const paneAspect = paneWidth / paneHeight;
   const faceCx = box.cx ?? (box.x + box.w / 2);
+  const faceCy = box.cy ?? (box.y + box.h / 2);
+  // Include head and shoulders, then expand as needed to match the pane.
+  let cropHeight = clamp(box.h * 3.1, sourceH * 0.42, sourceH);
+  let cropWidth = cropHeight * paneAspect;
+  if (cropWidth > sourceW) {
+    cropWidth = sourceW;
+    cropHeight = cropWidth / paneAspect;
+  }
+  cropWidth = floorEven(cropWidth);
+  cropHeight = floorEven(Math.min(sourceH, cropHeight));
   const cropX = floorEven(clamp(faceCx - cropWidth / 2, 0, Math.max(0, sourceW - cropWidth)));
-  const backgroundX = floorEven(clamp(faceCx - backgroundCropWidth / 2, 0, Math.max(0, sourceW - backgroundCropWidth)));
-  return [
-    `${inputLabel}split=2[${labelPrefix}bg][${labelPrefix}fg]`,
-    `[${labelPrefix}bg]crop=${backgroundCropWidth}:${cropHeight}:${backgroundX}:0,scale=${paneWidth}:${VERTICAL_EXPORT_HEIGHT}:flags=${HIGH_QUALITY_SCALE_FLAGS},boxblur=18:2[${labelPrefix}bgready]`,
-    `[${labelPrefix}fg]crop=${cropWidth}:${cropHeight}:${cropX}:0,scale=${paneWidth}:-2:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1[${labelPrefix}fgready]`,
-    `[${labelPrefix}bgready][${labelPrefix}fgready]overlay=0:(H-h)/2:format=auto,setsar=1${outputLabel}`,
-  ];
+  const cropY = floorEven(clamp(faceCy - cropHeight * 0.38, 0, Math.max(0, sourceH - cropHeight)));
+  return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${paneWidth}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1${outputLabel}`;
+}
+
+function buildTimelineGrid(
+  base: string,
+  normalizedOutput: string,
+  index: number,
+  segment: ReframeTimelineSegment,
+  sourceW: number,
+  sourceH: number,
+) {
+  const required = segment.gridTemplate === 'grid_4' ? 4 : 3;
+  const subjects = (segment.subjects ?? []).slice(0, required);
+  if (subjects.length < required) return buildLargeSafeWideContext(base, normalizedOutput, index);
+  const graph: string[] = [`${base},split=${required}${subjects.map((_, subjectIndex) => `[grid${index}in${subjectIndex}]`).join('')}`];
+
+  if (segment.gridTemplate === 'hero_3') {
+    graph.push(buildTimelineGridPane(`[grid${index}in0]`, `[grid${index}hero]`, subjects[0].box, sourceW, sourceH, VERTICAL_EXPORT_WIDTH, 960));
+    graph.push(buildTimelineGridPane(`[grid${index}in1]`, `[grid${index}support1]`, subjects[1].box, sourceW, sourceH, 540, 960));
+    graph.push(buildTimelineGridPane(`[grid${index}in2]`, `[grid${index}support2]`, subjects[2].box, sourceW, sourceH, 540, 960));
+    graph.push(`[grid${index}support1][grid${index}support2]hstack=inputs=2[grid${index}bottom]`);
+    graph.push(`[grid${index}hero][grid${index}bottom]vstack=inputs=2,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    return graph;
+  }
+
+  if (segment.gridTemplate === 'grid_4') {
+    subjects.forEach((subject, subjectIndex) => graph.push(buildTimelineGridPane(`[grid${index}in${subjectIndex}]`, `[grid${index}pane${subjectIndex}]`, subject.box, sourceW, sourceH, 540, 960)));
+    graph.push(`[grid${index}pane0][grid${index}pane1]hstack=inputs=2[grid${index}row0]`);
+    graph.push(`[grid${index}pane2][grid${index}pane3]hstack=inputs=2[grid${index}row1]`);
+    graph.push(`[grid${index}row0][grid${index}row1]vstack=inputs=2,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    return graph;
+  }
+
+  const paneHeight = 640;
+  subjects.forEach((subject, subjectIndex) => graph.push(buildTimelineGridPane(`[grid${index}in${subjectIndex}]`, `[grid${index}pane${subjectIndex}]`, subject.box, sourceW, sourceH, VERTICAL_EXPORT_WIDTH, paneHeight)));
+  graph.push(`[grid${index}pane0][grid${index}pane1][grid${index}pane2]vstack=inputs=3,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+  return graph;
 }
 
 function buildCropToFillContext(
@@ -1887,23 +1940,9 @@ function buildTimedReframeFilter(
 
     if (segment.mode === 'source_vertical') {
       graph.push(`${base},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS},pad=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
-    } else if (segment.mode === 'wide_context' && segment.wideKind === 'two_person' && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
-      const dividerWidth = 8;
-      const leftWidth = floorEven((VERTICAL_EXPORT_WIDTH - dividerWidth) / 2);
-      const rightWidth = VERTICAL_EXPORT_WIDTH - dividerWidth - leftWidth;
-      const orderedBoxes = [segment.topBox, segment.bottomBox].sort(
-        (a, b) => (a.cx ?? (a.x + a.w / 2)) - (b.cx ?? (b.x + b.w / 2)),
-      );
-      graph.push(`${base},split=2[twopersonleft${index}][twopersonright${index}]`);
-      graph.push(...buildTwoPersonColumnPane(`[twopersonleft${index}]`, `[twopersonleftready${index}]`, orderedBoxes[0], sourceW, sourceH, leftWidth, `twopersonleftpane${index}`));
-      graph.push(...buildTwoPersonColumnPane(`[twopersonright${index}]`, `[twopersonrightready${index}]`, orderedBoxes[1], sourceW, sourceH, rightWidth, `twopersonrightpane${index}`));
-      graph.push(`color=c=black@0.92:s=${dividerWidth}x${VERTICAL_EXPORT_HEIGHT}:d=${(segment.end - segment.start).toFixed(3)}[twopersondivider${index}]`);
-      graph.push(`[twopersonleftready${index}][twopersondivider${index}][twopersonrightready${index}]hstack=inputs=3,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
-    } else if (segment.mode === 'wide_context' && segment.wideKind === 'broll' && sourceW > 0 && sourceH > 0) {
-      graph.push(`${buildCropToFillContext(`${base},`, '', sourceW, sourceH)},fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
-    } else if (segment.mode === 'wide_context') {
-      graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index));
-    } else if (segment.mode === 'stacked' && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
+    } else if (segment.mode === 'grid' && sourceW > 0 && sourceH > 0) {
+      graph.push(...buildTimelineGrid(base, normalizedOutput, index, segment, sourceW, sourceH));
+    } else if ((segment.mode === 'stacked' || (segment.mode === 'wide_context' && segment.wideKind === 'two_person')) && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
       const dividerHeight = 16;
       const paneHeight = Math.floor((VERTICAL_EXPORT_HEIGHT - dividerHeight) / 2);
       graph.push(`${base},split=2[stacktop${index}][stackbottom${index}]`);
@@ -1911,8 +1950,17 @@ function buildTimedReframeFilter(
       graph.push(buildTimelineStackPane(`[stackbottom${index}]`, `[stackbottomready${index}]`, segment.bottomBox, sourceW, sourceH, paneHeight));
       graph.push(`color=c=white@0.82:s=${VERTICAL_EXPORT_WIDTH}x${dividerHeight}:d=${(segment.end - segment.start).toFixed(3)}[divider${index}]`);
       graph.push(`[stacktopready${index}][divider${index}][stackbottomready${index}]vstack=inputs=3,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else if (segment.mode === 'wide_context' && segment.wideKind === 'broll' && sourceW > 0 && sourceH > 0) {
+      graph.push(`${buildCropToFillContext(`${base},`, '', sourceW, sourceH)},fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+    } else if (segment.mode === 'wide_context') {
+      graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index));
     } else {
       const firstPoint = segment.points[0];
+      if (!firstPoint) {
+        graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index));
+        outputs.push(normalizedOutput);
+        return;
+      }
       const cropWidth = floorEven(firstPoint?.cropW ?? Math.min(sourceW, sourceH * 9 / 16));
       const cropHeight = floorEven(firstPoint?.cropH ?? sourceH);
       const fallbackX = firstPoint?.cropX ?? Math.max(0, (sourceW - cropWidth) / 2);
