@@ -3,6 +3,7 @@
 
 from reframe_per_clip import (
     build_reframe_timeline,
+    detect_fixed_two_panel_layout,
     portrait_crop_for_subject,
     semantic_subject_choice,
 )
@@ -23,7 +24,8 @@ def box(x, y, w, h, track_id=None, confidence=0.8):
     return value
 
 
-def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0, scene_cut=False):
+def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
+           speaker_margin=0.0, scene_cut=False, fixed_layout=None):
     subject = subject or {
         'kind': 'context', 'box': None, 'confidence': 0.0,
         'reason': 'no_reliable_visual_subject', 'predicted': False,
@@ -33,9 +35,13 @@ def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0, scene_
         't': float(t), 'faces': faces or [], 'active_track_id': active_id,
         'selected_box': subject.get('box') if subject.get('kind') == 'face' else None,
         'semantic_subject': subject, 'scene_cut': scene_cut,
+        'speaker_score_margin': float(speaker_margin),
     }
+    if fixed_layout is not None:
+        frame['fixed_two_panel'] = fixed_layout
     point = {
         't': float(t), 'speaker_confidence': float(speaker_conf),
+        'speaker_score_margin': float(speaker_margin),
         'audio_activity': 0.7 if speaker_conf else 0.0,
         'fallback_used': bool(subject.get('predicted')),
         'subject_kind': subject.get('kind'),
@@ -119,6 +125,60 @@ def test_alternating_speakers_cut_identity():
     assert {segment['subjectStableId'] for segment in singles} >= {'face:1', 'face:2'}, result
 
 
+def fixed_two_region_fixture():
+    left = box(180, 145, 350, 720, 1, 0.92)
+    right = box(1380, 145, 350, 720, 2, 0.92)
+    detector_frames = [
+        {'timestamp': index * 0.25, 'faces': [left, right]}
+        for index in range(16)
+    ]
+    fixed = detect_fixed_two_panel_layout(detector_frames, W, H)
+    assert fixed and fixed['mode'] == 'FIXED_TWO_REGION_CONVERSATION', fixed
+    assert fixed['track_region_map'] == {'1': 'left', '2': 'right'}, fixed
+    return left, right, fixed
+
+
+def test_fixed_two_region_right_speaker_never_uses_midpoint():
+    left, right, fixed = fixed_two_region_fixture()
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', right, 'face:2', 0.92),
+            [left, right], 2, 0.92, 0.55, fixed_layout=fixed,
+        )
+        for index in range(12)
+    ]
+    result = timeline(samples)
+    active = [segment for segment in result if segment.get('renderBranch') == 'active_speaker_right']
+    assert active, result
+    for segment in active:
+        assert segment['mode'] == 'single' and segment['primaryPanel'] == 'right', segment
+        for point in segment['points']:
+            assert point['cropX'] >= fixed['right_region'][0], point
+            assert point['cropX'] > fixed['divider_x'], point
+
+
+def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():
+    left, right, fixed = fixed_two_region_fixture()
+    samples = []
+    for index in range(12):
+        active_id = 1 if index < 6 else 2
+        active_box = left if active_id == 1 else right
+        samples.append(sample(
+            index * 0.25,
+            subject('face', active_box, f'face:{active_id}', 0.94),
+            [left, right], active_id, 0.94, 0.62, fixed_layout=fixed,
+        ))
+    result = timeline(samples)
+    panel_segments = [segment for segment in result if segment.get('primaryPanel') in ('left', 'right')]
+    assert [segment['primaryPanel'] for segment in panel_segments] == ['left', 'right'], result
+    assert panel_segments[1]['hardCutStart'], panel_segments[1]
+    assert panel_segments[0]['renderBranch'] == 'active_speaker_left'
+    assert panel_segments[1]['renderBranch'] == 'active_speaker_right'
+    assert panel_segments[0]['points'][-1]['cropX'] + panel_segments[0]['points'][-1]['cropW'] <= fixed['left_region'][1] + 1
+    assert panel_segments[1]['points'][0]['cropX'] >= fixed['right_region'][0] - 1
+
+
 def test_three_and_four_person_grids():
     three = [box(100 + index * 580, 170, 320, 600, index + 1) for index in range(3)]
     four = [
@@ -156,4 +216,4 @@ if __name__ == '__main__':
     for test in tests:
         test()
         print(f'PASS {test.__name__}')
-    print(f'PASS {len(tests)}/10 universal semantic reframe acceptance tests')
+    print(f'PASS {len(tests)}/{len(tests)} universal semantic reframe acceptance tests')

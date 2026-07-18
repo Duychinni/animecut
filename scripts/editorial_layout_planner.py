@@ -14,9 +14,14 @@ SCENE_TYPES = {
 }
 
 LAYOUTS = {
-    'SINGLE_SPEAKER_CROP', 'TWO_PERSON_CONVERSATION',
+    'SINGLE_SPEAKER_CROP', 'ACTIVE_SPEAKER_CROP', 'TWO_PERSON_CONVERSATION',
     'THREE_PERSON_COMPOSITION', 'PRESERVE_GRID', 'BROLL_FILL',
     'PICTURE_IN_PICTURE', 'SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL',
+}
+
+FIXED_TWO_REGION_LAYOUTS = {
+    'FIXED_TWO_REGION_CONVERSATION',
+    'FIXED_TWO_PANEL_INTERVIEW',
 }
 
 
@@ -65,6 +70,31 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
         segment = dict(raw_segment)
         scene_type, layout, reason = _classify_visual_scene(segment)
 
+        fixed_two_region = segment.get('sourceLayout') in FIXED_TWO_REGION_LAYOUTS
+        fixed_active_speaker = (
+            fixed_two_region
+            and segment.get('renderBranch') in ('active_speaker_left', 'active_speaker_right')
+            and segment.get('mode') == 'single'
+            and segment.get('primaryPanel') in ('left', 'right')
+            and segment.get('primaryTrackId') is not None
+        )
+
+        # This renderer decision is authoritative. Once visual analysis has
+        # classified a fixed two-region source and bound a confident speaker
+        # to one panel, transcript/editorial hints may not widen, stack, or
+        # recenter the shot between participants.
+        if fixed_active_speaker:
+            scene_type = 'SINGLE_SPEAKER'
+            layout = 'ACTIVE_SPEAKER_CROP'
+            reason = 'Confident fixed-region speaker selection requires a panel-bounded single-speaker crop.'
+            segment['mode'] = 'single'
+            segment['wideKind'] = None
+            segment['editorialSceneType'] = scene_type
+            segment['editorialLayout'] = layout
+            segment['editorialReason'] = reason
+            planned.append(segment)
+            continue
+
         # Transcript intelligence is a prior, never permission to contradict
         # the observed frame. It may preserve context, but may not invent a
         # speaker count or force an unsafe crop.
@@ -88,7 +118,7 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
         elif layout in ('SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL'):
             segment['mode'] = 'wide_context'
             segment['wideKind'] = 'safe_wide'
-        elif layout == 'SINGLE_SPEAKER_CROP' and segment.get('points') and segment.get('mode') != 'source_vertical':
+        elif layout in ('SINGLE_SPEAKER_CROP', 'ACTIVE_SPEAKER_CROP') and segment.get('points') and segment.get('mode') != 'source_vertical':
             segment['mode'] = 'single'
             segment['wideKind'] = None
 

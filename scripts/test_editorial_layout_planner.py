@@ -88,6 +88,36 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
         self.assertEqual(summary['segments'], 2)
         self.assertTrue(planned[1]['sceneCutStart'])
 
+    def test_fixed_two_region_active_speaker_cannot_be_overridden(self):
+        planned, _ = plan_editorial_timeline([{
+            'start': 0.0, 'end': 4.0, 'mode': 'single',
+            'sourceLayout': 'FIXED_TWO_REGION_CONVERSATION',
+            'renderBranch': 'active_speaker_right',
+            'primaryPanel': 'right', 'primaryTrackId': 2,
+            'visibleCount': 2, 'points': [crop_point()],
+        }], candidate_plan={
+            'recommended_layout': 'TWO_PERSON',
+            'visual_context_required': True,
+        })
+        self.assertEqual(planned[0]['mode'], 'single')
+        self.assertEqual(planned[0]['editorialLayout'], 'ACTIVE_SPEAKER_CROP')
+        self.assertEqual(planned[0]['primaryPanel'], 'right')
+
+    def test_qa_zero_primary_samples_cannot_pass(self):
+        validated, report = validate_layout_timeline([{
+            'start': 0.0, 'end': 2.0, 'mode': 'single',
+            'sourceLayout': 'FIXED_TWO_REGION_CONVERSATION',
+            'renderBranch': 'active_speaker_right',
+            'primaryPanel': 'right', 'primaryTrackId': 2,
+            'panelBoundaryX': 960.0,
+            'panelRegions': {'left': [0.0, 930.0], 'right': [990.0, 1920.0]},
+            'points': [crop_point()],
+        }], [], 1920, 1080)
+        self.assertNotEqual(validated[0].get('qaStatus'), 'pass')
+        self.assertEqual(validated[0]['mode'], 'wide_context')
+        self.assertEqual(validated[0]['qaFallbackApplied'], 'safe_two_region_context')
+        self.assertGreater(report['issue_counts_before_fallback'].get('no_primary_samples_checked', 0), 0)
+
     def test_qa_rejects_stack_without_both_subjects(self):
         validated, report = validate_layout_timeline([{
             'start': 0.0, 'end': 2.0, 'mode': 'stacked',

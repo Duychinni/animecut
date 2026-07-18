@@ -11,7 +11,7 @@ type ReframeMode = 'off' | 'basic' | 'smart';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v12-full-canvas-context';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v13-fixed-region-authority';
 // Customer exports are streamed directly in the browser. The former 50-60 Mbps
 // envelope created unnecessarily large reels that buffered between card clicks.
 // Keep the 1080x1920 frame visually clean while making progressive playback

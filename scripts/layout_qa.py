@@ -3,6 +3,12 @@
 from collections import Counter
 
 
+FIXED_TWO_REGION_LAYOUTS = {
+    'FIXED_TWO_REGION_CONVERSATION',
+    'FIXED_TWO_PANEL_INTERVIEW',
+}
+
+
 def _contains(outer, inner, margin=0.0):
     return (
         float(inner['x']) >= float(outer['x']) + margin
@@ -62,6 +68,7 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
     validated = []
     issue_counts = Counter()
     rejected_segments = 0
+    remaining_unsafe_segments = 0
 
     for raw_segment in timeline:
         segment = dict(raw_segment)
@@ -91,7 +98,7 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
 
         if segment.get('mode') == 'single':
             primary_id = segment.get('primaryTrackId')
-            fixed_two_panel = segment.get('sourceLayout') == 'FIXED_TWO_PANEL_INTERVIEW'
+            fixed_two_panel = segment.get('sourceLayout') in FIXED_TWO_REGION_LAYOUTS
             panel_boundary = float(segment.get('panelBoundaryX') or source_w / 2.0)
             for frame in segment_frames:
                 point = _nearest_point(segment, float(frame.get('timestamp', 0.0)))
@@ -120,11 +127,14 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                     if 0.08 < overlap < 0.92:
                         issues['secondary_face_partially_visible'] += 1
 
+            if checked == 0:
+                issues['no_primary_samples_checked'] += 1
+
         invalid_samples = sum(issues.values())
         invalid_ratio = invalid_samples / max(1, checked)
-        if segment.get('mode') == 'single' and checked > 0 and invalid_ratio > 0.20:
+        if segment.get('mode') == 'single' and (checked == 0 or invalid_ratio > 0.20):
             rejected_segments += 1
-            if segment.get('sourceLayout') == 'FIXED_TWO_PANEL_INTERVIEW':
+            if segment.get('sourceLayout') in FIXED_TWO_REGION_LAYOUTS:
                 regions = segment.get('panelRegions') or {}
                 primary_panel = segment.get('primaryPanel')
                 region = regions.get(primary_panel) if primary_panel in ('left', 'right') else None
@@ -142,7 +152,7 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                         point.update(_panel_crop_for_face(primary, source_w, source_h, float(region[0]), float(region[1])))
                         corrected += 1
                 if corrected:
-                    segment['editorialLayout'] = 'SINGLE_SPEAKER_CROP'
+                    segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
                     segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA constrained the crop to the active source panel."
                     segment['qaFallbackApplied'] = 'panel_bounded_crop'
                 elif segment.get('topBox') and segment.get('bottomBox'):
@@ -152,19 +162,15 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                     segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA preserved both source panels because active-speaker identity was uncertain."
                     segment['qaFallbackApplied'] = 'stacked_two_panel'
                 else:
-                    # Last resort remains one explicit panel. Never return to a
-                    # full-frame center crop for a detected split interview.
-                    fallback_panel = primary_panel if primary_panel in ('left', 'right') else 'left'
-                    fallback_region = regions.get(fallback_panel) or [0.0, float(segment.get('panelBoundaryX') or source_w / 2.0)]
-                    for point in segment.get('points') or []:
-                        crop_w = min(float(fallback_region[1]) - float(fallback_region[0]), float(source_h) * 9.0 / 16.0)
-                        point.update({
-                            'cropX': round(float(fallback_region[0]), 3), 'cropY': 0.0,
-                            'cropW': round(crop_w, 3), 'cropH': round(float(source_h), 3),
-                            'cropCenterX': round(float(fallback_region[0]) + crop_w / 2.0, 3),
-                            'cropCenterY': round(float(source_h) / 2.0, 3), 'zoom': 1.0,
-                        })
-                    segment['qaFallbackApplied'] = 'explicit_panel_fallback'
+                    # Fail closed. Without verified primary samples or two
+                    # independently safe participant boxes, preserve source
+                    # context. Never invent a panel and never center a portrait
+                    # crop on the divider.
+                    segment['mode'] = 'wide_context'
+                    segment['wideKind'] = 'safe_wide'
+                    segment['editorialLayout'] = 'SAFE_ORIGINAL'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA lacked safe active-speaker evidence."
+                    segment['qaFallbackApplied'] = 'safe_two_region_context'
             else:
                 segment['mode'] = 'wide_context'
                 segment['wideKind'] = 'safe_wide'
@@ -173,6 +179,9 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                 segment['qaFallbackApplied'] = 'safe_original'
 
         segment['qaStatus'] = 'fallback' if segment.get('qaFallbackApplied') else 'pass'
+        if segment.get('mode') == 'single' and checked == 0:
+            segment['qaStatus'] = 'fail'
+            remaining_unsafe_segments += 1
         segment['qaIssues'] = dict(issues)
         segment['qaCheckedSamples'] = checked
         validated.append(segment)
@@ -183,5 +192,5 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
         'segments_rejected_before_fallback': rejected_segments,
         'segments_safe_after_fallback': len(validated),
         'issue_counts_before_fallback': dict(issue_counts),
-        'remaining_unsafe_segments': 0,
+        'remaining_unsafe_segments': remaining_unsafe_segments,
     }

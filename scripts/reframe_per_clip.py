@@ -31,6 +31,12 @@ STACK_LAYOUT_ENABLED = True
 SCENE_CUT_LOOKAHEAD_SEC = 0.25
 WIDE_FACE_HEIGHT_RATIO = 0.22
 WIDE_FACE_WIDTH_RATIO = 0.105
+FIXED_LAYOUT_MODE = 'FIXED_TWO_REGION_CONVERSATION'
+LEGACY_FIXED_LAYOUT_MODE = 'FIXED_TWO_PANEL_INTERVIEW'
+FIXED_SPEAKER_CONFIDENCE = float(os.getenv('FIXED_SPEAKER_CONFIDENCE', '0.42'))
+FIXED_SPEAKER_MARGIN = float(os.getenv('FIXED_SPEAKER_MARGIN', '0.08'))
+FIXED_UNCERTAINTY_HOLD_SEC = float(os.getenv('FIXED_UNCERTAINTY_HOLD_SEC', '0.55'))
+FIXED_MIN_CONFIRMED_TURN_SEC = float(os.getenv('FIXED_MIN_CONFIRMED_TURN_SEC', '0.45'))
 
 
 def fail(code: int, error: str):
@@ -482,12 +488,43 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
         for frame in frames
         if frame.get('divider_x') is not None and float(frame.get('divider_confidence', 0.0)) >= 2.0
     ]
-    if len(divider_samples) < max(3, int(len(frames) * 0.35)):
-        return None
-    divider_x = float(statistics.median(sample[0] for sample in divider_samples))
-    divider_mad = float(statistics.median(abs(sample[0] - divider_x) for sample in divider_samples))
-    if not (source_w * 0.30 <= divider_x <= source_w * 0.70) or divider_mad > source_w * 0.018:
-        return None
+    divider_x = None
+    divider_mad = None
+    detection_method = 'divider'
+    if len(divider_samples) >= max(3, int(len(frames) * 0.35)):
+        candidate = float(statistics.median(sample[0] for sample in divider_samples))
+        candidate_mad = float(statistics.median(abs(sample[0] - candidate) for sample in divider_samples))
+        if source_w * 0.30 <= candidate <= source_w * 0.70 and candidate_mad <= source_w * 0.018:
+            divider_x = candidate
+            divider_mad = candidate_mad
+
+    # Some interview sources have no visible gutter. Persistent, well-separated
+    # tracks still define two stable source regions; this is classification,
+    # never permission to crop their combined midpoint.
+    if divider_x is None:
+        track_samples = {}
+        for frame in frames:
+            for face in frame.get('faces', []):
+                if face.get('track_id') is None or bool(face.get('predicted')):
+                    continue
+                if float(face.get('h', 0.0)) < source_h * 0.13:
+                    continue
+                track_samples.setdefault(int(face['track_id']), []).append(float(face.get('cx', 0.0)))
+        persistent = [
+            (track_id, statistics.median(samples), len(samples))
+            for track_id, samples in track_samples.items()
+            if len(samples) >= max(3, int(len(frames) * 0.45))
+        ]
+        separated = [
+            (left, right) for left in persistent for right in persistent
+            if left[0] != right[0] and left[1] < right[1] and right[1] - left[1] >= source_w * 0.30
+        ]
+        if not separated:
+            return None
+        left_track, right_track = max(separated, key=lambda pair: pair[0][2] + pair[1][2])
+        divider_x = (float(left_track[1]) + float(right_track[1])) / 2.0
+        divider_mad = 0.0
+        detection_method = 'persistent_tracks'
 
     both_sides = 0
     eligible = 0
@@ -513,7 +550,7 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
 
     gutter = max(4.0, source_w * 0.012)
     return {
-        'mode': 'FIXED_TWO_PANEL_INTERVIEW',
+        'mode': FIXED_LAYOUT_MODE,
         'divider_x': round(divider_x, 3),
         'divider_mad': round(divider_mad, 3),
         'left_region': [0.0, round(max(2.0, divider_x - gutter), 3)],
@@ -521,6 +558,11 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
         'dual_face_persistence': round(persistence, 4),
         'left_track_ids': sorted(left_ids),
         'right_track_ids': sorted(right_ids),
+        'track_region_map': {
+            **{str(track_id): 'left' for track_id in sorted(left_ids)},
+            **{str(track_id): 'right' for track_id in sorted(right_ids)},
+        },
+        'detection_method': detection_method,
     }
 
 
@@ -583,6 +625,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     wide_pair_hold_ids = None
     wide_pair_hold_faces = None
     wide_pair_miss_streak = 0
+    fixed_last_confident_track = None
+    fixed_last_confident_panel = None
+    fixed_last_confident_time = -1e9
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -617,6 +662,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             or (f'face:{active_id}' if active_id is not None else subject_kind)
         )
         fixed_two_panel = frame.get('fixed_two_panel')
+        face_by_id = {int(face.get('track_id')): face for face in faces if face.get('track_id') is not None}
+        speaker_score_margin = float(point.get('speaker_score_margin', frame.get('speaker_score_margin', 0.0)))
         pair = strongest_face_pair(faces, source_w)
         pair_ids = None if pair is None else tuple(int(face.get('track_id')) for face in pair)
 
@@ -820,12 +867,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 contextual_shot_latched = False
                 talking_head_release_streak = 0
 
-        fixed_panel_exchange = bool(
-            fixed_two_panel
-            and visual_pair is not None
-            and (selected is None or speaker_confidence < 0.18)
-        )
-
         active_speaker_mapped = bool(
             subject_kind == 'face'
             and selected is not None
@@ -835,44 +876,93 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         )
         participant_count = len(layout_faces)
         desired_grid_template = None
+        fixed_render_branch = None
+        fixed_hard_cut = False
+        fixed_track_region_map = {} if not fixed_two_panel else fixed_two_panel.get('track_region_map', {})
+        fixed_active_panel = None
+        if fixed_two_panel and active_id is not None:
+            fixed_active_panel = fixed_track_region_map.get(str(int(active_id)))
+            if fixed_active_panel is None and int(active_id) in face_by_id:
+                fixed_active_panel = (
+                    'left' if float(face_by_id[int(active_id)].get('cx', 0.0)) < float(fixed_two_panel['divider_x'])
+                    else 'right'
+                )
+        fixed_confident = bool(
+            fixed_two_panel
+            and active_id is not None
+            and int(active_id) in face_by_id
+            and fixed_active_panel in ('left', 'right')
+            and not point.get('fallback_used')
+            and speaker_confidence >= FIXED_SPEAKER_CONFIDENCE
+            and speaker_score_margin >= FIXED_SPEAKER_MARGIN
+        )
+        fixed_hold = bool(
+            fixed_two_panel
+            and not fixed_confident
+            and fixed_last_confident_track is not None
+            and now - fixed_last_confident_time <= FIXED_UNCERTAINTY_HOLD_SEC
+            and int(fixed_last_confident_track) in face_by_id
+        )
 
         if portrait_source:
             desired_mode = 'source_vertical'
+            fixed_render_branch = 'source_vertical'
+        elif fixed_confident:
+            desired_mode = 'single'
+            fixed_render_branch = f'active_speaker_{fixed_active_panel}'
+            fixed_hard_cut = (
+                fixed_last_confident_track is not None
+                and int(fixed_last_confident_track) != int(active_id)
+            )
+            fixed_last_confident_track = int(active_id)
+            fixed_last_confident_panel = fixed_active_panel
+            fixed_last_confident_time = now
+            contextual_shot_latched = False
+        elif fixed_hold:
+            desired_mode = 'single'
+            fixed_render_branch = f'active_speaker_{fixed_last_confident_panel}'
+        elif fixed_two_panel and visual_pair is not None and (stack_eligible or recent_switches >= STACK_MIN_RAPID_SWITCHES):
+            desired_mode = 'stacked'
+            fixed_render_branch = 'stacked_uncertain'
+        elif fixed_two_panel:
+            desired_mode = 'wide_context'
+            fixed_render_branch = 'safe_full_frame'
         elif participant_count >= 4:
             desired_mode = 'grid'
+            fixed_render_branch = 'grid'
             desired_grid_template = 'grid_4'
         elif participant_count == 3:
             desired_mode = 'grid'
+            fixed_render_branch = 'grid'
             desired_grid_template = 'hero_3' if active_speaker_mapped else 'grid_3'
         elif participant_count == 2 and active_speaker_mapped:
             desired_mode = 'single'
+            fixed_render_branch = 'single_subject'
         elif participant_count == 2:
             # Two people without a trustworthy voice-to-face association are
             # kept as independent vertical panes. Never crop their midpoint.
             desired_mode = 'stacked'
-        elif fixed_two_panel and fixed_panel_exchange:
-            desired_mode = 'stacked'
-        elif fixed_two_panel and selected is not None:
-            # A fixed split interview is edited as hard cuts between explicit
-            # source panels. Never allow small-face/context heuristics to pull
-            # the crop back to the center divider.
-            desired_mode = 'single'
-            contextual_shot_latched = False
-            talking_head_release_streak = 0
+            fixed_render_branch = 'stacked_uncertain'
         elif subject_kind in ('context', 'screen'):
             desired_mode = 'wide_context'
+            fixed_render_branch = 'safe_full_frame'
         elif selected is not None and subject_confidence >= 0.10:
             # People, bodies, moving objects, and salient action all use the
             # same semantic ROI timeline. Face detection is not required.
             desired_mode = 'single'
+            fixed_render_branch = 'single_subject'
         elif contextual_shot_latched:
             desired_mode = 'wide_context'
+            fixed_render_branch = 'safe_full_frame'
         elif wide_context_trigger:
             desired_mode = 'wide_context'
+            fixed_render_branch = 'safe_full_frame'
         elif stack_eligible:
             desired_mode = 'stacked'
+            fixed_render_branch = 'stacked_uncertain'
         else:
             desired_mode = 'single'
+            fixed_render_branch = 'single_subject'
 
         two_person_context = wide_pair_hold_ids is not None
         grid_like_context = (
@@ -890,7 +980,16 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         else:
             wide_kind = 'safe_wide'
 
-        if scene_cut:
+        if fixed_two_panel:
+            # Fixed-region routing is authoritative. Generic hysteresis must
+            # not delay a confirmed speaker cut or mutate it into a midpoint.
+            current_mode = desired_mode
+            current_grid_template = None
+            current_pair = pair_ids if desired_mode == 'stacked' else None
+            pending_mode = None
+            pending_count = 0
+            held_samples = 0
+        elif scene_cut:
             current_mode = desired_mode
             current_grid_template = desired_grid_template if desired_mode == 'grid' else None
             current_pair = pair_ids if desired_mode == 'stacked' else None
@@ -922,7 +1021,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             else:
                 held_samples += 1
 
-        face_by_id = {int(face.get('track_id')): face for face in faces if face.get('track_id') is not None}
         layout_face_by_id = {
             int(face.get('track_id')): face for face in layout_faces if face.get('track_id') is not None
         }
@@ -939,6 +1037,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             if subject_kind == 'face' and active_id is not None
             else None
         )
+        if fixed_hold:
+            active_id = int(fixed_last_confident_track)
+            primary_face = face_by_id.get(active_id)
+            subject_stable_id = f'face:{active_id}'
+            subject_kind = 'face'
+        elif fixed_confident:
+            primary_face = face_by_id.get(int(active_id))
         primary_subject = None
         if selected is not None:
             primary_subject = {
@@ -991,7 +1096,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         )
         if fixed_two_panel and face_tuple is not None:
             divider_x = float(fixed_two_panel['divider_x'])
-            primary_panel = 'left' if center(face_tuple)[0] < divider_x else 'right'
+            mapped_panel = (
+                (fixed_two_panel.get('track_region_map') or {}).get(str(int(active_id)))
+                if active_id is not None
+                else None
+            )
+            primary_panel = (
+                mapped_panel if mapped_panel in ('left', 'right')
+                else ('left' if center(face_tuple)[0] < divider_x else 'right')
+            )
             region = fixed_two_panel['left_region'] if primary_panel == 'left' else fixed_two_panel['right_region']
             crop = portrait_crop_for_face_in_panel(face_tuple, source_w, source_h, float(region[0]), float(region[1]))
         elif primary_tuple is not None:
@@ -1004,18 +1117,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 velocity_x=subject_velocity_x,
             )
         elif fixed_two_panel:
-            # No active identity is preferable to a divider crop. The renderer
-            # receives a safe panel anchor while the two-person mode preserves
-            # both participants whenever both boxes are available.
-            region = fixed_two_panel['left_region']
-            crop_w = min(float(region[1]) - float(region[0]), source_h * 9.0 / 16.0)
+            # Uncertainty is represented explicitly as stacked/safe context.
+            # Never invent a left/right choice and never use the divider as a
+            # portrait subject center.
             crop = {
-                'x': round(float(region[0]), 3), 'y': 0.0,
-                'w': round(crop_w, 3), 'h': round(source_h, 3),
-                'cx': round(float(region[0]) + crop_w / 2.0, 3),
+                'x': 0.0, 'y': 0.0,
+                'w': round(source_w, 3), 'h': round(source_h, 3),
+                'cx': round(source_w / 2.0, 3),
                 'cy': round(source_h / 2.0, 3), 'zoom': 1.0,
             }
-            primary_panel = 'left'
         else:
             # With no reliable subject, do not invent a portrait crop around
             # the source midpoint. Preserve the source as safe context and let
@@ -1058,6 +1168,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'top_track_id': wide_pair_ids[0] if wide_pair_ids else (None if current_pair is None else current_pair[0]),
             'bottom_track_id': wide_pair_ids[1] if wide_pair_ids else (None if current_pair is None else current_pair[1]),
             'speaker_confidence': round(speaker_confidence, 4),
+            'speaker_score_margin': round(speaker_score_margin, 4),
             'audio_activity': round(audio_activity, 4),
             'scene_cut': scene_cut,
             'single_score': round(single_score, 4),
@@ -1087,6 +1198,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'right': fixed_two_panel['right_region'],
             },
             'primary_panel': primary_panel,
+            'render_branch': fixed_render_branch,
+            'hard_cut': fixed_hard_cut,
+            'track_region_map': None if not fixed_two_panel else fixed_two_panel.get('track_region_map'),
             'visible_count': len(visible_faces),
             'editorial_signals': {
                 'two_stable_speakers': two_stable_speakers,
@@ -1126,6 +1240,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         )
         identity_key = (
             decision['mode'],
+            decision.get('render_branch'),
+            decision.get('primary_panel'),
+            decision.get('primary_track_id') if decision.get('source_layout') else None,
             decision['subject_stable_id'] if decision['mode'] == 'single' else None,
             decision['wide_kind'] if decision['mode'] == 'wide_context' else None,
             decision['top_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
@@ -1133,7 +1250,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             decision.get('grid_template') if decision['mode'] == 'grid' else None,
             grid_subject_ids if decision['mode'] == 'grid' else None,
         )
-        force_boundary = bool(decision.get('scene_cut'))
+        force_boundary = bool(decision.get('scene_cut') or decision.get('hard_cut'))
         if not segments or identity_key != segments[-1]['_key'] or force_boundary:
             segments.append({
                 '_key': identity_key,
@@ -1157,7 +1274,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'panelBoundaryX': decision.get('panel_boundary_x'),
                 'panelRegions': decision.get('panel_regions'),
                 'primaryPanel': decision.get('primary_panel'),
-                'sceneCutStart': force_boundary,
+                'renderBranch': decision.get('render_branch'),
+                'speakerScoreMargin': decision.get('speaker_score_margin'),
+                'trackRegionMap': decision.get('track_region_map'),
+                'hardCutStart': bool(decision.get('hard_cut')),
+                'sceneCutStart': bool(decision.get('scene_cut')),
                 'points': [],
                 '_top_boxes': [],
                 '_bottom_boxes': [],
@@ -1242,7 +1363,14 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     index = 0
     while index < len(clean_segments) and len(clean_segments) > 1:
         segment = clean_segments[index]
-        if float(segment['end']) - float(segment['start']) >= 0.9:
+        segment_duration = float(segment['end']) - float(segment['start'])
+        is_confirmed_fixed_turn = (
+            segment.get('sourceLayout') in (FIXED_LAYOUT_MODE, LEGACY_FIXED_LAYOUT_MODE)
+            and segment.get('mode') == 'single'
+            and segment.get('renderBranch') in ('active_speaker_left', 'active_speaker_right')
+            and segment_duration >= FIXED_MIN_CONFIRMED_TURN_SEC
+        )
+        if segment_duration >= 0.9 or is_confirmed_fixed_turn:
             index += 1
             continue
         previous = clean_segments[index - 1] if index > 0 else None
@@ -1294,7 +1422,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     for segment_index in range(1, len(clean_segments)):
         segment = clean_segments[segment_index]
         previous = clean_segments[segment_index - 1]
-        if not segment.get('sceneCutStart') or not segment.get('points'):
+        if not segment.get('sceneCutStart') or segment.get('hardCutStart') or not segment.get('points'):
             continue
         original_start = float(segment['start'])
         boundary = max(float(previous['start']), original_start - SCENE_CUT_LOOKAHEAD_SEC)
@@ -1556,6 +1684,23 @@ def main():
     crop_h = int(source_h)
 
     duration = max(0.01, end_sec - start_sec)
+    source_frame_count = float(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+    source_duration = source_frame_count / fps if source_frame_count > 0.0 and fps > 0.0 else 0.0
+    try:
+        requested_preroll = float(os.environ.get('SMART_REFRAME_ANALYSIS_PREROLL_SEC', '0.85'))
+    except (TypeError, ValueError):
+        requested_preroll = 0.85
+    try:
+        requested_postroll = float(os.environ.get('SMART_REFRAME_ANALYSIS_POSTROLL_SEC', '0.50'))
+    except (TypeError, ValueError):
+        requested_postroll = 0.50
+    analysis_preroll = clamp(requested_preroll, 0.75, 1.0)
+    analysis_postroll = clamp(requested_postroll, 0.4, 0.6)
+    analysis_start_sec = max(0.0, start_sec - analysis_preroll)
+    requested_analysis_end = end_sec + analysis_postroll
+    analysis_end_sec = min(source_duration, requested_analysis_end) if source_duration > 0.0 else requested_analysis_end
+    analysis_end_sec = max(end_sec, analysis_end_sec)
+    analysis_duration = max(0.01, analysis_end_sec - analysis_start_sec)
     # Four observations per second is frequent enough to associate speech with
     # mouth motion and still bounded for long clips.
     try:
@@ -1566,9 +1711,17 @@ def main():
         requested_analysis_fps = 4.0
     analysis_fps = clamp(requested_analysis_fps, 1.0, 8.0)
     sample_interval = 1.0 / analysis_fps
-    sample_count = max(2, int(math.ceil(duration * analysis_fps)) + 1)
-    sample_times = [min(end_sec, start_sec + sample_interval * i) for i in range(sample_count)]
-    audio_activity, audio_available = extract_audio_activity(input_path, start_sec, duration, sample_times)
+    sample_count = max(2, int(math.ceil(analysis_duration * analysis_fps)) + 1)
+    sample_times = [
+        min(analysis_end_sec, analysis_start_sec + sample_interval * i)
+        for i in range(sample_count)
+    ]
+    audio_activity, audio_available = extract_audio_activity(
+        input_path,
+        analysis_start_sec,
+        analysis_duration,
+        sample_times,
+    )
 
     mp_face = mp.solutions.face_detection
     detector = mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.45)
@@ -1698,6 +1851,7 @@ def main():
 
         selected_mouth_score = 0.0
         selected_speaker_confidence = 0.0
+        speaker_score_margin = 0.0
         speaker_scores_by_track = {}
 
         if faces:
@@ -1774,6 +1928,11 @@ def main():
             selected_index = face_track_ids.index(active_track_id) if active_track_id in face_track_ids else max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], selected_box, source_w, source_h))
             selected_mouth_score = mouth_scores[selected_index]
             selected_speaker_confidence = float(speaker_scores_by_track.get(active_track_id, candidate_score))
+            runner_up_score = max(
+                (float(score) for track_id, score in speaker_scores_by_track.items() if track_id != active_track_id),
+                default=0.0,
+            )
+            speaker_score_margin = max(0.0, selected_speaker_confidence - runner_up_score)
             if strong_speaker_evidence:
                 confident_speaker_samples += 1
 
@@ -1950,6 +2109,7 @@ def main():
             'cut': bool(points and points[-1].get('shot_id') != shot_id),
             'audio_activity': round(current_audio, 4),
             'speaker_confidence': round(max(selected_mouth_score * current_audio, selected_speaker_confidence), 4),
+            'speaker_score_margin': round(speaker_score_margin, 4),
             'scene_change': round(scene_change, 4),
             'active_track_id': active_track_id,
             'fallback_used': fallback_used,
@@ -1971,6 +2131,8 @@ def main():
             'fallback_used': fallback_used,
             'scene_cut': scene_change >= 0.72,
             'audio_activity': round(current_audio, 4),
+            'speaker_confidence': round(max(selected_mouth_score * current_audio, selected_speaker_confidence), 4),
+            'speaker_score_margin': round(speaker_score_margin, 4),
             'body_box': dict_box(body_box),
             'motion_box': dict_box(motion_box),
             'saliency_box': dict_box(saliency_box),
@@ -1991,12 +2153,33 @@ def main():
         prev_gray = gray
         previous_track_boxes = {track_id: face for face, track_id in zip(faces, face_track_ids)}
 
-        if first_debug_frame is None:
+        if first_debug_frame is None and 0.0 <= rel_t <= duration:
             first_debug_frame = frame.copy()
             first_box = selected_box
             first_motion_box = motion_box
 
     cap.release()
+
+    # Preroll warms tracking, speaker association, and hysteresis before the
+    # requested clip begins. Postroll provides bounded trailing evidence for
+    # diagnostics. Neither may leak timestamps outside the exported clip.
+    centers_x = [item for item in centers_x if 0.0 <= float(item.get('timestamp', -1.0)) <= duration]
+    points = [item for item in points if 0.0 <= float(item.get('t', -1.0)) <= duration]
+    detected_faces = [
+        item for item in detected_faces
+        if 0.0 <= float(item.get('timestamp', -1.0)) <= duration
+    ]
+    selected_subject_boxes = [
+        (
+            float(box['x']),
+            float(box['y']),
+            float(box['w']),
+            float(box['h']),
+        )
+        for item in detected_faces
+        for box in [item.get('selected_box')]
+        if isinstance(box, dict)
+    ]
     detector.close()
 
     if not centers_x:
@@ -2092,8 +2275,9 @@ def main():
         'points': points,
         'meta': {
             'points': len(points),
-            'sample_count': sample_count,
-            'frames_with_detection_pct': len(selected_subject_boxes) / max(1, len(sample_times)),
+            'sample_count': len(points),
+            'analysis_sample_count': sample_count,
+            'frames_with_detection_pct': len(selected_subject_boxes) / max(1, len(points)),
             'average_face_center': {
                 'x': clamp(avg_center_x / max(source_w, 1.0), 0.0, 1.0),
                 'y': 0.42,
@@ -2117,7 +2301,13 @@ def main():
             'samples_using_prediction': predicted_samples,
             'confident_speaker_samples': confident_speaker_samples,
             'wide_context_samples': wide_context_samples,
-            'analysis_rate_fps': sample_count / duration,
+            'analysis_rate_fps': sample_count / analysis_duration,
+            'analysis_window': {
+                'start_sec': round(analysis_start_sec, 3),
+                'end_sec': round(analysis_end_sec, 3),
+                'preroll_sec': round(start_sec - analysis_start_sec, 3),
+                'postroll_sec': round(analysis_end_sec - end_sec, 3),
+            },
             'dual_frames': dual_frames,
             'dual_observation_opportunities': dual_observation_opportunities,
             'dual_frame_ratio': round(dual_frame_ratio, 4),
