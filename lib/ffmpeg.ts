@@ -270,6 +270,36 @@ export async function renderCutVideo(
   ]);
 }
 
+/**
+ * Produce the low-latency rendition used by project preview cards. The full
+ * 1080x1920 export remains the download/editing master. Short GOPs and a small
+ * bitrate let storage range requests start quickly without downloading several
+ * large masters while a user browses a project.
+ */
+export async function renderPlaybackPreview(inputPath: string, outputPath: string) {
+  await runFfmpeg([
+    '-y',
+    '-i', inputPath,
+    '-map', '0:v:0',
+    '-map', '0:a:0?',
+    '-vf', 'scale=540:960:flags=lanczos,fps=30',
+    '-c:v', 'libx264',
+    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
+    '-crf', '25',
+    '-maxrate', '1500k',
+    '-bufsize', '3000k',
+    '-pix_fmt', 'yuv420p',
+    '-g', '30',
+    '-keyint_min', '15',
+    '-sc_threshold', '0',
+    '-c:a', 'aac',
+    '-b:a', '96k',
+    '-ar', '48000',
+    '-movflags', '+faststart',
+    outputPath,
+  ]);
+}
+
 function captionFontsDirOption() {
   const configuredDir = process.env.CAPTION_FONTS_DIR?.trim();
   const fontsDir = configuredDir || path.join(/* turbopackIgnore: true */ process.cwd(), 'public', 'fonts');

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
-import { createExportSignedUrls } from '@/lib/storage';
+import { createExportSignedUrls, makeExportPreviewObjectPath } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -171,11 +171,15 @@ export default async function ProjectDetailPage({
   const candidatesById = new Map<string, CandidateRow>(((candidateRows ?? []) as CandidateRow[]).map((c) => [String(c.id), c]));
 
   const exportRows = (exportsRows ?? []) as ExportRow[];
+  const projectUserId = String((projectRow as { user_id?: string | null } | null)?.user_id ?? '');
   const signablePaths = exportRows.flatMap((row) => {
     const outputPath = row.output_storage_path;
     if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return [];
     const posterPath = getExportPosterPath(outputPath);
-    return posterPath ? [outputPath, posterPath] : [outputPath];
+    const previewPath = projectUserId
+      ? makeExportPreviewObjectPath(projectUserId, projectId, String(row.id))
+      : null;
+    return [outputPath, posterPath, previewPath].filter((value): value is string => Boolean(value));
   });
   const signedUrls = await createExportSignedUrls(signablePaths, 60 * 60).catch(() => new Map<string, string>());
 
@@ -183,6 +187,10 @@ export default async function ProjectDetailPage({
     const signedUrl = row.output_storage_path ? signedUrls.get(row.output_storage_path) ?? null : null;
     const posterPath = row.output_storage_path ? getExportPosterPath(row.output_storage_path) : null;
     const posterUrl = posterPath ? signedUrls.get(posterPath) ?? null : null;
+    const previewPath = row.output_storage_path && projectUserId
+      ? makeExportPreviewObjectPath(projectUserId, projectId, String(row.id))
+      : null;
+    const previewUrl = previewPath ? signedUrls.get(previewPath) ?? null : null;
 
       const candidate = row.clip_candidate_id ? candidatesById.get(String(row.clip_candidate_id)) : undefined;
 
@@ -199,6 +207,7 @@ export default async function ProjectDetailPage({
       return {
         ...row,
         signedUrl,
+        previewUrl,
         posterUrl,
         title: candidate?.title ?? 'Untitled clip',
         score,
@@ -335,6 +344,7 @@ export default async function ProjectDetailPage({
               status: row.status,
               errorMessage: row.error_message,
               signedUrl: row.signedUrl,
+              previewUrl: row.previewUrl,
               posterUrl: row.posterUrl,
               startSec: row.startSec,
               endSec: row.endSec,

@@ -3,9 +3,9 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { extractBestVideoThumbnail, renderCutVideo, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractBestVideoThumbnail, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
-import { createExportSignedUrl, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportThumbnailObject } from '@/lib/storage';
+import { createExportSignedUrl, makeExportObjectPath, makeExportPreviewObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
@@ -980,6 +980,15 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const bytes = await readFile(outPath);
   const objectPath = makeExportObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
   await uploadExportObject(objectPath, bytes);
+
+  // A completed export must include a browser-optimized preview as well as the
+  // full-quality master. Otherwise the project can look ready while its cards
+  // still have to stream multiple large 1080x1920 files from object storage.
+  const previewPath = path.join(exportDir, `${bundle.id}.preview.mp4`);
+  await renderPlaybackPreview(outPath, previewPath);
+  const previewBytes = await readFile(previewPath);
+  const previewObjectPath = makeExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
+  await uploadExportPreviewObject(previewObjectPath, previewBytes);
 
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);

@@ -14,6 +14,7 @@ type ClipItem = {
   status: string;
   errorMessage: string | null;
   signedUrl: string | null;
+  previewUrl?: string | null;
   posterUrl?: string | null;
   startSec: number | null;
   endSec: number | null;
@@ -684,7 +685,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }, [visible]);
 
   function stableMediaUrl(clip: ClipItem) {
-    const nextUrl = clip.signedUrl ?? null;
+    const nextUrl = clip.previewUrl ?? clip.signedUrl ?? null;
     const currentUrl = stableMediaUrlsRef.current.get(clip.exportId) ?? null;
     const previousEditStatus = previousEditStatusesRef.current.get(clip.exportId);
     const editFinished = previousEditStatus === 'rendering' && clip.editStatus !== 'rendering';
@@ -928,17 +929,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             if (intendedPlayingIdRef.current === clip.exportId && videoRefs.current[clip.exportId]?.paused) {
                               void playVideo(clip.exportId);
                             }
-                            // Continue warming reels one at a time after the
-                            // preceding reel has enough data to play. This
-                            // avoids simultaneous 1080p downloads while making
-                            // later cards click-ready too.
-                            const nextClip = visible[clipIndex + 1];
-                            if (nextClip) {
-                              window.setTimeout(
-                                () => primeVideo(nextClip.exportId, 'auto'),
-                                150,
-                              );
-                            }
                           }}
                           onTimeUpdate={(e) => {
                             const v = e.currentTarget;
@@ -970,6 +960,18 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             updatePlayback(clip.exportId, { paused: true, buffering: false });
                           }}
                           onError={() => {
+                            const video = videoRefs.current[clip.exportId];
+                            const currentUrl = stableMediaUrlsRef.current.get(clip.exportId);
+                            // Exports created before preview renditions were
+                            // introduced do not have a .preview.mp4 object.
+                            // Transparently fall back to their full master once.
+                            if (video && clip.signedUrl && clip.previewUrl && currentUrl === clip.previewUrl) {
+                              stableMediaUrlsRef.current.set(clip.exportId, clip.signedUrl);
+                              primedVideoIdsRef.current.delete(clip.exportId);
+                              video.src = clip.signedUrl;
+                              video.load();
+                              return;
+                            }
                             primedVideoIdsRef.current.delete(clip.exportId);
                             if (intendedPlayingIdRef.current === clip.exportId) intendedPlayingIdRef.current = null;
                             updatePlayback(clip.exportId, { paused: true, buffering: false });

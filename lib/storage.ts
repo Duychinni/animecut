@@ -15,6 +15,10 @@ export function makeExportObjectPath(userId: string, projectId: string, exportId
   return `${userId}/${projectId}/${exportId}.mp4`;
 }
 
+export function makeExportPreviewObjectPath(userId: string, projectId: string, exportId: string) {
+  return `${userId}/${projectId}/${exportId}.preview.mp4`;
+}
+
 export function makeExportThumbnailObjectPath(userId: string, projectId: string, exportId: string) {
   return `${userId}/${projectId}/${exportId}.jpg`;
 }
@@ -40,6 +44,16 @@ export async function uploadExportObject(objectPath: string, bytes: Buffer) {
     // Signed URLs already protect access. Allow the browser/CDN to reuse the
     // same reel while users switch between clips instead of fetching it again.
     cacheControl: '3600',
+  });
+  if (error) throw error;
+}
+
+export async function uploadExportPreviewObject(objectPath: string, bytes: Buffer) {
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
+    upsert: true,
+    contentType: 'video/mp4',
+    cacheControl: '86400',
   });
   if (error) throw error;
 }
