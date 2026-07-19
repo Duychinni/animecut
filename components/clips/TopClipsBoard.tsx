@@ -358,6 +358,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const playRequestsRef = useRef<Record<string, number>>({});
   const intendedPlayingIdRef = useRef<string | null>(null);
   const primedVideoIdsRef = useRef(new Set<string>());
+  const previewWarmQueueRef = useRef<string[]>([]);
+  const previewWarmActiveRef = useRef(new Set<string>());
+  const previewWarmCompleteRef = useRef(new Set<string>());
+  const previewObserverRef = useRef<IntersectionObserver | null>(null);
   const playRecoveryTimersRef = useRef<Record<string, number>>({});
   const playRecoveryAttemptsRef = useRef<Record<string, number>>({});
   const stallRecoveryTimersRef = useRef<Record<string, number>>({});
@@ -468,6 +472,57 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       video.load();
     }
   }
+
+  function drainPreviewWarmQueue() {
+    const maxConcurrentPreviewLoads = 3;
+    while (
+      previewWarmActiveRef.current.size < maxConcurrentPreviewLoads &&
+      previewWarmQueueRef.current.length > 0
+    ) {
+      const id = previewWarmQueueRef.current.shift();
+      if (!id || previewWarmCompleteRef.current.has(id) || previewWarmActiveRef.current.has(id)) continue;
+      if (!videoRefs.current[id]) continue;
+      previewWarmActiveRef.current.add(id);
+      primeVideo(id, 'auto');
+    }
+  }
+
+  function queuePreviewWarm(id: string) {
+    if (
+      previewWarmCompleteRef.current.has(id) ||
+      previewWarmActiveRef.current.has(id) ||
+      previewWarmQueueRef.current.includes(id)
+    ) return;
+    previewWarmQueueRef.current.push(id);
+    drainPreviewWarmQueue();
+  }
+
+  function finishPreviewWarm(id: string) {
+    previewWarmCompleteRef.current.add(id);
+    previewWarmActiveRef.current.delete(id);
+    drainPreviewWarmQueue();
+  }
+
+  // The queue helpers intentionally operate only on refs; rebuilding the
+  // observer when the server-provided clip list changes is sufficient.
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const id = (entry.target as HTMLElement).dataset.clipVideoId;
+        if (id) queuePreviewWarm(id);
+        observer.unobserve(entry.target);
+      }
+    }, { rootMargin: '700px 0px' });
+    previewObserverRef.current = observer;
+    document.querySelectorAll<HTMLElement>('[data-clip-video-id]').forEach((element) => observer.observe(element));
+    return () => {
+      observer.disconnect();
+      previewObserverRef.current = null;
+    };
+  }, [clips]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   function isInterruptedPlayError(error: unknown) {
     const name = error instanceof Error ? error.name : '';
@@ -811,7 +866,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
         <div className="px-4 pb-2">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
-            {visible.slice(0, 10).map((clip) => {
+            {visible.map((clip) => {
               const mediaUrl = stableMediaUrl(clip);
               const durationLabel = formatDuration(clip.startSec, clip.endSec);
               const playbackState = playback[clip.exportId];
@@ -955,7 +1010,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         <video
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
+                            if (el) previewObserverRef.current?.observe(el);
                           }}
+                          data-clip-video-id={clip.exportId}
                           preload="none"
                           playsInline
                           controls={false}
@@ -973,6 +1030,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             });
                           }}
                           onCanPlay={() => {
+                            finishPreviewWarm(clip.exportId);
                             updatePlayback(clip.exportId, { buffering: false });
                             if (intendedPlayingIdRef.current === clip.exportId && videoRefs.current[clip.exportId]?.paused) {
                               void playVideo(clip.exportId);
@@ -1017,6 +1075,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             updatePlayback(clip.exportId, { paused: true, buffering: false });
                           }}
                           onError={() => {
+                            finishPreviewWarm(clip.exportId);
                             cancelStallRecovery(clip.exportId);
                             const video = videoRefs.current[clip.exportId];
                             const currentUrl = stableMediaUrlsRef.current.get(clip.exportId);
