@@ -360,6 +360,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const primedVideoIdsRef = useRef(new Set<string>());
   const playRecoveryTimersRef = useRef<Record<string, number>>({});
   const playRecoveryAttemptsRef = useRef<Record<string, number>>({});
+  const stallRecoveryTimersRef = useRef<Record<string, number>>({});
+  const stallRecoveryAttemptsRef = useRef<Record<string, number>>({});
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const stableMediaUrlsRef = useRef(new Map<string, string>());
   const previousEditStatusesRef = useRef(new Map<string, string | null | undefined>());
@@ -398,9 +400,54 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     for (const [id, video] of Object.entries(videoRefs.current)) {
       if (!video || id === activeId || video.paused) continue;
       playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
+      window.clearTimeout(stallRecoveryTimersRef.current[id]);
       video.pause();
       updatePlayback(id, { paused: true, buffering: false });
     }
+  }
+
+  function cancelStallRecovery(id: string, resetAttempts = false) {
+    window.clearTimeout(stallRecoveryTimersRef.current[id]);
+    delete stallRecoveryTimersRef.current[id];
+    if (resetAttempts) stallRecoveryAttemptsRef.current[id] = 0;
+  }
+
+  function scheduleStallRecovery(id: string) {
+    const video = videoRefs.current[id];
+    if (!video || intendedPlayingIdRef.current !== id || video.ended) return;
+
+    cancelStallRecovery(id);
+    const stalledAt = video.currentTime;
+    stallRecoveryTimersRef.current[id] = window.setTimeout(() => {
+      const currentVideo = videoRefs.current[id];
+      if (!currentVideo || intendedPlayingIdRef.current !== id || currentVideo.ended) return;
+      if (currentVideo.currentTime > stalledAt + 0.1 && currentVideo.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+        cancelStallRecovery(id, true);
+        updatePlayback(id, { buffering: false });
+        return;
+      }
+
+      const attempts = (stallRecoveryAttemptsRef.current[id] ?? 0) + 1;
+      stallRecoveryAttemptsRef.current[id] = attempts;
+      if (attempts > 2) {
+        intendedPlayingIdRef.current = null;
+        updatePlayback(id, { paused: currentVideo.paused, buffering: false });
+        return;
+      }
+
+      // A storage/CDN range request can occasionally remain open without
+      // delivering more bytes. Re-open the same browser-optimized rendition
+      // at the current timestamp instead of leaving the card frozen forever.
+      const resumeAt = currentVideo.currentTime;
+      primedVideoIdsRef.current.delete(id);
+      currentVideo.addEventListener('loadedmetadata', () => {
+        if (Number.isFinite(currentVideo.duration)) {
+          currentVideo.currentTime = Math.min(resumeAt, Math.max(0, currentVideo.duration - 0.05));
+        }
+        if (intendedPlayingIdRef.current === id) void playVideo(id);
+      }, { once: true });
+      currentVideo.load();
+    }, 6000);
   }
 
   function primeVideo(id: string, preload: 'metadata' | 'auto' = 'metadata') {
@@ -486,6 +533,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
     if (intendedPlayingIdRef.current === id) intendedPlayingIdRef.current = null;
     window.clearTimeout(playRecoveryTimersRef.current[id]);
+    cancelStallRecovery(id, true);
     playRecoveryAttemptsRef.current[id] = 0;
     playRequestsRef.current[id] = (playRequestsRef.current[id] ?? 0) + 1;
     video.pause();
@@ -658,19 +706,17 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     return () => {
       intendedPlayingIdRef.current = null;
       Object.values(playRecoveryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      Object.values(stallRecoveryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
     };
   }, []);
 
   useEffect(() => {
-    // Warm the highest-ranked reels during idle time. Preloading every export
-    // at once competes for bandwidth and makes the whole grid slower; warming
-    // only the first two prevents large MP4s from saturating the connection.
+    // Warm only the highest-ranked reel during idle time. Starting multiple
+    // video range requests in parallel can starve the reel the user presses,
+    // especially on mobile connections.
     const warm = () => {
-      // Give the first reel priority, then warm its nearest neighbor. Remaining
-      // reels switch to auto preload on hover, focus, or pointer-down.
-      visible.slice(0, 2).forEach((clip, index) => {
-        window.setTimeout(() => primeVideo(clip.exportId, 'auto'), index * 350);
-      });
+      const firstClip = visible[0];
+      if (firstClip) primeVideo(firstClip.exportId, 'auto');
     };
     const windowWithIdle = window as Window & {
       requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
@@ -765,7 +811,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
         <div className="px-4 pb-2">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
-            {visible.slice(0, 10).map((clip, clipIndex) => {
+            {visible.slice(0, 10).map((clip) => {
               const mediaUrl = stableMediaUrl(clip);
               const durationLabel = formatDuration(clip.startSec, clip.endSec);
               const playbackState = playback[clip.exportId];
@@ -908,7 +954,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload={clipIndex < 2 ? 'auto' : 'metadata'}
+                          preload="metadata"
                           playsInline
                           controls={false}
                           disablePictureInPicture
@@ -932,6 +978,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           }}
                           onTimeUpdate={(e) => {
                             const v = e.currentTarget;
+                            if (v.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+                              cancelStallRecovery(clip.exportId, true);
+                            }
                             updatePlayback(clip.exportId, {
                               current: v.currentTime || 0,
                               duration: v.duration || 0,
@@ -947,19 +996,26 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           onWaiting={() => {
                             if (intendedPlayingIdRef.current === clip.exportId) {
                               updatePlayback(clip.exportId, { buffering: true });
+                              scheduleStallRecovery(clip.exportId);
                             }
                           }}
                           onStalled={() => {
                             if (intendedPlayingIdRef.current === clip.exportId) {
                               updatePlayback(clip.exportId, { buffering: true });
+                              scheduleStallRecovery(clip.exportId);
                             }
                           }}
-                          onPause={() => updatePlayback(clip.exportId, { paused: true, buffering: false })}
+                          onPause={() => {
+                            cancelStallRecovery(clip.exportId);
+                            updatePlayback(clip.exportId, { paused: true, buffering: false });
+                          }}
                           onEnded={() => {
+                            cancelStallRecovery(clip.exportId, true);
                             if (intendedPlayingIdRef.current === clip.exportId) intendedPlayingIdRef.current = null;
                             updatePlayback(clip.exportId, { paused: true, buffering: false });
                           }}
                           onError={() => {
+                            cancelStallRecovery(clip.exportId);
                             const video = videoRefs.current[clip.exportId];
                             const currentUrl = stableMediaUrlsRef.current.get(clip.exportId);
                             // Exports created before preview renditions were
