@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
-import { createExportSignedUrls, makeExportPreviewObjectPath } from '@/lib/storage';
+import { createExportSignedUrls, findExistingExportObjectPaths, makeExportPreviewObjectPath } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -172,15 +172,23 @@ export default async function ProjectDetailPage({
 
   const exportRows = (exportsRows ?? []) as ExportRow[];
   const projectUserId = String((projectRow as { user_id?: string | null } | null)?.user_id ?? '');
-  const signablePaths = exportRows.flatMap((row) => {
+  const requiredOutputPaths: string[] = [];
+  const optionalMediaPaths: string[] = [];
+  exportRows.forEach((row) => {
     const outputPath = row.output_storage_path;
-    if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return [];
+    if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return;
+    requiredOutputPaths.push(outputPath);
     const posterPath = getExportPosterPath(outputPath);
     const previewPath = projectUserId
       ? makeExportPreviewObjectPath(projectUserId, projectId, String(row.id))
       : null;
-    return [outputPath, posterPath, previewPath].filter((value): value is string => Boolean(value));
+    optionalMediaPaths.push(...[posterPath, previewPath].filter((value): value is string => Boolean(value)));
   });
+  // Supabase can sign a path even when no object exists there. Legacy exports
+  // predate preview renditions, so signing their guessed `.preview.mp4` paths
+  // makes the browser wait for a failing request before it can use the master.
+  const existingOptionalPaths = await findExistingExportObjectPaths(optionalMediaPaths).catch(() => new Set<string>());
+  const signablePaths = [...requiredOutputPaths, ...existingOptionalPaths];
   const signedUrls = await createExportSignedUrls(signablePaths, 60 * 60).catch(() => new Map<string, string>());
 
   const exportItems = exportRows.map((row) => {

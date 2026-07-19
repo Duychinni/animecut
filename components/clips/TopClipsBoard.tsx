@@ -950,11 +950,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
                         className="relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22"
                       >
+                        {/* Avoid opening ten metadata range requests at once. The
+                            saved duration/poster are enough until interaction. */}
                         <video
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
                           }}
-                          preload="metadata"
+                          preload="none"
                           playsInline
                           controls={false}
                           disablePictureInPicture

@@ -157,6 +157,37 @@ export async function createExportSignedUrl(objectPath: string, expiresIn = 60 *
   return data.signedUrl;
 }
 
+export async function findExistingExportObjectPaths(objectPaths: string[]) {
+  const paths = [...new Set(objectPaths.filter(Boolean))];
+  const existing = new Set<string>();
+  if (paths.length === 0) return existing;
+
+  const pathsByDirectory = new Map<string, string[]>();
+  for (const objectPath of paths) {
+    const parts = objectPath.split('/');
+    const fileName = parts.pop();
+    if (!fileName) continue;
+    const directory = parts.join('/');
+    pathsByDirectory.set(directory, [...(pathsByDirectory.get(directory) ?? []), fileName]);
+  }
+
+  const admin = createAdminClient();
+  await Promise.all([...pathsByDirectory.entries()].map(async ([directory, fileNames]) => {
+    const wanted = new Set(fileNames);
+    const { data, error } = await admin.storage.from(EXPORT_BUCKET).list(directory, {
+      limit: Math.max(100, wanted.size * 3),
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    if (error) throw error;
+
+    for (const item of data ?? []) {
+      if (wanted.has(item.name)) existing.add(directory ? `${directory}/${item.name}` : item.name);
+    }
+  }));
+
+  return existing;
+}
+
 export async function createExportSignedUrls(objectPaths: string[], expiresIn = 60 * 60) {
   const paths = [...new Set(objectPaths.filter(Boolean))];
   const signedUrls = new Map<string, string>();
