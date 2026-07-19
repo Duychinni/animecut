@@ -259,7 +259,7 @@ export async function POST(req: Request) {
       if (planId === 'free' && uploadMinutes > FREE_TRIAL_MAX_UPLOAD_MINUTES) {
         return NextResponse.json(
           {
-            error: `Your free test video can be up to ${FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes long. Choose a shorter video or upgrade to continue.`,
+            error: `Videos on the free plan must be ${FREE_TRIAL_MAX_UPLOAD_MINUTES} minutes or under. Choose a shorter video or upgrade to continue.`,
           },
           { status: 400 },
         );

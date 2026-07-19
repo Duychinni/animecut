@@ -325,7 +325,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [allowanceLabel, setAllowanceLabel] = useState('1 free test · up to 10 min');
+  const [allowanceLabel, setAllowanceLabel] = useState('1 free video');
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup');
@@ -363,7 +363,7 @@ export default function Home() {
           setIsAuthenticated(true);
           setUserLabel(data.user?.displayName ?? data.user?.email ?? 'User');
           setAvatarUrl(data.user?.avatarUrl ?? null);
-          setAllowanceLabel(data.user?.allowanceLabel ?? '1 free test · up to 10 min');
+          setAllowanceLabel(data.user?.allowanceLabel ?? '1 free video');
         } else {
           setIsAuthenticated(false);
           setUserLabel(null);
@@ -609,7 +609,7 @@ export default function Home() {
                   <span className="hidden xl:inline">Add more credits</span>
                   <span className="xl:hidden">Add credits</span>
                 </Link>
-                <div className="group relative">
+                <div className="group/account relative">
                   {avatarUrl ? (
                     <Image
                       src={avatarUrl}
@@ -627,11 +627,11 @@ export default function Home() {
                       {userLabel.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <span className="pointer-events-none absolute -bottom-9 left-1/2 z-20 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-white/20 bg-black/90 px-2 py-1 text-xs text-white/85 group-hover:block">
-                    {userLabel}
-                  </span>
+                  <div className="invisible absolute right-0 top-full z-50 mt-2 w-44 translate-y-1 rounded-xl border border-white/15 bg-[#111018] p-2 opacity-0 shadow-2xl transition group-hover/account:visible group-hover/account:translate-y-0 group-hover/account:opacity-100">
+                    <p className="truncate px-2 py-1.5 text-xs font-semibold text-white/60">{userLabel}</p>
+                    <SignOutButton className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-60" />
+                  </div>
                 </div>
-                <SignOutButton className="rounded-lg border border-white/20 px-3 py-2 text-sm transition hover:border-white/40 disabled:cursor-not-allowed disabled:opacity-60" />
               </>
             ) : (
               <div className="flex items-center justify-end gap-2">

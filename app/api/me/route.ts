@@ -62,7 +62,7 @@ export async function GET() {
   const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1));
   const processingMinutesRemaining = Math.max(0, Math.floor(Number(profile?.processing_minutes_remaining ?? 0)));
   const allowanceLabel = subscriptionPlan === 'free'
-    ? freeUploadsRemaining > 0 ? '1 free test · up to 10 min' : 'Free test used'
+    ? freeUploadsRemaining > 0 ? '1 free video' : 'Free video used'
     : `${processingMinutesRemaining.toLocaleString()} min left`;
 
   return NextResponse.json({
