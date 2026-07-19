@@ -272,9 +272,9 @@ export async function renderCutVideo(
 
 /**
  * Produce the low-latency rendition used by project preview cards. The full
- * 1080x1920 export remains the download/editing master. Short GOPs and a small
- * bitrate let storage range requests start quickly without downloading several
- * large masters while a user browses a project.
+ * 1080x1920 export remains the download/editing master. The project cards only
+ * render about 230 CSS pixels wide, so 360x640 keeps them sharp while remaining
+ * small enough to begin and continue playing on constrained connections.
  */
 export async function renderPlaybackPreview(inputPath: string, outputPath: string) {
   await runFfmpeg([
@@ -282,18 +282,18 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-i', inputPath,
     '-map', '0:v:0',
     '-map', '0:a:0?',
-    '-vf', 'scale=540:960:flags=lanczos,fps=30',
+    '-vf', 'scale=360:640:flags=lanczos,fps=24',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '25',
-    '-maxrate', '1500k',
-    '-bufsize', '3000k',
+    '-crf', '27',
+    '-maxrate', '800k',
+    '-bufsize', '1600k',
     '-pix_fmt', 'yuv420p',
-    '-g', '30',
-    '-keyint_min', '15',
+    '-g', '24',
+    '-keyint_min', '12',
     '-sc_threshold', '0',
     '-c:a', 'aac',
-    '-b:a', '96k',
+    '-b:a', '64k',
     '-ar', '48000',
     '-movflags', '+faststart',
     outputPath,
