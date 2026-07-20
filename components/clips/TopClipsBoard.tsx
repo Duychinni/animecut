@@ -379,6 +379,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [loadingCaptionSettings, setLoadingCaptionSettings] = useState(false);
   const [applyingPreset, setApplyingPreset] = useState(false);
   const [removingProjectHooks, setRemovingProjectHooks] = useState(false);
+  const [hookConfirmation, setHookConfirmation] = useState<boolean | null>(null);
   const [retryingExportIds, setRetryingExportIds] = useState<Set<string>>(() => new Set());
   const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
   const renderKickInFlightRef = useRef(false);
@@ -696,13 +697,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (removingProjectHooks) return;
     const reelCount = visible.filter((clip) => (clip.hookTextEnabled !== false) !== enabled).length;
     if (!reelCount) return;
-    const confirmed = window.confirm(
-      `${enabled ? 'Add hook text back to' : 'Remove hook text from'} all ${reelCount} reels? They will be re-rendered, which may take a few minutes.`,
-    );
-    if (!confirmed) return;
 
     try {
       setRemovingProjectHooks(true);
+      setHookConfirmation(null);
       const response = await fetch(`/api/projects/${projectId}/hook-text`, { method: enabled ? 'POST' : 'DELETE' });
       const payload = await readJsonSafe(response) as { error?: string; queued?: number };
       if (!response.ok) throw new Error(payload.error || `Could not ${enabled ? 'restore' : 'remove'} hook text`);
@@ -937,7 +935,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
             <div className="flex max-w-md items-center gap-2.5 sm:justify-end">
               <button
                 type="button"
-                onClick={() => void updateAllProjectHooks(!visible.some((clip) => clip.hookTextEnabled !== false))}
+                onClick={() => setHookConfirmation(!visible.some((clip) => clip.hookTextEnabled !== false))}
                 disabled={removingProjectHooks || visible.some((clip) => clip.editStatus === 'rendering')}
                 className="shrink-0 rounded-lg border border-white/25 bg-white px-3 py-1.5 text-xs font-bold text-black transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-45"
               >
@@ -1455,7 +1453,76 @@ export function TopClipsBoard({ projectId, clips }: Props) {
           onDownloadAgain={downloadShareClip}
         />
       ) : null}
+
+      {hookConfirmation !== null ? (
+        <HookConfirmationModal
+          enabled={hookConfirmation}
+          reelCount={visible.filter((clip) => (clip.hookTextEnabled !== false) !== hookConfirmation).length}
+          onCancel={() => setHookConfirmation(null)}
+          onConfirm={() => void updateAllProjectHooks(hookConfirmation)}
+        />
+      ) : null}
     </>
+  );
+}
+
+function HookConfirmationModal({
+  enabled,
+  reelCount,
+  onCancel,
+  onConfirm,
+}: {
+  enabled: boolean;
+  reelCount: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/75 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hook-confirmation-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <div className="w-full max-w-[430px] overflow-hidden rounded-2xl border border-white/10 bg-[#0d0b12] shadow-[0_24px_90px_rgba(0,0,0,0.65)]">
+        <div className="h-1 bg-gradient-to-r from-[#8b5cf6] via-[#d946ef] to-[#f59e0b]" />
+        <div className="p-6 sm:p-7">
+          <div className="mb-5 grid h-11 w-11 place-items-center rounded-xl border border-fuchsia-400/20 bg-fuchsia-400/10 text-fuchsia-200">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 4v6h6" />
+              <path d="M20 20v-6h-6" />
+              <path d="M5.5 15a8 8 0 0 0 13-3" />
+              <path d="M18.5 9a8 8 0 0 0-13 3" />
+            </svg>
+          </div>
+          <h3 id="hook-confirmation-title" className="text-xl font-black tracking-tight text-white">
+            {enabled ? 'Add hooks back?' : 'Remove hooks?'}
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-white/60">
+            {reelCount} {reelCount === 1 ? 'reel' : 'reels'} will re-render with {enabled ? 'opening text restored' : 'opening text removed'}. This may take a few minutes.
+          </p>
+          <div className="mt-7 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-lg border border-white/12 px-4 py-2.5 text-sm font-bold text-white/70 transition hover:border-white/25 hover:bg-white/[0.06] hover:text-white"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className="rounded-lg bg-white px-4 py-2.5 text-sm font-black text-black transition hover:bg-white/85"
+            >
+              Re-render {reelCount === 1 ? 'reel' : 'reels'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
