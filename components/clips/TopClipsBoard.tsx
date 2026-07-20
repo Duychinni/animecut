@@ -49,6 +49,7 @@ type Props = {
 
 type CaptionPreviewData = {
   sourceUrl: string | null;
+  fallbackUrl: string | null;
   settings: ClipEditSettings;
 };
 
@@ -640,9 +641,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       const data = await readJsonSafe(res);
       if (!res.ok || !data?.settings) throw new Error(String(data?.error || 'Could not load caption settings'));
       const settings = data.settings as ClipEditSettings;
-      const source = data.source as { previewUrl?: unknown } | undefined;
+      const source = data.source as { previewUrl?: unknown; fallbackClipUrl?: unknown } | undefined;
       setCaptionPreviewData({
         sourceUrl: typeof source?.previewUrl === 'string' ? source.previewUrl : null,
+        fallbackUrl: typeof source?.fallbackClipUrl === 'string' ? source.fallbackClipUrl : clip.signedUrl,
         settings,
       });
       const selected = CAPTION_TEMPLATE_OPTIONS.find((preset) =>
@@ -1586,9 +1588,10 @@ function CaptionTemplatesModal({
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const previewSettings = previewData?.settings;
-  const previewUrl = previewData?.sourceUrl ?? null;
+  const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
+  const previewUsesSource = Boolean(previewData?.sourceUrl && previewUrl === previewData.sourceUrl);
   const activeCaption = useMemo(() => {
-    if (!captionsEnabled || !previewSettings) return null;
+    if (!captionsEnabled || !previewSettings || !previewUsesSource) return null;
     const phrase = previewSettings.edited_transcript.find((item) => (
       item.deleted !== true
       && previewTime >= item.start
@@ -1606,7 +1609,7 @@ function CaptionTemplatesModal({
       words: words.slice(groupStart, groupStart + maxWords),
       highlightedIndex: previewSettings.caption_word_highlight ? activeWordIndex - groupStart : -1,
     };
-  }, [captionsEnabled, previewSettings, previewTime]);
+  }, [captionsEnabled, previewSettings, previewTime, previewUsesSource]);
 
   useEffect(() => {
     setSelectedPresetId(defaultPresetId);
@@ -1647,22 +1650,24 @@ function CaptionTemplatesModal({
                   className="aspect-[9/16] w-full bg-black object-cover"
                   onLoadedMetadata={(event) => {
                     const start = previewSettings?.clip_start_seconds ?? 0;
-                    event.currentTarget.currentTime = start;
+                    event.currentTarget.currentTime = previewUsesSource ? start : 0;
                     setPreviewTime(start);
                   }}
                   onTimeUpdate={(event) => {
                     const video = event.currentTarget;
                     const end = previewSettings?.clip_end_seconds;
-                    if (end !== undefined && video.currentTime >= end) {
+                    if (previewUsesSource && end !== undefined && video.currentTime >= end) {
                       video.pause();
                       video.currentTime = previewSettings?.clip_start_seconds ?? 0;
                     }
-                    setPreviewTime(video.currentTime);
+                    setPreviewTime(previewUsesSource
+                      ? video.currentTime
+                      : (previewSettings?.clip_start_seconds ?? 0) + video.currentTime);
                   }}
                 />
               ) : (
                 <div className="grid aspect-[9/16] place-items-center px-6 text-center text-sm text-white/45">
-                  {loading ? 'Loading caption preview…' : 'Clean source preview unavailable'}
+                  {loading ? 'Loading caption preview…' : 'Reel preview unavailable'}
                 </div>
               )}
               {activeCaption ? (
@@ -1683,7 +1688,11 @@ function CaptionTemplatesModal({
                 </div>
               ) : null}
             </div>
-            <p className="mt-3 text-center text-xs text-white/45">Play the reel to preview its actual captions in the selected color.</p>
+            <p className="mt-3 text-center text-xs text-white/45">
+              {previewUsesSource
+                ? 'Play the reel to preview its actual captions in the selected color.'
+                : 'Play the reel to see its captions. Apply to render the newly selected color.'}
+            </p>
           </div>
 
           <div className="flex flex-col p-6">
