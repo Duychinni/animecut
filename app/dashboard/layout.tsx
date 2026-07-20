@@ -51,8 +51,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const allowanceLabel = subscriptionPlan === 'free'
     ? freeUploadsRemaining > 0 ? '1 free video' : 'Free video used'
     : `${processingMinutesRemaining.toLocaleString()} min left`;
-  const showUpgradeNotice = subscriptionPlan === 'free' && freeUploadsRemaining === 0;
-  const showLowMinutesNotice = subscriptionPlan !== 'free' && processingMinutesRemaining <= 10;
+  const hasLowMinuteBalance = processingMinutesRemaining <= 20;
+  const showUpgradeNotice = subscriptionPlan === 'free' && freeUploadsRemaining === 0 && hasLowMinuteBalance;
+  const showLowMinutesNotice = subscriptionPlan !== 'free' && hasLowMinuteBalance;
 
   return (
     <div className="app-shell min-h-screen text-white">
