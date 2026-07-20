@@ -244,6 +244,7 @@ function closingLine(text: string) {
 export function analyzeTranscriptLocally(
   transcript: string,
   segments: TranscriptSegment[] = [],
+  sourceContext = '',
 ) {
   const realSegments = segments
     .map((segment) => ({
@@ -274,7 +275,7 @@ export function analyzeTranscriptLocally(
     const legacyHook = hookTextFromTranscript(text, legacyTitle);
     const editorialPlan = buildCandidateEditorialPlan({
       transcriptText: text,
-      globalContext: transcript,
+      globalContext: [sourceContext, transcript].filter(Boolean).join('\n'),
       fallbackTitle: legacyTitle,
       fallbackHook: legacyHook,
     });

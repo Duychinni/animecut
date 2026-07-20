@@ -820,7 +820,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const { data: projectRow, error: projectError } = await supabase
       .from('projects')
-      .select('source_duration_seconds')
+      .select('title, source_title, source_channel_name, source_duration_seconds')
       .eq('id', project_id)
       .single();
     if (projectError) throw projectError;
@@ -864,10 +864,21 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const targetClipCount = getTargetClipCount(policyDurationSeconds);
     const minimumCandidatePool = Math.max(policy.candidateCount, targetClipCount * 4);
     const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
+    const sourceContext = [
+      typeof projectRow?.source_title === 'string' && projectRow.source_title.trim()
+        ? `Source title: ${projectRow.source_title.trim()}`
+        : typeof projectRow?.title === 'string' && projectRow.title.trim()
+          ? `Project title: ${projectRow.title.trim()}`
+          : '',
+      typeof projectRow?.source_channel_name === 'string' && projectRow.source_channel_name.trim()
+        ? `Source channel: ${projectRow.source_channel_name.trim()}`
+        : '',
+    ].filter(Boolean).join('\n');
+    const editorialGlobalContext = [sourceContext, String(transcriptRow.full_text ?? '')].filter(Boolean).join('\n');
 
     const parsed = options.forceLocal
-      ? analyzeTranscriptLocally(transcriptRow.full_text as string, segments)
-      : await analyzeClipCandidates(transcriptRow.full_text as string, segments);
+      ? analyzeTranscriptLocally(transcriptRow.full_text as string, segments, sourceContext)
+      : await analyzeClipCandidates(transcriptRow.full_text as string, segments, sourceContext);
     const analysisDiagnostics = options.forceLocal
       ? { provider: 'local', openai_timed_out: false, fallback_used: true, fallback_reason: 'force_local_requested' }
       : ((parsed as { diagnostics?: Record<string, unknown> }).diagnostics ?? {
@@ -876,7 +887,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
     const localSupplement = options.forceLocal
       ? { candidates: [] }
-      : analyzeTranscriptLocally(transcriptRow.full_text as string, segments);
+      : analyzeTranscriptLocally(transcriptRow.full_text as string, segments, sourceContext);
     const analysisCandidates = [
       ...(parsed.candidates ?? []).slice(0, candidateLimit),
       ...(localSupplement.candidates ?? []).slice(0, candidateLimit),
@@ -904,7 +915,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         });
         const editorialPlan = buildCandidateEditorialPlan({
           transcriptText: transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, segments),
-          globalContext: String(transcriptRow.full_text ?? ''),
+          globalContext: editorialGlobalContext,
           raw: c,
           fallbackTitle: displayTitle,
           fallbackHook: resolvedHook,

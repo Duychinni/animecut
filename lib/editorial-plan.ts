@@ -60,6 +60,7 @@ const ENTITY_STOPWORDS = new Set([
   'Okay', 'One', 'Or', 'Our', 'People', 'See', 'She', 'So', 'Some', 'That', 'The', 'Then', 'There', 'These',
   'They', 'Thing', 'This', 'Those', 'Timely', 'Two', 'Uh', 'We', 'Well', 'What', 'When', 'Who', 'Why', 'Yeah',
   'You', 'Your', 'Youre', 'Youve', 'Youll', 'Im', 'Ive', 'Ill', 'Started', 'Make', 'Money', 'Ain',
+  'Source', 'Project', 'Title', 'Channel',
 ]);
 
 function clean(text: unknown) {
@@ -108,7 +109,8 @@ function canonicalEntities(context: string) {
   const source = clean(context);
   const counts = new Map<string, number>();
   const multiWordEntities = new Set<string>();
-  const multi = source.match(/\b(?:[A-Z][a-z]+|[A-Z]{2,}|\d{2,})(?:\s+(?:[A-Z][a-z]+|[A-Z]{2,}|Cent)){1,2}\b/g) ?? [];
+  const namedToken = String.raw`(?:[A-Z][a-z]+(?:[A-Z][a-z0-9]+)*|[A-Z]{2,}|\d{2,})`;
+  const multi = source.match(new RegExp(`\\b${namedToken}(?:\\s+(?:${namedToken}|Cent)){1,2}\\b`, 'g')) ?? [];
   for (const rawEntity of multi) {
     const words = rawEntity.split(/\s+/).filter((word, index) => index > 0 || !ENTITY_STOPWORDS.has(word));
     if (words.every((word) => ENTITY_STOPWORDS.has(word))) continue;
@@ -122,6 +124,11 @@ function canonicalEntities(context: string) {
     if (ENTITY_STOPWORDS.has(entity)) continue;
     counts.set(entity, (counts.get(entity) ?? 0) + 1);
   }
+  const camelCaseNames = source.match(/\b[A-Z][a-z]+[A-Z][A-Za-z0-9]*\b/g) ?? [];
+  for (const entity of camelCaseNames) {
+    if (ENTITY_STOPWORDS.has(entity)) continue;
+    counts.set(entity, (counts.get(entity) ?? 0) + 2);
+  }
   const candidates = [...counts.entries()]
     .filter(([entity, count]) => count >= 2 || multiWordEntities.has(entity))
     .map(([entity, count]) => ({ entity, count }));
@@ -133,8 +140,14 @@ function canonicalEntities(context: string) {
 
 function entitiesForWindow(text: string, globalContext: string) {
   const haystack = ` ${normalized(text)} `;
-  return canonicalEntities(globalContext)
+  const contextLines = globalContext.split('\n');
+  const titleEntities = canonicalEntities(contextLines.filter((line) => /^(source title|project title):/i.test(line)).join('\n'));
+  const channelEntities = canonicalEntities(contextLines.filter((line) => /^source channel:/i.test(line)).join('\n'));
+  const metadataEntities = [...titleEntities, ...channelEntities];
+  const windowEntities = canonicalEntities(globalContext)
     .filter((entity) => haystack.includes(` ${normalized(entity)} `) || entity.split(/\s+/).some((part) => part.length > 4 && haystack.includes(` ${part.toLowerCase()} `)))
+  return [...metadataEntities, ...windowEntities]
+    .filter((entity, index, all) => all.findIndex((other) => normalized(other) === normalized(entity)) === index)
     .slice(0, 4);
 }
 

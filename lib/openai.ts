@@ -170,6 +170,8 @@ REEL TITLE RULES:
 - Do not copy the opening_line, hook_text, or any raw transcript phrase as the title.
 - Make it specific, human-readable, and grounded in the clip.
 - Name the person, topic, decision, lesson, or event discussed when the transcript makes it clear.
+- Treat names explicitly present in SOURCE METADATA as verified context. When a recognizable person is central to the reel, prefer including their name in the title because it adds clarity and discovery value.
+- A source title or channel can establish who appears in the source, but do not assign an individual statement to that person unless the transcript or source metadata supports it.
 - Use 4-10 words in title case or sentence case.
 - Avoid invented drama, hashtags, emojis, quotation marks, and all-caps.
 - Bad examples: "Yeah, I mean", "I can't back that up", "Did you get ghosts close to black".
@@ -186,6 +188,7 @@ REEL HOOK TEXT RULES:
 - Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question from the actual dialogue.
 - Keep it grounded in the transcript. Do not invent facts, names, outcomes, or drama.
 - Every factual word in the hook must be supported by the reel transcript, even when the wording is lightly tightened.
+- A recognizable name from SOURCE METADATA may be used when that person is central to the reel and the hook remains accurate. Do not force a celebrity name into every hook.
 - The hook must make sense before the video starts; reject fragments that only make sense after hearing the previous sentence.
 - Prefer specificity over vague hype. Numbers, concrete stakes, named conflicts, and surprising outcomes beat phrases such as "This Is Crazy".
 - Keep it short enough for a 9:16 title card: 3-9 words, max 42 characters.
@@ -314,6 +317,7 @@ function chunkSegments(
 export async function analyzeClipCandidates(
   transcript: string,
   segments: Array<{ start?: number; end?: number; text?: string }> = [],
+  sourceContext = '',
 ) {
   if (isMockClipAnalysisEnabled()) {
     return {
@@ -325,7 +329,7 @@ export async function analyzeClipCandidates(
   const provider = analysisProvider();
   if (provider === 'local' || !hasOpenAiKey()) {
     return {
-      ...analyzeTranscriptLocally(transcript, segments),
+      ...analyzeTranscriptLocally(transcript, segments, sourceContext),
       diagnostics: {
         provider: 'local',
         openai_timed_out: false,
@@ -352,7 +356,7 @@ export async function analyzeClipCandidates(
             model: 'gpt-4.1-mini',
             input: [
               { role: 'system', content: prompt },
-              { role: 'user', content: `TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
+              { role: 'user', content: `${sourceContext ? `SOURCE METADATA:\n${sourceContext}\n\n` : ''}TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
             ],
           });
 
@@ -367,7 +371,7 @@ export async function analyzeClipCandidates(
           model: 'gpt-4.1-mini',
           input: [
             { role: 'system', content: prompt },
-            { role: 'user', content: userInput },
+          { role: 'user', content: `${sourceContext ? `SOURCE METADATA:\n${sourceContext}\n\n` : ''}TRANSCRIPT:\n${userInput}` },
           ],
         });
 
@@ -380,7 +384,7 @@ export async function analyzeClipCandidates(
       const merged = { candidates: allCandidates };
       if (!allCandidates.length) {
         return {
-          ...analyzeTranscriptLocally(transcript, segments),
+          ...analyzeTranscriptLocally(transcript, segments, sourceContext),
           diagnostics: { provider: 'local', openai_timed_out: false, fallback_used: true, fallback_reason: 'openai_returned_no_candidates' },
         };
       }
@@ -423,7 +427,7 @@ Return revised JSON only.`;
       console.warn('[analysis] OpenAI analysis unavailable; using local transcript analysis.', error);
       const message = error instanceof Error ? error.message : String(error);
       return {
-        ...analyzeTranscriptLocally(transcript, segments),
+        ...analyzeTranscriptLocally(transcript, segments, sourceContext),
         diagnostics: {
           provider: 'local',
           openai_timed_out: /timed out|timeout|aborted/i.test(message),
