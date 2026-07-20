@@ -29,7 +29,7 @@ export const PLAN_CONFIG: PlanConfig[] = [
     id: 'starter',
     name: 'Starter',
     subtitle: 'For occasional creators getting started',
-    monthlyPrice: '$14.99',
+    monthlyPrice: '$9.99',
     processingMinutes: 300,
     maxUploadLengthMinutes: 60,
     maxGeneratedClips: 12,
