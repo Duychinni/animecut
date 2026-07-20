@@ -692,29 +692,29 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }
   }
 
-  async function removeAllProjectHooks() {
+  async function updateAllProjectHooks(enabled: boolean) {
     if (removingProjectHooks) return;
-    const reelCount = visible.filter((clip) => clip.hookTextEnabled !== false).length;
+    const reelCount = visible.filter((clip) => (clip.hookTextEnabled !== false) !== enabled).length;
     if (!reelCount) return;
     const confirmed = window.confirm(
-      `Remove the opening hook text from all ${reelCount} reels? Each reel will be re-rendered, which may take a few minutes.`,
+      `${enabled ? 'Add hook text back to' : 'Remove hook text from'} all ${reelCount} reels? They will be re-rendered, which may take a few minutes.`,
     );
     if (!confirmed) return;
 
     try {
       setRemovingProjectHooks(true);
-      const response = await fetch(`/api/projects/${projectId}/hook-text`, { method: 'DELETE' });
+      const response = await fetch(`/api/projects/${projectId}/hook-text`, { method: enabled ? 'POST' : 'DELETE' });
       const payload = await readJsonSafe(response) as { error?: string; queued?: number };
-      if (!response.ok) throw new Error(payload.error || 'Could not remove hook text');
+      if (!response.ok) throw new Error(payload.error || `Could not ${enabled ? 'restore' : 'remove'} hook text`);
 
       const queuedIds = visible
-        .filter((clip) => clip.hookTextEnabled !== false && clip.signedUrl)
+        .filter((clip) => (clip.hookTextEnabled !== false) !== enabled && clip.signedUrl)
         .map((clip) => clip.exportId);
       setOptimisticEditIds((current) => new Set([...current, ...queuedIds]));
       void fetch('/api/jobs/process', { method: 'POST', cache: 'no-store' }).catch(() => null);
       router.refresh();
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Could not remove hook text');
+      window.alert(error instanceof Error ? error.message : `Could not ${enabled ? 'restore' : 'remove'} hook text`);
     } finally {
       setRemovingProjectHooks(false);
     }
@@ -933,18 +933,24 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       <section className="mt-6 space-y-3">
         <div className="flex flex-col gap-3 px-4 sm:flex-row sm:items-end sm:justify-between">
           <h2 className="text-lg font-semibold">Top clips</h2>
-          {visible.some((clip) => clip.hookTextEnabled !== false) ? (
-            <div className="max-w-sm sm:text-right">
+          {visible.length ? (
+            <div className="flex max-w-md items-center gap-2.5 sm:justify-end">
               <button
                 type="button"
-                onClick={() => void removeAllProjectHooks()}
+                onClick={() => void updateAllProjectHooks(!visible.some((clip) => clip.hookTextEnabled !== false))}
                 disabled={removingProjectHooks || visible.some((clip) => clip.editStatus === 'rendering')}
-                className="inline-flex items-center justify-center rounded-lg border border-red-400/25 bg-red-400/[0.07] px-3.5 py-2 text-sm font-bold text-red-100 transition hover:border-red-300/45 hover:bg-red-400/[0.12] disabled:cursor-not-allowed disabled:opacity-45"
+                className="shrink-0 rounded-lg border border-white/25 bg-white px-3 py-1.5 text-xs font-bold text-black transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                {removingProjectHooks ? 'Removing hook text...' : 'Remove all hook text'}
+                {removingProjectHooks
+                  ? 'Updating...'
+                  : visible.some((clip) => clip.hookTextEnabled !== false)
+                    ? 'Remove hooks'
+                    : 'Add hooks back'}
               </button>
-              <p className="mt-1.5 text-xs leading-5 text-white/48">
-                Removes the white opening text card from every reel in this project. Re-rendering may take a few minutes.
+              <p className="text-left text-xs leading-4 text-white/55">
+                {visible.some((clip) => clip.hookTextEnabled !== false)
+                  ? 'Hide opening text on every reel.'
+                  : 'Restore opening text on every reel.'}
               </p>
             </div>
           ) : null}
