@@ -1,7 +1,6 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { SignOutButton } from '@/components/auth/SignOutButton';
+import { AccountMenu } from '@/components/auth/AccountMenu';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { ProjectQuickStart } from '@/components/project/ProjectQuickStart';
 
@@ -83,22 +82,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 <span className="hidden xl:inline">Add more credits</span>
                 <span className="xl:hidden">Add credits</span>
               </Link>
-              <div className="group/account relative shrink-0" aria-label="Account">
-                <button type="button" className="flex items-center gap-2 rounded-full p-0.5 outline-none ring-white/30 focus-visible:ring-2" aria-haspopup="menu">
-                  {avatarUrl ? (
-                    <Image src={avatarUrl} alt="Account avatar" width={32} height={32} className="h-8 w-8 rounded-full border border-white/20 object-cover" />
-                  ) : (
-                    <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85">
-                      {displayName.charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                  <span className="hidden max-w-24 truncate text-xs font-semibold text-white/80 2xl:block">{displayName}</span>
-                </button>
-                <div role="menu" className="invisible absolute right-0 top-full z-50 mt-2 w-44 translate-y-1 rounded-xl border border-white/15 bg-[#111018] p-2 opacity-0 shadow-2xl transition group-hover/account:visible group-hover/account:translate-y-0 group-hover/account:opacity-100 group-focus-within/account:visible group-focus-within/account:translate-y-0 group-focus-within/account:opacity-100">
-                  <p className="truncate px-2 py-1.5 text-xs font-semibold text-white/60">{displayName}</p>
-                  <SignOutButton className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-60" />
-                </div>
-              </div>
+              <AccountMenu displayName={displayName} avatarUrl={avatarUrl} />
             </div>
           </div>
 

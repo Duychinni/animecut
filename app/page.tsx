@@ -1,11 +1,10 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
-import { SignOutButton } from '@/components/auth/SignOutButton';
+import { AccountMenu } from '@/components/auth/AccountMenu';
 import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -609,29 +608,7 @@ export default function Home() {
                   <span className="hidden xl:inline">Add more credits</span>
                   <span className="xl:hidden">Add credits</span>
                 </Link>
-                <div className="group/account relative">
-                  {avatarUrl ? (
-                    <Image
-                      src={avatarUrl}
-                      alt={`${userLabel} avatar`}
-                      title={userLabel}
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 rounded-full border border-white/20 object-cover"
-                    />
-                  ) : (
-                    <div
-                      title={userLabel}
-                      className="grid h-8 w-8 place-items-center rounded-full border border-white/20 bg-white/10 text-xs font-semibold text-white/85"
-                    >
-                      {userLabel.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="invisible absolute right-0 top-full z-50 mt-2 w-44 translate-y-1 rounded-xl border border-white/15 bg-[#111018] p-2 opacity-0 shadow-2xl transition group-hover/account:visible group-hover/account:translate-y-0 group-hover/account:opacity-100">
-                    <p className="truncate px-2 py-1.5 text-xs font-semibold text-white/60">{userLabel}</p>
-                    <SignOutButton className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-60" />
-                  </div>
-                </div>
+                <AccountMenu displayName={userLabel} avatarUrl={avatarUrl} />
               </>
             ) : (
               <div className="flex items-center justify-end gap-2">
