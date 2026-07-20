@@ -713,6 +713,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       setPaused(true);
       return;
     }
+    if (settings && currentTime >= settings.clip_end_seconds - 0.05) {
+      seekAbsolute(settings.clip_start_seconds);
+    }
     try {
       await video.play();
       setPaused(false);
@@ -1121,7 +1124,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
             <p className="text-xs font-semibold text-white/45">
-              Reel 0:00 - {formatClock(clipDuration)} · one segment until you make a cut
+              Reel 0:00 - {formatClock(clipDuration)} · {timelineSegments.length} {timelineSegments.length === 1 ? 'segment' : 'segments'}
             </p>
           </div>
 
@@ -1174,7 +1177,27 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               : 'Click to seek or select a segment. Drag green handles to trim; select a segment to adjust or delete it. Nothing is saved until Apply.'}
           </p>
           <div className="relative grid h-[176px] grid-cols-[54px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
-            <div className="border-r border-white/[0.08] bg-black/25 pt-[31px] text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
+            <div className="border-r border-white/[0.08] bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
+              <div className="grid h-[31px] place-items-center border-b border-white/[0.08] bg-white/[0.02]">
+                <button
+                  type="button"
+                  onClick={() => void togglePlay()}
+                  disabled={!previewUrl}
+                  className="grid h-7 w-7 place-items-center rounded-full border border-white/15 bg-white/[0.06] text-white/85 transition hover:border-white/30 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-35"
+                  aria-label={paused ? 'Play timeline preview' : 'Pause timeline preview'}
+                  title={paused ? 'Play timeline' : 'Pause timeline'}
+                >
+                  {paused ? (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
+                      <path d="M8 5.5v13l10-6.5-10-6.5Z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden="true">
+                      <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
               {[
                 ['Text', 'h-[34px]'],
                 ['Video', 'h-[62px]'],
