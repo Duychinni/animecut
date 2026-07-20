@@ -343,6 +343,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [shareClip, setShareClip] = useState<ClipItem | null>(null);
+  const [downloadedShareClipId, setDownloadedShareClipId] = useState<string | null>(null);
+  const [shareDownloadError, setShareDownloadError] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
@@ -677,7 +679,30 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function openShareModal(clip: ClipItem) {
     for (const video of Object.values(videoRefs.current)) video?.pause();
+    setShareDownloadError(null);
     setShareClip(clip);
+  }
+
+  async function downloadShareClip() {
+    if (!shareClip?.signedUrl || sharingId) return false;
+
+    try {
+      setSharingId(shareClip.exportId);
+      setShareDownloadError(null);
+      const response = await fetch(shareClip.signedUrl);
+      if (!response.ok) throw new Error('Could not prepare this reel for sharing');
+
+      const blob = await response.blob();
+      downloadClipBlob(blob, getClipFileName(shareClip));
+      setDownloadedShareClipId(shareClip.exportId);
+      return true;
+    } catch (error) {
+      console.error(error);
+      setShareDownloadError('Download failed. Try Download again, then select the MP4 in the platform uploader.');
+      return false;
+    } finally {
+      setSharingId(null);
+    }
   }
 
   async function handlePlatformPost(platform: SocialPostPlatform) {
@@ -687,21 +712,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (!destination) return;
 
     window.open(destination.destinationUrl, '_blank', 'noopener,noreferrer');
-
-    try {
-      setSharingId(shareClip.exportId);
-      const response = await fetch(shareClip.signedUrl);
-      if (!response.ok) throw new Error('Could not prepare this reel for sharing');
-
-      const blob = await response.blob();
-      downloadClipBlob(blob, getClipFileName(shareClip));
-      setShareClip(null);
-    } catch (error) {
-      console.error(error);
-      window.alert('The posting page opened, but the reel download failed. Download it from the clip card and try again.');
-    } finally {
-      setSharingId(null);
-    }
+    if (downloadedShareClipId !== shareClip.exportId) await downloadShareClip();
   }
 
   async function applyPreset(selectedPresetId: string, captionsEnabled: boolean) {
@@ -1350,10 +1361,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
         <SocialPostModal
           clip={shareClip}
           posting={sharingId === shareClip.exportId}
+          downloaded={downloadedShareClipId === shareClip.exportId}
+          downloadError={shareDownloadError}
           onClose={() => {
             if (!sharingId) setShareClip(null);
           }}
           onSelect={handlePlatformPost}
+          onDownloadAgain={downloadShareClip}
         />
       ) : null}
     </>
@@ -1397,13 +1411,19 @@ function SocialPlatformIcon({ platform }: { platform: SocialPostPlatform }) {
 function SocialPostModal({
   clip,
   posting,
+  downloaded,
+  downloadError,
   onClose,
   onSelect,
+  onDownloadAgain,
 }: {
   clip: ClipItem;
   posting: boolean;
+  downloaded: boolean;
+  downloadError: string | null;
   onClose: () => void;
   onSelect: (platform: SocialPostPlatform) => Promise<void>;
+  onDownloadAgain: () => Promise<boolean>;
 }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1428,7 +1448,7 @@ function SocialPostModal({
           </button>
         </div>
 
-        <p className="mt-5 text-sm leading-6 text-white/65">Choose a platform. AnimaCut will download the MP4 and open that platform&apos;s posting page.</p>
+        <p className="mt-5 text-sm leading-6 text-white/65">Choose a platform. The reel downloads once, then each selection opens that platform&apos;s posting page.</p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           {SOCIAL_POST_PLATFORMS.map((platform) => (
@@ -1449,9 +1469,13 @@ function SocialPostModal({
           ))}
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-white/8 bg-white/[0.025] px-4 py-3 text-xs text-white/45">
-          <span>{posting ? 'Preparing your reel download...' : 'Select the downloaded MP4 in the platform uploader.'}</span>
-          <button type="button" onClick={onClose} disabled={posting} className="shrink-0 rounded-lg bg-white/10 px-3 py-2 font-semibold text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-35">Skip</button>
+        <div className={`mt-5 flex items-center justify-between gap-4 rounded-xl border px-4 py-3 text-xs ${downloadError ? 'border-red-400/25 bg-red-400/[0.06] text-red-100/75' : downloaded ? 'border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-100/75' : 'border-white/8 bg-white/[0.025] text-white/45'}`}>
+          <span>{posting ? 'Preparing your reel download...' : downloadError || (downloaded ? 'Reel downloaded — select it from your Downloads folder.' : 'Your first platform selection will download the reel.')}</span>
+          {downloaded || downloadError ? (
+            <button type="button" onClick={() => void onDownloadAgain()} disabled={posting} className="shrink-0 rounded-lg bg-white/10 px-3 py-2 font-semibold text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-35">Download again</button>
+          ) : (
+            <button type="button" onClick={onClose} disabled={posting} className="shrink-0 rounded-lg bg-white/10 px-3 py-2 font-semibold text-white/75 transition hover:bg-white/15 hover:text-white disabled:opacity-35">Close</button>
+          )}
         </div>
       </div>
     </div>
@@ -1523,15 +1547,8 @@ function CaptionTemplatesModal({
               ) : (
                 <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
               )}
-              {captionsEnabled ? (
-                <>
-                  <div className="pointer-events-none absolute inset-x-0 bottom-[10%] h-[24%] bg-gradient-to-t from-black/95 via-black/88 to-transparent" />
-                  <div className="pointer-events-none absolute inset-x-4 bottom-[18%] flex justify-center text-center">
-                    <CaptionPreviewText preset={activePreset} title={clip.title} size="reel" />
-                  </div>
-                </>
-              ) : null}
             </div>
+            <p className="mt-3 text-center text-xs text-white/45">The video shows the current render. Apply regenerates it with your selected highlight color.</p>
           </div>
 
           <div className="flex flex-col p-6">

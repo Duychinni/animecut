@@ -80,6 +80,8 @@ export function isNaturalEditorialTitle(value: unknown) {
   if (text.length < 5 || text.length > 100) return false;
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/^why\s+(?:\w+\s+){1,4}matters$/i.test(text)) return false;
+  if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}\s+explains\s+/i.test(text)) return false;
+  if (/^(a|the)\s+(conversation|discussion|main idea)\b/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top|viral|best|standout)\s+(clip|reel|short|moment)/i.test(text)) return false;
   return /[a-z]{2}/i.test(text);
@@ -210,10 +212,14 @@ function genericEditorialCopy(text: string, globalContext: string) {
   const question = sentences.find((sentence) => /\?|^(why|what|how|who|when|where|can|could|should|does|do|is|are)\b/i.test(sentence));
   const contrast = sentences.find((sentence) => /\b(but|however|instead|rather|problem|mistake|risk|wrong|difference|versus|vs\.?|against)\b/i.test(sentence));
   const title = namedSubject
-    ? `${namedSubject} Explains ${topic}`.slice(0, 100)
+    ? contrast
+      ? `${namedSubject}'s Take On ${topic}`.slice(0, 100)
+      : `What ${namedSubject} Reveals About ${topic}`.slice(0, 100)
     : question
       ? titleCase(compactStatement(question, 11)).slice(0, 100)
-      : `Why ${topic} Matters`.slice(0, 100);
+      : contrast
+        ? `The Hidden Tradeoff Behind ${topic}`.slice(0, 100)
+        : `What Most People Miss About ${topic}`.slice(0, 100);
   const hookSubject = namedSubject || `This ${keywords[0] ? titleCase(keywords[0]) : 'Idea'}`;
   const quote = sentences
     .sort((a, b) => Math.abs(a.length - 90) - Math.abs(b.length - 90))[0]

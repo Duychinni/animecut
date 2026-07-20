@@ -162,8 +162,10 @@ CANDIDATE GENERATION RULES:
 
 REEL TITLE RULES:
 - The "title" appears above each reel in the project page.
-- The title is the subject label for the reel, not its attention hook.
-- Summarize what the reel is about and its central idea in clear, natural language.
+- Write the title as a captivating editorial headline, not a generic subject label or a transcript fragment.
+- It should instantly tell the creator what makes this reel worth watching while still making clear what the reel is about.
+- Lead with the most interesting specific result, tension, decision, lesson, reveal, or named subject in the clip.
+- Create curiosity with specificity and stakes, not vague hype or clickbait.
 - Do not use the first words of the transcript as the title.
 - Do not copy the opening_line, hook_text, or any raw transcript phrase as the title.
 - Make it specific, human-readable, and grounded in the clip.
@@ -171,7 +173,8 @@ REEL TITLE RULES:
 - Use 4-10 words in title case or sentence case.
 - Avoid invented drama, hashtags, emojis, quotation marks, and all-caps.
 - Bad examples: "Yeah, I mean", "I can't back that up", "Did you get ghosts close to black".
-- Good examples: "Building An App Through Cold Outreach", "The Cost Of Posting Only Highlights", "Steve-O's Flat Earth Debate".
+- Reject generic constructions such as "X Explains Y", "Why X Matters", "A Conversation About X", or "The Main Idea" when a more specific headline is supported.
+- Good examples: "How 100 Cold Calls Built His App", "Why Posting Only Highlights Kills Trust", "Steve-O Challenges the Flat Earth Claim".
 
 REEL HOOK TEXT RULES:
 - Write a separate "hook_text" for the white title card that appears on the reel.
@@ -389,7 +392,7 @@ Every remaining clip must end on a complete sentence, punchline, answer, or clea
 If a clean ending cannot fit inside the allowed duration, reject that candidate instead of cutting the speaker off mid-sentence.
 If two clips share the same setup/payoff, keep the more viral and self-contained one.
 Remove only clearly broken candidates or duplicate/overlapping candidates.
-Rewrite every title as a concise subject label that explains what its reel is about, not as an attention hook. Rewrite every hook_text as a transcript-proven, reader-stopping curiosity gap, tension, high-stakes consequence, specific result, question, or surprising claim. The hook must make sense before playback and create a reason to keep watching; reject vague hype and incomplete transcript fragments. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
+Rewrite every title as a concise, captivating editorial headline built around the reel's most specific result, tension, decision, lesson, reveal, or named subject. It must make immediate sense and accurately explain why the reel is worth watching; reject generic "X Explains Y" and "Why X Matters" formulas when the transcript supports something sharper. Rewrite every hook_text as a transcript-proven, reader-stopping curiosity gap, tension, high-stakes consequence, specific result, question, or surprising claim. The hook must make sense before playback and create a reason to keep watching; reject vague hype and incomplete transcript fragments. A title and hook_text must never copy or closely paraphrase one another. Do not copy the opening transcript words or opening_line as the title.
 For every candidate, retain five hook_options, one hook_supporting_quote, a hook_selection_reason, topic, moment_type, virality_reason, story, conflict, primary_speaker, supporting_speakers, visual_context_required, scene_type, recommended_layout, and recommended_thumbnail.
 Return revised JSON only.`;
 
