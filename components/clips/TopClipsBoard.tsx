@@ -377,6 +377,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   });
   const [loadingCaptionSettings, setLoadingCaptionSettings] = useState(false);
   const [applyingPreset, setApplyingPreset] = useState(false);
+  const [removingProjectHooks, setRemovingProjectHooks] = useState(false);
   const [retryingExportIds, setRetryingExportIds] = useState<Set<string>>(() => new Set());
   const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
   const renderKickInFlightRef = useRef(false);
@@ -689,6 +690,34 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }
   }
 
+  async function removeAllProjectHooks() {
+    if (removingProjectHooks) return;
+    const reelCount = visible.filter((clip) => clip.hookTextEnabled !== false).length;
+    if (!reelCount) return;
+    const confirmed = window.confirm(
+      `Remove the opening hook text from all ${reelCount} reels? Each reel will be re-rendered, which may take a few minutes.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      setRemovingProjectHooks(true);
+      const response = await fetch(`/api/projects/${projectId}/hook-text`, { method: 'DELETE' });
+      const payload = await readJsonSafe(response) as { error?: string; queued?: number };
+      if (!response.ok) throw new Error(payload.error || 'Could not remove hook text');
+
+      const queuedIds = visible
+        .filter((clip) => clip.hookTextEnabled !== false && clip.signedUrl)
+        .map((clip) => clip.exportId);
+      setOptimisticEditIds((current) => new Set([...current, ...queuedIds]));
+      void fetch('/api/jobs/process', { method: 'POST', cache: 'no-store' }).catch(() => null);
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not remove hook text');
+    } finally {
+      setRemovingProjectHooks(false);
+    }
+  }
+
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
 
@@ -900,7 +929,24 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   return (
     <>
       <section className="mt-6 space-y-3">
-        <h2 className="px-4 text-lg font-semibold">Top clips</h2>
+        <div className="flex flex-col gap-3 px-4 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="text-lg font-semibold">Top clips</h2>
+          {visible.some((clip) => clip.hookTextEnabled !== false) ? (
+            <div className="max-w-sm sm:text-right">
+              <button
+                type="button"
+                onClick={() => void removeAllProjectHooks()}
+                disabled={removingProjectHooks || visible.some((clip) => clip.editStatus === 'rendering')}
+                className="inline-flex items-center justify-center rounded-lg border border-red-400/25 bg-red-400/[0.07] px-3.5 py-2 text-sm font-bold text-red-100 transition hover:border-red-300/45 hover:bg-red-400/[0.12] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {removingProjectHooks ? 'Removing hook text...' : 'Remove all hook text'}
+              </button>
+              <p className="mt-1.5 text-xs leading-5 text-white/48">
+                Removes the white opening text card from every reel in this project. Re-rendering may take a few minutes.
+              </p>
+            </div>
+          ) : null}
+        </div>
 
         {!visible.length && <p className="px-4 text-sm text-white/60">No clips yet.</p>}
 
