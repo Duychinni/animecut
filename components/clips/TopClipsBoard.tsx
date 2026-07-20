@@ -1704,17 +1704,6 @@ function CaptionTemplatesModal({
               </label>
             </div>
 
-            <div className="mt-5 rounded-2xl border border-cyan-300/70 bg-cyan-300/[0.06] p-3">
-              <div className="grid aspect-[2.15] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
-                {captionsEnabled ? (
-                  <CaptionPreviewText preset={activePreset} title="Your caption" />
-                ) : (
-                  <span className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Captions off</span>
-                )}
-              </div>
-              <p className="mt-2 text-xs font-black text-white">Default bold captions</p>
-            </div>
-
             <div className="mt-5 space-y-2">
               <p className="text-xs font-black text-white/70">Highlight color</p>
               <div className="flex flex-wrap gap-2">

@@ -74,8 +74,6 @@ type TimelineFilmstrip = {
   captureFailed: boolean;
 };
 
-const SCISSORS_CURSOR = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22 viewBox=%220 0 32 32%22%3E%3Ctext x=%221%22 y=%2226%22 font-size=%2227%22%3E%E2%9C%82%3C/text%3E%3C/svg%3E") 4 4, crosshair';
-
 function TimelineVideoThumbnail({ src, time }: { src: string; time: number }) {
   return (
     <video
@@ -262,7 +260,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [paused, setPaused] = useState(true);
   const [volume, setVolume] = useState(1);
   const [dragMode, setDragMode] = useState<DragMode>(null);
-  const [cutMode, setCutMode] = useState(false);
   const [selectedRange, setSelectedRange] = useState<TimelineRange | null>(null);
   const [timelineViewport, setTimelineViewport] = useState({ start: 0, end: 1 });
   const [timelineFilmstrip, setTimelineFilmstrip] = useState<TimelineFilmstrip>({ key: '', frames: [], captureFailed: false });
@@ -418,13 +415,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       if (event.key === 'Escape' && selectedRange) {
         event.preventDefault();
         setSelectedRange(null);
-        setCutMode(false);
         return;
       }
-      if (event.key === 'Escape' && cutMode) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        const target = event.target as HTMLElement | null;
+        if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.isContentEditable) return;
         event.preventDefault();
-        setCutMode(false);
-        setToast('Scissors tool turned off');
+        cutTimelineAt(currentTime);
         return;
       }
       if (event.key === 'Escape') {
@@ -589,7 +586,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const end = clamp(chunk.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
     setSelectedRange({ id: chunk.id, start, end });
-    setCutMode(false);
     seekAbsolute(start);
     setToast('Segment selected — drag either edge to adjust it');
   }
@@ -607,7 +603,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     });
     setSelectedRange(null);
     seekAbsolute(point);
-    setToast(`Cut added at ${formatClock(point)} — click again to add another`);
+    setToast(`Split at ${formatClock(point)} — select either segment to delete it`);
   }
 
   function selectTimelineSegment(range: TimelineRange) {
@@ -615,7 +611,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const start = clamp(range.start, settings.clip_start_seconds, settings.clip_end_seconds);
     const end = clamp(range.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
-    setCutMode(false);
     setSelectedRange({ ...range, start, end });
     seekAbsolute(start);
     setToast('Segment selected — adjust its edges or press Delete segment');
@@ -635,7 +630,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     };
     setSettings(nextSettings);
     setSelectedRange(null);
-    setCutMode(false);
     if (currentTime >= start && currentTime < end) seekAbsolute(end);
     setToast('Selected time removed from preview');
   }
@@ -771,11 +765,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     event.stopPropagation();
     setDragMode(mode);
     const seconds = timelineSeconds(event);
-    if (mode === 'seek' && cutMode) {
-      cutTimelineAt(seconds);
-      setDragMode(null);
-      return;
-    }
     if (mode === 'start' && settings) patchTimes(seconds, settings.clip_end_seconds);
     if (mode === 'end' && settings) patchTimes(settings.clip_start_seconds, seconds);
     if (mode === 'seek') seekAbsolute(seconds);
@@ -1080,14 +1069,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   On
                 </label>
               </div>
-              <div className="rounded-2xl border border-cyan-300/70 bg-cyan-300/[0.06] p-3">
-                <div className="grid aspect-[2.15] place-items-center rounded-xl border border-white/10 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,.12),rgba(255,255,255,.03)_42%,rgba(0,0,0,.55))]">
-                  <span style={captionPreviewStyle(activePreset, settings)}>
-                    <span style={{ color: settings.caption_highlight_color }}>YOUR</span> CAPTION
-                  </span>
-                </div>
-                <p className="mt-2 text-xs font-black text-white">Default bold captions</p>
-              </div>
               <div className="space-y-2">
                 <p className="text-xs font-black text-white/70">Highlight color</p>
                 <div className="flex flex-wrap gap-2">
@@ -1134,16 +1115,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             </span>
             <button
               type="button"
-              onClick={() => {
-                setCutMode((value) => !value);
-                setSelectedRange(null);
-              }}
-              className={`grid h-9 w-9 place-items-center rounded-md border text-lg transition ${cutMode ? 'border-orange-300 bg-orange-300/15 text-orange-200' : 'border-white/10 text-white/72 hover:bg-white/[0.06]'}`}
-              aria-pressed={cutMode}
-              aria-label={cutMode ? 'Turn off scissors tool' : 'Turn on scissors tool'}
-              title={cutMode ? 'Scissors active — click the timeline to cut' : 'Scissors tool'}
+              onClick={() => cutTimelineAt(currentTime)}
+              disabled={currentTime <= settings.clip_start_seconds + 0.1 || currentTime >= settings.clip_end_seconds - 0.1}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 px-3 text-xs font-bold text-white/72 transition hover:border-orange-300/45 hover:bg-orange-300/10 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label="Split at playhead"
+              aria-keyshortcuts="Control+B Meta+B"
+              title="Split at playhead (Ctrl+B)"
             >
               <span aria-hidden="true">&#9986;</span>
+              Split
             </button>
             {selectedRange ? (
               <>
@@ -1172,9 +1152,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
         <div className="px-3 py-2">
           <p className="mb-2 text-xs font-semibold text-white/48">
-            {cutMode
-              ? 'Scissors active: click anywhere on the timeline to split at that exact point. Nothing is saved until Apply.'
-              : 'Click to seek or select a segment. Drag green handles to trim; select a segment to adjust or delete it. Nothing is saved until Apply.'}
+            Move the playhead, then press Split (Ctrl+B). Select a segment to adjust or delete it. Splits alone do not change playback; deleted segments are skipped after Apply.
           </p>
           <div className="relative grid h-[176px] grid-cols-[54px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
             <div className="border-r border-white/[0.08] bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
@@ -1213,7 +1191,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               ref={timelineRef}
               onPointerDown={(event) => beginTimelineDrag('seek', event)}
               className="relative overflow-hidden"
-              style={{ cursor: cutMode ? SCISSORS_CURSOR : 'pointer' }}
+              style={{ cursor: 'pointer' }}
             >
               <div className="relative h-[31px] border-b border-white/[0.08] bg-white/[0.02]">
                 {rulerTicks.map((tick) => (
@@ -1239,15 +1217,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     onPointerDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      if (cutMode) cutTimelineAt(timelineSeconds(event));
-                      else selectTimelineChunk(chunk);
+                      selectTimelineChunk(chunk);
                     }}
-                    className={`absolute top-[38px] z-10 h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${selected ? 'bg-orange-100 ring-2 ring-white' : cutMode ? 'bg-orange-200 ring-1 ring-orange-100' : 'bg-orange-300/80'}`}
+                    className={`absolute top-[38px] z-10 h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${selected ? 'bg-orange-100 ring-2 ring-white' : 'bg-orange-300/80'}`}
                     title={chunk.text}
                     style={{
                       left: `${(start / timelineDuration) * 100}%`,
                       width: `${Math.max(0.45, ((end - start) / timelineDuration) * 100)}%`,
-                      cursor: cutMode ? SCISSORS_CURSOR : 'pointer',
+                      cursor: 'pointer',
                     }}
                   >
                     {chunk.text}
@@ -1286,8 +1263,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   onPointerDown={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (cutMode) cutTimelineAt(timelineSeconds(event));
-                    else selectTimelineSegment(segment);
+                    selectTimelineSegment(segment);
                   }}
                   className={`absolute bottom-0 top-[69px] z-[15] border-x transition ${
                     selectedRange?.id === segment.id
@@ -1299,10 +1275,10 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   style={{
                     left: `${clamp(((segment.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`,
                     width: `${clamp(((segment.end - segment.start) / timelineDuration) * 100, 0, 100)}%`,
-                    cursor: cutMode ? SCISSORS_CURSOR : 'pointer',
+                    cursor: 'pointer',
                   }}
-                  aria-label={cutMode ? `Cut at timeline position in segment ${index + 1}` : `Select segment ${index + 1}`}
-                  title={cutMode ? 'Click to cut here' : `Segment ${index + 1}: ${formatClock(segment.end - segment.start)}`}
+                  aria-label={`Select segment ${index + 1}`}
+                  title={`Segment ${index + 1}: ${formatClock(segment.end - segment.start)}`}
                 />
               ))}
               <div className="absolute inset-x-0 bottom-2 flex h-9 items-end gap-[2px] px-2">
