@@ -924,20 +924,20 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
               return (
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
-                  <div className="min-h-[78px] px-0.5 pb-1.5">
+                  <div className="min-h-[112px] px-0.5 pb-1.5">
                     <p className="line-clamp-3 min-h-[52px] text-[15px] font-extrabold leading-[1.15rem] text-white">{clip.title}</p>
 
-                    <div className="mx-auto mt-2 flex w-full max-w-[230px] items-center justify-between gap-3 px-1">
-                      <div className="flex min-w-0 flex-nowrap items-center gap-2">
-                        <span className="text-[28px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
-                          {displayScore}
-                        </span>
-                        <span className="max-w-[118px] truncate rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">
+                    <div className="mx-auto mt-1 w-full max-w-[230px] px-1">
+                      <span className="block text-[28px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
+                        {displayScore}
+                      </span>
+
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">
                           {primaryBadge}
                         </span>
-                      </div>
 
-                      <div className="flex shrink-0 items-center gap-3 text-white">
+                        <div className="flex shrink-0 items-center gap-3 text-white">
                         <div className="group/edit relative">
                           <button
                             type="button"
@@ -1020,6 +1020,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             </span>
                           </div>
                         ) : null}
+                        </div>
                       </div>
                     </div>
                   </div>
