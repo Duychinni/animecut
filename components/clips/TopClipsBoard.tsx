@@ -200,7 +200,7 @@ function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: '
 
   return {
     color: preset.captionTextColor,
-    fontFamily: preset.captionFontFamily,
+    fontFamily: `"${preset.captionFontFamily}", "Arial Black", Impact, sans-serif`,
     fontSize: `${Math.round(preset.captionFontSize * scale)}px`,
     fontWeight: 950,
     letterSpacing: 0,
@@ -209,6 +209,23 @@ function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: '
     WebkitTextStroke: stroke > 0 ? `${stroke}px ${preset.captionStrokeColor}` : '0px transparent',
     textShadow: shadowMap[preset.captionShadow] ?? shadowMap['black-heavy'],
   };
+}
+
+function CaptionPreviewWord({
+  children,
+  color,
+  style,
+}: {
+  children: string;
+  color: string;
+  style: CSSProperties;
+}) {
+  return (
+    <span className="relative inline-block">
+      <span aria-hidden="true" className="absolute inset-0" style={{ ...style, color, userSelect: 'none' }}>{children}</span>
+      <span className="relative" style={{ ...style, color, WebkitTextStroke: '0px transparent', textShadow: 'none' }}>{children}</span>
+    </span>
+  );
 }
 
 function CaptionPreviewText({
@@ -235,8 +252,8 @@ function CaptionPreviewText({
 
   return (
     <span className="inline-block text-center">
-      <span style={{ ...baseStyle, color: preset.captionHighlightColor }}>{words.highlight}</span>{' '}
-      <span style={baseStyle}>{words.rest}</span>
+      <CaptionPreviewWord color={preset.captionHighlightColor} style={baseStyle}>{words.highlight}</CaptionPreviewWord>{' '}
+      <CaptionPreviewWord color={preset.captionTextColor} style={baseStyle}>{words.rest}</CaptionPreviewWord>
     </span>
   );
 }
@@ -1547,8 +1564,16 @@ function CaptionTemplatesModal({
               ) : (
                 <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
               )}
+              {captionsEnabled ? (
+                <>
+                  <div className="pointer-events-none absolute inset-x-0 bottom-[9%] h-[22%] bg-gradient-to-t from-black/95 via-black/85 to-transparent" />
+                  <div className="pointer-events-none absolute inset-x-3 bottom-[17%] flex justify-center text-center">
+                    <CaptionPreviewText preset={activePreset} title={clip.title} size="reel" />
+                  </div>
+                </>
+              ) : null}
             </div>
-            <p className="mt-3 text-center text-xs text-white/45">The video shows the current render. Apply regenerates it with your selected highlight color.</p>
+            <p className="mt-3 text-center text-xs text-white/45">Preview the selected highlight color, then apply to regenerate the reel.</p>
           </div>
 
           <div className="flex flex-col p-6">
