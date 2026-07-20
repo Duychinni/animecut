@@ -47,6 +47,11 @@ type Props = {
   clips: ClipItem[];
 };
 
+type CaptionPreviewData = {
+  sourceUrl: string | null;
+  settings: ClipEditSettings;
+};
+
 type PlaybackState = {
   current: number;
   duration: number;
@@ -365,6 +370,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
+  const [captionPreviewData, setCaptionPreviewData] = useState<CaptionPreviewData | null>(null);
   const [captionModalDefaults, setCaptionModalDefaults] = useState({
     presetId: CAPTION_TEMPLATE_OPTIONS[0]?.id ?? DEFAULT_CAPTION_PRESET_ID,
     captionsEnabled: true,
@@ -624,6 +630,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       captionsEnabled: clip.captionsEnabled !== false,
     });
     setCaptionSettings(null);
+    setCaptionPreviewData(null);
     setEditingClip(clip);
     setLoadingCaptionSettings(true);
 
@@ -632,6 +639,11 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       const data = await readJsonSafe(res);
       if (!res.ok || !data?.settings) throw new Error(String(data?.error || 'Could not load caption settings'));
       const settings = data.settings as ClipEditSettings;
+      const source = data.source as { previewUrl?: unknown } | undefined;
+      setCaptionPreviewData({
+        sourceUrl: typeof source?.previewUrl === 'string' ? source.previewUrl : null,
+        settings,
+      });
       const selected = CAPTION_TEMPLATE_OPTIONS.find((preset) =>
         preset.captionHighlightColor.toLowerCase() === settings.caption_highlight_color.toLowerCase()
       ) ?? fallbackPreset;
@@ -1367,6 +1379,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
           clip={editingClip}
           defaultPresetId={captionModalDefaults.presetId}
           defaultCaptionsEnabled={captionModalDefaults.captionsEnabled}
+          previewData={captionPreviewData}
           loading={loadingCaptionSettings}
           applying={applyingPreset}
           canApply={Boolean(captionSettings)}
@@ -1504,6 +1517,7 @@ function CaptionTemplatesModal({
   clip,
   defaultPresetId,
   defaultCaptionsEnabled,
+  previewData,
   loading,
   applying,
   canApply,
@@ -1513,6 +1527,7 @@ function CaptionTemplatesModal({
   clip: ClipItem;
   defaultPresetId: string;
   defaultCaptionsEnabled: boolean;
+  previewData: CaptionPreviewData | null;
   loading: boolean;
   applying: boolean;
   canApply: boolean;
@@ -1521,8 +1536,31 @@ function CaptionTemplatesModal({
 }) {
   const [selectedPresetId, setSelectedPresetId] = useState(defaultPresetId);
   const [captionsEnabled, setCaptionsEnabled] = useState(defaultCaptionsEnabled);
+  const [previewTime, setPreviewTime] = useState(0);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
+  const previewSettings = previewData?.settings;
+  const previewUrl = previewData?.sourceUrl ?? null;
+  const activeCaption = useMemo(() => {
+    if (!captionsEnabled || !previewSettings) return null;
+    const phrase = previewSettings.edited_transcript.find((item) => (
+      item.deleted !== true
+      && previewTime >= item.start
+      && previewTime <= item.end
+    ));
+    if (!phrase) return null;
+
+    const words = phrase.text.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+    const maxWords = Math.max(1, previewSettings.caption_max_words);
+    const progress = Math.max(0, Math.min(0.999, (previewTime - phrase.start) / Math.max(0.1, phrase.end - phrase.start)));
+    const activeWordIndex = Math.min(words.length - 1, Math.floor(progress * words.length));
+    const groupStart = Math.floor(activeWordIndex / maxWords) * maxWords;
+    return {
+      words: words.slice(groupStart, groupStart + maxWords),
+      highlightedIndex: previewSettings.caption_word_highlight ? activeWordIndex - groupStart : -1,
+    };
+  }, [captionsEnabled, previewSettings, previewTime]);
 
   useEffect(() => {
     setSelectedPresetId(defaultPresetId);
@@ -1534,7 +1572,7 @@ function CaptionTemplatesModal({
     if (!video) return;
     video.preload = 'auto';
     video.load();
-  }, [clip.signedUrl]);
+  }, [previewUrl]);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70">
@@ -1552,29 +1590,54 @@ function CaptionTemplatesModal({
         <div className="grid flex-1 gap-0 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
             <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black">
-              {clip.signedUrl ? (
+              {previewUrl ? (
                 <video
                   ref={previewVideoRef}
-                  src={clip.signedUrl}
+                  src={previewUrl}
                   poster={clip.posterUrl ?? undefined}
                   controls
                   playsInline
                   preload="auto"
                   className="aspect-[9/16] w-full bg-black object-cover"
+                  onLoadedMetadata={(event) => {
+                    const start = previewSettings?.clip_start_seconds ?? 0;
+                    event.currentTarget.currentTime = start;
+                    setPreviewTime(start);
+                  }}
+                  onTimeUpdate={(event) => {
+                    const video = event.currentTarget;
+                    const end = previewSettings?.clip_end_seconds;
+                    if (end !== undefined && video.currentTime >= end) {
+                      video.pause();
+                      video.currentTime = previewSettings?.clip_start_seconds ?? 0;
+                    }
+                    setPreviewTime(video.currentTime);
+                  }}
                 />
               ) : (
-                <div className="grid aspect-[9/16] place-items-center text-sm text-white/45">Preview unavailable</div>
+                <div className="grid aspect-[9/16] place-items-center px-6 text-center text-sm text-white/45">
+                  {loading ? 'Loading caption preview…' : 'Clean source preview unavailable'}
+                </div>
               )}
-              {captionsEnabled ? (
-                <>
-                  <div className="pointer-events-none absolute inset-x-0 bottom-[9%] h-[22%] bg-gradient-to-t from-black/95 via-black/85 to-transparent" />
-                  <div className="pointer-events-none absolute inset-x-3 bottom-[17%] flex justify-center text-center">
-                    <CaptionPreviewText preset={activePreset} title={clip.title} size="reel" />
-                  </div>
-                </>
+              {activeCaption ? (
+                <div className="pointer-events-none absolute inset-x-3 bottom-[17%] flex justify-center text-center">
+                  <span className="inline-block text-center">
+                    {activeCaption.words.map((word, index) => (
+                      <span key={`${word}-${index}`}>
+                        {index > 0 ? ' ' : null}
+                        <CaptionPreviewWord
+                          color={index === activeCaption.highlightedIndex ? activePreset.captionHighlightColor : activePreset.captionTextColor}
+                          style={getPresetCaptionStyle(activePreset, 'reel')}
+                        >
+                          {word.toUpperCase()}
+                        </CaptionPreviewWord>
+                      </span>
+                    ))}
+                  </span>
+                </div>
               ) : null}
             </div>
-            <p className="mt-3 text-center text-xs text-white/45">Preview the selected highlight color, then apply to regenerate the reel.</p>
+            <p className="mt-3 text-center text-xs text-white/45">Play the reel to preview its actual captions in the selected color.</p>
           </div>
 
           <div className="flex flex-col p-6">
