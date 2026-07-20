@@ -1,4 +1,5 @@
 export const PROJECT_RETENTION_DAYS = 3;
+export const ABANDONED_PROJECT_HOURS = 24;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -19,4 +20,3 @@ export function getProjectExpiryInfo(completedAt: string | null | undefined, now
     is_expired: expiresMs <= nowMs,
   };
 }
-

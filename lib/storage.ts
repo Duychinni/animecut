@@ -7,6 +7,17 @@ const RAW_BUCKET = 'raw-media';
 const EXPORT_BUCKET = 'exports';
 const PROJECT_THUMBNAIL_BUCKET = 'exports';
 
+async function removeSupabaseObjects(bucket: string, objectPaths: string[]) {
+  const paths = [...new Set(objectPaths.filter(Boolean))];
+  if (!paths.length) return;
+
+  const admin = createAdminClient();
+  for (let index = 0; index < paths.length; index += 100) {
+    const { error } = await admin.storage.from(bucket).remove(paths.slice(index, index + 100));
+    if (error) throw error;
+  }
+}
+
 export function makeRawObjectPath(userId: string, projectId: string, ext: string) {
   return `${userId}/${projectId}/source.${ext.toLowerCase()}`;
 }
@@ -220,4 +231,12 @@ export async function createProjectThumbnailSignedUrl(objectPath: string, expire
   const { data, error } = await admin.storage.from(PROJECT_THUMBNAIL_BUCKET).createSignedUrl(objectPath, expiresIn);
   if (error) throw error;
   return data.signedUrl;
+}
+
+export async function deleteRawMediaObjects(objectPaths: string[]) {
+  await removeSupabaseObjects(RAW_BUCKET, objectPaths);
+}
+
+export async function deleteExportObjects(objectPaths: string[]) {
+  await removeSupabaseObjects(EXPORT_BUCKET, objectPaths);
 }

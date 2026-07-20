@@ -18,10 +18,37 @@ export default function TermsPage() {
           <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#ff7bd8]">Terms</p>
           <h1 className="mt-3 text-4xl font-bold tracking-tight text-white">Terms of Service</h1>
           <div className="mt-6 space-y-6 text-sm leading-7 text-white/70 md:text-base">
-            <p>By using AnimaCut, you agree to use the service lawfully and only with content you have the right to upload, edit, and publish.</p>
-            <p>You are responsible for your account security, the source content you submit, and any resulting published media.</p>
-            <p>We may update product functionality, pricing, limits, or policies over time. Continued use of the platform means you accept those updates.</p>
-            <p>If you have questions about these terms, contact support before using the service for production workflows.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/45">Effective July 20, 2026</p>
+
+            <section>
+              <h2 className="text-xl font-semibold text-white">Your content and permissions</h2>
+              <p className="mt-2">You retain ownership of your content. You represent that you own or have all permissions needed to upload, download, edit, process, and publish it. You grant AnimaCut a limited license to host and process that content only as needed to provide the service. Do not submit unlawful, infringing, private, or harmful content.</p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold text-white">AI-generated results</h2>
+              <p className="mt-2">Transcripts, rankings, captions, crops, and suggested clips may be inaccurate or unsuitable. You are responsible for reviewing every result before publication and for complying with platform rules, publicity rights, copyright, and applicable law.</p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold text-white">Subscriptions and usage</h2>
+              <p className="mt-2">Plans include the processing allowance displayed at purchase. Unless stated otherwise, subscriptions renew automatically until canceled through the billing portal or account deletion flow. Fees already charged are non-refundable except where required by law or expressly stated in our refund policy. We may prevent abusive usage or attempts to bypass plan limits.</p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold text-white">Retention and availability</h2>
+              <p className="mt-2">Finished projects are scheduled for deletion three days after completion and abandoned created projects after 24 hours. Download anything you want to keep before that deadline. The service may change, experience interruptions, or produce failed renders; it is not a permanent archive or backup service.</p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold text-white">Account termination</h2>
+              <p className="mt-2">You may delete your account from Account &amp; privacy. We may suspend or terminate accounts used unlawfully, fraudulently, or in ways that threaten the service or other users.</p>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold text-white">Questions</h2>
+              <p className="mt-2">These terms should be reviewed for your company and jurisdiction before commercial launch. Contact <a className="text-white underline" href="mailto:support@animacut.com">support@animacut.com</a> with questions.</p>
+            </section>
           </div>
         </section>
       </div>

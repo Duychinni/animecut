@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { deleteProjectAnalysisArtifacts } from '@/lib/media-intelligence/storage';
+import { deleteProjectAndArtifacts } from '@/lib/data-deletion';
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -54,7 +54,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ projectId:
 
     const { data: project, error: pErr } = await supabase
       .from('projects')
-      .select('id')
+      .select('id, user_id, source_storage_path')
       .eq('id', projectId)
       .eq('user_id', user.id)
       .single();
@@ -63,22 +63,7 @@ export async function DELETE(_: Request, context: { params: Promise<{ projectId:
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    // Remove encrypted server-only embedding objects before cascading database rows.
-    await deleteProjectAnalysisArtifacts(projectId);
-
-    const deletions = await Promise.all([
-      supabase.from('jobs').delete().eq('project_id', projectId),
-      supabase.from('exports').delete().eq('project_id', projectId),
-      supabase.from('clip_candidates').delete().eq('project_id', projectId),
-      supabase.from('transcripts').delete().eq('project_id', projectId),
-    ]);
-
-    for (const result of deletions) {
-      if (result.error) throw result.error;
-    }
-
-    const { error: dErr } = await supabase.from('projects').delete().eq('id', projectId).eq('user_id', user.id);
-    if (dErr) throw dErr;
+    await deleteProjectAndArtifacts(project);
 
     return NextResponse.json({ ok: true });
   } catch (error: unknown) {

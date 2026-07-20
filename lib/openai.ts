@@ -88,7 +88,7 @@ async function createAnalysisResponse(params: Parameters<typeof openai.responses
   const timeout = setTimeout(() => controller.abort(), OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await openai.responses.create(params, { signal: controller.signal });
+    const response = await openai.responses.create({ ...params, store: false }, { signal: controller.signal });
     return response as unknown as AnalysisResponse;
   } catch (error) {
     if (controller.signal.aborted) {

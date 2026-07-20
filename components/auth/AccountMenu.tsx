@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 
@@ -70,6 +71,7 @@ export function AccountMenu({ displayName, avatarUrl }: AccountMenuProps) {
       >
         <div role="menu" className="rounded-xl border border-white/15 bg-[#111018] p-2 shadow-2xl">
           <p className="truncate px-2 py-1.5 text-xs font-semibold text-white/60">{displayName}</p>
+          <Link href="/dashboard/account" role="menuitem" className="block rounded-lg px-2 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Account & privacy</Link>
           <SignOutButton className="w-full rounded-lg px-2 py-2 text-left text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-60" />
         </div>
       </div>

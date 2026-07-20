@@ -310,6 +310,7 @@ export async function POST(req: Request) {
         source_thumbnail_url: sourceMeta.sourceThumbnailUrl,
         source_channel_name: sourceMeta.sourceChannelName,
         source_duration_seconds: sourceMeta.sourceDurationSeconds,
+        content_rights_confirmed_at: new Date().toISOString(),
         status: 'created',
       })
       .select('*')

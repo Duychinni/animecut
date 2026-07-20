@@ -4,6 +4,9 @@ export const createProjectSchema = z.object({
   title: z.string().min(2),
   source_type: z.enum(['upload', 'youtube']),
   source_url: z.string().url().optional(),
+  rights_confirmed: z.literal(true, {
+    error: 'You must confirm that you have permission to process this content.',
+  }),
   // Browser media elements report fractional seconds, while the database
   // stores this value as an integer. Round up so quota accounting never
   // under-counts a partial source-video minute and Postgres never receives a

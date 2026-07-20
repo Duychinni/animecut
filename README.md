@@ -80,6 +80,7 @@ Update Supabase Auth settings:
   - `POST /api/projects/:projectId/start`
   - `POST /api/pipeline/process`
   - `GET /api/cron/process-jobs` (Bearer `CRON_SECRET`)
+  - `GET /api/cron/cleanup-retention` (Bearer `CRON_SECRET`; deletes completed projects after 3 days, abandoned uploads after 24 hours, and worker artifacts older than 24 hours)
 
 ## Deploy (Vercel)
 1. Push repo to GitHub

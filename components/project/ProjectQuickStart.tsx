@@ -54,12 +54,14 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
 
   async function createProject(input: { title: string; source_type: 'youtube' | 'upload'; source_url?: string; source_duration_seconds?: number }) {
+    if (!rightsConfirmed) throw new Error('Confirm that you have permission to process this content.');
     const res = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, rights_confirmed: true }),
     });
 
     const data = await readJsonSafe(res);
@@ -211,7 +213,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
             />
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !rightsConfirmed}
               className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? '...' : 'Get Clips'}
@@ -226,10 +228,15 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
               accept="video/*,audio/*"
               onChange={onUploadFileSelect}
               className="hidden"
-              disabled={loading}
+              disabled={loading || !rightsConfirmed}
             />
           </label>
         </div>
+
+        <label className="mt-2 flex max-w-[520px] items-start gap-2 text-[11px] leading-4 text-white/55">
+          <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-0.5 accent-[#ff7bd8]" />
+          <span>I own this content or have permission to upload, process, and export it.</span>
+        </label>
 
         {loading ? (
           <div className="mt-3 w-full max-w-[520px]">
@@ -260,7 +267,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
           />
           <button
             type="submit"
-            disabled={loading || !sourceUrl.trim()}
+            disabled={loading || !sourceUrl.trim() || !rightsConfirmed}
             className="h-11 shrink-0 rounded-xl bg-white px-5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? 'Working...' : 'Get Clips'}
@@ -276,11 +283,16 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
               accept="video/*,audio/*"
               onChange={onUploadFileSelect}
               className="hidden"
-              disabled={loading}
+              disabled={loading || !rightsConfirmed}
             />
           </label>
         </div>
       </div>
+
+      <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-white/60">
+        <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1 accent-[#ff7bd8]" />
+        <span>I own this content or have permission to upload, process, and export it.</span>
+      </label>
 
       {loading ? (
         <div className="mt-3 w-full">
