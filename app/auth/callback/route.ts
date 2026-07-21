@@ -6,6 +6,9 @@ function getSafeRedirectOrigin(requestUrl: URL) {
   if (originUrl.hostname === '0.0.0.0') {
     originUrl.hostname = 'localhost';
   }
+  if (originUrl.hostname.endsWith('.vercel.app')) {
+    return 'https://www.animacut.com';
+  }
   return originUrl.origin;
 }
 

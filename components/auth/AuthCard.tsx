@@ -16,6 +16,11 @@ function getBrowserSafeOrigin() {
   if (url.hostname === '0.0.0.0') {
     url.hostname = 'localhost';
   }
+  // OAuth must return to the public production domain. Preview deployments can
+  // otherwise leak their temporary Vercel hostname into Google's redirect flow.
+  if (url.hostname.endsWith('.vercel.app')) {
+    return 'https://www.animacut.com';
+  }
   return url.origin;
 }
 
