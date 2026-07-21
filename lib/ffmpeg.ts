@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getVerticalExportSize } from '@/lib/export-profile';
+import { buildRenderOutputArgs, type SourceColorMetadata } from '@/lib/ffmpeg-output-args';
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
@@ -198,7 +199,7 @@ export async function extractBestVideoThumbnail(inputPath: string, outputPath: s
 async function probeInputVideoForRender(inputPath: string) {
   const result = await runJsonCommand(resolveMediaBinary('ffprobe'), [
     '-v', 'error',
-    '-show_entries', 'format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate',
+    '-show_entries', 'format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate,color_space,color_transfer,color_primaries',
     '-of', 'json',
     inputPath,
   ]);
@@ -210,6 +211,9 @@ async function probeInputVideoForRender(inputPath: string) {
       height?: number;
       avg_frame_rate?: string;
       bit_rate?: string;
+      color_space?: string;
+      color_transfer?: string;
+      color_primaries?: string;
     }>;
     format?: { duration?: string; size?: string; bit_rate?: string };
   };
@@ -223,6 +227,9 @@ async function probeInputVideoForRender(inputPath: string) {
     containerBitrate: data.format?.bit_rate ?? null,
     duration: data.format?.duration ?? null,
     size: data.format?.size ?? null,
+    colorSpace: video?.color_space ?? null,
+    colorTransfer: video?.color_transfer ?? null,
+    colorPrimaries: video?.color_primaries ?? null,
   };
 }
 
@@ -2006,8 +2013,14 @@ export async function renderVerticalClip(opts: RenderOpts) {
     smartScript: resolveSmartReframeScript(),
     smartPython: resolveSmartReframePython(),
   });
+  let sourceColorMetadata: SourceColorMetadata | null = null;
   try {
     const sourceInfo = await probeInputVideoForRender(opts.inputPath);
+    sourceColorMetadata = {
+      colorSpace: sourceInfo.colorSpace,
+      colorTransfer: sourceInfo.colorTransfer,
+      colorPrimaries: sourceInfo.colorPrimaries,
+    };
     const estimatedVerticalCropUpscale = sourceInfo.height && sourceInfo.height > 0
       ? Number((outputHeight / sourceInfo.height).toFixed(3))
       : null;
@@ -2024,6 +2037,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
       sourceContainerBitrate: sourceInfo.containerBitrate,
       sourceDuration: sourceInfo.duration,
       sourceSize: sourceInfo.size,
+      sourceColorSpace: sourceInfo.colorSpace,
+      sourceColorTransfer: sourceInfo.colorTransfer,
+      sourceColorPrimaries: sourceInfo.colorPrimaries,
       estimatedVerticalCropUpscale,
       sourceBelowHd: Boolean(sourceInfo.height && sourceInfo.height < 1080),
     });
@@ -2174,63 +2190,21 @@ export async function renderVerticalClip(opts: RenderOpts) {
       );
     }
 
-    common.push('-c:v', encoder);
-
     const configuredOutputFps = Number(process.env.FFMPEG_OUTPUT_FPS ?? 0);
-    if (Number.isFinite(configuredOutputFps) && configuredOutputFps >= 24 && configuredOutputFps <= 60) {
-      common.push('-r', String(Math.round(configuredOutputFps)));
-    }
-
-    if (encoder === 'libx264') {
-      common.push(
-        '-preset',
-        configuredPreset,
-        '-crf',
-        configuredCrf,
-        '-maxrate',
-        configuredX264Maxrate,
-        '-bufsize',
-        configuredX264Bufsize,
-        '-profile:v',
-        'high',
-        '-level',
-        '4.2',
-        '-g',
-        '30',
-        '-keyint_min',
-        '15',
-        '-sc_threshold',
-        '0',
-        '-threads',
-        '0',
-      );
-    } else {
-      // Hardware encoders (nvenc/qsv/videotoolbox) usually ignore CRF/preset semantics.
-      common.push(
-        '-b:v',
-        allowOversizedExports ? process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE : DEFAULT_HW_VIDEO_BITRATE,
-        '-maxrate',
-        allowOversizedExports ? process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE : DEFAULT_HW_MAXRATE,
-        '-bufsize',
-        allowOversizedExports ? process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE : DEFAULT_HW_BUFSIZE,
-        '-g',
-        '30',
-      );
-    }
-
-    common.push(
-      '-pix_fmt',
-      'yuv420p',
-      '-af',
-      `volume=${clamp(Number(effectiveOpts.volume ?? 1), 0, 2)}`,
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      '-movflags',
-      '+faststart',
-      effectiveOpts.outputPath,
-    );
+    common.push(...buildRenderOutputArgs({
+      encoder,
+      preset: configuredPreset,
+      crf: configuredCrf,
+      x264Maxrate: configuredX264Maxrate,
+      x264Bufsize: configuredX264Bufsize,
+      hardwareBitrate: allowOversizedExports ? process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE : DEFAULT_HW_VIDEO_BITRATE,
+      hardwareMaxrate: allowOversizedExports ? process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE : DEFAULT_HW_MAXRATE,
+      hardwareBufsize: allowOversizedExports ? process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE : DEFAULT_HW_BUFSIZE,
+      outputFps: configuredOutputFps,
+      sourceColor: sourceColorMetadata,
+      volume: Number(effectiveOpts.volume ?? 1),
+      outputPath: effectiveOpts.outputPath,
+    }));
 
     return common;
   };

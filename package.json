@@ -11,6 +11,7 @@
     "reframe:check": "node scripts/reframe_runtime.mjs check",
     "reframe:regression": "python3 scripts/test_universal_semantic_reframe.py",
     "framing:feedback-report": "node --env-file-if-exists=.env.local scripts/framing-feedback-report.mjs",
+    "ffmpeg:args:test": "npx tsx scripts/test_ffmpeg_output_args.ts",
     "worker:deps": "node scripts/reframe_runtime.mjs worker",
     "worker:check": "node scripts/reframe_runtime.mjs check",
     "worker": "npm run worker:check && npx tsx workers/pipelineWorker.ts",
