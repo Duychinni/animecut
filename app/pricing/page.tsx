@@ -121,7 +121,7 @@ export default async function PricingPage() {
         </section>
 
         <div id="plans" className="scroll-mt-8">
-          <PricingCards plans={PLAN_CONFIG} interval={interval} currentPlan={currentPlan} />
+          <PricingCards plans={PLAN_CONFIG} interval={interval} currentPlan={currentPlan} isAuthenticated={Boolean(user)} />
         </div>
 
         <section className="mx-auto mt-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5 text-center sm:flex-row sm:text-left">

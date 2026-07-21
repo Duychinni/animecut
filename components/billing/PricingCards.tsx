@@ -12,12 +12,14 @@ function PlanCard({
   selected,
   onSelect,
   currentPlan,
+  isAuthenticated,
 }: {
   plan: PlanConfig;
   interval: BillingInterval;
   selected: boolean;
   onSelect: (planId: string) => void;
   currentPlan: PlanId;
+  isAuthenticated: boolean;
 }) {
   const price = plan.monthlyPrice;
   const suffix = '/month';
@@ -65,7 +67,7 @@ function PlanCard({
         {plan.secondaryCta ? <p className="text-sm text-white/58">{plan.secondaryCta}</p> : null}
       </div>
 
-      <PricingActions plan={plan} interval={interval} selected={selected} onSelect={onSelect} currentPlan={currentPlan} />
+      <PricingActions plan={plan} interval={interval} selected={selected} onSelect={onSelect} currentPlan={currentPlan} isAuthenticated={isAuthenticated} />
 
       <ul className="mt-6 space-y-3 text-sm text-white/80">
         {features.map((feature, index) => (
@@ -79,7 +81,7 @@ function PlanCard({
   );
 }
 
-export function PricingCards({ plans, interval, currentPlan }: { plans: PlanConfig[]; interval: BillingInterval; currentPlan: PlanId }) {
+export function PricingCards({ plans, interval, currentPlan, isAuthenticated }: { plans: PlanConfig[]; interval: BillingInterval; currentPlan: PlanId; isAuthenticated: boolean }) {
   useEffect(() => { captureEvent('pricing_viewed'); }, []);
   const [selectedPlanId, setSelectedPlanId] = useState(plans.find((plan) => plan.highlighted)?.id ?? plans[0]?.id ?? '');
 
@@ -100,6 +102,7 @@ export function PricingCards({ plans, interval, currentPlan }: { plans: PlanConf
             selected={selectedPlanId === plan.id}
             onSelect={(planId) => setSelectedPlanId(planId as PlanConfig['id'])}
             currentPlan={currentPlan}
+            isAuthenticated={isAuthenticated}
           />
         ))}
       </div>

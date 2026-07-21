@@ -114,7 +114,6 @@ export async function POST(req: Request) {
 
       const upgradedSubscription = await stripe.subscriptions.update(subscriptionId, {
         items: [{ id: subscriptionItem.id, price: nextPriceId, quantity: 1 }],
-        cancel_at_period_end: false,
         proration_behavior: 'always_invoice',
         proration_date: prorationDate,
         payment_behavior: 'pending_if_incomplete',

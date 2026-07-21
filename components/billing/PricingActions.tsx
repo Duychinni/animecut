@@ -13,15 +13,19 @@ export function PricingActions({
   selected,
   onSelect,
   currentPlan,
+  isAuthenticated,
 }: {
   plan: PlanConfig;
   interval: BillingInterval;
   selected?: boolean;
   onSelect?: (planId: string) => void;
   currentPlan: PlanId;
+  isAuthenticated: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [upgradeQuote, setUpgradeQuote] = useState<{ amount: string; prorationDate: number } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isCurrentPlan = currentPlan === plan.id;
   const isUpgrade = PLAN_RANK[plan.id] > PLAN_RANK[currentPlan] && currentPlan !== 'free';
 
@@ -29,19 +33,42 @@ export function PricingActions({
     if (selected) onSelect?.(plan.id);
   }, [onSelect, plan.id, selected]);
 
-  async function onClick() {
+  async function startBillingRequest(confirmUpgrade = false, prorationDate?: number) {
+    const response = await fetch('/api/billing/checkout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ planId: plan.id, interval, confirmUpgrade, prorationDate }),
+    });
+    return { response, data: await readJsonSafe(response) };
+  }
+
+  async function finishUpgrade(prorationDate: number) {
     try {
       setLoading(true);
-      const startBillingRequest = async (confirmUpgrade = false, prorationDate?: number) => {
-        const response = await fetch('/api/billing/checkout', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ planId: plan.id, interval, confirmUpgrade, prorationDate }),
-        });
-        return { response, data: await readJsonSafe(response) };
-      };
+      const { response, data } = await startBillingRequest(true, prorationDate);
+      if (!response.ok) throw new Error(String(data?.error || 'Could not complete the upgrade'));
+      const checkoutUrl = typeof data?.url === 'string' ? data.url : null;
+      if (!checkoutUrl) throw new Error('Stripe checkout URL missing');
+      window.location.href = checkoutUrl;
+    } catch (error) {
+      setUpgradeQuote(null);
+      setErrorMessage(error instanceof Error ? error.message : 'Could not complete the upgrade');
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      let { response: res, data } = await startBillingRequest();
+  async function onClick() {
+    if (!isAuthenticated) {
+      router.push(`/auth/login?next=${encodeURIComponent('/pricing')}`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+
+      const { response: res, data } = await startBillingRequest();
       if (!res.ok) {
         if (res.status === 401) {
           router.push(`/auth/login?next=${encodeURIComponent('/pricing')}`);
@@ -57,13 +84,8 @@ export function PricingActions({
           style: 'currency',
           currency,
         }).format(amountDue / 100);
-        const confirmed = window.confirm(
-          `Upgrade to ${plan.name}? You are NOT being charged the full ${plan.monthlyPrice} today. Today's prorated charge is ${formattedAmount}. Your next regular renewal will be ${plan.monthlyPrice}.`,
-        );
-        if (!confirmed) return;
-
-        ({ response: res, data } = await startBillingRequest(true, Number(data.prorationDate)));
-        if (!res.ok) throw new Error(String(data?.error || 'Could not complete the upgrade'));
+        setUpgradeQuote({ amount: formattedAmount, prorationDate: Number(data.prorationDate) });
+        return;
       }
 
       const checkoutUrl = typeof data?.url === 'string' ? data.url : null;
@@ -75,13 +97,14 @@ export function PricingActions({
       throw new Error('Stripe checkout URL missing');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not start checkout';
-      window.alert(message);
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
+    <>
     <button
       type="button"
       onClick={() => {
@@ -93,7 +116,36 @@ export function PricingActions({
         selected ? 'bg-white text-black hover:bg-white/90' : 'border border-white/12 bg-white/[0.03] text-white hover:bg-white/[0.06]'
       } disabled:cursor-not-allowed disabled:opacity-60`}
     >
-      {loading ? 'Redirecting...' : isCurrentPlan ? 'Current plan' : isUpgrade ? `Upgrade to ${plan.name} — prorated` : plan.cta}
+      {loading ? 'Redirecting...' : isCurrentPlan ? 'Current plan' : !isAuthenticated ? `Sign in to choose ${plan.name}` : isUpgrade ? `Upgrade to ${plan.name} — prorated` : plan.cta}
     </button>
+    {upgradeQuote ? (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={`upgrade-${plan.id}-title`}>
+        <div className="w-full max-w-md rounded-[28px] border border-[#ff7bd8]/30 bg-[#0c0911] p-6 text-left shadow-[0_30px_100px_rgba(0,0,0,0.7)]">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff7bd8]">Prorated upgrade</p>
+          <h3 id={`upgrade-${plan.id}-title`} className="mt-3 text-2xl font-bold text-white">Upgrade to {plan.name}?</h3>
+          <p className="mt-3 text-sm leading-6 text-white/65">Unused time on your current plan is credited automatically.</p>
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+            <div className="flex justify-between gap-4 text-sm"><span className="text-white/55">Due today</span><strong className="text-white">{upgradeQuote.amount}</strong></div>
+            <div className="mt-2 flex justify-between gap-4 text-sm"><span className="text-white/55">Next renewal</span><strong className="text-white">{plan.monthlyPrice}</strong></div>
+          </div>
+          <p className="mt-4 text-xs leading-5 text-white/50">You are not being charged the full {plan.monthlyPrice} today.</p>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setUpgradeQuote(null)} disabled={loading} className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.05]">Cancel</button>
+            <button type="button" onClick={() => void finishUpgrade(upgradeQuote.prorationDate)} disabled={loading} className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition hover:bg-white/90 disabled:opacity-60">{loading ? 'Upgrading...' : 'Confirm upgrade'}</button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    {errorMessage ? (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-5 backdrop-blur-sm" role="alertdialog" aria-modal="true">
+        <div className="w-full max-w-md rounded-[28px] border border-red-300/25 bg-[#0c0911] p-6 text-left">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-300">Billing problem</p>
+          <h3 className="mt-3 text-xl font-bold text-white">We couldn’t update your plan</h3>
+          <p className="mt-3 break-words text-sm leading-6 text-white/65">{errorMessage}</p>
+          <button type="button" onClick={() => setErrorMessage(null)} className="mt-6 w-full rounded-xl bg-white px-4 py-3 text-sm font-bold text-black">Close</button>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
