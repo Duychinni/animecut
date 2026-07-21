@@ -82,6 +82,17 @@ export async function POST(req: Request) {
 
       const nextPriceId = getPlanPriceId(planId, interval);
       if (body.confirmUpgrade !== true) {
+        const customer = await stripe.customers.retrieve(customerId);
+        const subscriptionPaymentMethodId = typeof currentSubscription.default_payment_method === 'string'
+          ? currentSubscription.default_payment_method
+          : currentSubscription.default_payment_method?.id;
+        const customerPaymentMethod = customer.deleted ? null : customer.invoice_settings.default_payment_method;
+        const customerPaymentMethodId = typeof customerPaymentMethod === 'string'
+          ? customerPaymentMethod
+          : customerPaymentMethod?.id;
+        const paymentMethodId = subscriptionPaymentMethodId || customerPaymentMethodId;
+        const paymentMethod = paymentMethodId ? await stripe.paymentMethods.retrieve(paymentMethodId) : null;
+        const card = paymentMethod?.card;
         const prorationDate = Math.floor(Date.now() / 1000);
         const preview = await stripe.invoices.createPreview({
           customer: customerId,
@@ -108,6 +119,10 @@ export async function POST(req: Request) {
           prorationDate,
           currentPlan: profile.subscription_plan,
           nextPlan: planId,
+          paymentMethod: card ? {
+            brand: card.brand,
+            last4: card.last4,
+          } : null,
         });
       }
 

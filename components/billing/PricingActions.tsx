@@ -24,7 +24,11 @@ export function PricingActions({
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [upgradeQuote, setUpgradeQuote] = useState<{ amount: string; prorationDate: number } | null>(null);
+  const [upgradeQuote, setUpgradeQuote] = useState<{
+    amount: string;
+    prorationDate: number;
+    paymentMethod: { brand: string; last4: string } | null;
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isCurrentPlan = currentPlan === plan.id;
   const isUpgrade = PLAN_RANK[plan.id] > PLAN_RANK[currentPlan] && currentPlan !== 'free';
@@ -58,6 +62,23 @@ export function PricingActions({
     }
   }
 
+  async function changePaymentMethod() {
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+      const response = await fetch('/api/billing/portal', { method: 'POST' });
+      const data = await readJsonSafe(response);
+      if (!response.ok) throw new Error(String(data?.error || 'Could not open billing settings'));
+      if (typeof data?.url !== 'string') throw new Error('Stripe billing URL missing');
+      window.location.href = data.url;
+    } catch (error) {
+      setUpgradeQuote(null);
+      setErrorMessage(error instanceof Error ? error.message : 'Could not open billing settings');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function onClick() {
     if (!isAuthenticated) {
       router.push(`/auth/login?next=${encodeURIComponent('/pricing')}`);
@@ -84,7 +105,16 @@ export function PricingActions({
           style: 'currency',
           currency,
         }).format(amountDue / 100);
-        setUpgradeQuote({ amount: formattedAmount, prorationDate: Number(data.prorationDate) });
+        const rawPaymentMethod = data?.paymentMethod;
+        const paymentMethod = rawPaymentMethod
+          && typeof rawPaymentMethod === 'object'
+          && 'brand' in rawPaymentMethod
+          && 'last4' in rawPaymentMethod
+          && typeof rawPaymentMethod.brand === 'string'
+          && typeof rawPaymentMethod.last4 === 'string'
+          ? { brand: rawPaymentMethod.brand, last4: rawPaymentMethod.last4 }
+          : null;
+        setUpgradeQuote({ amount: formattedAmount, prorationDate: Number(data.prorationDate), paymentMethod });
         return;
       }
 
@@ -127,8 +157,10 @@ export function PricingActions({
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             <div className="flex justify-between gap-4 text-sm"><span className="text-white/55">Due today</span><strong className="text-white">{upgradeQuote.amount}</strong></div>
             <div className="mt-2 flex justify-between gap-4 text-sm"><span className="text-white/55">Next renewal</span><strong className="text-white">{plan.monthlyPrice}</strong></div>
+            <div className="mt-2 flex justify-between gap-4 text-sm"><span className="text-white/55">Payment method</span><strong className="capitalize text-white">{upgradeQuote.paymentMethod ? `${upgradeQuote.paymentMethod.brand} •••• ${upgradeQuote.paymentMethod.last4}` : 'Saved card in Stripe'}</strong></div>
           </div>
-          <p className="mt-4 text-xs leading-5 text-white/50">You are not being charged the full {plan.monthlyPrice} today.</p>
+          <p className="mt-4 text-xs leading-5 text-white/50">You are not being charged the full {plan.monthlyPrice} today. The prorated amount above will be charged to this payment method.</p>
+          <button type="button" onClick={() => void changePaymentMethod()} disabled={loading} className="mt-3 text-xs font-semibold text-[#ff9de2] underline decoration-[#ff9de2]/40 underline-offset-4 hover:text-white disabled:opacity-60">Change payment method in Stripe</button>
           <div className="mt-6 grid grid-cols-2 gap-3">
             <button type="button" onClick={() => setUpgradeQuote(null)} disabled={loading} className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.05]">Cancel</button>
             <button type="button" onClick={() => void finishUpgrade(upgradeQuote.prorationDate)} disabled={loading} className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition hover:bg-white/90 disabled:opacity-60">{loading ? 'Upgrading...' : 'Confirm upgrade'}</button>

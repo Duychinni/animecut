@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getOrCreateProfile, getStripe, resolveAppUrl } from '@/lib/billing';
+import { getOrCreateProfile, getStripe } from '@/lib/billing';
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const supabase = await createClient();
     const {
@@ -19,7 +19,7 @@ export async function POST() {
     }
 
     const stripe = getStripe();
-    const appUrl = await resolveAppUrl();
+    const appUrl = new URL(req.url).origin;
     const configuration = process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim();
     const session = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
