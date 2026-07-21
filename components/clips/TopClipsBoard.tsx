@@ -831,6 +831,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   async function applyPreset(options: {
     selectedPresetId: string;
+    captionHighlightColor: string;
     captionsEnabled: boolean;
     captionX: number;
     captionY: number;
@@ -842,14 +843,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (!editingClip || !captionSettings) return;
     try {
       setApplyingPreset(true);
-      const preset = CAPTION_TEMPLATE_OPTIONS.find((option) => option.id === options.selectedPresetId) ?? CAPTION_TEMPLATE_OPTIONS[0]!;
       const nextSettings: ClipEditSettings = {
         ...captionSettings,
         captions_enabled: options.captionsEnabled,
         caption_preset_id: DEFAULT_CAPTION_PRESET_ID,
         caption_font_size: options.captionFontSize,
         caption_text_color: '#FFFFFF',
-        caption_highlight_color: preset.captionHighlightColor,
+        caption_highlight_color: options.captionHighlightColor,
         caption_background: options.captionBackground,
         caption_word_highlight: options.captionWordHighlight,
         caption_max_words: options.captionMaxWords,
@@ -1731,6 +1731,7 @@ function CaptionTemplatesModal({
   onClose: () => void;
   onApply: (options: {
     selectedPresetId: string;
+    captionHighlightColor: string;
     captionsEnabled: boolean;
     captionX: number;
     captionY: number;
@@ -1741,6 +1742,11 @@ function CaptionTemplatesModal({
   }) => Promise<void>;
 }) {
   const [selectedPresetId, setSelectedPresetId] = useState(defaultPresetId);
+  const [captionHighlightColor, setCaptionHighlightColor] = useState(
+    previewData?.settings.caption_highlight_color
+      ?? CAPTION_PRESETS.find((preset) => preset.id === defaultPresetId)?.captionHighlightColor
+      ?? CAPTION_PRESETS[0]!.captionHighlightColor
+  );
   const [captionsEnabled, setCaptionsEnabled] = useState(defaultCaptionsEnabled);
   const [previewTime, setPreviewTime] = useState(0);
   const [captionX, setCaptionX] = useState(previewData?.settings.caption_x ?? 0.5);
@@ -1757,7 +1763,7 @@ function CaptionTemplatesModal({
   const previewSettings = previewData?.settings;
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
   const previewUsesSource = previewData?.previewKind === 'source';
-  const hasEditableCaptionCanvas = previewData?.previewKind !== 'burned-reel';
+  const previewHasBurnedCaptions = previewData?.previewKind === 'burned-reel';
   const activeCaption = useMemo(() => {
     if (!captionsEnabled || !previewSettings) return null;
     const phrase = previewSettings.edited_transcript.find((item) => (
@@ -1782,7 +1788,12 @@ function CaptionTemplatesModal({
   useEffect(() => {
     setSelectedPresetId(defaultPresetId);
     setCaptionsEnabled(defaultCaptionsEnabled);
-  }, [defaultCaptionsEnabled, defaultPresetId]);
+    setCaptionHighlightColor(
+      previewData?.settings.caption_highlight_color
+        ?? CAPTION_PRESETS.find((preset) => preset.id === defaultPresetId)?.captionHighlightColor
+        ?? CAPTION_PRESETS[0]!.captionHighlightColor
+    );
+  }, [defaultCaptionsEnabled, defaultPresetId, previewData?.settings.caption_highlight_color]);
 
   useEffect(() => {
     if (!previewSettings) return;
@@ -1856,7 +1867,7 @@ function CaptionTemplatesModal({
                   {loading ? 'Loading caption preview…' : 'Reel preview unavailable'}
                 </div>
               )}
-              {activeCaption && hasEditableCaptionCanvas ? (
+              {activeCaption ? (
                 <div
                   className="absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center outline outline-1 outline-cyan-300/0 outline-offset-4 transition hover:outline-cyan-300/85 active:outline-cyan-300"
                   style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
@@ -1875,7 +1886,7 @@ function CaptionTemplatesModal({
                       <span key={`${word}-${index}`}>
                         {index > 0 ? ' ' : null}
                         <CaptionPreviewWord
-                          color={index === activeCaption.highlightedIndex ? activePreset.captionHighlightColor : activePreset.captionTextColor}
+                          color={index === activeCaption.highlightedIndex ? captionHighlightColor : activePreset.captionTextColor}
                           style={{ ...getPresetCaptionStyle(activePreset, 'reel'), fontSize: `${Math.round(captionFontSize * 2.6)}px` }}
                         >
                           {word.toUpperCase()}
@@ -1887,9 +1898,9 @@ function CaptionTemplatesModal({
               ) : null}
             </div>
             <p className="mt-3 text-center text-xs text-white/45">
-              {hasEditableCaptionCanvas
-                ? 'This is the reel’s real framing with one editable caption layer. Drag or resize it, then Apply.'
-                : 'This older reel needs one refresh render before its captions can be edited without duplication.'}
+              {previewHasBurnedCaptions
+                ? 'This temporary preview sits over the old burned captions. Apply replaces the reel with this edited caption style; it does not add a second caption track.'
+                : 'This is the reel’s real framing with one editable caption layer. Drag or resize it, then Apply.'}
             </p>
           </div>
 
@@ -1931,7 +1942,7 @@ function CaptionTemplatesModal({
                         {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
                           const active = preset.id === selectedPresetId;
                           return (
-                            <button key={preset.id} type="button" onClick={() => setSelectedPresetId(preset.id)} disabled={loading} className={`grid aspect-square place-items-center rounded-lg border bg-black/35 text-xl font-black transition hover:bg-white/10 disabled:opacity-45 ${active ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/10'}`} aria-label={`Preview ${preset.name}`} title={preset.name}>
+                            <button key={preset.id} type="button" onClick={() => { setSelectedPresetId(preset.id); setCaptionHighlightColor(preset.captionHighlightColor); }} disabled={loading} className={`grid aspect-square place-items-center rounded-lg border bg-black/35 text-xl font-black transition hover:bg-white/10 disabled:opacity-45 ${active ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/10'}`} aria-label={`Preview ${preset.name}`} title={preset.name}>
                               <span style={{ color: preset.captionHighlightColor, WebkitTextStroke: '1px #000', textShadow: '0 2px 4px #000' }}>Aa</span>
                             </button>
                           );
@@ -1943,7 +1954,7 @@ function CaptionTemplatesModal({
                       <section className="space-y-3 border-b border-white/10 pb-5">
                         <div className="flex items-center justify-between"><p className="text-xs font-bold text-white/65">Font</p><span className="rounded bg-white/[0.07] px-3 py-2 text-xs text-white/80">{activePreset.captionFontFamily}</span></div>
                         <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Font size <span className="rounded bg-black/30 px-2 py-1 font-mono text-white">{Math.round(captionFontSize * 1.33)}</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
-                        <div className="flex items-center justify-between"><span className="text-xs font-bold text-white/65">Highlight color</span><div className="flex gap-2">{CAPTION_TEMPLATE_OPTIONS.slice(0, 7).map((preset) => <button key={preset.id} type="button" onClick={() => setSelectedPresetId(preset.id)} className={`h-7 w-7 rounded border ${selectedPresetId === preset.id ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/15'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={preset.name} />)}</div></div>
+                        <div className="flex items-center justify-between"><span className="text-xs font-bold text-white/65">Highlight color</span><div className="flex gap-2">{CAPTION_TEMPLATE_OPTIONS.slice(0, 7).map((preset) => <button key={preset.id} type="button" onClick={() => setCaptionHighlightColor(preset.captionHighlightColor)} className={`h-7 w-7 rounded border ${captionHighlightColor.toLowerCase() === preset.captionHighlightColor.toLowerCase() ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/15'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={`Use ${preset.captionHighlightColor} highlight color`} />)}</div></div>
                         <label className="flex items-center justify-between text-xs font-bold text-white/65">Background <input type="checkbox" checked={captionBackground} onChange={(event) => setCaptionBackground(event.target.checked)} className="accent-cyan-300" /></label>
                       </section>
 
@@ -1979,8 +1990,8 @@ function CaptionTemplatesModal({
               <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-white/55">Apply saves these previewed changes and renders the reel.</div>
               <button
                 type="button"
-                onClick={() => void onApply({ selectedPresetId, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
-                disabled={applying || loading || !canApply || !hasEditableCaptionCanvas}
+                onClick={() => void onApply({ selectedPresetId, captionHighlightColor, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
+                disabled={applying || loading || !canApply}
                 className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? 'Loading...' : applying ? 'Applying...' : 'Apply'}
