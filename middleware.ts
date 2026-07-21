@@ -45,6 +45,16 @@ async function updateSession(request: NextRequest) {
 }
 
 export async function middleware(request: NextRequest) {
+  // Keep auth cookies, including the PKCE verifier, on one production host.
+  // Starting OAuth on the apex domain and returning to www loses host-scoped
+  // cookies and causes `PKCE code verifier not found in storage`.
+  if (request.nextUrl.hostname === 'animacut.com') {
+    const url = request.nextUrl.clone();
+    url.hostname = 'www.animacut.com';
+    url.protocol = 'https:';
+    return NextResponse.redirect(url, 308);
+  }
+
   return updateSession(request);
 }
 

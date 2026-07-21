@@ -16,6 +16,12 @@ function getBrowserSafeOrigin() {
   if (url.hostname === '0.0.0.0') {
     url.hostname = 'localhost';
   }
+  // PKCE stores its verifier in a host-scoped cookie. Always begin and finish
+  // production OAuth on the same hostname so animacut.com -> www.animacut.com
+  // cannot lose the verifier during the Google redirect.
+  if (url.hostname === 'animacut.com') {
+    return 'https://www.animacut.com';
+  }
   // OAuth must return to the public production domain. Preview deployments can
   // otherwise leak their temporary Vercel hostname into Google's redirect flow.
   if (url.hostname.endsWith('.vercel.app')) {
@@ -66,8 +72,17 @@ export function AuthCard({
     setLocalMsg(null);
 
     try {
+      const oauthOrigin = getBrowserSafeOrigin();
+      if (window.location.origin !== oauthOrigin) {
+        const loginUrl = new URL(window.location.href);
+        loginUrl.protocol = 'https:';
+        loginUrl.host = 'www.animacut.com';
+        window.location.assign(loginUrl.toString());
+        return;
+      }
+
       const supabase = createSupabaseBrowserClient();
-      const redirectTo = `${getBrowserSafeOrigin()}/auth/callback?next=${encodeURIComponent(next || '/dashboard')}`;
+      const redirectTo = `${oauthOrigin}/auth/callback?next=${encodeURIComponent(next || '/dashboard')}`;
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider,
         options: { redirectTo },
