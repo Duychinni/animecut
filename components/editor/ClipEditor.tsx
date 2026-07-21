@@ -708,6 +708,27 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     }
   }
 
+  useEffect(() => {
+    function handleEditorShortcut(event: KeyboardEvent) {
+      if (event.code !== 'Space' || event.repeat) return;
+
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || target instanceof HTMLSelectElement
+        || target instanceof HTMLButtonElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return;
+
+      event.preventDefault();
+      void togglePlay();
+    }
+
+    window.addEventListener('keydown', handleEditorShortcut);
+    return () => window.removeEventListener('keydown', handleEditorShortcut);
+  });
+
   function handlePreviewVolume(nextVolume: number) {
     const safeVolume = clamp(nextVolume, 0, 1);
     setVolume(safeVolume);
