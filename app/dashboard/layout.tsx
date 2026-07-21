@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { AccountMenu } from '@/components/auth/AccountMenu';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { ProjectQuickStart } from '@/components/project/ProjectQuickStart';
+import { effectivePlanId } from '@/lib/billing';
 
 type ProfileLike = { email?: string | null; user_metadata?: Record<string, unknown> | null };
 
@@ -40,11 +41,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: profile } = user
     ? await supabase
         .from('profiles')
-        .select('subscription_plan, processing_minutes_remaining, free_uploads_remaining')
+        .select('subscription_plan, subscription_status, processing_minutes_remaining, free_uploads_remaining')
         .eq('id', user.id)
         .maybeSingle()
     : { data: null };
-  const subscriptionPlan = profile?.subscription_plan ?? 'free';
+  const subscriptionPlan = profile
+    ? effectivePlanId(profile as Parameters<typeof effectivePlanId>[0])
+    : 'free';
   const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1));
   const processingMinutesRemaining = Math.max(0, Math.floor(Number(profile?.processing_minutes_remaining ?? 0)));
   const allowanceLabel = subscriptionPlan === 'free'

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { effectivePlanId } from '@/lib/billing';
 
 type ProfileLike = {
   email?: string | null;
@@ -54,11 +55,13 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_plan, processing_minutes_remaining, free_uploads_remaining')
+    .select('subscription_plan, subscription_status, processing_minutes_remaining, free_uploads_remaining')
     .eq('id', user.id)
     .maybeSingle();
 
-  const subscriptionPlan = profile?.subscription_plan ?? 'free';
+  const subscriptionPlan = profile
+    ? effectivePlanId(profile as Parameters<typeof effectivePlanId>[0])
+    : 'free';
   const freeUploadsRemaining = Math.max(0, Number(profile?.free_uploads_remaining ?? 1));
   const processingMinutesRemaining = Math.max(0, Math.floor(Number(profile?.processing_minutes_remaining ?? 0)));
   const allowanceLabel = subscriptionPlan === 'free'

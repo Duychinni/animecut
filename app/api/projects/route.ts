@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { fetchYouTubeSourceMetadata, stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { FREE_TRIAL_MAX_UPLOAD_MINUTES, FREE_TRIAL_UPLOADS, PLAN_LOOKUP, type PlanId } from '@/lib/plans';
-import { getOrCreateProfile, minutesRequiredFromSeconds } from '@/lib/billing';
+import { effectivePlanId, getOrCreateProfile, minutesRequiredFromSeconds } from '@/lib/billing';
 import { isMockAiEnabled } from '@/lib/dev-ai';
 import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
@@ -239,7 +239,7 @@ export async function POST(req: Request) {
     // let the same account create more than one free project.
     const profile = await getOrCreateProfile(user.id);
 
-    const planId = (profile?.subscription_plan ?? 'free') as PlanId;
+    const planId = effectivePlanId(profile) as PlanId;
     const configuredPlan = planId === 'starter' || planId === 'creator' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;
     if (planId === 'free' && parsed.source_type === 'youtube' && !sourceMeta.sourceDurationSeconds && parsed.source_url) {
       sourceMeta.sourceDurationSeconds = await fetchYouTubeDurationSeconds(parsed.source_url);

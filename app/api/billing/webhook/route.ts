@@ -40,14 +40,20 @@ export async function POST(req: Request) {
           const subscription = await stripe.subscriptions.retrieve(String(session.subscription), {
             expand: ['items.data.price'],
           });
-          await syncProfileFromSubscription(subscription);
+          await syncProfileFromSubscription(subscription, { resetAllowance: true });
         }
         break;
       }
-      case 'customer.subscription.created':
+      case 'customer.subscription.created': {
+        const subscription = event.data.object as Stripe.Subscription;
+        await syncProfileFromSubscription(subscription, { resetAllowance: true });
+        break;
+      }
       case 'customer.subscription.updated': {
         const subscription = event.data.object as Stripe.Subscription;
-        await syncProfileFromSubscription(subscription);
+        // Cancellation scheduling and metadata updates must not refill the
+        // monthly allowance. Renewals are reset only after a paid invoice.
+        await syncProfileFromSubscription(subscription, { resetAllowance: false });
         break;
       }
       case 'customer.subscription.deleted': {
@@ -66,7 +72,7 @@ export async function POST(req: Request) {
           const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
             expand: ['items.data.price'],
           });
-          await syncProfileFromSubscription(subscription);
+          await syncProfileFromSubscription(subscription, { resetAllowance: true });
         }
         break;
       }

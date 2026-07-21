@@ -85,7 +85,23 @@ export function minutesRequiredFromSeconds(totalSeconds: number | null | undefin
   return Math.ceil(totalSeconds / 60);
 }
 
-export async function syncProfileFromSubscription(subscription: Stripe.Subscription) {
+const PAID_ACCESS_STATUSES = new Set(['active', 'trialing', 'past_due']);
+
+export function hasPaidSubscriptionAccess(profile: Pick<ProfileRow, 'subscription_plan' | 'subscription_status'>) {
+  return profile.subscription_plan !== 'free'
+    && profile.subscription_plan !== 'business'
+    && PAID_ACCESS_STATUSES.has(profile.subscription_status);
+}
+
+export function effectivePlanId(profile: Pick<ProfileRow, 'subscription_plan' | 'subscription_status'>): PlanId {
+  if (profile.subscription_plan === 'business' && PAID_ACCESS_STATUSES.has(profile.subscription_status)) return 'business';
+  return hasPaidSubscriptionAccess(profile) ? profile.subscription_plan : 'free';
+}
+
+export async function syncProfileFromSubscription(
+  subscription: Stripe.Subscription,
+  options: { resetAllowance?: boolean } = {},
+) {
   const admin = createAdminClient();
   const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id;
   const planId = (subscription.metadata.planId || 'free') as PlanId;
@@ -95,12 +111,10 @@ export async function syncProfileFromSubscription(subscription: Stripe.Subscript
   const configuredMinutes = planId === 'business' ? null : configuredPlan?.processingMinutes ?? 0;
 
   const nextLimit = configuredMinutes ?? 0;
-  const nextUsed = 0;
-  const nextRemaining = nextLimit;
 
   const { data: profile, error: findError } = await admin
     .from('profiles')
-    .select('id')
+    .select('id, subscription_plan, current_period_end, processing_minutes_limit, processing_minutes_used, processing_minutes_remaining')
     .eq('stripe_customer_id', customerId)
     .maybeSingle();
 
@@ -108,6 +122,16 @@ export async function syncProfileFromSubscription(subscription: Stripe.Subscript
   if (!profile?.id) {
     throw new Error(`No profile found for stripe customer ${customerId}`);
   }
+
+  const nextPeriodEnd = new Date(subscription.items.data[0]?.current_period_end ? subscription.items.data[0].current_period_end * 1000 : Date.now()).toISOString();
+  const periodChanged = profile.current_period_end !== nextPeriodEnd;
+  const planChanged = profile.subscription_plan !== planId;
+  const shouldResetAllowance = options.resetAllowance === true && (periodChanged || planChanged);
+  const previousUsed = Math.max(0, Number(profile.processing_minutes_used ?? 0));
+  const nextUsed = shouldResetAllowance ? 0 : Math.min(previousUsed, nextLimit);
+  const nextRemaining = shouldResetAllowance
+    ? nextLimit
+    : Math.max(0, nextLimit - nextUsed);
 
   const { error: updateError } = await admin
     .from('profiles')
@@ -117,7 +141,7 @@ export async function syncProfileFromSubscription(subscription: Stripe.Subscript
       subscription_status: subscription.status,
       subscription_interval: interval,
       subscription_ends_at: subscription.cancel_at ? new Date(subscription.cancel_at * 1000).toISOString() : null,
-      current_period_end: new Date(subscription.items.data[0]?.current_period_end ? subscription.items.data[0].current_period_end * 1000 : Date.now()).toISOString(),
+      current_period_end: nextPeriodEnd,
       cancel_at_period_end: subscription.cancel_at_period_end,
       processing_minutes_limit: nextLimit,
       processing_minutes_used: nextUsed,
@@ -137,10 +161,15 @@ export async function markProfileCanceled(subscription: Stripe.Subscription) {
     .from('profiles')
     .update({
       stripe_subscription_id: subscription.id,
+      subscription_plan: 'free',
       subscription_status: subscription.status,
+      subscription_interval: null,
       subscription_ends_at: subscription.ended_at ? new Date(subscription.ended_at * 1000).toISOString() : null,
       current_period_end: subscription.items.data[0]?.current_period_end ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString() : null,
-      cancel_at_period_end: subscription.cancel_at_period_end,
+      cancel_at_period_end: false,
+      processing_minutes_limit: 0,
+      processing_minutes_used: 0,
+      processing_minutes_remaining: 0,
       updated_at: new Date().toISOString(),
     })
     .eq('stripe_customer_id', customerId);

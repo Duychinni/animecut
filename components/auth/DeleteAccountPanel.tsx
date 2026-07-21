@@ -9,7 +9,7 @@ export function DeleteAccountPanel() {
 
   async function deleteAccount() {
     if (confirmation !== 'DELETE' || deleting) return;
-    if (!window.confirm('Permanently delete your account, projects, source videos, and exports? This cannot be undone.')) return;
+    if (!window.confirm('Permanently delete your account, projects, source videos, and exports? Your subscription will be canceled immediately, but account deletion does not issue a refund. This cannot be undone.')) return;
 
     setDeleting(true);
     setMessage('Deleting your account and stored media...');
@@ -32,7 +32,7 @@ export function DeleteAccountPanel() {
     <section className="rounded-[24px] border border-red-400/25 bg-red-500/[0.06] p-6">
       <h2 className="text-xl font-semibold text-white">Delete account</h2>
       <p className="mt-3 text-sm leading-6 text-white/65">
-        This permanently removes your projects, uploaded sources, generated clips, transcripts, and account. Any active subscription is canceled immediately.
+        This permanently removes your projects, uploaded sources, generated clips, transcripts, and account. Any active subscription is canceled immediately. Account deletion does not automatically issue a refund.
       </p>
       <label className="mt-5 block text-xs font-semibold uppercase tracking-[0.14em] text-white/55" htmlFor="delete-confirmation">Type DELETE to confirm</label>
       <div className="mt-2 flex flex-col gap-3 sm:flex-row">

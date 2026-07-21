@@ -32,7 +32,7 @@ export default function TermsPage() {
 
             <section>
               <h2 className="text-xl font-semibold text-white">Subscriptions and usage</h2>
-              <p className="mt-2">Plans include the processing allowance displayed at purchase. Unless stated otherwise, subscriptions renew automatically until canceled through the billing portal or account deletion flow. Fees already charged are non-refundable except where required by law or expressly stated in our refund policy. We may prevent abusive usage or attempts to bypass plan limits.</p>
+              <p className="mt-2">Plans include the processing allowance displayed at purchase. Unless stated otherwise, subscriptions renew automatically until canceled through the billing portal. A standard cancellation takes effect at the end of the current paid billing period; paid access and unused processing minutes remain available until then. At period end, the account returns to the free plan without receiving another free video if its one-time free video was already used. Fees already charged are non-refundable except where required by law or expressly stated in our refund policy. Deleting an account cancels its subscription immediately, permanently removes its stored data, and does not automatically issue a refund. We may prevent abusive usage or attempts to bypass plan limits.</p>
             </section>
 
             <section>
