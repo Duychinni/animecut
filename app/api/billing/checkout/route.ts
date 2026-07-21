@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type Stripe from 'stripe';
 import { createClient } from '@/lib/supabase/server';
 import { getOrCreateProfile, getPlanPriceId, getStripe, hasPaidSubscriptionAccess, syncProfileFromSubscription } from '@/lib/billing';
 import type { BillingInterval, PlanId } from '@/lib/plans';
@@ -10,6 +11,70 @@ const PLAN_RANK: Record<PlanId, number> = {
   pro: 3,
   business: 4,
 };
+
+type SavedCard = { brand: string; last4: string };
+
+function cardSummary(value: unknown): SavedCard | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const candidate = value as Record<string, unknown>;
+  const nestedCard = candidate.card;
+  const card = nestedCard && typeof nestedCard === 'object'
+    ? nestedCard as Record<string, unknown>
+    : candidate;
+  return typeof card.brand === 'string' && typeof card.last4 === 'string'
+    ? { brand: card.brand, last4: card.last4 }
+    : null;
+}
+
+async function getSavedCard(
+  stripe: Stripe,
+  customerId: string,
+  subscription: Stripe.Subscription,
+): Promise<SavedCard | null> {
+  try {
+    const subscriptionPaymentMethod = subscription.default_payment_method;
+    if (subscriptionPaymentMethod && typeof subscriptionPaymentMethod !== 'string') {
+      return cardSummary(subscriptionPaymentMethod);
+    }
+
+    const customer = await stripe.customers.retrieve(customerId, {
+      expand: ['invoice_settings.default_payment_method', 'default_source'],
+    });
+    if (customer.deleted) return null;
+
+    const invoicePaymentMethod = customer.invoice_settings.default_payment_method;
+    if (invoicePaymentMethod && typeof invoicePaymentMethod !== 'string') {
+      return cardSummary(invoicePaymentMethod);
+    }
+
+    const paymentMethodId = typeof subscriptionPaymentMethod === 'string'
+      ? subscriptionPaymentMethod
+      : typeof invoicePaymentMethod === 'string'
+        ? invoicePaymentMethod
+        : null;
+    if (paymentMethodId?.startsWith('pm_')) {
+      return cardSummary(await stripe.paymentMethods.retrieve(paymentMethodId));
+    }
+
+    if (customer.default_source && typeof customer.default_source !== 'string') {
+      return cardSummary(customer.default_source);
+    }
+
+    const sourceId = typeof customer.default_source === 'string' ? customer.default_source : paymentMethodId;
+    if (sourceId?.startsWith('card_') || sourceId?.startsWith('src_')) {
+      return cardSummary(await stripe.customers.retrieveSource(customerId, sourceId));
+    }
+  } catch (error) {
+    // Card details are informational. A stale or legacy Stripe source must not
+    // prevent a customer from viewing or accepting a valid upgrade quote.
+    console.warn('Could not load the saved billing card for an upgrade quote', {
+      type: error instanceof Error ? error.name : 'unknown',
+    });
+  }
+
+  return null;
+}
 
 export async function POST(req: Request) {
   try {
@@ -82,17 +147,7 @@ export async function POST(req: Request) {
 
       const nextPriceId = getPlanPriceId(planId, interval);
       if (body.confirmUpgrade !== true) {
-        const customer = await stripe.customers.retrieve(customerId);
-        const subscriptionPaymentMethodId = typeof currentSubscription.default_payment_method === 'string'
-          ? currentSubscription.default_payment_method
-          : currentSubscription.default_payment_method?.id;
-        const customerPaymentMethod = customer.deleted ? null : customer.invoice_settings.default_payment_method;
-        const customerPaymentMethodId = typeof customerPaymentMethod === 'string'
-          ? customerPaymentMethod
-          : customerPaymentMethod?.id;
-        const paymentMethodId = subscriptionPaymentMethodId || customerPaymentMethodId;
-        const paymentMethod = paymentMethodId ? await stripe.paymentMethods.retrieve(paymentMethodId) : null;
-        const card = paymentMethod?.card;
+        const card = await getSavedCard(stripe, customerId, currentSubscription);
         const prorationDate = Math.floor(Date.now() / 1000);
         const preview = await stripe.invoices.createPreview({
           customer: customerId,
@@ -119,10 +174,7 @@ export async function POST(req: Request) {
           prorationDate,
           currentPlan: profile.subscription_plan,
           nextPlan: planId,
-          paymentMethod: card ? {
-            brand: card.brand,
-            last4: card.last4,
-          } : null,
+          paymentMethod: card,
         });
       }
 
