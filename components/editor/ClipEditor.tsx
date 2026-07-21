@@ -230,6 +230,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const editableClipBoundsRef = useRef<TimelineRange | null>(null);
   const cropDragRef = useRef<{ clientX: number; clientY: number; cropX: number; cropY: number } | null>(null);
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
@@ -343,6 +344,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setDebugInfo(null);
     setData(json);
     setSettings(json.settings);
+    editableClipBoundsRef.current = {
+      id: 'editable-clip-bounds',
+      start: Number(json.settings.clip_start_seconds ?? 0),
+      end: Number(json.settings.clip_end_seconds ?? 30),
+    };
     setBaseline(safeJson(json.settings));
     setCurrentTime(Number(json.settings.clip_start_seconds ?? 0));
     setTimelineViewport(buildTimelineViewport(
@@ -446,12 +452,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   useEffect(() => {
     if (clipStartSeconds === undefined || clipEndSeconds === undefined || dragMode) return;
-    const clipLength = Math.max(10, clipEndSeconds - clipStartSeconds);
-    const padding = Math.max(12, Math.min(45, clipLength * 0.65));
-    const start = Math.max(0, clipStartSeconds - padding);
-    const end = Math.min(sourceDuration, clipEndSeconds + padding);
-    setTimelineViewport(buildTimelineViewport(start, end));
-  }, [clipEndSeconds, clipStartSeconds, dragMode, sourceDuration]);
+    setTimelineViewport(buildTimelineViewport(clipStartSeconds, clipEndSeconds));
+  }, [clipEndSeconds, clipStartSeconds, dragMode]);
 
   useEffect(() => {
     if (!previewUrl || !timelineSampleTimes.length) return;
@@ -535,10 +537,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   function patchTimes(start: number, end: number) {
     if (!settings) return;
-    const maxEnd = Math.max(10, sourceDuration);
-    const minimumDuration = Math.min(3, maxEnd);
-    const safeStart = clamp(start, 0, Math.max(0, maxEnd - minimumDuration));
-    const safeEnd = clamp(end, safeStart + minimumDuration, Math.min(maxEnd, safeStart + 90));
+    const editableBounds = editableClipBoundsRef.current ?? {
+      id: 'editable-clip-bounds',
+      start: settings.clip_start_seconds,
+      end: settings.clip_end_seconds,
+    };
+    const minimumDuration = Math.min(3, Math.max(0.1, editableBounds.end - editableBounds.start));
+    const safeStart = clamp(start, editableBounds.start, Math.max(editableBounds.start, settings.clip_end_seconds - minimumDuration));
+    const safeEnd = clamp(end, safeStart + minimumDuration, editableBounds.end);
     patchSettings({ clip_start_seconds: safeStart, clip_end_seconds: safeEnd });
     if (currentTime < safeStart || currentTime > safeEnd) {
       seekAbsolute(safeStart);
