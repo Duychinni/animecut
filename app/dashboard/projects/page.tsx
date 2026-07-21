@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
+import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
@@ -50,6 +51,7 @@ export default function ProjectsPage() {
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const hasProcessingRef = useRef(true);
   const repairRanRef = useRef(false);
@@ -106,9 +108,6 @@ export default function ProjectsPage() {
   }, []);
 
   async function onDeleteProject(projectId: string) {
-    const confirmed = window.confirm('Delete this project? This will remove its transcript, clips, and exports.');
-    if (!confirmed) return;
-
     setDeletingId(projectId);
     setMsg('Deleting project...');
 
@@ -124,6 +123,7 @@ export default function ProjectsPage() {
       setMsg('Project deleted.');
     } finally {
       setDeletingId(null);
+      setDeleteTargetId(null);
     }
   }
 
@@ -213,7 +213,7 @@ export default function ProjectsPage() {
 
                 <button
                   type="button"
-                  onClick={() => onDeleteProject(p.id)}
+                  onClick={() => setDeleteTargetId(p.id)}
                   disabled={deletingId === p.id}
                   className="shrink-0 rounded-md border border-red-400/40 px-2.5 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -224,6 +224,14 @@ export default function ProjectsPage() {
           );
         })}
       </div>
+      {deleteTargetId ? (
+        <DeleteProjectModal
+          projectTitle={recentProjects.find((project) => project.id === deleteTargetId)?.title}
+          deleting={deletingId === deleteTargetId}
+          onCancel={() => setDeleteTargetId(null)}
+          onConfirm={() => void onDeleteProject(deleteTargetId)}
+        />
+      ) : null}
     </main>
   );
 }

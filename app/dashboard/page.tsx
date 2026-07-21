@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
+import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
 
 const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
 
@@ -126,6 +127,7 @@ export default function DashboardPage() {
   const [recentProjects, setRecentProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -403,9 +405,6 @@ export default function DashboardPage() {
   }
 
   async function onDeleteProject(projectId: string) {
-    const confirmed = window.confirm('Delete this project? This will remove its transcript, clips, and exports.');
-    if (!confirmed) return;
-
     setDeletingId(projectId);
     setMsg('Deleting project...');
 
@@ -421,6 +420,7 @@ export default function DashboardPage() {
       setMsg('Project deleted.');
     } finally {
       setDeletingId(null);
+      setDeleteTargetId(null);
       setOpenMenuId(null);
     }
   }
@@ -686,7 +686,7 @@ export default function DashboardPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => void onDeleteProject(p.id)}
+                            onClick={() => { setDeleteTargetId(p.id); setOpenMenuId(null); }}
                             disabled={deletingId === p.id}
                             className="block w-full rounded-md px-3 py-2 text-left text-sm text-red-200 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -702,6 +702,14 @@ export default function DashboardPage() {
           );
         })}
       </div>
+      {deleteTargetId ? (
+        <DeleteProjectModal
+          projectTitle={recentProjects.find((project) => project.id === deleteTargetId)?.source_title || recentProjects.find((project) => project.id === deleteTargetId)?.title}
+          deleting={deletingId === deleteTargetId}
+          onCancel={() => setDeleteTargetId(null)}
+          onConfirm={() => void onDeleteProject(deleteTargetId)}
+        />
+      ) : null}
     </main>
   );
 }
