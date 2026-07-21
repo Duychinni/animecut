@@ -3,6 +3,7 @@ import { deleteProjectAnalysisArtifacts } from '@/lib/media-intelligence/storage
 import { deleteR2Object, isR2Configured } from '@/lib/r2';
 import {
   deleteExportObjects,
+  deleteR2PreviewObjects,
   deleteRawMediaObjects,
   makeExportPreviewObjectPath,
   makeExportThumbnailObjectPath,
@@ -32,12 +33,16 @@ export async function deleteProjectAndArtifacts(project: ProjectDeletionRow) {
   const admin = createAdminClient();
   const { data: exportRows, error: exportError } = await admin
     .from('exports')
-    .select('id, output_storage_path')
+    .select('id, output_storage_path, preview_storage_provider, preview_360_storage_path, preview_540_storage_path')
     .eq('project_id', project.id);
   if (exportError) throw exportError;
 
   const rawPaths = unique([project.source_storage_path]);
   const exportPaths = derivedExportPaths(project.user_id, project.id, exportRows ?? []);
+  const r2PreviewPaths = unique((exportRows ?? []).flatMap((row) => [
+    row.preview_storage_provider === 'r2' ? row.preview_360_storage_path : null,
+    row.preview_storage_provider === 'r2' ? row.preview_540_storage_path : null,
+  ]));
 
   // Try both raw-media backends so changing UPLOAD_PROVIDER does not orphan
   // objects written by the previous provider.
@@ -46,6 +51,7 @@ export async function deleteProjectAndArtifacts(project: ProjectDeletionRow) {
     for (const objectPath of rawPaths) await deleteR2Object(objectPath);
   }
   await deleteExportObjects(exportPaths);
+  await deleteR2PreviewObjects(r2PreviewPaths);
   await deleteProjectAnalysisArtifacts(project.id);
 
   const { error: deleteError } = await admin

@@ -61,6 +61,7 @@ type RenderOpts = {
   debugClipId?: string;
   debugCandidateId?: string;
   editorialPlan?: Record<string, unknown> | null;
+  speakerTurns?: Array<{ speaker_key: string | null; start_sec: number; end_sec: number; confidence: number | null }>;
 };
 
 export async function extractVideoThumbnail(inputPath: string, outputPath: string, atSeconds = 5) {
@@ -275,24 +276,25 @@ export async function renderCutVideo(
  * render at multiple sizes, so use a 540x960 rendition that remains crisp when
  * opened larger while still being much lighter than the 1080x1920 master.
  */
-export async function renderPlaybackPreview(inputPath: string, outputPath: string) {
+export async function renderPlaybackPreview(inputPath: string, outputPath: string, quality: '360p' | '540p' = '540p') {
+  const constrained = quality === '360p';
   await runFfmpeg([
     '-y',
     '-i', inputPath,
     '-map', '0:v:0',
     '-map', '0:a:0?',
-    '-vf', 'scale=540:960:flags=lanczos+accurate_rnd+full_chroma_int,fps=30',
+    '-vf', `scale=${constrained ? '360:640' : '540:960'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '23',
-    '-maxrate', '2500k',
-    '-bufsize', '5000k',
+    '-crf', constrained ? '25' : '23',
+    '-maxrate', constrained ? '950k' : '2500k',
+    '-bufsize', constrained ? '1900k' : '5000k',
     '-pix_fmt', 'yuv420p',
-    '-g', '60',
-    '-keyint_min', '30',
+    '-g', constrained ? '48' : '60',
+    '-keyint_min', constrained ? '24' : '30',
     '-sc_threshold', '0',
     '-c:a', 'aac',
-    '-b:a', '128k',
+    '-b:a', constrained ? '80k' : '128k',
     '-ar', '48000',
     '-movflags', '+faststart',
     outputPath,
@@ -931,11 +933,18 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
 
   try {
     let editorialPlanPath: string | null = null;
+    let speakerTurnsPath: string | null = null;
     if (opts.editorialPlan) {
       const plannerDir = path.join(/* turbopackIgnore: true */ process.cwd(), 'tmp', 'editorial-plans');
       await mkdir(plannerDir, { recursive: true });
       editorialPlanPath = path.join(plannerDir, `${opts.debugCandidateId ?? opts.debugClipId ?? 'clip'}.json`);
       await writeFile(editorialPlanPath, JSON.stringify(opts.editorialPlan, null, 2), 'utf8');
+    }
+    if (opts.speakerTurns?.length) {
+      const plannerDir = path.join(/* turbopackIgnore: true */ process.cwd(), 'tmp', 'editorial-plans');
+      await mkdir(plannerDir, { recursive: true });
+      speakerTurnsPath = path.join(plannerDir, `${opts.debugCandidateId ?? opts.debugClipId ?? 'clip'}.speaker-turns.json`);
+      await writeFile(speakerTurnsPath, JSON.stringify(opts.speakerTurns, null, 2), 'utf8');
     }
     let script = resolveSmartReframeScript();
     let probe = await runJsonCommand(resolveSmartReframePython(), [
@@ -944,7 +953,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
       String(opts.startSec),
       String(opts.endSec),
       process.env.SMART_REFRAME_ANALYSIS_FPS || '4',
-      ...(editorialPlanPath ? [editorialPlanPath] : []),
+      ...(editorialPlanPath || speakerTurnsPath ? [editorialPlanPath ?? ''] : []),
+      ...(speakerTurnsPath ? [speakerTurnsPath] : []),
     ]);
     let raw = probe.json as {
       ok?: boolean;

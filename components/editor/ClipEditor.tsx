@@ -247,6 +247,36 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [activeTool, setActiveTool] = useState<EditorTool>('trim');
   const [captionInspectorTab, setCaptionInspectorTab] = useState<CaptionInspectorTab>('text');
   const [cropDragging, setCropDragging] = useState(false);
+  const [framingIssue, setFramingIssue] = useState('wrong_speaker');
+  const [sendingFramingFeedback, setSendingFramingFeedback] = useState(false);
+
+  async function sendFramingFeedback(rating: 'good' | 'needs_adjustment') {
+    if (!data || !settings || sendingFramingFeedback) return;
+    setSendingFramingFeedback(true);
+    try {
+      const response = await fetch(`/api/exports/${data.clip.id}/framing-feedback`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          rating,
+          issueType: rating === 'needs_adjustment' ? framingIssue : null,
+          playheadSeconds: currentTime,
+          correction: {
+            framing_mode: settings.framing_mode,
+            crop_x: settings.crop_x,
+            crop_y: settings.crop_y,
+            zoom: settings.zoom,
+          },
+        }),
+      });
+      if (!response.ok) throw new Error('Feedback request failed');
+      setToast(rating === 'good' ? 'Framing marked as good' : 'Correction saved for framing improvements');
+    } catch {
+      setToast('Could not save framing feedback');
+    } finally {
+      setSendingFramingFeedback(false);
+    }
+  }
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
   const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
@@ -1233,6 +1263,22 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => patchSettings({ framing_mode: 'fit', zoom: 1 })} className="rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Fit</button>
                   <button type="button" onClick={resetCrop} className="rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset crop</button>
+                </div>
+                <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-3">
+                  <p className="text-xs font-bold text-white">Help improve smart framing</p>
+                  <select value={framingIssue} onChange={(event) => setFramingIssue(event.target.value)} className="w-full rounded-lg border border-white/10 bg-[#181b21] px-3 py-2 text-xs text-white">
+                    <option value="wrong_speaker">Wrong speaker</option>
+                    <option value="subject_cut_off">Subject cut off</option>
+                    <option value="bad_split">Bad split screen</option>
+                    <option value="too_much_motion">Too much camera motion</option>
+                    <option value="missed_context">Missed visual context</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" disabled={sendingFramingFeedback} onClick={() => void sendFramingFeedback('good')} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Looks good</button>
+                    <button type="button" disabled={sendingFramingFeedback} onClick={() => void sendFramingFeedback('needs_adjustment')} className="rounded-lg bg-cyan-300 px-3 py-2 text-xs font-black text-black hover:bg-cyan-200">Save correction</button>
+                  </div>
+                  <p className="text-[11px] leading-4 text-white/40">Drag the frame first, then save the correction. It is recorded with the playhead position.</p>
                 </div>
               </div>
             ) : activeTool === 'trim' ? (

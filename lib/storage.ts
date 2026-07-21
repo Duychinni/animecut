@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createSignedR2GetUrl, getUploadProvider, isR2Configured, r2ObjectExists } from '@/lib/r2';
+import { createR2PublicUrl, createSignedR2GetUrl, deleteR2Object, deleteR2PreviewObject, getR2Config, getUploadProvider, isR2Configured, r2ObjectExists, r2PreviewObjectExists, uploadR2PreviewObject } from '@/lib/r2';
 
 const RAW_BUCKET = 'raw-media';
 const EXPORT_BUCKET = 'exports';
@@ -28,6 +28,10 @@ export function makeExportObjectPath(userId: string, projectId: string, exportId
 
 export function makeExportPreviewObjectPath(userId: string, projectId: string, exportId: string) {
   return `${userId}/${projectId}/${exportId}.preview.mp4`;
+}
+
+export function makeAdaptiveExportPreviewObjectPath(userId: string, projectId: string, exportId: string, quality: '360p' | '540p', version = 'v1') {
+  return `previews/${userId}/${projectId}/${exportId}/${version}.${quality}.mp4`;
 }
 
 export function makeExportThumbnailObjectPath(userId: string, projectId: string, exportId: string) {
@@ -60,6 +64,10 @@ export async function uploadExportObject(objectPath: string, bytes: Buffer) {
 }
 
 export async function uploadExportPreviewObject(objectPath: string, bytes: Buffer) {
+  if (isR2Configured() && getR2Config()?.publicBaseUrl) {
+    await uploadR2PreviewObject(objectPath, bytes, 'video/mp4');
+    return { provider: 'r2' as const, path: objectPath, url: createR2PublicUrl(objectPath) };
+  }
   const admin = createAdminClient();
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
@@ -67,6 +75,21 @@ export async function uploadExportPreviewObject(objectPath: string, bytes: Buffe
     cacheControl: '86400',
   });
   if (error) throw error;
+  return { provider: 'supabase' as const, path: objectPath, url: null };
+}
+
+export async function exportPreviewObjectExists(provider: 'r2' | 'supabase', objectPath: string) {
+  if (provider === 'r2') return isR2Configured() ? r2PreviewObjectExists(objectPath) : false;
+  const directory = objectPath.split('/').slice(0, -1).join('/');
+  const name = objectPath.split('/').pop();
+  const admin = createAdminClient();
+  const { data } = await admin.storage.from(EXPORT_BUCKET).list(directory, { search: name, limit: 1 });
+  return Boolean(name && data?.some((item) => item.name === name));
+}
+
+export async function createExportPreviewUrl(provider: 'r2' | 'supabase', objectPath: string, expiresIn = 60 * 60) {
+  if (provider === 'r2') return createR2PublicUrl(objectPath) || createSignedR2GetUrl(objectPath, expiresIn);
+  return createExportSignedUrl(objectPath, expiresIn);
 }
 
 export async function uploadExportThumbnailObject(objectPath: string, bytes: Buffer) {
@@ -239,4 +262,9 @@ export async function deleteRawMediaObjects(objectPaths: string[]) {
 
 export async function deleteExportObjects(objectPaths: string[]) {
   await removeSupabaseObjects(EXPORT_BUCKET, objectPaths);
+}
+
+export async function deleteR2PreviewObjects(objectPaths: string[]) {
+  if (!isR2Configured()) return;
+  await Promise.all([...new Set(objectPaths.filter(Boolean))].map((objectPath) => deleteR2PreviewObject(objectPath)));
 }

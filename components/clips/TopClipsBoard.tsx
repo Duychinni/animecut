@@ -15,6 +15,10 @@ type ClipItem = {
   errorMessage: string | null;
   signedUrl: string | null;
   previewUrl?: string | null;
+  preview360Url?: string | null;
+  preview540Url?: string | null;
+  preview360SizeBytes?: number | null;
+  preview540SizeBytes?: number | null;
   posterUrl?: string | null;
   startSec: number | null;
   endSec: number | null;
@@ -369,6 +373,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [downloadedShareClipId, setDownloadedShareClipId] = useState<string | null>(null);
   const [shareDownloadError, setShareDownloadError] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
+  const [previewQuality, setPreviewQuality] = useState<'360p' | '540p'>('540p');
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
   const [captionPreviewData, setCaptionPreviewData] = useState<CaptionPreviewData | null>(null);
@@ -398,6 +403,51 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const stableMediaUrlsRef = useRef(new Map<string, string>());
   const previousEditStatusesRef = useRef(new Map<string, string | null | undefined>());
   const refreshMediaOnNextUrlRef = useRef(new Set<string>());
+  const telemetryRef = useRef(new Map<string, { sessionId: string; requestedAt: number; startupMs: number | null; bufferingCount: number; failed: boolean }>());
+
+  function playbackTelemetry(clip: ClipItem, event: 'request' | 'playing' | 'buffering' | 'failed') {
+    let metric = telemetryRef.current.get(clip.exportId);
+    if (!metric || event === 'request') {
+      metric = { sessionId: crypto.randomUUID(), requestedAt: performance.now(), startupMs: null, bufferingCount: 0, failed: false };
+      telemetryRef.current.set(clip.exportId, metric);
+    }
+    if (event === 'playing' && metric.startupMs == null) metric.startupMs = Math.max(0, Math.round(performance.now() - metric.requestedAt));
+    if (event === 'buffering') metric.bufferingCount += 1;
+    if (event === 'failed') metric.failed = true;
+    if (event === 'request') return;
+    const connection = (navigator as Navigator & { connection?: { type?: string; effectiveType?: string; downlink?: number } }).connection;
+    const quality = clip.preview360Url || clip.preview540Url ? previewQuality : clip.previewUrl ? '540p' : 'master';
+    const size = quality === '360p' ? clip.preview360SizeBytes : quality === '540p' ? clip.preview540SizeBytes : null;
+    void fetch('/api/playback', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        sessionId: metric.sessionId,
+        exportId: clip.exportId,
+        previewQuality: quality,
+        startupMs: metric.startupMs,
+        bufferingCount: metric.bufferingCount,
+        failed: metric.failed,
+        errorCode: metric.failed ? 'media_element_error' : null,
+        connectionType: connection?.type ?? null,
+        effectiveType: connection?.effectiveType ?? null,
+        downlinkMbps: connection?.downlink ?? null,
+        clipSizeBytes: size ?? null,
+      }),
+    }).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; downlink?: number } }).connection;
+    const constrained = Boolean(connection?.saveData)
+      || /(^|-)2g|3g/i.test(connection?.effectiveType ?? '')
+      || (typeof connection?.downlink === 'number' && connection.downlink < 2)
+      || window.matchMedia('(max-width: 520px)').matches;
+    const nextQuality = constrained ? '360p' : '540p';
+    stableMediaUrlsRef.current.clear();
+    setPreviewQuality(nextQuality);
+  }, []);
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
     setPlayback((prev) => ({
@@ -561,6 +611,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   async function playVideo(id: string) {
     const video = videoRefs.current[id];
     if (!video || !video.paused) return;
+    const clip = clips.find((item) => item.exportId === id);
+    if (clip && !telemetryRef.current.has(id)) playbackTelemetry(clip, 'request');
 
     intendedPlayingIdRef.current = id;
     const requestId = (playRequestsRef.current[id] ?? 0) + 1;
@@ -866,7 +918,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }, [visible]);
 
   function stableMediaUrl(clip: ClipItem) {
-    const nextUrl = clip.previewUrl ?? clip.signedUrl ?? null;
+    const adaptiveUrl = previewQuality === '360p'
+      ? clip.preview360Url ?? clip.preview540Url
+      : clip.preview540Url ?? clip.preview360Url;
+    const nextUrl = adaptiveUrl ?? clip.previewUrl ?? clip.signedUrl ?? null;
     const currentUrl = stableMediaUrlsRef.current.get(clip.exportId) ?? null;
     const previousEditStatus = previousEditStatusesRef.current.get(clip.exportId);
     const editFinished = previousEditStatus === 'rendering' && clip.editStatus !== 'rendering';
@@ -1156,15 +1211,20 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             window.clearTimeout(playRecoveryTimersRef.current[clip.exportId]);
                             updatePlayback(clip.exportId, { paused: false, buffering: false });
                           }}
-                          onPlaying={() => updatePlayback(clip.exportId, { paused: false, buffering: false })}
+                          onPlaying={() => {
+                            playbackTelemetry(clip, 'playing');
+                            updatePlayback(clip.exportId, { paused: false, buffering: false });
+                          }}
                           onWaiting={() => {
                             if (intendedPlayingIdRef.current === clip.exportId) {
+                              playbackTelemetry(clip, 'buffering');
                               updatePlayback(clip.exportId, { buffering: true });
                               scheduleStallRecovery(clip.exportId);
                             }
                           }}
                           onStalled={() => {
                             if (intendedPlayingIdRef.current === clip.exportId) {
+                              playbackTelemetry(clip, 'buffering');
                               updatePlayback(clip.exportId, { buffering: true });
                               scheduleStallRecovery(clip.exportId);
                             }
@@ -1179,6 +1239,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             updatePlayback(clip.exportId, { paused: true, buffering: false });
                           }}
                           onError={() => {
+                            playbackTelemetry(clip, 'failed');
                             finishPreviewWarm(clip.exportId);
                             cancelStallRecovery(clip.exportId);
                             const video = videoRefs.current[clip.exportId];

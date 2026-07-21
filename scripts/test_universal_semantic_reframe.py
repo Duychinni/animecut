@@ -70,6 +70,14 @@ def timeline(samples, duration=None):
     )
 
 
+def speaker_centering_error(result, expected_centers):
+    """Mean normalized distance between the crop center and expected speaker."""
+    observed = [point['cropCenterX'] for segment in result for point in segment.get('points', [])]
+    assert observed and expected_centers
+    count = min(len(observed), len(expected_centers))
+    return sum(abs(observed[i] - expected_centers[i]) / W for i in range(count)) / count
+
+
 def test_silent_far_left():
     crop = portrait_crop_for_subject((40, 130, 420, 850), W, H, 'body')
     assert crop['cx'] < W * 0.32, crop
@@ -123,6 +131,33 @@ def test_alternating_speakers_cut_identity():
     result = timeline(samples)
     singles = [segment for segment in result if segment['mode'] == 'single']
     assert {segment['subjectStableId'] for segment in singles} >= {'face:1', 'face:2'}, result
+    expected = [left['cx']] * 8 + [right['cx']] * 8
+    assert speaker_centering_error(result, expected) < 0.12, result
+
+
+def test_difficult_asymmetric_podcast_centering_accuracy():
+    host = box(40, 115, 310, 760, 1, 0.92)
+    guest = box(1510, 175, 240, 620, 2, 0.90)
+    samples = []
+    expected = []
+    for index in range(24):
+        active = 1 if index < 7 or 15 <= index < 20 else 2
+        active_box = host if active == 1 else guest
+        samples.append(sample(index * 0.25, subject('face', active_box, f'face:{active}', 0.9), [host, guest], active, 0.9, 0.5))
+        expected.append(active_box['cx'])
+    result = timeline(samples)
+    assert speaker_centering_error(result, expected) < 0.14, result
+
+
+def test_reaction_face_does_not_steal_active_speaker():
+    speaker = box(180, 130, 340, 760, 1, 0.94)
+    large_reactor = box(1160, 60, 650, 940, 2, 0.18)
+    samples = [
+        sample(i * 0.25, subject('face', speaker, 'face:1', 0.94), [speaker, large_reactor], 1, 0.94, 0.62)
+        for i in range(16)
+    ]
+    result = timeline(samples)
+    assert speaker_centering_error(result, [speaker['cx']] * 16) < 0.12, result
 
 
 def fixed_two_region_fixture():

@@ -1655,11 +1655,18 @@ def main():
     start_sec = float(sys.argv[2])
     end_sec = float(sys.argv[3])
     editorial_plan = None
+    diarized_turns = []
     if len(sys.argv) >= 6 and sys.argv[5]:
         try:
             editorial_plan = json.loads(Path(sys.argv[5]).read_text(encoding='utf-8'))
         except Exception as exc:
             fail(2, f'editorial_plan_invalid:{exc}')
+    if len(sys.argv) >= 7 and sys.argv[6]:
+        try:
+            raw_turns = json.loads(Path(sys.argv[6]).read_text(encoding='utf-8'))
+            diarized_turns = raw_turns if isinstance(raw_turns, list) else []
+        except Exception as exc:
+            fail(2, f'speaker_turns_invalid:{exc}')
 
     try:
         import cv2  # type: ignore
@@ -2169,6 +2176,70 @@ def main():
         item for item in detected_faces
         if 0.0 <= float(item.get('timestamp', -1.0)) <= duration
     ]
+
+    # Audio diarization names speakers but cannot identify a face by itself.
+    # Associate each diarized voice with the face track showing the strongest
+    # mouth motion during that speaker's turns, then use that evidence to
+    # correct ambiguous visual-only selections. This deliberately keeps mouth
+    # motion as the identity bridge instead of trusting an unverified model.
+    diarization_track_scores = {}
+    for frame in detected_faces:
+        absolute_t = start_sec + float(frame.get('timestamp', 0.0))
+        audio_activity = max(0.15, float(frame.get('audio_activity', 0.0)))
+        matching_turns = [
+            turn for turn in diarized_turns
+            if turn.get('speaker_key')
+            and float(turn.get('start_sec', 0.0)) <= absolute_t <= float(turn.get('end_sec', 0.0))
+        ]
+        for turn in matching_turns:
+            speaker_key = str(turn.get('speaker_key'))
+            confidence = clamp(float(turn.get('confidence') or 0.65), 0.2, 1.0)
+            speaker_scores = diarization_track_scores.setdefault(speaker_key, {})
+            for face in frame.get('faces', []):
+                track_id = face.get('track_id')
+                if track_id is None:
+                    continue
+                visual_score = float(face.get('mouth_motion', 0.0)) * audio_activity
+                visual_score += 0.35 * float(face.get('active_speaker_confidence', 0.0))
+                speaker_scores[int(track_id)] = speaker_scores.get(int(track_id), 0.0) + visual_score * confidence
+
+    diarization_track_map = {}
+    for speaker_key, scores in diarization_track_scores.items():
+        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        if ranked and ranked[0][1] > 0.01:
+            runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
+            if ranked[0][1] >= runner_up * 1.12:
+                diarization_track_map[speaker_key] = ranked[0][0]
+
+    for frame in detected_faces:
+        absolute_t = start_sec + float(frame.get('timestamp', 0.0))
+        active_turn = next((
+            turn for turn in diarized_turns
+            if turn.get('speaker_key') in diarization_track_map
+            and float(turn.get('start_sec', 0.0)) <= absolute_t <= float(turn.get('end_sec', 0.0))
+            and float(turn.get('confidence') or 0.65) >= 0.45
+        ), None)
+        if not active_turn:
+            continue
+        track_id = diarization_track_map[str(active_turn.get('speaker_key'))]
+        active_face = next((face for face in frame.get('faces', []) if face.get('track_id') == track_id), None)
+        if active_face is None:
+            continue
+        frame['active_track_id'] = track_id
+        frame['diarized_speaker_key'] = active_turn.get('speaker_key')
+        frame['diarization_fused'] = True
+        selected_box = {key: float(active_face[key]) for key in ('x', 'y', 'w', 'h')}
+        frame['selected_box'] = selected_box
+        frame['chosen_center_x'] = float(active_face.get('cx', selected_box['x'] + selected_box['w'] / 2.0))
+        frame['chosen_center_y'] = float(active_face.get('cy', selected_box['y'] + selected_box['h'] / 2.0))
+        nearest_point = min(points, key=lambda point: abs(float(point.get('t', 0.0)) - float(frame.get('timestamp', 0.0))), default=None)
+        if nearest_point is not None:
+            nearest_point['active_track_id'] = track_id
+            nearest_point['cx'] = frame['chosen_center_x']
+            nearest_point['cy'] = frame['chosen_center_y']
+            nearest_point['nx'] = clamp(frame['chosen_center_x'] / max(source_w, 1.0), 0.0, 1.0)
+            nearest_point['ny'] = clamp(frame['chosen_center_y'] / max(source_h, 1.0), 0.0, 1.0)
+            nearest_point['selection_reason'] = 'diarization_mouth_motion_fusion'
     selected_subject_boxes = [
         (
             float(box['x']),

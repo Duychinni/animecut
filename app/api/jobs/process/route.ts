@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { extractBestVideoThumbnail, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
-import { createExportSignedUrl, makeExportObjectPath, makeExportPreviewObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
+import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
@@ -820,6 +820,13 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   };
 
   const inputPath = await resolveProjectVideoSource(bundle.project);
+  const { data: speakerTurns } = await supabase
+    .from('speaker_turns')
+    .select('speaker_key, start_sec, end_sec, confidence')
+    .eq('project_id', bundle.project_id)
+    .lt('start_sec', bundle.clip.end_sec)
+    .gt('end_sec', bundle.clip.start_sec)
+    .order('start_sec', { ascending: true });
 
   const exportDir = path.join(process.cwd(), 'tmp', 'exports', bundle.project_id);
   await mkdir(exportDir, { recursive: true });
@@ -975,6 +982,12 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
     editorialPlan: bundle.clip.editorial_plan,
+    speakerTurns: (speakerTurns ?? []).map((turn) => ({
+      speaker_key: typeof turn.speaker_key === 'string' ? turn.speaker_key : null,
+      start_sec: Number(turn.start_sec),
+      end_sec: Number(turn.end_sec),
+      confidence: turn.confidence == null ? null : Number(turn.confidence),
+    })),
     fastRender: options?.fast_edit_render === true,
   });
 
@@ -987,11 +1000,23 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   // A completed export must include a browser-optimized preview as well as the
   // full-quality master. Otherwise the project can look ready while its cards
   // still have to stream multiple large 1080x1920 files from object storage.
-  const previewPath = path.join(exportDir, `${bundle.id}.preview.mp4`);
-  await renderPlaybackPreview(outPath, previewPath);
-  const previewBytes = await readFile(previewPath);
-  const previewObjectPath = makeExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
-  await uploadExportPreviewObject(previewObjectPath, previewBytes);
+  const preview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
+  const preview540Path = path.join(exportDir, `${bundle.id}.540p.preview.mp4`);
+  await Promise.all([
+    renderPlaybackPreview(outPath, preview360Path, '360p'),
+    renderPlaybackPreview(outPath, preview540Path, '540p'),
+  ]);
+  const [preview360Bytes, preview540Bytes] = await Promise.all([
+    readFile(preview360Path),
+    readFile(preview540Path),
+  ]);
+  const previewVersion = `r${Date.now()}`;
+  const preview360ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '360p', previewVersion);
+  const preview540ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '540p', previewVersion);
+  const [preview360Upload, preview540Upload] = await Promise.all([
+    uploadExportPreviewObject(preview360ObjectPath, preview360Bytes),
+    uploadExportPreviewObject(preview540ObjectPath, preview540Bytes),
+  ]);
 
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
@@ -1016,6 +1041,11 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     .update({
       status: 'done',
       output_storage_path: objectPath,
+      preview_storage_provider: preview540Upload.provider,
+      preview_360_storage_path: preview360Upload.path,
+      preview_540_storage_path: preview540Upload.path,
+      preview_360_size_bytes: preview360Bytes.byteLength,
+      preview_540_size_bytes: preview540Bytes.byteLength,
       hook_text: hookText,
       error_message: null,
       edit_status: useEditSettings ? 'rendered' : 'idle',

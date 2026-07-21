@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
@@ -180,6 +181,40 @@ export async function deleteR2Object(key: string) {
   await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }));
 }
 
+function previewBucket() {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  return process.env.R2_PREVIEW_BUCKET?.trim() || cfg.bucket;
+}
+
+export async function deleteR2PreviewObject(key: string) {
+  await getR2Client().send(new DeleteObjectCommand({ Bucket: previewBucket(), Key: key }));
+}
+
+export async function uploadR2Object(key: string, bytes: Buffer, contentType: string, cacheControl = 'public, max-age=31536000, immutable') {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  await getR2Client().send(new PutObjectCommand({
+    Bucket: cfg.bucket,
+    Key: key,
+    Body: bytes,
+    ContentType: contentType,
+    CacheControl: cacheControl,
+  }));
+}
+
+export async function uploadR2PreviewObject(key: string, bytes: Buffer, contentType: string, cacheControl = 'public, max-age=31536000, immutable') {
+  await getR2Client().send(new PutObjectCommand({
+    Bucket: previewBucket(), Key: key, Body: bytes, ContentType: contentType, CacheControl: cacheControl,
+  }));
+}
+
+export function createR2PublicUrl(key: string) {
+  const cfg = getR2Config();
+  if (!cfg?.publicBaseUrl) return null;
+  return `${cfg.publicBaseUrl.replace(/\/$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export async function r2ObjectExists(key: string) {
   const cfg = getR2Config();
   if (!cfg) throw new Error('R2 is not configured');
@@ -187,6 +222,15 @@ export async function r2ObjectExists(key: string) {
 
   try {
     await client.send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function r2PreviewObjectExists(key: string) {
+  try {
+    await getR2Client().send(new HeadObjectCommand({ Bucket: previewBucket(), Key: key }));
     return true;
   } catch {
     return false;

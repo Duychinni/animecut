@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
-import { createExportSignedUrls, findExistingExportObjectPaths, makeExportPreviewObjectPath } from '@/lib/storage';
+import { createExportPreviewUrl, createExportSignedUrls, findExistingExportObjectPaths, makeExportPreviewObjectPath } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -13,6 +13,11 @@ type ExportRow = {
   clip_candidate_id: string | null;
   status: string;
   output_storage_path: string | null;
+  preview_storage_provider?: 'r2' | 'supabase' | null;
+  preview_360_storage_path?: string | null;
+  preview_540_storage_path?: string | null;
+  preview_360_size_bytes?: number | null;
+  preview_540_size_bytes?: number | null;
   error_message: string | null;
   created_at: string;
   updated_at?: string | null;
@@ -108,7 +113,7 @@ function isMissingEditColumnError(error: unknown) {
 async function loadProjectExports(supabase: SupabaseServerClient, projectId: string): Promise<ExportRow[]> {
   const withEditFields = await supabase
     .from('exports')
-    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id, hook_text_enabled, hook_text, clip_edit_settings, edit_status')
+    .select('id, clip_candidate_id, status, output_storage_path, error_message, created_at, updated_at, caption_preset_id, hook_text_enabled, hook_text, clip_edit_settings, edit_status, preview_storage_provider, preview_360_storage_path, preview_540_storage_path, preview_360_size_bytes, preview_540_size_bytes')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -191,14 +196,20 @@ export default async function ProjectDetailPage({
   const signablePaths = [...requiredOutputPaths, ...existingOptionalPaths];
   const signedUrls = await createExportSignedUrls(signablePaths, 60 * 60).catch(() => new Map<string, string>());
 
-  const exportItems = exportRows.map((row) => {
+  const exportItems = await Promise.all(exportRows.map(async (row) => {
     const signedUrl = row.output_storage_path ? signedUrls.get(row.output_storage_path) ?? null : null;
     const posterPath = row.output_storage_path ? getExportPosterPath(row.output_storage_path) : null;
     const posterUrl = posterPath ? signedUrls.get(posterPath) ?? null : null;
     const previewPath = row.output_storage_path && projectUserId
       ? makeExportPreviewObjectPath(projectUserId, projectId, String(row.id))
       : null;
-    const previewUrl = previewPath ? signedUrls.get(previewPath) ?? null : null;
+    const legacyPreviewUrl = previewPath ? signedUrls.get(previewPath) ?? null : null;
+    const previewProvider = row.preview_storage_provider ?? 'supabase';
+    const [preview360Url, preview540Url] = await Promise.all([
+      row.preview_360_storage_path ? createExportPreviewUrl(previewProvider, row.preview_360_storage_path).catch(() => null) : Promise.resolve(null),
+      row.preview_540_storage_path ? createExportPreviewUrl(previewProvider, row.preview_540_storage_path).catch(() => null) : Promise.resolve(null),
+    ]);
+    const previewUrl = preview540Url ?? preview360Url ?? legacyPreviewUrl;
 
       const candidate = row.clip_candidate_id ? candidatesById.get(String(row.clip_candidate_id)) : undefined;
 
@@ -216,6 +227,10 @@ export default async function ProjectDetailPage({
         ...row,
         signedUrl,
         previewUrl,
+        preview360Url,
+        preview540Url,
+        preview360SizeBytes: row.preview_360_size_bytes ?? null,
+        preview540SizeBytes: row.preview_540_size_bytes ?? null,
         posterUrl,
         title: candidate?.title ?? 'Untitled clip',
         score,
@@ -226,7 +241,7 @@ export default async function ProjectDetailPage({
         hookStrength: candidate ? Number(candidate.hook_strength) : null,
         rank: candidate?.rank ?? null,
       };
-  });
+  }));
 
   const filteredExportItems = exportItems
     .filter((row, index, arr) => {
@@ -353,6 +368,10 @@ export default async function ProjectDetailPage({
               errorMessage: row.error_message,
               signedUrl: row.signedUrl,
               previewUrl: row.previewUrl,
+              preview360Url: row.preview360Url,
+              preview540Url: row.preview540Url,
+              preview360SizeBytes: row.preview360SizeBytes,
+              preview540SizeBytes: row.preview540SizeBytes,
               posterUrl: row.posterUrl,
               startSec: row.startSec,
               endSec: row.endSec,
