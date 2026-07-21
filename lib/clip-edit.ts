@@ -20,6 +20,8 @@ export type ClipEditSettings = {
   caption_text_color: string;
   caption_highlight_color: string;
   caption_position: 'upper' | 'center' | 'lower-third';
+  caption_x: number;
+  caption_y: number;
   caption_word_highlight: boolean;
   caption_background: boolean;
   caption_max_words: number;
@@ -141,6 +143,8 @@ export function buildDefaultClipEditSettings(params: {
     caption_text_color: preset.captionTextColor,
     caption_highlight_color: preset.captionHighlightColor,
     caption_position: normalizeCaptionPosition(preset.captionPosition),
+    caption_x: 0.5,
+    caption_y: 0.8,
     caption_word_highlight: preset.captionWordHighlight,
     caption_background: preset.captionBackgroundBox,
     caption_max_words: preset.captionMaxWords,
@@ -172,6 +176,8 @@ export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettin
     caption_text_color: normalizeColor(row.caption_text_color, defaults.caption_text_color),
     caption_highlight_color: normalizeColor(row.caption_highlight_color, defaults.caption_highlight_color),
     caption_position: normalizeCaptionPosition(row.caption_position ?? defaults.caption_position),
+    caption_x: clamp(finiteNumber(row.caption_x, defaults.caption_x), 0.08, 0.92),
+    caption_y: clamp(finiteNumber(row.caption_y, defaults.caption_y), 0.08, 0.92),
     caption_word_highlight: row.caption_word_highlight !== false,
     caption_background: row.caption_background === true,
     caption_max_words: Math.round(clamp(finiteNumber(row.caption_max_words, defaults.caption_max_words), 1, 6)),

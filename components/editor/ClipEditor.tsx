@@ -208,12 +208,6 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
   };
 }
 
-function captionPositionClass(position: ClipEditSettings['caption_position']) {
-  if (position === 'upper') return 'top-[16%]';
-  if (position === 'center') return 'top-1/2 -translate-y-1/2';
-  return 'bottom-[15%]';
-}
-
 function cropPreviewStyle(settings: ClipEditSettings) {
   const zoom = settings.framing_mode === 'fit' ? 1 : settings.zoom;
   const x = settings.framing_mode === 'center' || settings.framing_mode === 'fit' ? 0.5 : settings.crop_x;
@@ -1016,7 +1010,10 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               ) : null}
 
               {previewUsesSource && settings.captions_enabled && activeCaptionText ? (
-                <div className={`pointer-events-none absolute left-4 right-4 z-20 text-center ${captionPositionClass(settings.caption_position)}`}>
+                <div
+                  className="pointer-events-none absolute z-20 max-w-[88%] text-center"
+                  style={{ left: `${settings.caption_x * 100}%`, top: `${settings.caption_y * 100}%`, transform: 'translate(-50%, -50%)' }}
+                >
                   <span
                     style={captionPreviewStyle(activePreset, settings)}
                     className={`inline-block max-w-full break-words ${settings.caption_background ? 'rounded-lg px-3 py-1' : ''}`}
@@ -1208,7 +1205,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     <button
                       key={position}
                       type="button"
-                      onClick={() => patchSettings({ caption_position: position })}
+                      onClick={() => patchSettings({
+                        caption_position: position,
+                        caption_x: 0.5,
+                        caption_y: position === 'upper' ? 0.18 : position === 'center' ? 0.5 : 0.8,
+                      })}
                       className={`rounded-lg border px-2 py-2.5 text-xs font-bold transition ${settings.caption_position === position ? 'border-cyan-300/70 bg-cyan-300/15 text-cyan-100' : 'border-white/10 text-white/55 hover:bg-white/[0.06] hover:text-white'}`}
                     >
                       {label}

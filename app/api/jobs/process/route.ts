@@ -915,6 +915,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
         captionTextColor: editSettings.caption_text_color,
         captionHighlightColor: editSettings.caption_highlight_color,
         captionPosition: editSettings.caption_position,
+        captionX: editSettings.caption_x,
+        captionY: editSettings.caption_y,
         captionBackgroundBox: editSettings.caption_background,
         captionWordHighlight: editSettings.caption_word_highlight,
         captionMaxWords: editSettings.caption_max_words,

@@ -25,6 +25,8 @@ type StyledCaptionPreset = {
   captionShadow?: string;
   captionBackgroundBox?: boolean;
   captionPosition?: string;
+  captionX?: number;
+  captionY?: number;
   captionWordHighlight?: boolean;
   captionMaxWords?: number;
 };
@@ -205,6 +207,8 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
     wordHighlight: preset?.captionWordHighlight !== false,
     playResX: exportSize.width,
     playResY: exportSize.height,
+    positionX: Math.round(Math.max(0.08, Math.min(0.92, preset?.captionX ?? 0.5)) * exportSize.width),
+    positionY: Math.round(Math.max(0.08, Math.min(0.92, preset?.captionY ?? 0.8)) * exportSize.height),
   };
 }
 
@@ -243,6 +247,7 @@ function buildHighlightedLine(
 
 export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSec: number, preset?: StyledCaptionPreset) {
   const style = resolveAssStyle(preset);
+  const positionOverride = `{\\an5\\pos(${style.positionX},${style.positionY})}`;
   const sliced = segments
     .map((seg) => ({
       start: Number(seg.start ?? 0),
@@ -308,7 +313,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
         const s = Math.max(localStart, intervals[windowStart]?.start ?? localStart);
         const e = Math.min(localEnd, intervals[windowEnd - 1]?.end ?? localEnd);
         const text = lineWords.join(' ');
-        if (text && e - s >= 0.05) events.push({ start: s, end: e, text });
+        if (text && e - s >= 0.05) events.push({ start: s, end: e, text: `${positionOverride}${text}` });
         continue;
       }
 
@@ -334,7 +339,7 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
         });
         if (!text) continue;
 
-        events.push({ start: s, end: e, text });
+        events.push({ start: s, end: e, text: `${positionOverride}${text}` });
       }
     }
   }

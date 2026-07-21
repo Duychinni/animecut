@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-presets';
 import type { ClipEditSettings } from '@/lib/clip-edit';
@@ -773,7 +773,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (downloadedShareClipId !== shareClip.exportId) await downloadShareClip();
   }
 
-  async function applyPreset(selectedPresetId: string, captionsEnabled: boolean) {
+  async function applyPreset(selectedPresetId: string, captionsEnabled: boolean, captionX: number, captionY: number) {
     if (!editingClip || !captionSettings) return;
     try {
       setApplyingPreset(true);
@@ -788,7 +788,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
         caption_background: false,
         caption_word_highlight: true,
         caption_max_words: 2,
-        caption_position: 'lower-third',
+        caption_position: captionY < 0.34 ? 'upper' : captionY < 0.66 ? 'center' : 'lower-third',
+        caption_x: captionX,
+        caption_y: captionY,
       };
       const presetRes = await fetch(`/api/clips/${editingClip.exportId}/rerender`, {
         method: 'POST',
@@ -1653,12 +1655,15 @@ function CaptionTemplatesModal({
   applying: boolean;
   canApply: boolean;
   onClose: () => void;
-  onApply: (presetId: string, captionsEnabled: boolean) => Promise<void>;
+  onApply: (presetId: string, captionsEnabled: boolean, captionX: number, captionY: number) => Promise<void>;
 }) {
   const [selectedPresetId, setSelectedPresetId] = useState(defaultPresetId);
   const [captionsEnabled, setCaptionsEnabled] = useState(defaultCaptionsEnabled);
   const [previewTime, setPreviewTime] = useState(0);
+  const [captionX, setCaptionX] = useState(previewData?.settings.caption_x ?? 0.5);
+  const [captionY, setCaptionY] = useState(previewData?.settings.caption_y ?? 0.8);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const previewSettings = previewData?.settings;
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
@@ -1690,6 +1695,20 @@ function CaptionTemplatesModal({
   }, [defaultCaptionsEnabled, defaultPresetId]);
 
   useEffect(() => {
+    if (!previewSettings) return;
+    setCaptionX(previewSettings.caption_x);
+    setCaptionY(previewSettings.caption_y);
+  }, [previewSettings]);
+
+  function moveCaption(event: ReactPointerEvent<HTMLDivElement>) {
+    const frame = previewFrameRef.current;
+    if (!frame || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    const rect = frame.getBoundingClientRect();
+    setCaptionX(Math.max(0.08, Math.min(0.92, (event.clientX - rect.left) / rect.width)));
+    setCaptionY(Math.max(0.08, Math.min(0.92, (event.clientY - rect.top) / rect.height)));
+  }
+
+  useEffect(() => {
     const video = previewVideoRef.current;
     if (!video) return;
     video.preload = 'auto';
@@ -1711,7 +1730,7 @@ function CaptionTemplatesModal({
 
         <div className="grid flex-1 gap-0 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
-            <div className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black">
+            <div ref={previewFrameRef} className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black">
               {previewUrl ? (
                 <video
                   ref={previewVideoRef}
@@ -1744,7 +1763,19 @@ function CaptionTemplatesModal({
                 </div>
               )}
               {activeCaption ? (
-                <div className="pointer-events-none absolute inset-x-3 bottom-[17%] flex justify-center text-center">
+                <div
+                  className="absolute z-20 max-w-[88%] touch-none cursor-move select-none text-center"
+                  style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    moveCaption(event);
+                  }}
+                  onPointerMove={moveCaption}
+                  onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+                  title="Drag to position captions"
+                >
                   <span className="inline-block text-center">
                     {activeCaption.words.map((word, index) => (
                       <span key={`${word}-${index}`}>
@@ -1812,13 +1843,44 @@ function CaptionTemplatesModal({
               </div>
             </div>
 
+            <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
+              <div>
+                <p className="text-sm font-black text-white">Position</p>
+                <p className="mt-1 text-xs font-semibold text-white/45">Drag the caption on the reel or choose a placement.</p>
+              </div>
+              <div className="grid w-32 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
+                {[0.18, 0.5, 0.82].flatMap((y) => [0.18, 0.5, 0.82].map((x) => {
+                  const selected = Math.abs(captionX - x) < 0.08 && Math.abs(captionY - y) < 0.08;
+                  return (
+                    <button
+                      key={`${x}-${y}`}
+                      type="button"
+                      onClick={() => { setCaptionX(x); setCaptionY(y); }}
+                      className={`grid aspect-square place-items-center rounded-md border transition ${selected ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:border-white/30 hover:bg-white/[0.06]'}`}
+                      aria-label={`Place captions at ${Math.round(x * 100)} percent horizontal and ${Math.round(y * 100)} percent vertical`}
+                    >
+                      <span className={`h-2 w-2 rounded-full ${selected ? 'bg-cyan-200' : 'bg-white/35'}`} />
+                    </button>
+                  );
+                }))}
+              </div>
+              <label className="block text-xs font-bold text-white/55">
+                Horizontal
+                <input type="range" min={0.08} max={0.92} step={0.01} value={captionX} onChange={(event) => setCaptionX(Number(event.target.value))} className="mt-2 w-full cursor-pointer accent-cyan-300" />
+              </label>
+              <label className="block text-xs font-bold text-white/55">
+                Vertical
+                <input type="range" min={0.08} max={0.92} step={0.01} value={captionY} onChange={(event) => setCaptionY(Number(event.target.value))} className="mt-2 w-full cursor-pointer accent-cyan-300" />
+              </label>
+            </div>
+
             <div className="mt-auto pt-6">
               <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
                 Preview colors instantly, then apply to regenerate this reel.
               </div>
               <button
                 type="button"
-                onClick={() => void onApply(selectedPresetId, captionsEnabled)}
+                onClick={() => void onApply(selectedPresetId, captionsEnabled, captionX, captionY)}
                 disabled={applying || loading || !canApply}
                 className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
