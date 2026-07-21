@@ -13,7 +13,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   [PLAN_LOOKUP.starter.maxGeneratedClips, PLAN_LOOKUP.creator.maxGeneratedClips, PLAN_LOOKUP.pro.maxGeneratedClips],
-  [12, 20, 30],
+  [20, 25, 30],
 );
 assert.equal(getTargetClipCount(181 * 60), 30);
 

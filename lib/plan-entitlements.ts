@@ -33,7 +33,7 @@ export async function getProjectPlanEntitlements(projectId: string) {
 
   return {
     planId,
-    maxGeneratedClips: plan?.maxGeneratedClips ?? 12,
+    maxGeneratedClips: plan?.maxGeneratedClips ?? 20,
     queuePriority: PLAN_QUEUE_PRIORITY[planId],
     hasCaptionPresets: planId === 'creator' || planId === 'pro' || planId === 'business',
     hasAdvancedClipScoring: planId === 'creator' || planId === 'pro' || planId === 'business',

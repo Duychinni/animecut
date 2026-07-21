@@ -218,7 +218,7 @@ EDITORIAL PLAN (ANALYSIS ONLY IN THIS PHASE):
 
 VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 - Generate at least ${targetCandidates} candidate clips.
-- Target final clip range: ${policy.targetMin}-${policy.targetMax}, but never more than 20 final clips.
+- Target final clip range: ${policy.targetMin}-${policy.targetMax}. The subscriber's plan cap is enforced separately.
 - Expected clip length: ${policy.expectedMinSec}-${policy.expectedMaxSec} seconds.
 - Minimum clip length: ${policy.minSec} seconds.
 - Maximum clip length: ${policy.maxSec} seconds.
