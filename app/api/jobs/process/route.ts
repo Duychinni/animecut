@@ -1005,13 +1005,13 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const preview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
   const preview540Path = path.join(exportDir, `${bundle.id}.540p.preview.mp4`);
   const captionFreeMasterPath = path.join(exportDir, `${bundle.id}.caption-free.mp4`);
-  const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.540p.preview.mp4`);
+  const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.360p.preview.mp4`);
   await Promise.all([
     renderPlaybackPreview(outPath, preview360Path, '360p'),
     renderPlaybackPreview(outPath, preview540Path, '540p'),
     (async () => {
       await renderVerticalClip({ ...renderOptions, outputPath: captionFreeMasterPath, captionsEnabled: false, fastRender: true });
-      await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '540p');
+      await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '360p');
     })(),
   ]);
   const [preview360Bytes, preview540Bytes, captionEditPreviewBytes] = await Promise.all([

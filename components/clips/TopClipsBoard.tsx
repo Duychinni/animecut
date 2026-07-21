@@ -1824,6 +1824,48 @@ function CaptionTemplatesModal({
     video.preload = 'metadata';
   }, [previewUrl]);
 
+  useEffect(() => {
+    const video = previewVideoRef.current;
+    if (!video || !previewSettings) return;
+
+    let frameRequest = 0;
+    let animationFrame = 0;
+    let stopped = false;
+    let lastMediaTime = -1;
+    const clipStart = previewSettings.clip_start_seconds ?? 0;
+    const updateFromMediaTime = (mediaTime: number) => {
+      // Avoid rerendering the editor more often than the preview frame rate,
+      // while keeping the caption clock tied to decoded video frames/audio.
+      if (lastMediaTime >= 0 && Math.abs(mediaTime - lastMediaTime) < 1 / 30) return;
+      lastMediaTime = mediaTime;
+      setPreviewTime(clipStart + mediaTime);
+    };
+
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+        if (stopped) return;
+        updateFromMediaTime(metadata.mediaTime);
+        frameRequest = video.requestVideoFrameCallback(onVideoFrame);
+      };
+      frameRequest = video.requestVideoFrameCallback(onVideoFrame);
+    } else {
+      const onAnimationFrame = () => {
+        if (stopped) return;
+        updateFromMediaTime(video.currentTime);
+        animationFrame = window.requestAnimationFrame(onAnimationFrame);
+      };
+      animationFrame = window.requestAnimationFrame(onAnimationFrame);
+    }
+
+    return () => {
+      stopped = true;
+      if (frameRequest && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameRequest);
+      }
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+    };
+  }, [previewSettings, previewUrl]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70">
       <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-white/10 bg-[#0d0f14] shadow-[0_0_60px_rgba(0,0,0,0.5)]">
@@ -1853,10 +1895,6 @@ function CaptionTemplatesModal({
                     const start = previewSettings?.clip_start_seconds ?? 0;
                     event.currentTarget.currentTime = 0;
                     setPreviewTime(start);
-                  }}
-                  onTimeUpdate={(event) => {
-                    const video = event.currentTarget;
-                    setPreviewTime((previewSettings?.clip_start_seconds ?? 0) + video.currentTime);
                   }}
                 />
               ) : (
