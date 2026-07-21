@@ -54,6 +54,7 @@ type Props = {
 type CaptionPreviewData = {
   sourceUrl: string | null;
   fallbackUrl: string | null;
+  previewKind: 'caption-free-reel' | 'source' | 'burned-reel';
   settings: ClipEditSettings;
 };
 
@@ -694,10 +695,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       const data = await readJsonSafe(res);
       if (!res.ok || !data?.settings) throw new Error(String(data?.error || 'Could not load caption settings'));
       const settings = data.settings as ClipEditSettings;
-      const source = data.source as { previewUrl?: unknown; fallbackClipUrl?: unknown } | undefined;
+      const source = data.source as { previewUrl?: unknown; fallbackClipUrl?: unknown; previewKind?: unknown } | undefined;
       setCaptionPreviewData({
         sourceUrl: typeof source?.previewUrl === 'string' ? source.previewUrl : null,
         fallbackUrl: typeof source?.fallbackClipUrl === 'string' ? source.fallbackClipUrl : clip.signedUrl,
+        previewKind: source?.previewKind === 'caption-free-reel' || source?.previewKind === 'source'
+          ? source.previewKind
+          : 'burned-reel',
         settings,
       });
       const selected = CAPTION_TEMPLATE_OPTIONS.find((preset) =>
@@ -1752,7 +1756,8 @@ function CaptionTemplatesModal({
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const previewSettings = previewData?.settings;
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
-  const previewUsesSource = Boolean(previewData?.sourceUrl && previewUrl === previewData.sourceUrl);
+  const previewUsesSource = previewData?.previewKind === 'source';
+  const hasEditableCaptionCanvas = previewData?.previewKind !== 'burned-reel';
   const activeCaption = useMemo(() => {
     if (!captionsEnabled || !previewSettings) return null;
     const phrase = previewSettings.edited_transcript.find((item) => (
@@ -1851,7 +1856,7 @@ function CaptionTemplatesModal({
                   {loading ? 'Loading caption preview…' : 'Reel preview unavailable'}
                 </div>
               )}
-              {activeCaption ? (
+              {activeCaption && hasEditableCaptionCanvas ? (
                 <div
                   className="absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center outline outline-1 outline-cyan-300/0 outline-offset-4 transition hover:outline-cyan-300/85 active:outline-cyan-300"
                   style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
@@ -1882,7 +1887,9 @@ function CaptionTemplatesModal({
               ) : null}
             </div>
             <p className="mt-3 text-center text-xs text-white/45">
-              Play the reel while you style or drag captions. Apply only saves and renders the final reel.
+              {hasEditableCaptionCanvas
+                ? 'This is the reel’s real framing with one editable caption layer. Drag or resize it, then Apply.'
+                : 'This older reel needs one refresh render before its captions can be edited without duplication.'}
             </p>
           </div>
 
@@ -1973,7 +1980,7 @@ function CaptionTemplatesModal({
               <button
                 type="button"
                 onClick={() => void onApply({ selectedPresetId, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
-                disabled={applying || loading || !canApply}
+                disabled={applying || loading || !canApply || !hasEditableCaptionCanvas}
                 className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? 'Loading...' : applying ? 'Applying...' : 'Apply'}

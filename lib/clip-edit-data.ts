@@ -7,7 +7,7 @@ import {
   type TranscriptSegment,
 } from '@/lib/clip-edit';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createExportSignedUrl, createRawMediaSignedUrl } from '@/lib/storage';
+import { createExportPreviewUrl, createExportSignedUrl, createRawMediaSignedUrl } from '@/lib/storage';
 
 type ExportRow = {
   id: string;
@@ -20,6 +20,8 @@ type ExportRow = {
   clip_edit_settings?: Record<string, unknown> | null;
   edit_status?: string | null;
   updated_at?: string | null;
+  caption_edit_preview_provider?: 'r2' | 'supabase' | null;
+  caption_edit_preview_storage_path?: string | null;
 };
 
 type ProjectRow = {
@@ -73,7 +75,7 @@ export function clipEditorErrorMessage(error: unknown, fallback = 'Could not loa
 
 export function isMissingEditColumnError(error: unknown) {
   const message = clipEditorErrorMessage(error, '');
-  return /(clip_edit_settings|edit_status)/i.test(message)
+  return /(clip_edit_settings|edit_status|caption_edit_preview)/i.test(message)
     && /(column|schema cache|could not find|PGRST204|42703)/i.test(message);
 }
 
@@ -174,6 +176,9 @@ export async function loadClipEditData(clipId: string, userId: string) {
   const clipUrl = await signedExportUrl(ex.output_storage_path);
   const posterUrl = await signedExportUrl(exportPosterPath(ex.output_storage_path));
   const sourcePreviewUrl = await signedRawUrl(project.source_storage_path);
+  const captionEditPreviewUrl = ex.caption_edit_preview_storage_path
+    ? await createExportPreviewUrl(ex.caption_edit_preview_provider ?? 'supabase', ex.caption_edit_preview_storage_path, 60 * 60).catch(() => null)
+    : null;
 
   return {
     project: {
@@ -199,7 +204,8 @@ export async function loadClipEditData(clipId: string, userId: string) {
       updatedAt: ex.updated_at ?? null,
     },
     source: {
-      previewUrl: sourcePreviewUrl,
+      previewUrl: captionEditPreviewUrl ?? sourcePreviewUrl,
+      previewKind: captionEditPreviewUrl ? 'caption-free-reel' : sourcePreviewUrl ? 'source' : 'burned-reel',
       fallbackClipUrl: clipUrl,
       posterUrl,
       durationSeconds: sourceDuration,

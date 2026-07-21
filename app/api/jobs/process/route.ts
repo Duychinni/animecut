@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
 import { extractBestVideoThumbnail, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
-import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
+import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
@@ -355,7 +355,7 @@ function errorText(error: unknown) {
 
 function isMissingEditColumnError(error: unknown) {
   const text = errorText(error);
-  return /(clip_edit_settings|edit_status)/i.test(text)
+  return /(clip_edit_settings|edit_status|caption_edit_preview)/i.test(text)
     && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
 }
 
@@ -955,7 +955,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     || null;
   const safeLayoutFallback = options?.safe_layout_fallback === true || compatibilityFallback;
 
-  await renderVerticalClip({
+  const renderOptions = {
     inputPath: renderInputPath,
     outputPath: outPath,
     startSec: effectiveRenderStart,
@@ -989,7 +989,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       confidence: turn.confidence == null ? null : Number(turn.confidence),
     })),
     fastRender: options?.fast_edit_render === true,
-  });
+  } satisfies Parameters<typeof renderVerticalClip>[0];
+
+  await renderVerticalClip(renderOptions);
 
   await validateRenderedVideo(outPath);
 
@@ -1002,20 +1004,29 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   // still have to stream multiple large 1080x1920 files from object storage.
   const preview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
   const preview540Path = path.join(exportDir, `${bundle.id}.540p.preview.mp4`);
+  const captionFreeMasterPath = path.join(exportDir, `${bundle.id}.caption-free.mp4`);
+  const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.540p.preview.mp4`);
   await Promise.all([
     renderPlaybackPreview(outPath, preview360Path, '360p'),
     renderPlaybackPreview(outPath, preview540Path, '540p'),
+    (async () => {
+      await renderVerticalClip({ ...renderOptions, outputPath: captionFreeMasterPath, captionsEnabled: false, fastRender: true });
+      await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '540p');
+    })(),
   ]);
-  const [preview360Bytes, preview540Bytes] = await Promise.all([
+  const [preview360Bytes, preview540Bytes, captionEditPreviewBytes] = await Promise.all([
     readFile(preview360Path),
     readFile(preview540Path),
+    readFile(captionEditPreviewPath),
   ]);
   const previewVersion = `r${Date.now()}`;
   const preview360ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '360p', previewVersion);
   const preview540ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '540p', previewVersion);
-  const [preview360Upload, preview540Upload] = await Promise.all([
+  const captionEditPreviewObjectPath = makeCaptionEditPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, previewVersion);
+  const [preview360Upload, preview540Upload, captionEditPreviewUpload] = await Promise.all([
     uploadExportPreviewObject(preview360ObjectPath, preview360Bytes),
     uploadExportPreviewObject(preview540ObjectPath, preview540Bytes),
+    uploadExportPreviewObject(captionEditPreviewObjectPath, captionEditPreviewBytes),
   ]);
 
   try {
@@ -1046,6 +1057,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       preview_540_storage_path: preview540Upload.path,
       preview_360_size_bytes: preview360Bytes.byteLength,
       preview_540_size_bytes: preview540Bytes.byteLength,
+      caption_edit_preview_provider: captionEditPreviewUpload.provider,
+      caption_edit_preview_storage_path: captionEditPreviewUpload.path,
       hook_text: hookText,
       error_message: null,
       edit_status: useEditSettings ? 'rendered' : 'idle',

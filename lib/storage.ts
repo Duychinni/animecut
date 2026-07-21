@@ -34,6 +34,10 @@ export function makeAdaptiveExportPreviewObjectPath(userId: string, projectId: s
   return `previews/${userId}/${projectId}/${exportId}/${version}.${quality}.mp4`;
 }
 
+export function makeCaptionEditPreviewObjectPath(userId: string, projectId: string, exportId: string, version = 'v1') {
+  return `edit-previews/${userId}/${projectId}/${exportId}/${version}.caption-free.540p.mp4`;
+}
+
 export function makeExportThumbnailObjectPath(userId: string, projectId: string, exportId: string) {
   return `${userId}/${projectId}/${exportId}.jpg`;
 }

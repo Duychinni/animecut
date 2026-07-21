@@ -33,7 +33,7 @@ export async function deleteProjectAndArtifacts(project: ProjectDeletionRow) {
   const admin = createAdminClient();
   const { data: exportRows, error: exportError } = await admin
     .from('exports')
-    .select('id, output_storage_path, preview_storage_provider, preview_360_storage_path, preview_540_storage_path')
+    .select('id, output_storage_path, preview_storage_provider, preview_360_storage_path, preview_540_storage_path, caption_edit_preview_provider, caption_edit_preview_storage_path')
     .eq('project_id', project.id);
   if (exportError) throw exportError;
 
@@ -42,6 +42,7 @@ export async function deleteProjectAndArtifacts(project: ProjectDeletionRow) {
   const r2PreviewPaths = unique((exportRows ?? []).flatMap((row) => [
     row.preview_storage_provider === 'r2' ? row.preview_360_storage_path : null,
     row.preview_storage_provider === 'r2' ? row.preview_540_storage_path : null,
+    row.caption_edit_preview_provider === 'r2' ? row.caption_edit_preview_storage_path : null,
   ]));
 
   // Try both raw-media backends so changing UPLOAD_PROVIDER does not orphan
