@@ -1684,7 +1684,8 @@ function CaptionTemplatesModal({
   const [captionBackground, setCaptionBackground] = useState(previewData?.settings.caption_background ?? false);
   const [captionMaxWords, setCaptionMaxWords] = useState(previewData?.settings.caption_max_words ?? 2);
   const [captionWordHighlight, setCaptionWordHighlight] = useState(previewData?.settings.caption_word_highlight ?? true);
-  const [captionTab, setCaptionTab] = useState<'text' | 'style' | 'transform'>('style');
+  const [captionTab, setCaptionTab] = useState<'text' | 'animation'>('text');
+  const [captionTextTab, setCaptionTextTab] = useState<'basic' | 'templates'>('basic');
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
@@ -1692,7 +1693,7 @@ function CaptionTemplatesModal({
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
   const previewUsesSource = Boolean(previewData?.sourceUrl && previewUrl === previewData.sourceUrl);
   const activeCaption = useMemo(() => {
-    if (!captionsEnabled || !previewSettings || !previewUsesSource) return null;
+    if (!captionsEnabled || !previewSettings) return null;
     const phrase = previewSettings.edited_transcript.find((item) => (
       item.deleted !== true
       && previewTime >= item.start
@@ -1710,7 +1711,7 @@ function CaptionTemplatesModal({
       words: words.slice(groupStart, groupStart + maxWords),
       highlightedIndex: captionWordHighlight ? activeWordIndex - groupStart : -1,
     };
-  }, [captionMaxWords, captionWordHighlight, captionsEnabled, previewSettings, previewTime, previewUsesSource]);
+  }, [captionMaxWords, captionWordHighlight, captionsEnabled, previewSettings, previewTime]);
 
   useEffect(() => {
     setSelectedPresetId(defaultPresetId);
@@ -1791,7 +1792,7 @@ function CaptionTemplatesModal({
               )}
               {activeCaption ? (
                 <div
-                  className={`absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center ${captionTab === 'transform' ? 'outline outline-1 outline-cyan-300/85 outline-offset-4' : ''}`}
+                  className="absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center outline outline-1 outline-cyan-300/0 outline-offset-4 transition hover:outline-cyan-300/85 active:outline-cyan-300"
                   style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
                   onPointerDown={(event) => {
                     event.preventDefault();
@@ -1816,14 +1817,11 @@ function CaptionTemplatesModal({
                       </span>
                     ))}
                   </span>
-                  {captionTab === 'transform' ? <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-cyan-300 px-2 py-1 text-[9px] font-black text-black">Drag to move</span> : null}
                 </div>
               ) : null}
             </div>
             <p className="mt-3 text-center text-xs text-white/45">
-              {previewUsesSource
-                ? 'Play the reel to preview its actual captions in the selected color.'
-                : 'Play the reel to see its captions. Apply to render the newly selected color.'}
+              Play the reel while you style or drag captions. Apply only saves and renders the final reel.
             </p>
           </div>
 
@@ -1831,7 +1829,7 @@ function CaptionTemplatesModal({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-black text-white">Caption style</p>
-                <p className="mt-1 text-xs font-semibold text-white/55">Changes below preview instantly. Apply regenerates the reel.</p>
+                <p className="mt-1 text-xs font-semibold text-white/55">Every change appears on the preview before you apply.</p>
               </div>
               <label className="flex items-center gap-2 text-xs font-bold text-white/65">
                 <input
@@ -1845,53 +1843,72 @@ function CaptionTemplatesModal({
               </label>
             </div>
 
-            <div className="mt-5 grid grid-cols-3 rounded-lg bg-white/[0.04] p-1">
-              {(['text', 'style', 'transform'] as const).map((tab) => (
-                <button key={tab} type="button" onClick={() => setCaptionTab(tab)} className={`rounded-md px-2 py-2 text-xs font-bold capitalize transition ${captionTab === tab ? 'bg-white/12 text-cyan-200' : 'text-white/45 hover:text-white'}`}>{tab}</button>
+            <div className="mt-5 flex border-b border-white/10">
+              {(['text', 'animation'] as const).map((tab) => (
+                <button key={tab} type="button" onClick={() => setCaptionTab(tab)} className={`border-b-2 px-5 py-3 text-xs font-bold capitalize transition ${captionTab === tab ? 'border-cyan-300 text-cyan-300' : 'border-transparent text-white/55 hover:text-white'}`}>{tab}</button>
               ))}
             </div>
 
             <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
               {captionTab === 'text' ? (
                 <div className="space-y-5">
-                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Words per caption <span className="font-mono text-cyan-200">{captionMaxWords}</span></span><input type="range" min={1} max={6} step={1} value={captionMaxWords} onChange={(event) => setCaptionMaxWords(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
-                  <label className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-3 text-xs font-bold text-white/65">Highlight spoken word <input type="checkbox" checked={captionWordHighlight} onChange={(event) => setCaptionWordHighlight(event.target.checked)} className="accent-cyan-300" /></label>
-                  <p className="text-xs leading-5 text-white/40">Use the full editor when you need to change the caption wording.</p>
-                </div>
-              ) : captionTab === 'style' ? (
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <p className="text-xs font-black text-white/70">Highlight color</p>
-                    <div className="flex flex-wrap gap-2">
-                      {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
-                        const active = preset.id === selectedPresetId;
-                        return <button key={preset.id} type="button" onClick={() => setSelectedPresetId(preset.id)} disabled={loading} className={`h-9 w-9 rounded-lg border-2 transition hover:scale-105 disabled:opacity-45 ${active ? 'border-white ring-2 ring-cyan-300/70' : 'border-white/20'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={`Preview ${preset.name} highlight color`} />;
-                      })}
-                    </div>
+                  <div className="grid grid-cols-2 rounded-md bg-black/25 p-1">
+                    {(['basic', 'templates'] as const).map((tab) => <button key={tab} type="button" onClick={() => setCaptionTextTab(tab)} className={`rounded px-3 py-2 text-[11px] font-bold capitalize ${captionTextTab === tab ? 'bg-white/15 text-white' : 'text-white/45 hover:text-white'}`}>{tab}</button>)}
                   </div>
-                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Size <span className="font-mono text-cyan-200">{Math.round((captionFontSize / 12) * 100)}%</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
-                  <label className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-3 text-xs font-bold text-white/65">Background box <input type="checkbox" checked={captionBackground} onChange={(event) => setCaptionBackground(event.target.checked)} className="accent-cyan-300" /></label>
+
+                  {captionTextTab === 'templates' ? (
+                    <section>
+                      <p className="mb-3 text-xs font-bold text-white/65">Preset style</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
+                          const active = preset.id === selectedPresetId;
+                          return (
+                            <button key={preset.id} type="button" onClick={() => setSelectedPresetId(preset.id)} disabled={loading} className={`grid aspect-square place-items-center rounded-lg border bg-black/35 text-xl font-black transition hover:bg-white/10 disabled:opacity-45 ${active ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/10'}`} aria-label={`Preview ${preset.name}`} title={preset.name}>
+                              <span style={{ color: preset.captionHighlightColor, WebkitTextStroke: '1px #000', textShadow: '0 2px 4px #000' }}>Aa</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ) : (
+                    <>
+                      <section className="space-y-3 border-b border-white/10 pb-5">
+                        <div className="flex items-center justify-between"><p className="text-xs font-bold text-white/65">Font</p><span className="rounded bg-white/[0.07] px-3 py-2 text-xs text-white/80">{activePreset.captionFontFamily}</span></div>
+                        <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Font size <span className="rounded bg-black/30 px-2 py-1 font-mono text-white">{Math.round(captionFontSize * 1.33)}</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                        <div className="flex items-center justify-between"><span className="text-xs font-bold text-white/65">Highlight color</span><div className="flex gap-2">{CAPTION_TEMPLATE_OPTIONS.slice(0, 7).map((preset) => <button key={preset.id} type="button" onClick={() => setSelectedPresetId(preset.id)} className={`h-7 w-7 rounded border ${selectedPresetId === preset.id ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/15'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={preset.name} />)}</div></div>
+                        <label className="flex items-center justify-between text-xs font-bold text-white/65">Background <input type="checkbox" checked={captionBackground} onChange={(event) => setCaptionBackground(event.target.checked)} className="accent-cyan-300" /></label>
+                      </section>
+
+                      <section className="space-y-4 border-b border-white/10 pb-5">
+                        <div className="flex items-center justify-between"><p className="text-xs font-bold text-white">Transform</p><button type="button" onClick={() => { setCaptionX(0.5); setCaptionY(0.8); setCaptionFontSize(12); }} className="text-[11px] font-bold text-white/45 hover:text-white">Reset</button></div>
+                        <label className="block space-y-2"><span className="flex justify-between text-xs text-white/60">Scale <span className="font-mono text-white">{Math.round((captionFontSize / 12) * 100)}%</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                        <div className="grid grid-cols-[1fr_1fr] gap-3">
+                          <label className="flex items-center gap-2 rounded bg-black/30 px-3 py-2 text-xs text-white/45">X <input type="number" min={3} max={97} value={Math.round(captionX * 100)} onChange={(event) => setCaptionX(Math.max(0.03, Math.min(0.97, Number(event.target.value) / 100)))} className="w-full bg-transparent text-right font-mono text-white outline-none" /></label>
+                          <label className="flex items-center gap-2 rounded bg-black/30 px-3 py-2 text-xs text-white/45">Y <input type="number" min={3} max={97} value={Math.round(captionY * 100)} onChange={(event) => setCaptionY(Math.max(0.03, Math.min(0.97, Number(event.target.value) / 100)))} className="w-full bg-transparent text-right font-mono text-white outline-none" /></label>
+                        </div>
+                        <div className="grid grid-cols-6 gap-1 rounded-md bg-white/[0.06] p-1" aria-label="Caption alignment">
+                          {[{ x: .12, y: captionY, label: 'Left', icon: '⇤' }, { x: .5, y: captionY, label: 'Center', icon: '↔' }, { x: .88, y: captionY, label: 'Right', icon: '⇥' }, { x: captionX, y: .12, label: 'Top', icon: '↥' }, { x: captionX, y: .5, label: 'Middle', icon: '↕' }, { x: captionX, y: .88, label: 'Bottom', icon: '↧' }].map((item) => <button key={item.label} type="button" onClick={() => { setCaptionX(item.x); setCaptionY(item.y); }} className="rounded py-2 text-sm text-white/65 hover:bg-white/10 hover:text-white" title={item.label}>{item.icon}</button>)}
+                        </div>
+                        <p className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2 text-[11px] leading-5 text-cyan-50/65">Drag the caption directly on the video for free positioning.</p>
+                      </section>
+
+                      <section className="space-y-3">
+                        <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Words per caption <span className="font-mono text-white">{captionMaxWords}</span></span><input type="range" min={1} max={6} step={1} value={captionMaxWords} onChange={(event) => setCaptionMaxWords(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                      </section>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Click and drag the caption anywhere on the reel. The sliders give you precise control.</div>
-                  <div className="grid w-36 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
-                    {[0.12, 0.5, 0.88].flatMap((y) => [0.12, 0.5, 0.88].map((x) => {
-                      const selected = Math.abs(captionX - x) < 0.08 && Math.abs(captionY - y) < 0.08;
-                      return <button key={`${x}-${y}`} type="button" onClick={() => { setCaptionX(x); setCaptionY(y); }} className={`grid aspect-square place-items-center rounded-md border transition ${selected ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:bg-white/[0.06]'}`}><span className="h-2 w-2 rounded-full bg-white/50" /></button>;
-                    }))}
-                  </div>
-                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/55">Horizontal <span className="font-mono">{Math.round(captionX * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={captionX} onChange={(event) => setCaptionX(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
-                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/55">Vertical <span className="font-mono">{Math.round(captionY * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={captionY} onChange={(event) => setCaptionY(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
-                  <button type="button" onClick={() => { setCaptionX(0.5); setCaptionY(0.8); }} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset position</button>
+                  <p className="text-xs font-bold text-white/65">Word animation</p>
+                  <button type="button" onClick={() => setCaptionWordHighlight(false)} className={`w-full rounded-lg border p-4 text-left text-xs ${!captionWordHighlight ? 'border-cyan-300 bg-cyan-300/10 text-white' : 'border-white/10 text-white/55'}`}><span className="block font-black">None</span><span className="mt-1 block text-white/40">Show each caption without animated emphasis.</span></button>
+                  <button type="button" onClick={() => setCaptionWordHighlight(true)} className={`w-full rounded-lg border p-4 text-left text-xs ${captionWordHighlight ? 'border-cyan-300 bg-cyan-300/10 text-white' : 'border-white/10 text-white/55'}`}><span className="block font-black">Spoken word highlight</span><span className="mt-1 block text-white/40">Highlight words as they are spoken.</span></button>
                 </div>
               )}
             </div>
 
             <div className="mt-auto pt-6">
-              <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-white/70">
-                Preview colors instantly, then apply to regenerate this reel.
-              </div>
+              <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-white/55">Apply saves these previewed changes and renders the reel.</div>
               <button
                 type="button"
                 onClick={() => void onApply({ selectedPresetId, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
