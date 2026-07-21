@@ -75,6 +75,8 @@ type TimelineFilmstrip = {
   captureFailed: boolean;
 };
 
+const TIMELINE_TAIL_SECONDS = 5;
+
 function TimelineVideoThumbnail({ src, time }: { src: string; time: number }) {
   return (
     <video
@@ -109,7 +111,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function buildTimelineViewport(start: number, end: number) {
-  return { start, end: Math.max(start + 0.1, end) };
+  return { start, end: Math.max(start + 0.1, end) + TIMELINE_TAIL_SECONDS };
 }
 
 function safeJson(value: unknown) {
@@ -251,13 +253,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const clipEndSeconds = settings?.clip_end_seconds;
   const changed = Boolean(settings && baseline && safeJson(settings) !== baseline);
   const needsRender = changed || data?.clip.editStatus === 'draft' || data?.clip.editStatus === 'error';
-  const filmstripFrameCount = clamp(Math.ceil((timelineViewport.end - timelineViewport.start) / 3), 8, 16);
+  const editableTimelineEnd = editableClipBoundsRef.current?.end ?? clipEndSeconds ?? timelineViewport.end - TIMELINE_TAIL_SECONDS;
+  const editableTimelineDuration = Math.max(0.1, editableTimelineEnd - timelineViewport.start);
+  const filmstripFrameCount = clamp(Math.ceil(editableTimelineDuration / 3), 8, 16);
   const timelineSampleTimes = useMemo(() => Array.from({ length: filmstripFrameCount }, (_, index) => {
     const ratio = (index + 0.5) / filmstripFrameCount;
     return previewUsesSource
-      ? timelineViewport.start + (timelineViewport.end - timelineViewport.start) * ratio
-      : (timelineViewport.end - timelineViewport.start) * ratio;
-  }), [filmstripFrameCount, previewUsesSource, timelineViewport.end, timelineViewport.start]);
+      ? timelineViewport.start + editableTimelineDuration * ratio
+      : editableTimelineDuration * ratio;
+  }), [editableTimelineDuration, filmstripFrameCount, previewUsesSource, timelineViewport.start]);
   const timelineFilmstripKey = `${previewUrl ?? ''}|${previewUsesSource ? 'source' : 'clip'}|${timelineViewport.start.toFixed(3)}|${timelineViewport.end.toFixed(3)}|${filmstripFrameCount}`;
 
   const activePreset = useMemo(() => {
@@ -445,7 +449,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   useEffect(() => {
     if (clipStartSeconds === undefined || clipEndSeconds === undefined || dragMode) return;
-    setTimelineViewport(buildTimelineViewport(clipStartSeconds, clipEndSeconds));
+    const editableBounds = editableClipBoundsRef.current;
+    setTimelineViewport(buildTimelineViewport(
+      editableBounds?.start ?? clipStartSeconds,
+      editableBounds?.end ?? clipEndSeconds,
+    ));
   }, [clipEndSeconds, clipStartSeconds, dragMode]);
 
   useEffect(() => {
@@ -779,7 +787,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const seconds = timelineSeconds(event);
     if (mode === 'start' && settings) patchTimes(seconds, settings.clip_end_seconds);
     if (mode === 'end' && settings) patchTimes(settings.clip_start_seconds, seconds);
-    if (mode === 'seek') seekAbsolute(seconds);
+    if (mode === 'seek') seekAbsolute(Math.min(seconds, editableClipBoundsRef.current?.end ?? sourceDuration));
     if (mode === 'selection-start' && selectedRange) {
       setSelectedRange({ ...selectedRange, start: clamp(seconds, settings?.clip_start_seconds ?? 0, selectedRange.end - 0.15) });
     }
@@ -795,7 +803,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       const seconds = timelineSeconds(event);
       if (dragMode === 'start') patchTimes(seconds, settings.clip_end_seconds);
       if (dragMode === 'end') patchTimes(settings.clip_start_seconds, seconds);
-      if (dragMode === 'seek') seekAbsolute(seconds);
+      if (dragMode === 'seek') seekAbsolute(Math.min(seconds, editableClipBoundsRef.current?.end ?? sourceDuration));
       if (dragMode === 'selection-start') {
         setSelectedRange((range) => range ? {
           ...range,
@@ -864,6 +872,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const playheadLeft = `${clamp(((currentTime - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`;
   const clipStartLeft = clamp(((settings.clip_start_seconds - timelineViewport.start) / timelineDuration) * 100, 0, 100);
   const clipEndLeft = clamp(((settings.clip_end_seconds - timelineViewport.start) / timelineDuration) * 100, 0, 100);
+  const sourceTrackEndLeft = clamp(((editableTimelineEnd - timelineViewport.start) / timelineDuration) * 100, 0, 100);
   const rulerTicks = Array.from({ length: 7 }, (_, index) => ({
     index,
     value: index === 6 ? timelineDuration : (timelineDuration / 6) * index,
@@ -1424,8 +1433,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 );
               })}
 
-              <div className="absolute inset-x-0 top-[69px] h-[58px] bg-cyan-300/10" />
-              <div className="absolute inset-x-0 top-[72px] flex h-[52px] overflow-hidden border-y border-cyan-100/15 bg-cyan-950/70">
+              <div className="absolute left-0 top-[69px] h-[58px] bg-cyan-300/10" style={{ width: `${sourceTrackEndLeft}%` }} />
+              <div className="absolute left-0 top-[72px] flex h-[52px] overflow-hidden border-y border-cyan-100/15 bg-cyan-950/70" style={{ width: `${sourceTrackEndLeft}%` }}>
                 {timelineFilmstrip.key === timelineFilmstripKey && timelineFilmstrip.frames.length === timelineSampleTimes.length
                   ? timelineFilmstrip.frames.map((frame, index) => (
                     <span
@@ -1486,7 +1495,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   title={`Segment ${index + 1}: ${formatClock(segment.end - segment.start)}`}
                 />
               )) : null}
-              <div className="absolute inset-x-0 bottom-2 flex h-7 items-end justify-between gap-px px-1.5">
+              <div className="absolute bottom-2 left-0 flex h-7 items-end justify-between gap-px px-1.5" style={{ width: `${sourceTrackEndLeft}%` }}>
                 {audioBars.map((height, index) => (
                   <span
                     key={index}
@@ -1494,6 +1503,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     style={{ height: `${height}%` }}
                   />
                 ))}
+              </div>
+              <div
+                className="pointer-events-none absolute bottom-0 top-[31px] border-l border-dashed border-white/15 bg-black/35"
+                style={{ left: `${sourceTrackEndLeft}%`, right: 0 }}
+                aria-hidden="true"
+              >
+                <span className="absolute left-3 top-3 text-[9px] font-bold uppercase tracking-[0.14em] text-white/20">Empty timeline</span>
               </div>
 
               {settings.removed_ranges.map((range, index) => (
