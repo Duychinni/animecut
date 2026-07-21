@@ -44,7 +44,7 @@ type EditorData = {
 };
 
 type DragMode = 'start' | 'end' | 'seek' | 'selection-start' | 'selection-end' | null;
-type EditorTool = 'trim' | 'crop' | 'captions';
+type EditorTool = 'trim' | 'crop' | 'captions' | 'audio';
 type EditorDebugInfo = {
   code?: string;
   status?: number;
@@ -243,7 +243,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [currentTime, setCurrentTime] = useState(0);
   const [previewDurationSeconds, setPreviewDurationSeconds] = useState(0);
   const [paused, setPaused] = useState(true);
-  const [volume, setVolume] = useState(1);
   const [dragMode, setDragMode] = useState<DragMode>(null);
   const [selectedRange, setSelectedRange] = useState<TimelineRange | null>(null);
   const [timelineViewport, setTimelineViewport] = useState({ start: 0, end: 1 });
@@ -546,8 +545,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const safeStart = clamp(start, editableBounds.start, Math.max(editableBounds.start, settings.clip_end_seconds - minimumDuration));
     const safeEnd = clamp(end, safeStart + minimumDuration, editableBounds.end);
     patchSettings({ clip_start_seconds: safeStart, clip_end_seconds: safeEnd });
-    if (currentTime < safeStart || currentTime > safeEnd) {
+    if (currentTime < safeStart) {
       seekAbsolute(safeStart);
+    } else if (currentTime >= safeEnd) {
+      videoRef.current?.pause();
+      seekAbsolute(safeEnd);
+      setPaused(true);
     }
   }
 
@@ -730,12 +733,19 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   });
 
   function handlePreviewVolume(nextVolume: number) {
-    const safeVolume = clamp(nextVolume, 0, 1);
-    setVolume(safeVolume);
+    const safeVolume = clamp(nextVolume, 0, 2);
+    patchSettings({ volume: safeVolume });
     if (!videoRef.current) return;
     videoRef.current.muted = safeVolume === 0;
-    videoRef.current.volume = safeVolume;
+    videoRef.current.volume = Math.min(1, safeVolume);
   }
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !settings) return;
+    video.muted = settings.volume === 0;
+    video.volume = Math.min(1, settings.volume);
+  }, [settings?.volume]);
 
   async function rerenderClip(nextSettings: ClipEditSettings | null = settings) {
     if (!nextSettings) return;
@@ -963,21 +973,26 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
                     setPreviewDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
-                    setVolume(video.muted ? 0 : video.volume);
+                    video.muted = settings.volume === 0;
+                    video.volume = Math.min(1, settings.volume);
                     video.currentTime = previewUsesSource ? settings.clip_start_seconds : 0;
                   }}
                   onTimeUpdate={(event) => {
                     const video = event.currentTarget;
                     const absolute = previewUsesSource ? video.currentTime : settings.clip_start_seconds + video.currentTime;
-                    setCurrentTime(clamp(absolute, 0, sourceDuration));
-                    if (previewUsesSource && absolute >= settings.clip_end_seconds) {
+                    if (absolute >= settings.clip_end_seconds - 0.01) {
                       video.pause();
+                      const endTime = settings.clip_end_seconds;
+                      const mediaEndTime = previewUsesSource ? endTime : Math.max(0, endTime - settings.clip_start_seconds);
+                      if (Math.abs(video.currentTime - mediaEndTime) > 0.02) video.currentTime = mediaEndTime;
+                      setCurrentTime(endTime);
                       setPaused(true);
+                      return;
                     }
+                    setCurrentTime(clamp(absolute, settings.clip_start_seconds, settings.clip_end_seconds));
                   }}
                   onPlay={() => setPaused(false)}
                   onPause={() => setPaused(true)}
-                  onVolumeChange={(event) => setVolume(event.currentTarget.muted ? 0 : event.currentTarget.volume)}
                 />
               ) : (
                 <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
@@ -1071,7 +1086,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                         min={0}
                         max={1}
                         step="0.01"
-                        value={volume}
+                        value={Math.min(1, settings.volume)}
                         onChange={(event) => handlePreviewVolume(Number(event.target.value))}
                         className="h-1.5 w-16 cursor-pointer accent-white"
                         aria-label="Clip volume"
@@ -1091,7 +1106,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           <div className="border-b border-white/10 px-4 py-3">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{activeTool}</p>
             <p className="mt-1 text-sm font-semibold text-white">
-              {activeTool === 'crop' ? 'Reframe video' : activeTool === 'trim' ? 'Clip timing' : 'Caption style'}
+              {activeTool === 'crop' ? 'Reframe video' : activeTool === 'trim' ? 'Clip timing' : activeTool === 'audio' ? 'Clip audio' : 'Caption style'}
             </p>
           </div>
 
@@ -1128,8 +1143,28 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   <p className="mt-2 text-xs font-semibold leading-5 text-white/48">Hover over either clip edge, then drag inward to shorten or outward to restore footage.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-center">
-                  <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">In</p><p className="font-mono text-sm text-white">{formatClock(settings.clip_start_seconds)}</p></div>
-                  <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">Out</p><p className="font-mono text-sm text-white">{formatClock(settings.clip_end_seconds)}</p></div>
+                  <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">Start</p><p className="font-mono text-sm text-white">0:00</p></div>
+                  <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">End</p><p className="font-mono text-sm text-white">{formatClock(clipDuration)}</p></div>
+                </div>
+              </div>
+            ) : activeTool === 'audio' ? (
+              <div className="space-y-5">
+                <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-black text-white">Volume</p>
+                    <span className="font-mono text-sm font-bold text-cyan-200">{Math.round(settings.volume * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={2}
+                    step={0.01}
+                    value={settings.volume}
+                    onChange={(event) => handlePreviewVolume(Number(event.target.value))}
+                    className="mt-4 w-full cursor-pointer accent-cyan-300"
+                    aria-label="Export volume"
+                  />
+                  <div className="mt-2 flex justify-between text-[10px] font-bold text-white/35"><span>Mute</span><span>100%</span><span>200%</span></div>
                 </div>
               </div>
             ) : (
@@ -1166,6 +1201,21 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   })}
                 </div>
               </div>
+              <div className="space-y-2 pt-2">
+                <p className="text-xs font-black text-white/70">Caption position</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([['upper', 'Top'], ['center', 'Center'], ['lower-third', 'Bottom']] as const).map(([position, label]) => (
+                    <button
+                      key={position}
+                      type="button"
+                      onClick={() => patchSettings({ caption_position: position })}
+                      className={`rounded-lg border px-2 py-2.5 text-xs font-bold transition ${settings.caption_position === position ? 'border-cyan-300/70 bg-cyan-300/15 text-cyan-100' : 'border-white/10 text-white/55 hover:bg-white/[0.06] hover:text-white'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             )}
 
@@ -1179,6 +1229,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             ['trim', 'Trim', 'M6 7h12M8 4v6m8-6v6M7 14h10v5H7z'],
             ['crop', 'Crop', 'M4 4v12a4 4 0 0 0 4 4h12M8 4v12h12'],
             ['captions', 'Captions', 'M4 6h16v12H4zM7 10h4m2 0h4m-10 4h3m2 0h5'],
+            ['audio', 'Audio', 'M4 10v4h4l5 4V6L8 10H4zm12-1a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12'],
           ] as const).map(([tool, label, path]) => (
             <button
               key={tool}
@@ -1427,7 +1478,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               ) : null}
 
               <div
-                className={`pointer-events-none absolute inset-y-0 z-30 w-px bg-white/90 shadow-[0_0_10px_rgba(255,255,255,.45)] transition-opacity ${dragMode === 'seek' ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
+                className={`pointer-events-none absolute inset-y-0 z-30 w-px bg-white/90 shadow-[0_0_10px_rgba(255,255,255,.45)] transition-opacity ${dragMode === 'seek' || !paused ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
                 style={{ left: playheadLeft }}
               />
               <button

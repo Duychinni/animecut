@@ -58,6 +58,7 @@ type RenderOpts = {
   cropX?: number;
   cropY?: number;
   zoom?: number;
+  volume?: number;
   debugReframeOverlay?: boolean;
   debugClipId?: string;
   debugCandidateId?: string;
@@ -2212,6 +2213,8 @@ export async function renderVerticalClip(opts: RenderOpts) {
     common.push(
       '-pix_fmt',
       'yuv420p',
+      '-af',
+      `volume=${clamp(Number(effectiveOpts.volume ?? 1), 0, 2)}`,
       '-c:a',
       'aac',
       '-b:a',

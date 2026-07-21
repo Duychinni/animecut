@@ -969,6 +969,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     cropX: useEditSettings ? editSettings.crop_x : undefined,
     cropY: useEditSettings ? editSettings.crop_y : undefined,
     zoom: useEditSettings ? editSettings.zoom : undefined,
+    volume: useEditSettings ? editSettings.volume : 1,
     debugClipId: bundle.id,
     debugCandidateId: bundle.clip_candidate_id,
     editorialPlan: bundle.clip.editorial_plan,

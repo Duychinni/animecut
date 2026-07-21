@@ -14,6 +14,7 @@ export type ClipEditSettings = {
   clip_end_seconds: number;
   edited_transcript: TranscriptPhrase[];
   captions_enabled: boolean;
+  volume: number;
   caption_preset_id: string;
   caption_font_size: number;
   caption_text_color: string;
@@ -134,6 +135,7 @@ export function buildDefaultClipEditSettings(params: {
     clip_end_seconds: clamp(params.aiEnd, Math.min(maxEnd, params.aiStart + 10), maxEnd),
     edited_transcript: params.transcriptPhrases,
     captions_enabled: true,
+    volume: 1,
     caption_preset_id: preset.id,
     caption_font_size: preset.captionFontSize,
     caption_text_color: preset.captionTextColor,
@@ -164,6 +166,7 @@ export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettin
     clip_end_seconds: end,
     edited_transcript: normalizePhrases(row.edited_transcript, defaults.edited_transcript),
     captions_enabled: row.captions_enabled !== false,
+    volume: clamp(finiteNumber(row.volume, defaults.volume), 0, 2),
     caption_preset_id: preset.id,
     caption_font_size: Math.round(clamp(finiteNumber(row.caption_font_size, defaults.caption_font_size), 8, 24)),
     caption_text_color: normalizeColor(row.caption_text_color, defaults.caption_text_color),
