@@ -25,7 +25,7 @@ def box(x, y, w, h, track_id=None, confidence=0.8):
 
 
 def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
-           speaker_margin=0.0, scene_cut=False, fixed_layout=None):
+           speaker_margin=0.0, scene_cut=False, fixed_layout=None, audio_activity=None):
     subject = subject or {
         'kind': 'context', 'box': None, 'confidence': 0.0,
         'reason': 'no_reliable_visual_subject', 'predicted': False,
@@ -42,7 +42,7 @@ def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
     point = {
         't': float(t), 'speaker_confidence': float(speaker_conf),
         'speaker_score_margin': float(speaker_margin),
-        'audio_activity': 0.7 if speaker_conf else 0.0,
+        'audio_activity': (0.7 if speaker_conf else 0.0) if audio_activity is None else float(audio_activity),
         'fallback_used': bool(subject.get('predicted')),
         'subject_kind': subject.get('kind'),
         'subject_confidence': subject.get('confidence', 0.0),
@@ -212,6 +212,59 @@ def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():
     assert panel_segments[1]['renderBranch'] == 'active_speaker_right'
     assert panel_segments[0]['points'][-1]['cropX'] + panel_segments[0]['points'][-1]['cropW'] <= fixed['left_region'][1] + 1
     assert panel_segments[1]['points'][0]['cropX'] >= fixed['right_region'][0] - 1
+
+
+def test_fixed_two_region_long_silence_holds_then_stacks_and_locks():
+    left, right, fixed = fixed_two_region_fixture()
+    samples = []
+    for index in range(5):
+        samples.append(sample(
+            index * 0.25, subject('face', left, 'face:1', 0.94),
+            [left, right], 1, 0.94, 0.62, fixed_layout=fixed,
+        ))
+    for index in range(5, 19):
+        samples.append(sample(
+            index * 0.25, subject('face', left, 'face:1', 0.20),
+            [left, right], 1, 0.20, 0.01, fixed_layout=fixed, audio_activity=0.0,
+        ))
+    result = timeline(samples)
+    hold = [segment for segment in result if segment.get('renderBranch') == 'active_speaker_left']
+    widened = [segment for segment in result if segment.get('renderBranch') == 'silence_widen_stacked']
+    locked = [segment for segment in result if segment.get('renderBranch') == 'silence_lock_stacked']
+    assert hold and widened and locked, result
+    assert all(segment['mode'] == 'stacked' for segment in widened + locked), result
+    assert all(segment.get('silenceState') in ('widen', 'lock') for segment in widened + locked), result
+
+
+def test_long_silence_resume_hard_cuts_to_confirmed_panel():
+    left, right, fixed = fixed_two_region_fixture()
+    samples = []
+    for index in range(5):
+        samples.append(sample(index * 0.25, subject('face', left, 'face:1', 0.94), [left, right], 1, 0.94, 0.62, fixed_layout=fixed))
+    for index in range(5, 16):
+        samples.append(sample(index * 0.25, subject('face', left, 'face:1', 0.18), [left, right], 1, 0.18, 0.01, fixed_layout=fixed, audio_activity=0.0))
+    samples.append(sample(4.0, subject('face', right, 'face:2', 0.95), [left, right], 2, 0.95, 0.65, fixed_layout=fixed, audio_activity=0.8))
+    result = timeline(samples, duration=4.25)
+    resumed = [segment for segment in result if segment.get('renderBranch') == 'active_speaker_right']
+    assert resumed and resumed[-1]['hardCutStart'], result
+    assert resumed[-1]['primaryPanel'] == 'right', resumed[-1]
+
+
+def test_general_conversation_long_silence_resumes_with_editorial_cut():
+    left = box(150, 140, 360, 760, 1, 0.94)
+    right = box(1380, 140, 360, 760, 2, 0.94)
+    samples = [
+        sample(index * 0.25, subject('face', left, 'face:1', 0.94), [left, right], 1, 0.94, 0.62)
+        for index in range(5)
+    ]
+    samples.extend(
+        sample(index * 0.25, subject('face', left, 'face:1', 0.18), [left, right], 1, 0.18, 0.01, audio_activity=0.0)
+        for index in range(5, 16)
+    )
+    samples.append(sample(4.0, subject('face', right, 'face:2', 0.95), [left, right], 2, 0.95, 0.65, audio_activity=0.8))
+    result = timeline(samples, duration=4.25)
+    resumed = [segment for segment in result if segment.get('subjectStableId') == 'face:2']
+    assert resumed and resumed[-1]['hardCutStart'], result
 
 
 def test_three_and_four_person_grids():

@@ -37,6 +37,9 @@ FIXED_SPEAKER_CONFIDENCE = float(os.getenv('FIXED_SPEAKER_CONFIDENCE', '0.42'))
 FIXED_SPEAKER_MARGIN = float(os.getenv('FIXED_SPEAKER_MARGIN', '0.08'))
 FIXED_UNCERTAINTY_HOLD_SEC = float(os.getenv('FIXED_UNCERTAINTY_HOLD_SEC', '0.55'))
 FIXED_MIN_CONFIRMED_TURN_SEC = float(os.getenv('FIXED_MIN_CONFIRMED_TURN_SEC', '0.45'))
+SILENCE_AUDIO_THRESHOLD = float(os.getenv('SILENCE_AUDIO_THRESHOLD', '0.10'))
+SILENCE_HOLD_SEC = float(os.getenv('SILENCE_HOLD_SEC', '1.20'))
+SILENCE_WIDEN_SEC = float(os.getenv('SILENCE_WIDEN_SEC', '1.00'))
 
 
 def fail(code: int, error: str):
@@ -628,6 +631,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     fixed_last_confident_track = None
     fixed_last_confident_panel = None
     fixed_last_confident_time = -1e9
+    silence_started_at = None
+    previous_silence_elapsed = 0.0
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -732,6 +737,30 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         if active_id is not None:
             recent_active_ids.append((float(point.get('t', 0.0)), int(active_id)))
         now = float(point.get('t', 0.0))
+        is_silent = audio_activity < SILENCE_AUDIO_THRESHOLD
+        speech_resumed_after_long_pause = bool(
+            not is_silent and previous_silence_elapsed >= SILENCE_HOLD_SEC
+        )
+        if is_silent:
+            if silence_started_at is None:
+                silence_started_at = now
+            silence_elapsed = max(0.0, now - silence_started_at)
+        else:
+            silence_elapsed = 0.0
+            silence_started_at = None
+        if not is_silent:
+            previous_silence_elapsed = 0.0
+        else:
+            previous_silence_elapsed = silence_elapsed
+
+        if not is_silent:
+            silence_state = 'speech'
+        elif silence_elapsed <= SILENCE_HOLD_SEC:
+            silence_state = 'hold'
+        elif silence_elapsed <= SILENCE_HOLD_SEC + SILENCE_WIDEN_SEC:
+            silence_state = 'widen'
+        else:
+            silence_state = 'lock'
         recent_active_ids = [item for item in recent_active_ids if now - item[0] <= 2.5]
 
         if active_id is not None:
@@ -907,13 +936,34 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         if portrait_source:
             desired_mode = 'source_vertical'
             fixed_render_branch = 'source_vertical'
+        elif silence_state == 'hold' and fixed_two_panel and fixed_last_confident_track is not None and int(fixed_last_confident_track) in face_by_id:
+            # A short pause is editorially continuous with the preceding turn.
+            # Keep the last confirmed panel instead of chasing incidental motion.
+            desired_mode = 'single'
+            fixed_render_branch = f'active_speaker_{fixed_last_confident_panel}'
+            active_id = int(fixed_last_confident_track)
+            fixed_hold = True
+        elif silence_state in ('widen', 'lock') and fixed_two_panel and visual_pair is not None:
+            # Never pull a portrait crop toward the divider. A fixed podcast
+            # widens structurally into two valid panes and then stays locked.
+            desired_mode = 'stacked'
+            fixed_render_branch = f'silence_{silence_state}_stacked'
+        elif silence_state in ('widen', 'lock') and fixed_two_panel:
+            desired_mode = 'wide_context'
+            fixed_render_branch = f'silence_{silence_state}_safe_full_frame'
+        elif silence_state in ('widen', 'lock') and visual_pair is not None:
+            desired_mode = 'stacked'
+            fixed_render_branch = f'silence_{silence_state}_stacked'
+        elif silence_state in ('widen', 'lock'):
+            desired_mode = 'wide_context'
+            fixed_render_branch = f'silence_{silence_state}_safe_full_frame'
         elif fixed_confident:
             desired_mode = 'single'
             fixed_render_branch = f'active_speaker_{fixed_active_panel}'
             fixed_hard_cut = (
                 fixed_last_confident_track is not None
                 and int(fixed_last_confident_track) != int(active_id)
-            )
+            ) or speech_resumed_after_long_pause
             fixed_last_confident_track = int(active_id)
             fixed_last_confident_panel = fixed_active_panel
             fixed_last_confident_time = now
@@ -963,6 +1013,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         else:
             desired_mode = 'single'
             fixed_render_branch = 'single_subject'
+
+        # Returning from a deliberate group composition to a trustworthy
+        # speaker is an editorial cut, not a camera pan across the room.
+        if speech_resumed_after_long_pause and active_speaker_mapped:
+            fixed_hard_cut = True
 
         two_person_context = wide_pair_hold_ids is not None
         grid_like_context = (
@@ -1200,6 +1255,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'primary_panel': primary_panel,
             'render_branch': fixed_render_branch,
             'hard_cut': fixed_hard_cut,
+            'silence_state': silence_state,
+            'silence_elapsed': round(silence_elapsed, 3),
             'track_region_map': None if not fixed_two_panel else fixed_two_panel.get('track_region_map'),
             'visible_count': len(visible_faces),
             'editorial_signals': {
@@ -1278,6 +1335,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'speakerScoreMargin': decision.get('speaker_score_margin'),
                 'trackRegionMap': decision.get('track_region_map'),
                 'hardCutStart': bool(decision.get('hard_cut')),
+                'silenceState': decision.get('silence_state'),
                 'sceneCutStart': bool(decision.get('scene_cut')),
                 'points': [],
                 '_top_boxes': [],
