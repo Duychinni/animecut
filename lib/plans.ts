@@ -88,6 +88,7 @@ export function buildPlanFeatures(plan: PlanConfig) {
     formatMinutesLabel(plan.processingMinutes),
     formatUploadLengthLabel(plan.maxUploadLengthMinutes),
     formatGeneratedClipsLabel(plan.maxGeneratedClips),
+    'No automatic overage charges',
     ...(plan.featureLabels ?? []),
   ];
 }
