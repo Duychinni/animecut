@@ -75,8 +75,6 @@ type TimelineFilmstrip = {
   captureFailed: boolean;
 };
 
-const TIMELINE_TAIL_SECONDS = 5;
-
 function TimelineVideoThumbnail({ src, time }: { src: string; time: number }) {
   return (
     <video
@@ -111,7 +109,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function buildTimelineViewport(start: number, end: number) {
-  return { start, end: Math.max(start + 0.1, end) + TIMELINE_TAIL_SECONDS };
+  return { start, end: Math.max(start + 0.1, end) };
 }
 
 function safeJson(value: unknown) {
@@ -253,7 +251,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const clipEndSeconds = settings?.clip_end_seconds;
   const changed = Boolean(settings && baseline && safeJson(settings) !== baseline);
   const needsRender = changed || data?.clip.editStatus === 'draft' || data?.clip.editStatus === 'error';
-  const editableTimelineEnd = editableClipBoundsRef.current?.end ?? clipEndSeconds ?? timelineViewport.end - TIMELINE_TAIL_SECONDS;
+  const editableTimelineEnd = editableClipBoundsRef.current?.end ?? clipEndSeconds ?? timelineViewport.end;
   const editableTimelineDuration = Math.max(0.1, editableTimelineEnd - timelineViewport.start);
   const filmstripFrameCount = clamp(Math.ceil(editableTimelineDuration / 3), 8, 16);
   const timelineSampleTimes = useMemo(() => Array.from({ length: filmstripFrameCount }, (_, index) => {
@@ -546,7 +544,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const minimumDuration = Math.min(3, Math.max(0.1, editableBounds.end - editableBounds.start));
     const safeStart = clamp(start, editableBounds.start, Math.max(editableBounds.start, settings.clip_end_seconds - minimumDuration));
     const safeEnd = clamp(end, safeStart + minimumDuration, editableBounds.end);
-    patchSettings({ clip_start_seconds: safeStart, clip_end_seconds: safeEnd });
+    patchSettings({
+      clip_start_seconds: safeStart,
+      clip_end_seconds: safeEnd,
+      cut_points: settings.cut_points.filter((point) => point > safeStart + 0.1 && point < safeEnd - 0.1),
+      removed_ranges: settings.removed_ranges
+        .map((range) => ({ start: Math.max(range.start, safeStart), end: Math.min(range.end, safeEnd) }))
+        .filter((range) => range.end - range.start >= 0.15),
+    });
     if (currentTime < safeStart) {
       seekAbsolute(safeStart);
     } else if (currentTime >= safeEnd) {
@@ -554,6 +559,49 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       seekAbsolute(safeEnd);
       setPaused(true);
     }
+  }
+
+  function splitAtPlayhead() {
+    if (!settings) return;
+    const point = clamp(currentTime, settings.clip_start_seconds, settings.clip_end_seconds);
+    if (point <= settings.clip_start_seconds + 0.15 || point >= settings.clip_end_seconds - 0.15) {
+      setToast('Move the playhead inside the clip to split');
+      return;
+    }
+    if (settings.cut_points.some((existing) => Math.abs(existing - point) < 0.15)) {
+      setToast('There is already a split here');
+      return;
+    }
+    patchSettings({ cut_points: [...settings.cut_points, Number(point.toFixed(3))].sort((a, b) => a - b) });
+    setSelectedRange(null);
+    setActiveTool('trim');
+    setToast(`Split at ${formatClock(point - settings.clip_start_seconds)}`);
+  }
+
+  function deleteLeftOfPlayhead() {
+    if (!settings) return;
+    const point = clamp(currentTime, settings.clip_start_seconds, settings.clip_end_seconds);
+    if (point <= settings.clip_start_seconds + 0.15) {
+      setToast('Move the playhead right to delete the left side');
+      return;
+    }
+    patchTimes(point, settings.clip_end_seconds);
+    setSelectedRange(null);
+    setActiveTool('trim');
+    setToast('Deleted everything left of the playhead');
+  }
+
+  function deleteRightOfPlayhead() {
+    if (!settings) return;
+    const point = clamp(currentTime, settings.clip_start_seconds, settings.clip_end_seconds);
+    if (point >= settings.clip_end_seconds - 0.15) {
+      setToast('Move the playhead left to delete the right side');
+      return;
+    }
+    patchTimes(settings.clip_start_seconds, point);
+    setSelectedRange(null);
+    setActiveTool('trim');
+    setToast('Deleted everything right of the playhead');
   }
 
   function beginCropDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1319,6 +1367,23 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               {label}
             </button>
           ))}
+          <span className="mx-1 h-5 w-px bg-white/10" />
+          {([
+            ['Split', splitAtPlayhead, 'M8 4v6m0 4v6M16 4v6m0 4v6M5 12h14'],
+            ['Delete left', deleteLeftOfPlayhead, 'M8 4v16M17 5v14M5 12h9m-3-3 3 3-3 3'],
+            ['Delete right', deleteRightOfPlayhead, 'M16 4v16M7 5v14m3-7h9m-3-3 3 3-3 3'],
+          ] as const).map(([label, action, path]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={action}
+              className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-bold text-white/60 transition hover:bg-white/[0.07] hover:text-white"
+              title={`${label} at playhead`}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>
+              {label}
+            </button>
+          ))}
           <span className="mx-2 h-5 w-px bg-white/10" />
           <button
             type="button"
@@ -1504,14 +1569,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   />
                 ))}
               </div>
-              <div
-                className="pointer-events-none absolute bottom-0 top-[31px] border-l border-dashed border-white/15 bg-black/35"
-                style={{ left: `${sourceTrackEndLeft}%`, right: 0 }}
-                aria-hidden="true"
-              >
-                <span className="absolute left-3 top-3 text-[9px] font-bold uppercase tracking-[0.14em] text-white/20">Empty timeline</span>
-              </div>
-
               {settings.removed_ranges.map((range, index) => (
                 <button
                   type="button"
