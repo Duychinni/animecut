@@ -522,6 +522,18 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {recentProjects.length < 2 ? (
+        <section className="mb-7 rounded-2xl border border-[#ff7bd8]/20 bg-[#ff7bd8]/[0.055] p-5">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#ff9dde]">Your first reel</p>
+          <div className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
+            <span className={recentProjects.length ? 'text-emerald-300' : 'text-white/70'}>{recentProjects.length ? '✓' : '1.'} Upload a video</span>
+            <span className={recentProjects.some(isCompletedProject) ? 'text-emerald-300' : 'text-white/50'}>{recentProjects.some(isCompletedProject) ? '✓' : '2.'} Let AnimaCut create reels</span>
+            <span className={recentProjects.some(isCompletedProject) ? 'text-white/70' : 'text-white/35'}>3. Preview and edit</span>
+            <span className="text-white/35">4. Download your reel</span>
+          </div>
+        </section>
+      ) : null}
+
       <div className="mb-6 grid gap-3 md:grid-cols-[minmax(260px,1fr)_auto_auto_auto]">
         <input
           type="text"

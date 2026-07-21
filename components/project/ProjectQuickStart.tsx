@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { readJsonSafe } from '@/lib/safe-json';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
+import { captureEvent } from '@/lib/analytics';
 
 type ProjectCreatedPayload = {
   id: string;
@@ -109,6 +110,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
 
   async function uploadFile(selectedFile: File) {
     try {
+      captureEvent('upload_started', { source_type: 'upload', size_mb: Math.round(selectedFile.size / 1024 / 1024) });
       setLoading(true);
       setUploadProgress(0);
       setMsg('Checking video length...');
@@ -174,6 +176,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
         setUploadProgress(100);
       }
       setMsg('Upload complete. Starting processing...');
+      captureEvent('upload_completed', { source_type: 'upload', duration_seconds: Math.round(durationSeconds) });
       await fetch(`/api/projects/${project.id}/start`, { method: 'POST' }).catch(() => null);
 
       if (onProjectCreated) {
@@ -183,6 +186,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Could not upload file';
+      captureEvent('upload_failed', { source_type: 'upload', error_type: text.slice(0, 80) });
       setMsg(text);
     } finally {
       setLoading(false);

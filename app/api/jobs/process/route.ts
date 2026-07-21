@@ -12,6 +12,7 @@ import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { hasSettledSuccessfulExports } from '@/lib/project-completion';
+import { sendProjectStatusEmail } from '@/lib/project-notifications';
 import {
   buildDefaultClipEditSettings,
   hasClipEditSettings,
@@ -75,6 +76,7 @@ async function maybeFinalizeProject(projectId: string) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
+    void sendProjectStatusEmail(projectId, 'completed').catch((error) => console.warn('[notification] completion email failed', { projectId, error: error instanceof Error ? error.message : String(error) }));
     return true;
   }
 
@@ -97,6 +99,7 @@ async function maybeFinalizeProject(projectId: string) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', projectId);
+      void sendProjectStatusEmail(projectId, 'completed').catch((error) => console.warn('[notification] completion email failed', { projectId, error: error instanceof Error ? error.message : String(error) }));
       return true;
     }
 
@@ -115,6 +118,7 @@ async function maybeFinalizeProject(projectId: string) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
+    void sendProjectStatusEmail(projectId, 'failed').catch((error) => console.warn('[notification] failure email failed', { projectId, error: error instanceof Error ? error.message : String(error) }));
     return true;
   }
 

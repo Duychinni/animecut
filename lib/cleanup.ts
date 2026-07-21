@@ -78,7 +78,7 @@ export async function cleanupExportTempFiles(projectId: string, exportId: string
   return log;
 }
 
-export async function cleanupTmpRootOlderThan(hours: number) {
+export async function cleanupTmpRootOlderThan(hours: number, protectedProjectIds: ReadonlySet<string> = new Set()) {
   const log = createLog();
   const cutoffMs = Date.now() - hours * 60 * 60 * 1000;
   const tmpRoot = path.join(process.cwd(), 'tmp');
@@ -95,6 +95,7 @@ export async function cleanupTmpRootOlderThan(hours: number) {
     }
 
     for (const entry of entries) {
+      if (protectedProjectIds.has(entry.name)) continue;
       const targetPath = path.join(bucketPath, entry.name);
       const info = await safeStat(targetPath);
       if (!info) continue;

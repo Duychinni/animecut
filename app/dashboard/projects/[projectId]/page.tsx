@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
+import { ProjectFailureActions } from '@/components/project/ProjectFailureActions';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
 import { createExportPreviewUrl, createExportSignedUrls, findExistingExportObjectPaths, makeExportPreviewObjectPath } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
@@ -344,6 +345,7 @@ export default async function ProjectDetailPage({
     !hasMockResults &&
     (effectiveStatus === 'completed' || pipelineStatus === 'completed' || progressPercent >= 100);
   const showProcessingHero = !shouldShowResults;
+  const pipelineFailed = pipelineStatus === 'error' || projectRow?.status === 'error';
 
   return (
     <main className="mx-auto w-full max-w-[2400px] px-8 py-10">
@@ -356,7 +358,9 @@ export default async function ProjectDetailPage({
           <PipelineRunner projectId={projectId} autoStart={autoStart || needsCoverageRepair} />
         </div>
 
-        {shouldShowResults ? (
+        {pipelineFailed ? (
+          <ProjectFailureActions projectId={projectId} detail={projectRow?.pipeline_error} />
+        ) : shouldShowResults ? (
           <TopClipsBoard
             projectId={projectId}
             clips={displayExportItems.map((row) => ({

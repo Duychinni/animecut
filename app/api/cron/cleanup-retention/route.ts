@@ -56,8 +56,14 @@ export async function GET(req: Request) {
       }
     }
 
+    const { data: activeProjects, error: activeError } = await admin
+      .from('projects')
+      .select('id')
+      .in('pipeline_status', ['queued', 'processing']);
+    if (activeError) throw activeError;
+    const protectedProjectIds = new Set((activeProjects ?? []).map((project) => String(project.id)));
     const analysis = await cleanupExpiredAnalysisArtifacts(500);
-    const temp = summarizeCleanup(await cleanupTmpRootOlderThan(24));
+    const temp = summarizeCleanup(await cleanupTmpRootOlderThan(24, protectedProjectIds));
     console.log('[cleanup] retention', { deleted, failures, analysis, temp });
     return NextResponse.json({ ok: failures.length === 0, deleted, failures, analysis, temp });
   } catch (error) {

@@ -202,6 +202,12 @@ export function AuthCard({
         </button>
       </form>
 
+      {isLogin ? (
+        <p className="mt-4 text-sm text-white/55">
+          <Link className="text-white underline underline-offset-4" href="/auth/forgot-password">Forgot your password?</Link>
+        </p>
+      ) : null}
+
       <p className="mt-5 text-sm text-white/55">
         {isLogin ? (
           <>

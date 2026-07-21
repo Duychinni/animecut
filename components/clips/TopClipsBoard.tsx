@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-presets';
 import type { ClipEditSettings } from '@/lib/clip-edit';
 import { readJsonSafe } from '@/lib/safe-json';
+import { captureEvent } from '@/lib/analytics';
 
 type ClipItem = {
   exportId: string;
@@ -789,6 +790,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();
       downloadClipBlob(blob, getClipFileName(clip));
+      captureEvent('reel_downloaded', { export_id: clip.exportId });
+      window.localStorage.setItem('animacut.onboarding.downloaded', 'true');
     } catch (error) {
       console.error(error);
       window.alert('Download failed. Try again.');

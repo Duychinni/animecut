@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { BillingInterval, PlanConfig, PlanId } from '@/lib/plans';
 import { buildPlanFeatures } from '@/lib/plans';
 import { PricingActions } from '@/components/billing/PricingActions';
+import { captureEvent } from '@/lib/analytics';
 
 function PlanCard({
   plan,
@@ -79,6 +80,7 @@ function PlanCard({
 }
 
 export function PricingCards({ plans, interval, currentPlan }: { plans: PlanConfig[]; interval: BillingInterval; currentPlan: PlanId }) {
+  useEffect(() => { captureEvent('pricing_viewed'); }, []);
   const [selectedPlanId, setSelectedPlanId] = useState(plans.find((plan) => plan.highlighted)?.id ?? plans[0]?.id ?? '');
 
   return (
