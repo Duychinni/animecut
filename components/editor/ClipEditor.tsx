@@ -1165,9 +1165,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               </div>
             ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              <div className="-mx-4 -mt-4 border-b border-white/10 bg-[#26282c] px-3 pt-1">
+                <div className="flex items-center gap-1">
+                  <button type="button" className="border-b-2 border-cyan-300 px-3 py-3 text-xs font-bold text-cyan-300">Basic</button>
+                  <button type="button" className="px-3 py-3 text-xs font-bold text-white/45" title="More caption animations coming soon">Animation</button>
+                </div>
+              </div>
               <div className="flex items-center justify-between">
-                <p className="text-sm font-black text-white">Caption style</p>
+                <p className="text-sm font-black text-white">Captions</p>
                 <label className="flex items-center gap-2 text-xs font-bold text-white/58">
                   <input type="checkbox" checked={settings.captions_enabled} onChange={(event) => patchSettings({ captions_enabled: event.target.checked })} className="accent-emerald-400" />
                   On
@@ -1198,9 +1204,69 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   })}
                 </div>
               </div>
-              <div className="space-y-2 pt-2">
-                <p className="text-xs font-black text-white/70">Caption position</p>
-                <div className="grid grid-cols-3 gap-2">
+              <div className="border-t border-white/10 pt-4">
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-xs font-black text-white/80">Transform</p>
+                  <button
+                    type="button"
+                    onClick={() => patchSettings({ caption_position: 'lower-third', caption_x: 0.5, caption_y: 0.8, caption_font_size: activePreset?.captionFontSize ?? 11 })}
+                    className="rounded-md px-2 py-1 text-lg leading-none text-white/45 transition hover:bg-white/[0.06] hover:text-white"
+                    title="Reset caption transform"
+                    aria-label="Reset caption transform"
+                  >↶</button>
+                </div>
+
+                <label className="block space-y-2">
+                  <span className="flex items-center justify-between text-xs font-semibold text-white/70">
+                    Scale
+                    <span className="rounded-md bg-black/30 px-2 py-1 font-mono text-white/85">{Math.round((settings.caption_font_size / 11) * 100)}%</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={6}
+                    max={20}
+                    step={0.5}
+                    value={settings.caption_font_size}
+                    onChange={(event) => patchSettings({ caption_font_size: Number(event.target.value) })}
+                    className="w-full cursor-pointer accent-cyan-300"
+                    aria-label="Caption scale"
+                  />
+                </label>
+
+                <div className="mt-5 space-y-2">
+                  <p className="text-xs font-semibold text-white/70">Position</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center rounded-md bg-black/25 px-2 text-[10px] font-bold text-white/35">
+                      X
+                      <input
+                        type="number"
+                        min={8}
+                        max={92}
+                        value={Math.round(settings.caption_x * 100)}
+                        onChange={(event) => patchSettings({ caption_x: clamp(Number(event.target.value) / 100, 0.08, 0.92) })}
+                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-right font-mono text-xs text-white outline-none"
+                        aria-label="Caption horizontal position"
+                      />
+                    </label>
+                    <label className="flex items-center rounded-md bg-black/25 px-2 text-[10px] font-bold text-white/35">
+                      Y
+                      <input
+                        type="number"
+                        min={8}
+                        max={92}
+                        value={Math.round(settings.caption_y * 100)}
+                        onChange={(event) => patchSettings({ caption_y: clamp(Number(event.target.value) / 100, 0.08, 0.92) })}
+                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-right font-mono text-xs text-white outline-none"
+                        aria-label="Caption vertical position"
+                      />
+                    </label>
+                  </div>
+                  <p className="text-[10px] font-semibold text-white/35">You can also drag captions directly on the video.</p>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <p className="text-xs font-semibold text-white/70">Quick align</p>
+                  <div className="grid grid-cols-3 gap-1 rounded-lg bg-black/25 p-1.5">
                   {([['upper', 'Top'], ['center', 'Center'], ['lower-third', 'Bottom']] as const).map(([position, label]) => (
                     <button
                       key={position}
@@ -1210,11 +1276,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                         caption_x: 0.5,
                         caption_y: position === 'upper' ? 0.18 : position === 'center' ? 0.5 : 0.8,
                       })}
-                      className={`rounded-lg border px-2 py-2.5 text-xs font-bold transition ${settings.caption_position === position ? 'border-cyan-300/70 bg-cyan-300/15 text-cyan-100' : 'border-white/10 text-white/55 hover:bg-white/[0.06] hover:text-white'}`}
+                      className={`rounded-md px-2 py-2 text-[11px] font-bold transition ${settings.caption_position === position ? 'bg-white/15 text-white' : 'text-white/48 hover:bg-white/[0.06] hover:text-white'}`}
                     >
                       {label}
                     </button>
                   ))}
+                  </div>
                 </div>
               </div>
             </div>
