@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getOrCreateProfile, getPlanPriceId, getStripe, hasPaidSubscriptionAccess, resolveAppUrl } from '@/lib/billing';
+import { getOrCreateProfile, getPlanPriceId, getStripe, hasPaidSubscriptionAccess, syncProfileFromSubscription } from '@/lib/billing';
 import type { BillingInterval, PlanId } from '@/lib/plans';
 
 const PLAN_RANK: Record<PlanId, number> = {
@@ -36,7 +36,12 @@ export async function POST(req: Request) {
 
     const profile = await getOrCreateProfile(user.id);
     const stripe = getStripe();
-    const appUrl = await resolveAppUrl();
+    // Billing is also exercised from Vercel Preview deployments. Supabase auth
+    // cookies are scoped to the host where the user signed in, so returning a
+    // Preview checkout to the production APP_URL makes that authenticated user
+    // appear signed out. Always return this interactive flow to its initiating
+    // origin instead.
+    const appUrl = new URL(req.url).origin;
 
     let customerId = profile.stripe_customer_id;
     if (!customerId) {
@@ -132,6 +137,15 @@ export async function POST(req: Request) {
       const paymentUrl = latestInvoice?.status === 'open' && 'hosted_invoice_url' in latestInvoice
         ? latestInvoice.hosted_invoice_url
         : null;
+
+      // Do not make the browser wait for a webhook before its upgraded plan
+      // and allowance appear. Stripe pending updates retain the old price when
+      // payment has not completed, so only synchronize once the requested
+      // price is actually active on the subscription.
+      const activePriceId = upgradedSubscription.items.data[0]?.price.id;
+      if (activePriceId === nextPriceId && ['active', 'trialing', 'past_due'].includes(upgradedSubscription.status)) {
+        await syncProfileFromSubscription(upgradedSubscription, { resetAllowance: false });
+      }
 
       return NextResponse.json({
         url: paymentUrl || `${appUrl}/success?upgraded=1`,

@@ -1,6 +1,47 @@
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
+import { getOrCreateProfile, getStripe, syncProfileFromSubscription } from '@/lib/billing';
 
-export default function SuccessPage() {
+export default async function SuccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ session_id?: string; upgraded?: string }>;
+}) {
+  const params = await searchParams;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (user) {
+    try {
+      const stripe = getStripe();
+      const profile = await getOrCreateProfile(user.id);
+      let subscriptionId = profile.stripe_subscription_id;
+
+      if (params.session_id) {
+        const checkout = await stripe.checkout.sessions.retrieve(params.session_id);
+        if (checkout.metadata?.userId === user.id && checkout.subscription) {
+          subscriptionId = typeof checkout.subscription === 'string'
+            ? checkout.subscription
+            : checkout.subscription.id;
+        }
+      }
+
+      if (subscriptionId) {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+          expand: ['items.data.price'],
+        });
+        const subscriptionUserId = subscription.metadata.userId;
+        if (!subscriptionUserId || subscriptionUserId === user.id) {
+          await syncProfileFromSubscription(subscription, { resetAllowance: params.upgraded !== '1' });
+        }
+      }
+    } catch (error) {
+      // Webhook processing remains the durable fallback. Do not turn a
+      // successful payment into an error page because reconciliation is late.
+      console.error('[billing/success] subscription reconciliation failed', error);
+    }
+  }
+
   return (
     <main className="app-shell min-h-screen text-white">
       <div className="mx-auto flex min-h-screen max-w-3xl items-center justify-center px-6 py-16">
