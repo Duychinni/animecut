@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { readJsonSafe } from '@/lib/safe-json';
 import { formatLivePercent, useLiveProgress } from '@/components/project/LiveProgress';
+import { createClient } from '@/lib/supabase/client';
 
 const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
 
@@ -82,6 +83,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const progressRef = useRef<ProgressPayload | null>(null);
   const autoRanRef = useRef(false);
   const processingKickInFlightRef = useRef(false);
+  const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
   const activeExportCount = useMemo(() => Number(progress?.progress?.active_exports ?? 0), [progress]);
@@ -116,6 +118,37 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
       processingKickInFlightRef.current = false;
     }
   }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const scheduleRefresh = () => {
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      realtimeRefreshTimerRef.current = setTimeout(() => {
+        void refreshProgress().then((latest) => {
+          if (latest?.project?.status === 'completed') router.refresh();
+        });
+      }, 150);
+    };
+
+    const channel = supabase
+      .channel(`project-processing-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` },
+        scheduleRefresh,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'exports', filter: `project_id=eq.${projectId}` },
+        scheduleRefresh,
+      )
+      .subscribe();
+
+    return () => {
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [projectId, refreshProgress, router]);
 
   useEffect(() => {
     if (progressPct >= 100 && activeExportCount <= 0) return;

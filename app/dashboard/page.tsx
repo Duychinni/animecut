@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
@@ -141,6 +142,7 @@ export default function DashboardPage() {
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const repairRanRef = useRef(false);
   const loadInFlightRef = useRef(false);
+  const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function persistProgressFloor() {
     try {
@@ -340,6 +342,27 @@ export default function DashboardPage() {
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    const scheduleRefresh = () => {
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      realtimeRefreshTimerRef.current = setTimeout(() => {
+        void loadProjects();
+      }, 200);
+    };
+
+    const channel = supabase
+      .channel('dashboard-processing')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exports' }, scheduleRefresh)
+      .subscribe();
+
+    return () => {
+      if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      void supabase.removeChannel(channel);
     };
   }, []);
 
