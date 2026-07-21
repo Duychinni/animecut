@@ -1,0 +1,10 @@
+.git
+.next
+.venv
+.tools
+animacut-code
+node_modules
+outputs
+tmp
+**/__pycache__
+**/*.pyc
