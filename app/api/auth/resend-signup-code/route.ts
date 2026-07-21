@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (error) {
       const isRateLimited = error.message.toLowerCase().includes('rate limit');
       return NextResponse.json(
-        { error: isRateLimited ? 'Please wait 60 seconds before requesting another code.' : 'We could not resend the code. Please try again.' },
+        { error: isRateLimited ? 'Please wait a moment before requesting another code.' : 'We could not resend the code. Please try again.' },
         { status: isRateLimited ? 429 : 400 },
       );
     }
