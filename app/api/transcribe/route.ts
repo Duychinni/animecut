@@ -6,6 +6,7 @@ import { resolveProjectVideoSource } from '@/lib/source';
 import { extractAudioForTranscription } from '@/lib/ffmpeg';
 import { buildMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { getPublicPipelineError } from '@/lib/pipeline-errors';
+import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 
 export async function POST(req: Request) {
   try {
@@ -72,6 +73,20 @@ export async function POST(req: Request) {
         id: String(project.id),
         source_type: 'upload',
         source_storage_path: String(project.source_storage_path || ''),
+      });
+      // Generate the dashboard image on the persistent media worker while the
+      // uploaded source is already local. Background work started by Vercel's
+      // request handler may be terminated before FFmpeg can save the frame.
+      await ensureProjectUploadThumbnail({
+        id: String(project.id),
+        user_id: String(project.user_id),
+        source_type: 'upload',
+        source_storage_path: String(project.source_storage_path || ''),
+      }, { localInputPath: mediaPath }).catch((thumbnailError) => {
+        console.warn('[transcribe] upload-thumbnail failed', {
+          project_id,
+          error: thumbnailError instanceof Error ? thumbnailError.message : String(thumbnailError),
+        });
       });
       transcriptionPath = `${mediaPath}.transcribe.mp3`;
       await extractAudioForTranscription(mediaPath, transcriptionPath);

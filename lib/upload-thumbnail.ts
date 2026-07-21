@@ -33,7 +33,10 @@ async function signExistingThumbnail(project: UploadThumbnailProject) {
   return signedUrl;
 }
 
-export async function ensureProjectUploadThumbnail(project: UploadThumbnailProject, options: { generateIfMissing?: boolean } = {}) {
+export async function ensureProjectUploadThumbnail(
+  project: UploadThumbnailProject,
+  options: { generateIfMissing?: boolean; localInputPath?: string | null } = {},
+) {
   if (project.source_type !== 'upload' || !project.source_storage_path || !project.user_id) return null;
 
   const existingUrl = await signExistingThumbnail(project);
@@ -45,35 +48,41 @@ export async function ensureProjectUploadThumbnail(project: UploadThumbnailProje
   if (attemptedThumbnailGeneration.has(project.id)) return null;
   attemptedThumbnailGeneration.add(project.id);
 
-  const inputPath = await resolveProjectVideoSource({
-    id: project.id,
-    source_type: 'upload',
-    source_storage_path: project.source_storage_path,
-  });
+  try {
+    const inputPath = options.localInputPath || await resolveProjectVideoSource({
+      id: project.id,
+      source_type: 'upload',
+      source_storage_path: project.source_storage_path,
+    });
 
-  const dir = path.join(process.cwd(), 'tmp', 'thumbnails', project.id);
-  await mkdir(dir, { recursive: true });
-  const thumbnailPath = path.join(dir, 'project-thumbnail.jpg');
-  let extracted = false;
+    const dir = path.join(process.cwd(), 'tmp', 'thumbnails', project.id);
+    await mkdir(dir, { recursive: true });
+    const thumbnailPath = path.join(dir, 'project-thumbnail.jpg');
+    let extracted = false;
 
-  for (const second of [5, 1, 0.2]) {
-    try {
-      await extractVideoThumbnail(inputPath, thumbnailPath, second);
-      extracted = true;
-      break;
-    } catch (error) {
-      console.warn('[upload-thumbnail] extract attempt failed', {
-        project_id: project.id,
-        second,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const second of [5, 1, 0.2]) {
+      try {
+        await extractVideoThumbnail(inputPath, thumbnailPath, second);
+        extracted = true;
+        break;
+      } catch (error) {
+        console.warn('[upload-thumbnail] extract attempt failed', {
+          project_id: project.id,
+          second,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+
+    if (!extracted) return null;
+
+    const bytes = Buffer.from(await readFile(thumbnailPath));
+    const objectPath = makeProjectThumbnailObjectPath(project.user_id, project.id);
+    await uploadProjectThumbnailObject(objectPath, bytes);
+    return await signExistingThumbnail(project);
+  } finally {
+    // This is an in-flight guard, not a permanent failure cache. A transient
+    // FFmpeg/storage error must be allowed to retry on the next worker pass.
+    attemptedThumbnailGeneration.delete(project.id);
   }
-
-  if (!extracted) return null;
-
-  const bytes = Buffer.from(await readFile(thumbnailPath));
-  const objectPath = makeProjectThumbnailObjectPath(project.user_id, project.id);
-  await uploadProjectThumbnailObject(objectPath, bytes);
-  return await signExistingThumbnail(project);
 }
