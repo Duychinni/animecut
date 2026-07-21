@@ -696,12 +696,18 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       if (!res.ok || !data?.settings) throw new Error(String(data?.error || 'Could not load caption settings'));
       const settings = data.settings as ClipEditSettings;
       const source = data.source as { previewUrl?: unknown; fallbackClipUrl?: unknown; previewKind?: unknown } | undefined;
+      const hasCaptionFreePreview = source?.previewKind === 'caption-free-reel'
+        && typeof source.previewUrl === 'string';
       setCaptionPreviewData({
-        sourceUrl: typeof source?.previewUrl === 'string' ? source.previewUrl : null,
-        fallbackUrl: typeof source?.fallbackClipUrl === 'string' ? source.fallbackClipUrl : clip.signedUrl,
-        previewKind: source?.previewKind === 'caption-free-reel' || source?.previewKind === 'source'
-          ? source.previewKind
-          : 'burned-reel',
+        // Caption-free previews are safe to decorate with the editable canvas.
+        // Older clips should use the smallest adaptive reel instead of loading
+        // the much larger source/master and drawing a duplicate caption layer.
+        sourceUrl: hasCaptionFreePreview ? source.previewUrl as string : null,
+        fallbackUrl: clip.preview360Url
+          ?? clip.preview540Url
+          ?? clip.previewUrl
+          ?? (typeof source?.fallbackClipUrl === 'string' ? source.fallbackClipUrl : clip.signedUrl),
+        previewKind: hasCaptionFreePreview ? 'caption-free-reel' : 'burned-reel',
         settings,
       });
       const selected = CAPTION_TEMPLATE_OPTIONS.find((preset) =>
@@ -1762,7 +1768,6 @@ function CaptionTemplatesModal({
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const previewSettings = previewData?.settings;
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
-  const previewUsesSource = previewData?.previewKind === 'source';
   const previewHasBurnedCaptions = previewData?.previewKind === 'burned-reel';
   const activeCaption = useMemo(() => {
     if (!captionsEnabled || !previewSettings) return null;
@@ -1816,8 +1821,7 @@ function CaptionTemplatesModal({
   useEffect(() => {
     const video = previewVideoRef.current;
     if (!video) return;
-    video.preload = 'auto';
-    video.load();
+    video.preload = 'metadata';
   }, [previewUrl]);
 
   return (
@@ -1843,23 +1847,16 @@ function CaptionTemplatesModal({
                   poster={clip.posterUrl ?? undefined}
                   controls
                   playsInline
-                  preload="auto"
+                  preload="metadata"
                   className="aspect-[9/16] w-full bg-black object-cover"
                   onLoadedMetadata={(event) => {
                     const start = previewSettings?.clip_start_seconds ?? 0;
-                    event.currentTarget.currentTime = previewUsesSource ? start : 0;
+                    event.currentTarget.currentTime = 0;
                     setPreviewTime(start);
                   }}
                   onTimeUpdate={(event) => {
                     const video = event.currentTarget;
-                    const end = previewSettings?.clip_end_seconds;
-                    if (previewUsesSource && end !== undefined && video.currentTime >= end) {
-                      video.pause();
-                      video.currentTime = previewSettings?.clip_start_seconds ?? 0;
-                    }
-                    setPreviewTime(previewUsesSource
-                      ? video.currentTime
-                      : (previewSettings?.clip_start_seconds ?? 0) + video.currentTime);
+                    setPreviewTime((previewSettings?.clip_start_seconds ?? 0) + video.currentTime);
                   }}
                 />
               ) : (
@@ -1867,7 +1864,7 @@ function CaptionTemplatesModal({
                   {loading ? 'Loading caption preview…' : 'Reel preview unavailable'}
                 </div>
               )}
-              {activeCaption ? (
+              {activeCaption && !previewHasBurnedCaptions ? (
                 <div
                   className="absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center outline outline-1 outline-cyan-300/0 outline-offset-4 transition hover:outline-cyan-300/85 active:outline-cyan-300"
                   style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
@@ -1899,7 +1896,7 @@ function CaptionTemplatesModal({
             </div>
             <p className="mt-3 text-center text-xs text-white/45">
               {previewHasBurnedCaptions
-                ? 'This temporary preview sits over the old burned captions. Apply replaces the reel with this edited caption style; it does not add a second caption track.'
+                ? 'This older reel shows its existing burned captions without adding a second preview layer. Apply replaces them with your edited style.'
                 : 'This is the reel’s real framing with one editable caption layer. Drag or resize it, then Apply.'}
             </p>
           </div>
