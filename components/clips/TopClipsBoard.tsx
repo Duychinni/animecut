@@ -1037,7 +1037,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                 <path d="m8.2 13.2 7.6 4.5" />
                               </svg>
                             </button>
-                            <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/share:opacity-100">
+                            <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/share:opacity-100">
                               {sharingId === clip.exportId ? 'Preparing reel...' : 'Share / publish'}
                             </span>
                           </div>
@@ -1059,7 +1059,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                               <path d="M14.5 14h2" />
                             </svg>
                           </button>
-                          <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
+                          <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
                             Captions
                           </span>
                         </div>
@@ -1079,7 +1079,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                 <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
                               </svg>
                             </button>
-                            <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
+                            <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
                               Download clip
                             </span>
                           </div>
@@ -1247,7 +1247,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                     <path d="m8.2 13.2 7.6 4.5" />
                                   </svg>
                                 </button>
-                                <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/share:opacity-100">
+                                <span className="pointer-events-none absolute bottom-full right-0 z-30 mb-2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/share:opacity-100">
                                   {sharingId === clip.exportId ? 'Preparing reel...' : 'Share / publish'}
                                 </span>
                               </div>
@@ -1268,7 +1268,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                   <path d="M14.5 14h2" />
                                 </svg>
                               </button>
-                              <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
+                              <span className="pointer-events-none absolute bottom-full right-0 z-30 mb-2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
                                 Captions
                               </span>
                             </div>
@@ -1287,7 +1287,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                   <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5v-2" />
                                 </svg>
                               </button>
-                              <span className="pointer-events-none absolute right-0 top-full z-30 mt-1 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
+                              <span className="pointer-events-none absolute bottom-full right-0 z-30 mb-2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/download:opacity-100">
                                 Download clip
                               </span>
                             </div>
