@@ -154,8 +154,9 @@ export function buildDefaultClipEditSettings(params: {
 export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettings, sourceDuration: number): ClipEditSettings {
   const row = typeof raw === 'object' && raw ? (raw as Record<string, unknown>) : {};
   const maxEnd = Math.max(10, sourceDuration || defaults.clip_end_seconds);
-  const start = clamp(finiteNumber(row.clip_start_seconds, defaults.clip_start_seconds), 0, Math.max(0, maxEnd - 10));
-  const end = clamp(finiteNumber(row.clip_end_seconds, defaults.clip_end_seconds), start + 10, Math.min(maxEnd, start + 90));
+  const minimumDuration = Math.min(3, maxEnd);
+  const start = clamp(finiteNumber(row.clip_start_seconds, defaults.clip_start_seconds), 0, Math.max(0, maxEnd - minimumDuration));
+  const end = clamp(finiteNumber(row.clip_end_seconds, defaults.clip_end_seconds), start + minimumDuration, Math.min(maxEnd, start + 90));
   const preset = getCaptionPresetById(typeof row.caption_preset_id === 'string' ? row.caption_preset_id : defaults.caption_preset_id);
 
   return {

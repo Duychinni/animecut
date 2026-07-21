@@ -44,6 +44,7 @@ type EditorData = {
 };
 
 type DragMode = 'start' | 'end' | 'seek' | 'selection-start' | 'selection-end' | null;
+type EditorTool = 'trim' | 'crop' | 'captions';
 type EditorDebugInfo = {
   code?: string;
   status?: number;
@@ -109,24 +110,6 @@ function clamp(value: number, min: number, max: number) {
 
 function buildTimelineViewport(start: number, end: number) {
   return { start, end: Math.max(start + 0.1, end) };
-}
-
-function mergeTimelineRanges(ranges: Array<{ start: number; end: number }>) {
-  const sorted = ranges
-    .filter((range) => range.end - range.start >= 0.15)
-    .sort((a, b) => a.start - b.start);
-  const merged: Array<{ start: number; end: number }> = [];
-
-  for (const range of sorted) {
-    const previous = merged[merged.length - 1];
-    if (!previous || range.start > previous.end + 0.05) {
-      merged.push({ ...range });
-    } else {
-      previous.end = Math.max(previous.end, range.end);
-    }
-  }
-
-  return merged;
 }
 
 function safeJson(value: unknown) {
@@ -247,6 +230,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const cropDragRef = useRef<{ clientX: number; clientY: number; cropX: number; cropY: number } | null>(null);
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
   const [baseline, setBaseline] = useState('');
@@ -263,6 +247,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [selectedRange, setSelectedRange] = useState<TimelineRange | null>(null);
   const [timelineViewport, setTimelineViewport] = useState({ start: 0, end: 1 });
   const [timelineFilmstrip, setTimelineFilmstrip] = useState<TimelineFilmstrip>({ key: '', frames: [], captureFailed: false });
+  const [activeTool, setActiveTool] = useState<EditorTool>('trim');
+  const [cropDragging, setCropDragging] = useState(false);
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
   const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
@@ -405,23 +391,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedRange) {
-        const target = event.target as HTMLElement | null;
-        if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.isContentEditable) return;
-        event.preventDefault();
-        removeTimelineRange(selectedRange);
-        return;
-      }
       if (event.key === 'Escape' && selectedRange) {
         event.preventDefault();
         setSelectedRange(null);
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
-        const target = event.target as HTMLElement | null;
-        if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT' || target?.isContentEditable) return;
-        event.preventDefault();
-        cutTimelineAt(currentTime);
         return;
       }
       if (event.key === 'Escape') {
@@ -474,8 +446,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   useEffect(() => {
     if (clipStartSeconds === undefined || clipEndSeconds === undefined || dragMode) return;
-    setTimelineViewport(buildTimelineViewport(clipStartSeconds, clipEndSeconds));
-  }, [clipEndSeconds, clipStartSeconds, dragMode]);
+    const clipLength = Math.max(10, clipEndSeconds - clipStartSeconds);
+    const padding = Math.max(12, Math.min(45, clipLength * 0.65));
+    const start = Math.max(0, clipStartSeconds - padding);
+    const end = Math.min(sourceDuration, clipEndSeconds + padding);
+    setTimelineViewport(buildTimelineViewport(start, end));
+  }, [clipEndSeconds, clipStartSeconds, dragMode, sourceDuration]);
 
   useEffect(() => {
     if (!previewUrl || !timelineSampleTimes.length) return;
@@ -560,12 +536,51 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   function patchTimes(start: number, end: number) {
     if (!settings) return;
     const maxEnd = Math.max(10, sourceDuration);
-    const safeStart = clamp(start, 0, Math.max(0, maxEnd - 10));
-    const safeEnd = clamp(end, safeStart + 10, Math.min(maxEnd, safeStart + 90));
+    const minimumDuration = Math.min(3, maxEnd);
+    const safeStart = clamp(start, 0, Math.max(0, maxEnd - minimumDuration));
+    const safeEnd = clamp(end, safeStart + minimumDuration, Math.min(maxEnd, safeStart + 90));
     patchSettings({ clip_start_seconds: safeStart, clip_end_seconds: safeEnd });
     if (currentTime < safeStart || currentTime > safeEnd) {
       seekAbsolute(safeStart);
     }
+  }
+
+  function beginCropDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!settings || activeTool !== 'crop') return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    cropDragRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      cropX: settings.crop_x,
+      cropY: settings.crop_y,
+    };
+    setCropDragging(true);
+    if (settings.framing_mode !== 'manual') patchSettings({ framing_mode: 'manual' });
+  }
+
+  function moveCrop(event: ReactPointerEvent<HTMLDivElement>) {
+    const origin = cropDragRef.current;
+    if (!origin || !settings || activeTool !== 'crop') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const sensitivity = 1 / Math.max(1, settings.zoom);
+    patchSettings({
+      framing_mode: 'manual',
+      crop_x: clamp(origin.cropX - ((event.clientX - origin.clientX) / Math.max(1, rect.width)) * sensitivity, 0, 1),
+      crop_y: clamp(origin.cropY - ((event.clientY - origin.clientY) / Math.max(1, rect.height)) * sensitivity, 0, 1),
+    });
+  }
+
+  function endCropDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!cropDragRef.current) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    cropDragRef.current = null;
+    setCropDragging(false);
+  }
+
+  function resetCrop() {
+    patchSettings({ framing_mode: 'manual', crop_x: 0.5, crop_y: 0.34, zoom: 1 });
+    setToast('Crop reset');
   }
 
   function updateClipTranscriptText(text: string) {
@@ -590,22 +605,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setToast('Segment selected — drag either edge to adjust it');
   }
 
-  function cutTimelineAt(seconds: number) {
-    if (!settings) return;
-    const point = clamp(seconds, settings.clip_start_seconds, settings.clip_end_seconds);
-    if (point <= settings.clip_start_seconds + 0.1 || point >= settings.clip_end_seconds - 0.1) return;
-    if (settings.cut_points.some((existing) => Math.abs(existing - point) < 0.12)) {
-      setToast('A cut already exists here');
-      return;
-    }
-    patchSettings({
-      cut_points: [...settings.cut_points, Number(point.toFixed(3))].sort((a, b) => a - b),
-    });
-    setSelectedRange(null);
-    seekAbsolute(point);
-    setToast(`Split at ${formatClock(point)} — select either segment to delete it`);
-  }
-
   function selectTimelineSegment(range: TimelineRange) {
     if (!settings) return;
     const start = clamp(range.start, settings.clip_start_seconds, settings.clip_end_seconds);
@@ -614,24 +613,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setSelectedRange({ ...range, start, end });
     seekAbsolute(start);
     setToast('Segment selected — adjust its edges or press Delete segment');
-  }
-
-  function removeTimelineRange(range: TimelineRange) {
-    if (!settings) return;
-    const start = clamp(range.start, settings.clip_start_seconds, settings.clip_end_seconds);
-    const end = clamp(range.end, start, settings.clip_end_seconds);
-    if (end - start < 0.15) return;
-    const nextSettings: ClipEditSettings = {
-      ...settings,
-      removed_ranges: mergeTimelineRanges([...settings.removed_ranges, { start, end }]),
-      edited_transcript: settings.edited_transcript.map((phrase) => (
-        phrase.start >= start && phrase.end <= end ? { ...phrase, deleted: true } : phrase
-      )),
-    };
-    setSettings(nextSettings);
-    setSelectedRange(null);
-    if (currentTime >= start && currentTime < end) seekAbsolute(end);
-    setToast('Selected time removed from preview');
   }
 
   function restoreRemovedRange(index: number) {
@@ -931,7 +912,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             {data.clip.title}
           </h1>
           <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden p-4">
-            <div className="group relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] shadow-[0_24px_90px_rgba(0,0,0,.45)] ring-1 ring-white/10 transition hover:ring-white/22">
+            <div
+              className={`group relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] shadow-[0_24px_90px_rgba(0,0,0,.45)] ring-1 transition ${activeTool === 'crop' ? 'cursor-grab ring-cyan-300/75 active:cursor-grabbing' : 'cursor-pointer ring-white/10 hover:ring-white/22'}`}
+              onPointerDown={beginCropDrag}
+              onPointerMove={moveCrop}
+              onPointerUp={endCropDrag}
+              onPointerCancel={endCropDrag}
+            >
               {previewUrl ? (
                 <video
                   key={previewUrl}
@@ -943,7 +930,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   preload="metadata"
                   className="h-full w-full cursor-pointer bg-black transition-transform duration-200"
                   style={cropPreviewStyle(settings)}
-                  onClick={() => void togglePlay()}
+                  onClick={() => {
+                    if (activeTool !== 'crop' && !cropDragging) void togglePlay();
+                  }}
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
                     setPreviewDurationSeconds(Number.isFinite(video.duration) ? video.duration : 0);
@@ -967,6 +956,23 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
               )}
 
+              {activeTool === 'crop' ? (
+                <div className="pointer-events-none absolute inset-0 z-20">
+                  <div className="absolute inset-3 border border-white/90 shadow-[0_0_0_999px_rgba(0,0,0,.18)]">
+                    <span className="absolute left-1/3 top-0 h-full w-px bg-white/30" />
+                    <span className="absolute left-2/3 top-0 h-full w-px bg-white/30" />
+                    <span className="absolute left-0 top-1/3 h-px w-full bg-white/30" />
+                    <span className="absolute left-0 top-2/3 h-px w-full bg-white/30" />
+                    {['left-0 top-0 border-l-2 border-t-2', 'right-0 top-0 border-r-2 border-t-2', 'bottom-0 left-0 border-b-2 border-l-2', 'bottom-0 right-0 border-b-2 border-r-2'].map((position) => (
+                      <span key={position} className={`absolute h-5 w-5 border-white ${position}`} />
+                    ))}
+                  </div>
+                  <span className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-black/65 px-3 py-1 text-[10px] font-bold text-white/90 backdrop-blur">
+                    Drag video to reframe
+                  </span>
+                </div>
+              ) : null}
+
               {previewUsesSource && settings.captions_enabled && activeCaptionText ? (
                 <div className={`pointer-events-none absolute left-4 right-4 z-20 text-center ${captionPositionClass(settings.caption_position)}`}>
                   <span
@@ -989,7 +995,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </span>
               ) : null}
 
-              {paused ? (
+              {paused && activeTool !== 'crop' ? (
                 <button
                   type="button"
                   onClick={() => void togglePlay()}
@@ -1002,7 +1008,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </button>
               ) : null}
 
-              {previewUrl ? (
+              {previewUrl && activeTool !== 'crop' ? (
                 <div
                   className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-3 pb-3 pt-8"
                   onPointerDown={(event) => event.stopPropagation()}
@@ -1056,11 +1062,50 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95">
           <div className="border-b border-white/10 px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">Project</p>
-            <p className="mt-1 text-sm font-semibold text-white">Clip settings</p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{activeTool}</p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              {activeTool === 'crop' ? 'Reframe video' : activeTool === 'trim' ? 'Clip timing' : 'Caption style'}
+            </p>
           </div>
 
           <div className="min-h-0 space-y-4 overflow-y-auto p-4">
+            {activeTool === 'crop' ? (
+              <div className="space-y-5">
+                <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">
+                  Drag the video in the player to position it inside the vertical frame.
+                </div>
+                <label className="block space-y-2">
+                  <span className="flex items-center justify-between text-xs font-bold text-white/70">
+                    Zoom <span className="font-mono text-white">{settings.zoom.toFixed(2)}x</span>
+                  </span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={2.4}
+                    step={0.01}
+                    value={settings.zoom}
+                    onChange={(event) => patchSettings({ framing_mode: 'manual', zoom: Number(event.target.value) })}
+                    className="w-full cursor-pointer accent-cyan-300"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => patchSettings({ framing_mode: 'fit', zoom: 1 })} className="rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Fit</button>
+                  <button type="button" onClick={resetCrop} className="rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset crop</button>
+                </div>
+              </div>
+            ) : activeTool === 'trim' ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-xs font-bold text-white/45">Clip duration</p>
+                  <p className="mt-1 font-mono text-2xl font-black text-white">{formatClock(clipDuration)}</p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-white/48">Drag the white handles on the timeline to shorten or bring footage back.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">In</p><p className="font-mono text-sm text-white">{formatClock(settings.clip_start_seconds)}</p></div>
+                  <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">Out</p><p className="font-mono text-sm text-white">{formatClock(settings.clip_end_seconds)}</p></div>
+                </div>
+              </div>
+            ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-black text-white">Caption style</p>
@@ -1095,12 +1140,44 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               </div>
             </div>
+            )}
 
           </div>
         </aside>
       </section>
 
       <section className="mx-auto mt-3 w-full max-w-[1360px] overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95">
+        <div className="flex items-center gap-1 border-b border-white/[0.08] bg-[#1b1d21] px-3 py-2">
+          {([
+            ['trim', 'Trim', 'M6 7h12M8 4v6m8-6v6M7 14h10v5H7z'],
+            ['crop', 'Crop', 'M4 4v12a4 4 0 0 0 4 4h12M8 4v12h12'],
+            ['captions', 'Captions', 'M4 6h16v12H4zM7 10h4m2 0h4m-10 4h3m2 0h5'],
+          ] as const).map(([tool, label, path]) => (
+            <button
+              key={tool}
+              type="button"
+              onClick={() => setActiveTool(tool)}
+              className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-bold transition ${activeTool === tool ? 'bg-white text-black' : 'text-white/60 hover:bg-white/[0.07] hover:text-white'}`}
+              aria-pressed={activeTool === tool}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>
+              {label}
+            </button>
+          ))}
+          <span className="mx-2 h-5 w-px bg-white/10" />
+          <button
+            type="button"
+            onClick={() => {
+              setSettings(JSON.parse(baseline) as ClipEditSettings);
+              setSelectedRange(null);
+              setToast('Changes reset');
+            }}
+            disabled={!changed}
+            className="rounded-md px-3 py-2 text-xs font-bold text-white/55 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-30"
+          >
+            Undo changes
+          </button>
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-2">
           <div>
             <p className="text-sm font-black text-white">Timeline</p>
@@ -1113,37 +1190,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             <span className={`text-xs font-bold ${changed ? 'text-amber-200/80' : 'text-white/45'}`}>
               {changed ? 'Unsaved draft — Apply to save and render' : 'No unsaved changes'}
             </span>
-            <button
-              type="button"
-              onClick={() => cutTimelineAt(currentTime)}
-              disabled={currentTime <= settings.clip_start_seconds + 0.1 || currentTime >= settings.clip_end_seconds - 0.1}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 px-3 text-xs font-bold text-white/72 transition hover:border-orange-300/45 hover:bg-orange-300/10 hover:text-orange-100 disabled:cursor-not-allowed disabled:opacity-35"
-              aria-label="Split at playhead"
-              aria-keyshortcuts="Control+B Meta+B"
-              title="Split at playhead (Ctrl+B)"
-            >
-              <span aria-hidden="true">&#9986;</span>
-              Split
-            </button>
-            {selectedRange ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => removeTimelineRange(selectedRange)}
-                  className="rounded-md border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-bold text-red-100 hover:bg-red-400/20"
-                  aria-keyshortcuts="Delete Backspace"
-                >
-                  Delete segment
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRange(null)}
-                  className="rounded-md border border-white/10 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.06]"
-                >
-                  Cancel selection
-                </button>
-              </>
-            ) : null}
             <button onClick={() => void rerenderClip()} disabled={!needsRender || rendering} className="rounded-full bg-white px-5 py-2 text-sm font-black text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-45">
               {rendering ? 'Applying...' : 'Apply'}
             </button>
@@ -1152,7 +1198,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
         <div className="px-3 py-2">
           <p className="mb-2 text-xs font-semibold text-white/48">
-            Move the playhead, then press Split (Ctrl+B). Select a segment to adjust or delete it. Splits alone do not change playback; deleted segments are skipped after Apply.
+            Drag the white clip handles to change the start and end. The dimmed footage stays available so you can lengthen the reel again.
           </p>
           <div className="relative grid h-[176px] grid-cols-[54px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
             <div className="border-r border-white/[0.08] bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
@@ -1256,7 +1302,20 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     ))}
               </div>
 
-              {timelineSegments.map((segment, index) => (
+              <div
+                className="pointer-events-none absolute bottom-0 top-[31px] z-[14] bg-black/60"
+                style={{ left: 0, width: `${clipStartLeft}%` }}
+              />
+              <div
+                className="pointer-events-none absolute bottom-0 top-[31px] z-[14] bg-black/60"
+                style={{ left: `${clipEndLeft}%`, right: 0 }}
+              />
+              <div
+                className="pointer-events-none absolute bottom-0 top-[31px] z-[16] border-y-2 border-cyan-300/85 bg-cyan-300/[0.035]"
+                style={{ left: `${clipStartLeft}%`, width: `${Math.max(0, clipEndLeft - clipStartLeft)}%` }}
+              />
+
+              {activeTool === 'trim' ? timelineSegments.map((segment, index) => (
                 <button
                   type="button"
                   key={segment.id}
@@ -1280,7 +1339,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   aria-label={`Select segment ${index + 1}`}
                   title={`Segment ${index + 1}: ${formatClock(segment.end - segment.start)}`}
                 />
-              ))}
+              )) : null}
               <div className="absolute inset-x-0 bottom-2 flex h-9 items-end gap-[2px] px-2">
                 {audioBars.map((height, index) => (
                   <span
@@ -1343,19 +1402,19 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               <div className="pointer-events-none absolute inset-y-0 z-30 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
               <button
                 onPointerDown={(event) => beginTimelineDrag('start', event)}
-                className="absolute top-[31px] z-40 h-[145px] w-[3px] -translate-x-1/2 cursor-ew-resize bg-emerald-300/80 shadow-[0_0_6px_rgba(110,231,183,.45)]"
+                className="absolute top-[31px] z-40 h-[145px] w-[4px] -translate-x-1/2 cursor-ew-resize bg-white shadow-[0_0_10px_rgba(255,255,255,.5)]"
                 style={{ left: `${clipStartLeft}%` }}
                 aria-label="Trim start"
               >
-                <span className="absolute left-1/2 top-1 h-4 w-2.5 -translate-x-1/2 rounded-sm border border-emerald-100/70 bg-emerald-300" />
+                <span className="absolute left-0 top-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-white text-black shadow-lg"><i className="h-4 w-px bg-black/35" /></span>
               </button>
               <button
                 onPointerDown={(event) => beginTimelineDrag('end', event)}
-                className="absolute top-[31px] z-40 h-[145px] w-[3px] -translate-x-1/2 cursor-ew-resize bg-emerald-300/80 shadow-[0_0_6px_rgba(110,231,183,.45)]"
+                className="absolute top-[31px] z-40 h-[145px] w-[4px] -translate-x-1/2 cursor-ew-resize bg-white shadow-[0_0_10px_rgba(255,255,255,.5)]"
                 style={{ left: `${clipEndLeft}%` }}
                 aria-label="Trim end"
               >
-                <span className="absolute right-1/2 top-1 h-4 w-2.5 translate-x-1/2 rounded-sm border border-emerald-100/70 bg-emerald-300" />
+                <span className="absolute left-0 top-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-white text-black shadow-lg"><i className="h-4 w-px bg-black/35" /></span>
               </button>
             </div>
           </div>
