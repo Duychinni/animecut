@@ -21,7 +21,7 @@ export function EmailVerificationCard({ email, next = '/' }: { email: string; ne
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
   const [expiresIn, setExpiresIn] = useState(OTP_EXPIRY_SECONDS);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState('Email delivered');
+  const [message, setMessage] = useState('Check your inbox');
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   function updateCodeDigit(index: number, value: string) {
