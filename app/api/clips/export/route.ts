@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { getCaptionPresetById } from '@/lib/caption-presets';
+import { getProjectPlanEntitlements } from '@/lib/plan-entitlements';
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
 
@@ -134,6 +135,7 @@ export async function POST(req: Request) {
       reframe_mode,
     } = await req.json();
     const supabase = createAdminClient();
+    const entitlements = await getProjectPlanEntitlements(String(project_id));
 
     const captionPreset = getCaptionPresetById(typeof caption_preset_id === 'string' ? caption_preset_id : undefined);
     const captionsEnabled = captions_enabled !== false;
@@ -153,8 +155,10 @@ export async function POST(req: Request) {
     const autoReframe = auto_reframe !== false;
     const reframeMode = normalizeReframeMode(reframe_mode, getDefaultReframeMode());
 
-    let targetCount = Math.max(1, Math.min(20, Number(target_count ?? 0)));
-    let selectedIds = Array.isArray(candidate_ids) ? (candidate_ids as string[]) : [];
+    let targetCount = Math.max(1, Math.min(entitlements.maxGeneratedClips, Number(target_count ?? 0)));
+    let selectedIds = Array.isArray(candidate_ids)
+      ? (candidate_ids as string[]).slice(0, entitlements.maxGeneratedClips)
+      : [];
     let blockedCount = 0;
     let candidateHookText = new Map<string, string>();
 
@@ -192,7 +196,7 @@ export async function POST(req: Request) {
         const segments = Array.isArray(transcriptRow?.segments_json) ? (transcriptRow?.segments_json as { end?: number }[]) : [];
         const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
         const desired = getTargetClipCount(totalSeconds);
-        targetCount = Math.max(1, Math.min(desired, (topCandidates ?? []).length || desired));
+        targetCount = Math.max(1, Math.min(entitlements.maxGeneratedClips, desired, (topCandidates ?? []).length || desired));
       }
 
       const doneCount = (existingExports ?? []).filter(hasPlayableOutput).length;

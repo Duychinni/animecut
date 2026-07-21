@@ -13,6 +13,7 @@ import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { hasSettledSuccessfulExports } from '@/lib/project-completion';
 import { sendProjectStatusEmail } from '@/lib/project-notifications';
+import { sortProjectWorkByPlan } from '@/lib/plan-entitlements';
 import {
   buildDefaultClipEditSettings,
   hasClipEditSettings,
@@ -125,7 +126,7 @@ async function maybeFinalizeProject(projectId: string) {
   return false;
 }
 
-type JobRow = { id: string; payload: { export_id?: string } & Record<string, unknown> };
+type JobRow = { id: string; project_id?: string | null; created_at?: string | null; payload: { export_id?: string; project_id?: string } & Record<string, unknown> };
 
 async function getProjectIdForExport(exportId: string) {
   const supabase = createAdminClient();
@@ -1118,20 +1119,24 @@ export async function POST(req: Request) {
 
   const { data: jobs, error } = await supabase
     .from('jobs')
-    .select('id, payload')
+    .select('id, project_id, created_at, payload')
     .eq('status', 'queued')
     .eq('type', 'export')
     .order('created_at', { ascending: true })
-    .limit(batchLimit);
+    .limit(Math.max(batchLimit * 10, 50));
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  let workItems: Array<{ jobId: string | null; exportId: string | null; payload: Record<string, unknown> }> =
+  let workItems: Array<{ jobId: string | null; exportId: string | null; projectId: string; createdAt?: string | null; payload: Record<string, unknown> }> =
     ((jobs ?? []) as JobRow[]).map((job) => ({
       jobId: job.id,
       exportId: job.payload?.export_id ?? null,
+      projectId: String(job.project_id ?? job.payload?.project_id ?? ''),
+      createdAt: job.created_at,
       payload: (job.payload as Record<string, unknown>) ?? {},
-    }));
+    })).filter((item) => item.projectId);
+
+  workItems = (await sortProjectWorkByPlan(workItems)).slice(0, batchLimit);
 
   const queuedExportSlots = Math.max(0, batchLimit - workItems.length);
   if (queuedExportSlots > 0) {
@@ -1142,7 +1147,7 @@ export async function POST(req: Request) {
     );
     const { data: queuedExports, error: exErr } = await supabase
       .from('exports')
-      .select('id, project_id')
+      .select('id, project_id, created_at')
       .eq('status', 'queued')
       .order('created_at', { ascending: true })
       .limit(batchLimit * 2);
@@ -1157,6 +1162,8 @@ export async function POST(req: Request) {
       workItems.push({
         jobId: null,
         exportId,
+        projectId: String(row.project_id),
+        createdAt: row.created_at,
         payload: buildFallbackExportPayload(exportId, { recovered_missing_job: true }),
       });
       alreadySelectedExportIds.add(exportId);
@@ -1172,7 +1179,7 @@ export async function POST(req: Request) {
     } else {
       const { data: focusedJobs, error: focusError } = await supabase
         .from('jobs')
-        .select('id, payload')
+        .select('id, project_id, created_at, payload')
         .eq('status', 'queued')
         .eq('type', 'export')
         .order('created_at', { ascending: true })
@@ -1187,6 +1194,8 @@ export async function POST(req: Request) {
           {
             jobId: focusedJob.id,
             exportId: String(focusedPayload.export_id ?? focusedExportId),
+            projectId: String(focusedJob.project_id ?? focusedPayload.project_id ?? ''),
+            createdAt: focusedJob.created_at,
             payload: focusedPayload,
           },
           ...workItems.filter((item) => item.exportId !== focusedExportId),

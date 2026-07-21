@@ -42,14 +42,14 @@ export function getClipPolicy(totalSeconds: number): ClipPolicy {
     return { targetMin: 15, targetMax: 18, candidateCount: 120, expectedMinSec: 30, expectedMaxSec: 90, minSec: 30, maxSec: 100 };
   }
 
-  return { targetMin: 18, targetMax: 20, candidateCount: 150, expectedMinSec: 30, expectedMaxSec: 90, minSec: 30, maxSec: 120 };
+  return { targetMin: 18, targetMax: 30, candidateCount: 180, expectedMinSec: 30, expectedMaxSec: 90, minSec: 30, maxSec: 120 };
 }
 
 export function getTargetClipCount(totalSeconds: number) {
   const policy = getClipPolicy(totalSeconds);
   const minutes = totalSeconds / 60;
   if (minutes > 4 && minutes <= 7) return 8;
-  return Math.min(20, policy.targetMax);
+  return policy.targetMax;
 }
 
 export function getRequiredClipCount(totalSeconds: number) {

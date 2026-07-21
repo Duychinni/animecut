@@ -4,7 +4,6 @@ export type SelfServePlanId = Exclude<PlanId, 'free' | 'business'>;
 
 export const FREE_TRIAL_UPLOADS = 1;
 export const FREE_TRIAL_MAX_UPLOAD_MINUTES = 20;
-export const EXTRA_USAGE_PRICE_PER_MINUTE = 0.1;
 
 export type PlanConfig = {
   id: SelfServePlanId;
@@ -89,7 +88,6 @@ export function buildPlanFeatures(plan: PlanConfig) {
     formatMinutesLabel(plan.processingMinutes),
     formatUploadLengthLabel(plan.maxUploadLengthMinutes),
     formatGeneratedClipsLabel(plan.maxGeneratedClips),
-    `Additional source-video minutes: $${EXTRA_USAGE_PRICE_PER_MINUTE.toFixed(2)} per minute`,
     ...(plan.featureLabels ?? []),
   ];
 }
