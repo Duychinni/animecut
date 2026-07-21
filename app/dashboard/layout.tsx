@@ -77,7 +77,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </nav>
 
             <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end">
-              <Link href="/pricing" className="hidden items-center gap-2 rounded-full border border-white/20 bg-white/[0.05] px-2.5 py-1 text-xs font-semibold text-white/85 transition hover:border-[#ff7bd8]/55 hover:bg-[#ff7bd8]/10 hover:text-white xl:inline-flex">
+              <Link href="/pricing" className="hidden items-center gap-2 whitespace-nowrap rounded-full border border-white/20 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/85 transition hover:border-[#ff7bd8]/55 hover:bg-[#ff7bd8]/10 hover:text-white xl:inline-flex">
                 <span aria-hidden className="text-[#ffd84d] drop-shadow-[0_0_10px_rgba(255,216,77,0.85)]">✦</span>
                 <span>{allowanceLabel}</span>
               </Link>
