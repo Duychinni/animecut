@@ -196,40 +196,6 @@ function makeProjectTitle() {
   return 'MAIN PROJECTS';
 }
 
-function getPlatformTone(platform: ShowcaseClip['platform']) {
-  switch (platform) {
-    case 'TikTok':
-      return 'text-white';
-    case 'Instagram':
-      return 'text-[#ff95dc]';
-    case 'YouTube':
-      return 'text-[#ff5f7f]';
-    case 'Facebook':
-      return 'text-[#87a8ff]';
-    case 'Podcast':
-      return 'text-[#f3c57a]';
-    default:
-      return 'text-white/80';
-  }
-}
-
-function getPlatformBadge(platform: ShowcaseClip['platform']) {
-  switch (platform) {
-    case 'TikTok':
-      return 'bg-white/[0.08] text-white border-white/10';
-    case 'Instagram':
-      return 'bg-[#ff7bd8]/10 text-[#ffb1ea] border-[#ff7bd8]/25';
-    case 'YouTube':
-      return 'bg-[#ff5f7f]/10 text-[#ff9cae] border-[#ff5f7f]/25';
-    case 'Facebook':
-      return 'bg-[#87a8ff]/10 text-[#b6c8ff] border-[#87a8ff]/25';
-    case 'Podcast':
-      return 'bg-[#f3c57a]/10 text-[#ffdca9] border-[#f3c57a]/25';
-    default:
-      return 'bg-white/[0.08] text-white border-white/10';
-  }
-}
-
 function PlatformLogo({ platform }: { platform: ShowcaseClip['platform'] }) {
   const bubbleClass = 'grid h-11 w-11 place-items-center rounded-full border border-white/12 bg-[#17171f] shadow-[0_10px_22px_rgba(0,0,0,0.3)] ring-1 ring-white/10';
 
@@ -802,15 +768,7 @@ export default function Home() {
                           />
                         )
                       ) : null}
-                      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.18),transparent_36%,rgba(0,0,0,0.34))]" />
-                      <div className="relative flex items-center justify-start gap-2">
-                        <span className="rounded-full border border-[#ff7bd8]/30 bg-[#1f111f]/80 px-2 py-1 text-[11px] font-semibold text-[#ffb1ea] shadow-[0_8px_20px_rgba(0,0,0,0.25)] backdrop-blur">🔥 {clip.score}</span>
-                      </div>
                     </div>
-                  </div>
-
-                  <div className="mt-3">
-                    <h3 className="text-[13px] font-semibold leading-4.5 text-white">{clip.title}</h3>
                   </div>
                 </div>
                 );
