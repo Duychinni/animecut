@@ -207,8 +207,8 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
     wordHighlight: preset?.captionWordHighlight !== false,
     playResX: exportSize.width,
     playResY: exportSize.height,
-    positionX: Math.round(Math.max(0.08, Math.min(0.92, preset?.captionX ?? 0.5)) * exportSize.width),
-    positionY: Math.round(Math.max(0.08, Math.min(0.92, preset?.captionY ?? 0.8)) * exportSize.height),
+    positionX: Math.round(Math.max(0.03, Math.min(0.97, preset?.captionX ?? 0.5)) * exportSize.width),
+    positionY: Math.round(Math.max(0.03, Math.min(0.97, preset?.captionY ?? 0.8)) * exportSize.height),
   };
 }
 

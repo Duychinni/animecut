@@ -45,6 +45,7 @@ type EditorData = {
 
 type DragMode = 'start' | 'end' | 'seek' | 'selection-start' | 'selection-end' | null;
 type EditorTool = 'trim' | 'crop' | 'captions' | 'audio';
+type CaptionInspectorTab = 'text' | 'style' | 'transform';
 type EditorDebugInfo = {
   code?: string;
   status?: number;
@@ -223,9 +224,11 @@ function cropPreviewStyle(settings: ClipEditSettings) {
 export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: string }) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const editableClipBoundsRef = useRef<TimelineRange | null>(null);
   const cropDragRef = useRef<{ clientX: number; clientY: number; cropX: number; cropY: number } | null>(null);
+  const captionDragRef = useRef(false);
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
   const [baseline, setBaseline] = useState('');
@@ -242,6 +245,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const [timelineViewport, setTimelineViewport] = useState({ start: 0, end: 1 });
   const [timelineFilmstrip, setTimelineFilmstrip] = useState<TimelineFilmstrip>({ key: '', frames: [], captureFailed: false });
   const [activeTool, setActiveTool] = useState<EditorTool>('trim');
+  const [captionInspectorTab, setCaptionInspectorTab] = useState<CaptionInspectorTab>('text');
   const [cropDragging, setCropDragging] = useState(false);
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
@@ -642,6 +646,37 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setToast('Crop reset');
   }
 
+  function moveCaptionOnPreview(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!captionDragRef.current || !settings) return;
+    const frame = previewFrameRef.current;
+    if (!frame) return;
+    const rect = frame.getBoundingClientRect();
+    const x = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0.03, 0.97);
+    const y = clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0.03, 0.97);
+    patchSettings({
+      caption_x: x,
+      caption_y: y,
+      caption_position: y < 0.34 ? 'upper' : y < 0.66 ? 'center' : 'lower-third',
+    });
+  }
+
+  function beginCaptionDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!settings || activeTool === 'crop') return;
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveTool('captions');
+    setCaptionInspectorTab('transform');
+    captionDragRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    moveCaptionOnPreview(event);
+  }
+
+  function endCaptionDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!captionDragRef.current) return;
+    captionDragRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
   function updateClipTranscriptText(text: string) {
     if (!settings) return;
     const paragraphs = text.split(/\n\s*\n/);
@@ -1001,6 +1036,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           </h1>
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden p-3">
             <div
+              ref={previewFrameRef}
               className={`group relative aspect-[9/16] h-full max-h-[630px] w-auto max-w-full overflow-hidden rounded-[8px] bg-[#15171c] shadow-[0_24px_90px_rgba(0,0,0,.45)] ring-1 transition ${activeTool === 'crop' ? 'cursor-grab ring-cyan-300/75 active:cursor-grabbing' : 'cursor-pointer ring-white/10 hover:ring-white/22'}`}
               onPointerDown={beginCropDrag}
               onPointerMove={moveCrop}
@@ -1068,8 +1104,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
               {previewUsesSource && settings.captions_enabled && activeCaptionText ? (
                 <div
-                  className="pointer-events-none absolute z-20 max-w-[88%] text-center"
+                  className={`absolute z-40 max-w-[92%] touch-none select-none text-center ${activeTool === 'crop' ? 'pointer-events-none' : 'cursor-move'} ${activeTool === 'captions' ? 'rounded-md outline outline-1 outline-cyan-300/80 outline-offset-4' : ''}`}
                   style={{ left: `${settings.caption_x * 100}%`, top: `${settings.caption_y * 100}%`, transform: 'translate(-50%, -50%)' }}
+                  onPointerDown={beginCaptionDrag}
+                  onPointerMove={moveCaptionOnPreview}
+                  onPointerUp={endCaptionDrag}
+                  onPointerCancel={endCaptionDrag}
+                  title="Drag captions anywhere on the video"
                 >
                   <span
                     style={captionPreviewStyle(activePreset, settings)}
@@ -1082,6 +1123,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                       </>
                     ) : activeCaptionText}
                   </span>
+                  {activeTool === 'captions' ? (
+                    <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-cyan-300 px-2 py-1 text-[9px] font-black text-black shadow-lg">
+                      Drag to move
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -1223,11 +1269,17 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               </div>
             ) : (
             <div className="space-y-4">
-              <div className="-mx-4 -mt-4 border-b border-white/10 bg-[#26282c] px-3 pt-1">
-                <div className="flex items-center gap-1">
-                  <button type="button" className="border-b-2 border-cyan-300 px-3 py-3 text-xs font-bold text-cyan-300">Basic</button>
-                  <button type="button" className="px-3 py-3 text-xs font-bold text-white/45" title="More caption animations coming soon">Animation</button>
-                </div>
+              <div className="-mx-4 -mt-4 grid grid-cols-3 border-b border-white/10 bg-[#26282c] px-2 pt-1">
+                {(['text', 'style', 'transform'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setCaptionInspectorTab(tab)}
+                    className={`border-b-2 px-2 py-3 text-xs font-bold capitalize transition ${captionInspectorTab === tab ? 'border-cyan-300 text-cyan-300' : 'border-transparent text-white/45 hover:text-white'}`}
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-sm font-black text-white">Captions</p>
@@ -1236,111 +1288,48 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   On
                 </label>
               </div>
-              <div className="space-y-2">
-                <p className="text-xs font-black text-white/70">Highlight color</p>
-                <div className="flex flex-wrap gap-2">
-                  {presetOptions.map((preset) => {
-                    const selected =
-                      preset.captionHighlightColor.toLowerCase() ===
-                      settings.caption_highlight_color.toLowerCase();
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => selectCaptionPreset(preset)}
-                        className={`h-9 w-9 rounded-full border-2 transition hover:scale-105 ${
-                          selected
-                            ? 'border-white ring-2 ring-cyan-300/70 ring-offset-2 ring-offset-[#111318]'
-                            : 'border-white/20'
-                        }`}
-                        style={{ backgroundColor: preset.captionHighlightColor }}
-                        aria-label={`Use ${preset.name} highlight color`}
-                        title={preset.name}
-                      />
-                    );
-                  })}
+              {captionInspectorTab === 'text' ? (
+                <div className="space-y-5">
+                  <label className="block space-y-2">
+                    <span className="flex items-center justify-between text-xs font-bold text-white/70">Words per caption <span className="font-mono text-cyan-200">{settings.caption_max_words}</span></span>
+                    <input type="range" min={1} max={6} step={1} value={settings.caption_max_words} onChange={(event) => patchSettings({ caption_max_words: Number(event.target.value) })} className="w-full accent-cyan-300" />
+                  </label>
+                  <label className="flex items-center justify-between rounded-lg bg-black/25 px-3 py-3 text-xs font-bold text-white/70">
+                    Highlight spoken word
+                    <input type="checkbox" checked={settings.caption_word_highlight} onChange={(event) => patchSettings({ caption_word_highlight: event.target.checked })} className="accent-cyan-300" />
+                  </label>
+                  <p className="text-[11px] leading-5 text-white/40">Edit the actual caption wording in the transcript panel on the left.</p>
                 </div>
-              </div>
-              <div className="border-t border-white/10 pt-4">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-xs font-black text-white/80">Transform</p>
-                  <button
-                    type="button"
-                    onClick={() => patchSettings({ caption_position: 'lower-third', caption_x: 0.5, caption_y: 0.8, caption_font_size: activePreset?.captionFontSize ?? 11 })}
-                    className="rounded-md px-2 py-1 text-lg leading-none text-white/45 transition hover:bg-white/[0.06] hover:text-white"
-                    title="Reset caption transform"
-                    aria-label="Reset caption transform"
-                  >↶</button>
-                </div>
-
-                <label className="block space-y-2">
-                  <span className="flex items-center justify-between text-xs font-semibold text-white/70">
-                    Scale
-                    <span className="rounded-md bg-black/30 px-2 py-1 font-mono text-white/85">{Math.round((settings.caption_font_size / 11) * 100)}%</span>
-                  </span>
-                  <input
-                    type="range"
-                    min={6}
-                    max={20}
-                    step={0.5}
-                    value={settings.caption_font_size}
-                    onChange={(event) => patchSettings({ caption_font_size: Number(event.target.value) })}
-                    className="w-full cursor-pointer accent-cyan-300"
-                    aria-label="Caption scale"
-                  />
-                </label>
-
-                <div className="mt-5 space-y-2">
-                  <p className="text-xs font-semibold text-white/70">Position</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center rounded-md bg-black/25 px-2 text-[10px] font-bold text-white/35">
-                      X
-                      <input
-                        type="number"
-                        min={8}
-                        max={92}
-                        value={Math.round(settings.caption_x * 100)}
-                        onChange={(event) => patchSettings({ caption_x: clamp(Number(event.target.value) / 100, 0.08, 0.92) })}
-                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-right font-mono text-xs text-white outline-none"
-                        aria-label="Caption horizontal position"
-                      />
-                    </label>
-                    <label className="flex items-center rounded-md bg-black/25 px-2 text-[10px] font-bold text-white/35">
-                      Y
-                      <input
-                        type="number"
-                        min={8}
-                        max={92}
-                        value={Math.round(settings.caption_y * 100)}
-                        onChange={(event) => patchSettings({ caption_y: clamp(Number(event.target.value) / 100, 0.08, 0.92) })}
-                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-right font-mono text-xs text-white outline-none"
-                        aria-label="Caption vertical position"
-                      />
-                    </label>
-                  </div>
-                  <p className="text-[10px] font-semibold text-white/35">You can also drag captions directly on the video.</p>
-                </div>
-
-                <div className="mt-5 space-y-2">
-                  <p className="text-xs font-semibold text-white/70">Quick align</p>
-                  <div className="grid grid-cols-3 gap-1 rounded-lg bg-black/25 p-1.5">
-                  {([['upper', 'Top'], ['center', 'Center'], ['lower-third', 'Bottom']] as const).map(([position, label]) => (
-                    <button
-                      key={position}
-                      type="button"
-                      onClick={() => patchSettings({
-                        caption_position: position,
-                        caption_x: 0.5,
-                        caption_y: position === 'upper' ? 0.18 : position === 'center' ? 0.5 : 0.8,
+              ) : captionInspectorTab === 'style' ? (
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <p className="text-xs font-black text-white/70">Highlight color</p>
+                    <div className="flex flex-wrap gap-2">
+                      {presetOptions.map((preset) => {
+                        const selected = preset.captionHighlightColor.toLowerCase() === settings.caption_highlight_color.toLowerCase();
+                        return <button key={preset.id} type="button" onClick={() => selectCaptionPreset(preset)} className={`h-9 w-9 rounded-lg border-2 transition hover:scale-105 ${selected ? 'border-white ring-2 ring-cyan-300/70' : 'border-white/15'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={`Use ${preset.name} highlight color`} />;
                       })}
-                      className={`rounded-md px-2 py-2 text-[11px] font-bold transition ${settings.caption_position === position ? 'bg-white/15 text-white' : 'text-white/48 hover:bg-white/[0.06] hover:text-white'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                    </div>
                   </div>
+                  <label className="block space-y-2">
+                    <span className="flex items-center justify-between text-xs font-bold text-white/70">Size <span className="font-mono text-cyan-200">{Math.round((settings.caption_font_size / 11) * 100)}%</span></span>
+                    <input type="range" min={6} max={20} step={0.5} value={settings.caption_font_size} onChange={(event) => patchSettings({ caption_font_size: Number(event.target.value) })} className="w-full accent-cyan-300" />
+                  </label>
+                  <label className="flex items-center justify-between rounded-lg bg-black/25 px-3 py-3 text-xs font-bold text-white/70">Background box <input type="checkbox" checked={settings.caption_background} onChange={(event) => patchSettings({ caption_background: event.target.checked })} className="accent-cyan-300" /></label>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Drag the caption directly anywhere on the video, or use the controls below.</div>
+                  <div className="grid w-36 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
+                    {[0.12, 0.5, 0.88].flatMap((y) => [0.12, 0.5, 0.88].map((x) => (
+                      <button key={`${x}-${y}`} type="button" onClick={() => patchSettings({ caption_x: x, caption_y: y, caption_position: y < 0.34 ? 'upper' : y < 0.66 ? 'center' : 'lower-third' })} className={`grid aspect-square place-items-center rounded-md border ${Math.abs(settings.caption_x - x) < 0.08 && Math.abs(settings.caption_y - y) < 0.08 ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:bg-white/[0.06]'}`}><span className="h-2 w-2 rounded-full bg-white/50" /></button>
+                    )))}
+                  </div>
+                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Horizontal <span className="font-mono">{Math.round(settings.caption_x * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={settings.caption_x} onChange={(event) => patchSettings({ caption_x: Number(event.target.value) })} className="w-full accent-cyan-300" /></label>
+                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Vertical <span className="font-mono">{Math.round(settings.caption_y * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={settings.caption_y} onChange={(event) => patchSettings({ caption_y: Number(event.target.value) })} className="w-full accent-cyan-300" /></label>
+                  <button type="button" onClick={() => patchSettings({ caption_x: 0.5, caption_y: 0.8, caption_position: 'lower-third' })} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset position</button>
+                </div>
+              )}
             </div>
             )}
 

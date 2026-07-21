@@ -773,24 +773,33 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (downloadedShareClipId !== shareClip.exportId) await downloadShareClip();
   }
 
-  async function applyPreset(selectedPresetId: string, captionsEnabled: boolean, captionX: number, captionY: number) {
+  async function applyPreset(options: {
+    selectedPresetId: string;
+    captionsEnabled: boolean;
+    captionX: number;
+    captionY: number;
+    captionFontSize: number;
+    captionBackground: boolean;
+    captionMaxWords: number;
+    captionWordHighlight: boolean;
+  }) {
     if (!editingClip || !captionSettings) return;
     try {
       setApplyingPreset(true);
-      const preset = CAPTION_TEMPLATE_OPTIONS.find((option) => option.id === selectedPresetId) ?? CAPTION_TEMPLATE_OPTIONS[0]!;
+      const preset = CAPTION_TEMPLATE_OPTIONS.find((option) => option.id === options.selectedPresetId) ?? CAPTION_TEMPLATE_OPTIONS[0]!;
       const nextSettings: ClipEditSettings = {
         ...captionSettings,
-        captions_enabled: captionsEnabled,
+        captions_enabled: options.captionsEnabled,
         caption_preset_id: DEFAULT_CAPTION_PRESET_ID,
-        caption_font_size: 12,
+        caption_font_size: options.captionFontSize,
         caption_text_color: '#FFFFFF',
         caption_highlight_color: preset.captionHighlightColor,
-        caption_background: false,
-        caption_word_highlight: true,
-        caption_max_words: 2,
-        caption_position: captionY < 0.34 ? 'upper' : captionY < 0.66 ? 'center' : 'lower-third',
-        caption_x: captionX,
-        caption_y: captionY,
+        caption_background: options.captionBackground,
+        caption_word_highlight: options.captionWordHighlight,
+        caption_max_words: options.captionMaxWords,
+        caption_position: options.captionY < 0.34 ? 'upper' : options.captionY < 0.66 ? 'center' : 'lower-third',
+        caption_x: options.captionX,
+        caption_y: options.captionY,
       };
       const presetRes = await fetch(`/api/clips/${editingClip.exportId}/rerender`, {
         method: 'POST',
@@ -1655,13 +1664,27 @@ function CaptionTemplatesModal({
   applying: boolean;
   canApply: boolean;
   onClose: () => void;
-  onApply: (presetId: string, captionsEnabled: boolean, captionX: number, captionY: number) => Promise<void>;
+  onApply: (options: {
+    selectedPresetId: string;
+    captionsEnabled: boolean;
+    captionX: number;
+    captionY: number;
+    captionFontSize: number;
+    captionBackground: boolean;
+    captionMaxWords: number;
+    captionWordHighlight: boolean;
+  }) => Promise<void>;
 }) {
   const [selectedPresetId, setSelectedPresetId] = useState(defaultPresetId);
   const [captionsEnabled, setCaptionsEnabled] = useState(defaultCaptionsEnabled);
   const [previewTime, setPreviewTime] = useState(0);
   const [captionX, setCaptionX] = useState(previewData?.settings.caption_x ?? 0.5);
   const [captionY, setCaptionY] = useState(previewData?.settings.caption_y ?? 0.8);
+  const [captionFontSize, setCaptionFontSize] = useState(previewData?.settings.caption_font_size ?? 12);
+  const [captionBackground, setCaptionBackground] = useState(previewData?.settings.caption_background ?? false);
+  const [captionMaxWords, setCaptionMaxWords] = useState(previewData?.settings.caption_max_words ?? 2);
+  const [captionWordHighlight, setCaptionWordHighlight] = useState(previewData?.settings.caption_word_highlight ?? true);
+  const [captionTab, setCaptionTab] = useState<'text' | 'style' | 'transform'>('style');
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
@@ -1679,15 +1702,15 @@ function CaptionTemplatesModal({
 
     const words = phrase.text.trim().split(/\s+/).filter(Boolean);
     if (!words.length) return null;
-    const maxWords = Math.max(1, previewSettings.caption_max_words);
+    const maxWords = Math.max(1, captionMaxWords);
     const progress = Math.max(0, Math.min(0.999, (previewTime - phrase.start) / Math.max(0.1, phrase.end - phrase.start)));
     const activeWordIndex = Math.min(words.length - 1, Math.floor(progress * words.length));
     const groupStart = Math.floor(activeWordIndex / maxWords) * maxWords;
     return {
       words: words.slice(groupStart, groupStart + maxWords),
-      highlightedIndex: previewSettings.caption_word_highlight ? activeWordIndex - groupStart : -1,
+      highlightedIndex: captionWordHighlight ? activeWordIndex - groupStart : -1,
     };
-  }, [captionsEnabled, previewSettings, previewTime, previewUsesSource]);
+  }, [captionMaxWords, captionWordHighlight, captionsEnabled, previewSettings, previewTime, previewUsesSource]);
 
   useEffect(() => {
     setSelectedPresetId(defaultPresetId);
@@ -1698,14 +1721,18 @@ function CaptionTemplatesModal({
     if (!previewSettings) return;
     setCaptionX(previewSettings.caption_x);
     setCaptionY(previewSettings.caption_y);
+    setCaptionFontSize(previewSettings.caption_font_size);
+    setCaptionBackground(previewSettings.caption_background);
+    setCaptionMaxWords(previewSettings.caption_max_words);
+    setCaptionWordHighlight(previewSettings.caption_word_highlight);
   }, [previewSettings]);
 
   function moveCaption(event: ReactPointerEvent<HTMLDivElement>) {
     const frame = previewFrameRef.current;
     if (!frame || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     const rect = frame.getBoundingClientRect();
-    setCaptionX(Math.max(0.08, Math.min(0.92, (event.clientX - rect.left) / rect.width)));
-    setCaptionY(Math.max(0.08, Math.min(0.92, (event.clientY - rect.top) / rect.height)));
+    setCaptionX(Math.max(0.03, Math.min(0.97, (event.clientX - rect.left) / rect.width)));
+    setCaptionY(Math.max(0.03, Math.min(0.97, (event.clientY - rect.top) / rect.height)));
   }
 
   useEffect(() => {
@@ -1764,7 +1791,7 @@ function CaptionTemplatesModal({
               )}
               {activeCaption ? (
                 <div
-                  className="absolute z-20 max-w-[88%] touch-none cursor-move select-none text-center"
+                  className={`absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center ${captionTab === 'transform' ? 'outline outline-1 outline-cyan-300/85 outline-offset-4' : ''}`}
                   style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
                   onPointerDown={(event) => {
                     event.preventDefault();
@@ -1776,19 +1803,20 @@ function CaptionTemplatesModal({
                   onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
                   title="Drag to position captions"
                 >
-                  <span className="inline-block text-center">
+                  <span className={`inline-block text-center ${captionBackground ? 'rounded-lg bg-white px-2 py-1' : ''}`}>
                     {activeCaption.words.map((word, index) => (
                       <span key={`${word}-${index}`}>
                         {index > 0 ? ' ' : null}
                         <CaptionPreviewWord
                           color={index === activeCaption.highlightedIndex ? activePreset.captionHighlightColor : activePreset.captionTextColor}
-                          style={getPresetCaptionStyle(activePreset, 'reel')}
+                          style={{ ...getPresetCaptionStyle(activePreset, 'reel'), fontSize: `${Math.round(captionFontSize * 2.6)}px` }}
                         >
                           {word.toUpperCase()}
                         </CaptionPreviewWord>
                       </span>
                     ))}
                   </span>
+                  {captionTab === 'transform' ? <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-cyan-300 px-2 py-1 text-[9px] font-black text-black">Drag to move</span> : null}
                 </div>
               ) : null}
             </div>
@@ -1799,7 +1827,7 @@ function CaptionTemplatesModal({
             </p>
           </div>
 
-          <div className="flex flex-col p-6">
+          <div className="flex min-h-0 flex-col p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-black text-white">Caption style</p>
@@ -1817,61 +1845,47 @@ function CaptionTemplatesModal({
               </label>
             </div>
 
-            <div className="mt-5 space-y-2">
-              <p className="text-xs font-black text-white/70">Highlight color</p>
-              <div className="flex flex-wrap gap-2">
-                {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
-                  const active = preset.id === selectedPresetId;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => setSelectedPresetId(preset.id)}
-                      disabled={loading}
-                      className={`h-9 w-9 rounded-full border-2 transition hover:scale-105 disabled:opacity-45 ${
-                        active
-                          ? 'border-white ring-2 ring-cyan-300/70 ring-offset-2 ring-offset-[#0d0f14]'
-                          : 'border-white/20'
-                      }`}
-                      style={{ backgroundColor: preset.captionHighlightColor }}
-                      aria-label={`Preview ${preset.name} highlight color`}
-                      aria-pressed={active}
-                      title={preset.name}
-                    />
-                  );
-                })}
-              </div>
+            <div className="mt-5 grid grid-cols-3 rounded-lg bg-white/[0.04] p-1">
+              {(['text', 'style', 'transform'] as const).map((tab) => (
+                <button key={tab} type="button" onClick={() => setCaptionTab(tab)} className={`rounded-md px-2 py-2 text-xs font-bold capitalize transition ${captionTab === tab ? 'bg-white/12 text-cyan-200' : 'text-white/45 hover:text-white'}`}>{tab}</button>
+              ))}
             </div>
 
-            <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
-              <div>
-                <p className="text-sm font-black text-white">Position</p>
-                <p className="mt-1 text-xs font-semibold text-white/45">Drag the caption on the reel or choose a placement.</p>
-              </div>
-              <div className="grid w-32 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
-                {[0.18, 0.5, 0.82].flatMap((y) => [0.18, 0.5, 0.82].map((x) => {
-                  const selected = Math.abs(captionX - x) < 0.08 && Math.abs(captionY - y) < 0.08;
-                  return (
-                    <button
-                      key={`${x}-${y}`}
-                      type="button"
-                      onClick={() => { setCaptionX(x); setCaptionY(y); }}
-                      className={`grid aspect-square place-items-center rounded-md border transition ${selected ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:border-white/30 hover:bg-white/[0.06]'}`}
-                      aria-label={`Place captions at ${Math.round(x * 100)} percent horizontal and ${Math.round(y * 100)} percent vertical`}
-                    >
-                      <span className={`h-2 w-2 rounded-full ${selected ? 'bg-cyan-200' : 'bg-white/35'}`} />
-                    </button>
-                  );
-                }))}
-              </div>
-              <label className="block text-xs font-bold text-white/55">
-                Horizontal
-                <input type="range" min={0.08} max={0.92} step={0.01} value={captionX} onChange={(event) => setCaptionX(Number(event.target.value))} className="mt-2 w-full cursor-pointer accent-cyan-300" />
-              </label>
-              <label className="block text-xs font-bold text-white/55">
-                Vertical
-                <input type="range" min={0.08} max={0.92} step={0.01} value={captionY} onChange={(event) => setCaptionY(Number(event.target.value))} className="mt-2 w-full cursor-pointer accent-cyan-300" />
-              </label>
+            <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+              {captionTab === 'text' ? (
+                <div className="space-y-5">
+                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Words per caption <span className="font-mono text-cyan-200">{captionMaxWords}</span></span><input type="range" min={1} max={6} step={1} value={captionMaxWords} onChange={(event) => setCaptionMaxWords(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                  <label className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-3 text-xs font-bold text-white/65">Highlight spoken word <input type="checkbox" checked={captionWordHighlight} onChange={(event) => setCaptionWordHighlight(event.target.checked)} className="accent-cyan-300" /></label>
+                  <p className="text-xs leading-5 text-white/40">Use the full editor when you need to change the caption wording.</p>
+                </div>
+              ) : captionTab === 'style' ? (
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <p className="text-xs font-black text-white/70">Highlight color</p>
+                    <div className="flex flex-wrap gap-2">
+                      {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
+                        const active = preset.id === selectedPresetId;
+                        return <button key={preset.id} type="button" onClick={() => setSelectedPresetId(preset.id)} disabled={loading} className={`h-9 w-9 rounded-lg border-2 transition hover:scale-105 disabled:opacity-45 ${active ? 'border-white ring-2 ring-cyan-300/70' : 'border-white/20'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={`Preview ${preset.name} highlight color`} />;
+                      })}
+                    </div>
+                  </div>
+                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Size <span className="font-mono text-cyan-200">{Math.round((captionFontSize / 12) * 100)}%</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                  <label className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-3 text-xs font-bold text-white/65">Background box <input type="checkbox" checked={captionBackground} onChange={(event) => setCaptionBackground(event.target.checked)} className="accent-cyan-300" /></label>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Click and drag the caption anywhere on the reel. The sliders give you precise control.</div>
+                  <div className="grid w-36 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
+                    {[0.12, 0.5, 0.88].flatMap((y) => [0.12, 0.5, 0.88].map((x) => {
+                      const selected = Math.abs(captionX - x) < 0.08 && Math.abs(captionY - y) < 0.08;
+                      return <button key={`${x}-${y}`} type="button" onClick={() => { setCaptionX(x); setCaptionY(y); }} className={`grid aspect-square place-items-center rounded-md border transition ${selected ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:bg-white/[0.06]'}`}><span className="h-2 w-2 rounded-full bg-white/50" /></button>;
+                    }))}
+                  </div>
+                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/55">Horizontal <span className="font-mono">{Math.round(captionX * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={captionX} onChange={(event) => setCaptionX(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/55">Vertical <span className="font-mono">{Math.round(captionY * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={captionY} onChange={(event) => setCaptionY(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
+                  <button type="button" onClick={() => { setCaptionX(0.5); setCaptionY(0.8); }} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset position</button>
+                </div>
+              )}
             </div>
 
             <div className="mt-auto pt-6">
@@ -1880,7 +1894,7 @@ function CaptionTemplatesModal({
               </div>
               <button
                 type="button"
-                onClick={() => void onApply(selectedPresetId, captionsEnabled, captionX, captionY)}
+                onClick={() => void onApply({ selectedPresetId, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
                 disabled={applying || loading || !canApply}
                 className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
