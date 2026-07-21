@@ -838,8 +838,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     value: index === 6 ? timelineDuration : (timelineDuration / 6) * index,
     percent: index === 6 ? 100 : ((timelineDuration / 6) * index / timelineDuration) * 100,
   }));
-  const audioBars = Array.from({ length: 120 }, (_, index) => {
-    const height = 18 + ((index * 17) % 31);
+  const audioBars = Array.from({ length: 240 }, (_, index) => {
+    const height = 12 + ((index * 17) % 27);
     return height;
   });
 
@@ -911,9 +911,9 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           <h1 className="flex min-h-[58px] items-center justify-center border-b border-white/10 px-5 py-3 text-center text-base font-black leading-tight text-white">
             {data.clip.title}
           </h1>
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden p-4">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden p-3">
             <div
-              className={`group relative aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-[8px] bg-[#15171c] shadow-[0_24px_90px_rgba(0,0,0,.45)] ring-1 transition ${activeTool === 'crop' ? 'cursor-grab ring-cyan-300/75 active:cursor-grabbing' : 'cursor-pointer ring-white/10 hover:ring-white/22'}`}
+              className={`group relative aspect-[9/16] h-full max-h-[630px] w-auto max-w-full overflow-hidden rounded-[8px] bg-[#15171c] shadow-[0_24px_90px_rgba(0,0,0,.45)] ring-1 transition ${activeTool === 'crop' ? 'cursor-grab ring-cyan-300/75 active:cursor-grabbing' : 'cursor-pointer ring-white/10 hover:ring-white/22'}`}
               onPointerDown={beginCropDrag}
               onPointerMove={moveCrop}
               onPointerUp={endCropDrag}
@@ -1098,7 +1098,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
                   <p className="text-xs font-bold text-white/45">Clip duration</p>
                   <p className="mt-1 font-mono text-2xl font-black text-white">{formatClock(clipDuration)}</p>
-                  <p className="mt-2 text-xs font-semibold leading-5 text-white/48">Drag the white handles on the timeline to shorten or bring footage back.</p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-white/48">Hover over either clip edge, then drag inward to shorten or outward to restore footage.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <div className="rounded-lg bg-black/25 px-3 py-2"><p className="text-[10px] font-bold uppercase text-white/35">In</p><p className="font-mono text-sm text-white">{formatClock(settings.clip_start_seconds)}</p></div>
@@ -1198,7 +1198,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
         <div className="px-3 py-2">
           <p className="mb-2 text-xs font-semibold text-white/48">
-            Drag the white clip handles to change the start and end. The dimmed footage stays available so you can lengthen the reel again.
+            Hover over a clip edge and drag it to set the exact start or end. The preview and final render use the selected range.
           </p>
           <div className="relative grid h-[176px] grid-cols-[54px_1fr] overflow-hidden rounded-2xl border border-white/10 bg-black/35">
             <div className="border-r border-white/[0.08] bg-black/25 text-[10px] font-black uppercase tracking-[0.12em] text-white/36">
@@ -1236,7 +1236,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
             <div
               ref={timelineRef}
               onPointerDown={(event) => beginTimelineDrag('seek', event)}
-              className="relative overflow-hidden"
+              className="group/timeline relative overflow-hidden"
               style={{ cursor: 'pointer' }}
             >
               <div className="relative h-[31px] border-b border-white/[0.08] bg-white/[0.02]">
@@ -1340,11 +1340,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   title={`Segment ${index + 1}: ${formatClock(segment.end - segment.start)}`}
                 />
               )) : null}
-              <div className="absolute inset-x-0 bottom-2 flex h-9 items-end gap-[2px] px-2">
+              <div className="absolute inset-x-0 bottom-2 flex h-7 items-end justify-between gap-px px-1.5">
                 {audioBars.map((height, index) => (
                   <span
                     key={index}
-                    className="flex-1 rounded-t bg-sky-300/55"
+                    className="w-px min-w-px rounded-t-sm bg-sky-300/55"
                     style={{ height: `${height}%` }}
                   />
                 ))}
@@ -1399,22 +1399,27 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </>
               ) : null}
 
-              <div className="pointer-events-none absolute inset-y-0 z-30 w-[2px] bg-white shadow-[0_0_16px_rgba(255,255,255,.65)]" style={{ left: playheadLeft }} />
+              <div
+                className={`pointer-events-none absolute inset-y-0 z-30 w-px bg-white/90 shadow-[0_0_10px_rgba(255,255,255,.45)] transition-opacity ${dragMode === 'seek' ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
+                style={{ left: playheadLeft }}
+              />
               <button
                 onPointerDown={(event) => beginTimelineDrag('start', event)}
-                className="absolute top-[31px] z-40 h-[145px] w-[4px] -translate-x-1/2 cursor-ew-resize bg-white shadow-[0_0_10px_rgba(255,255,255,.5)]"
+                className={`absolute top-[31px] z-40 h-[145px] w-5 -translate-x-1/2 cursor-ew-resize transition-opacity ${dragMode === 'start' ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
                 style={{ left: `${clipStartLeft}%` }}
                 aria-label="Trim start"
               >
-                <span className="absolute left-0 top-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-white text-black shadow-lg"><i className="h-4 w-px bg-black/35" /></span>
+                <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/90" />
+                <span className="absolute left-1/2 top-1/2 flex h-11 w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded bg-white text-black shadow-lg"><i className="h-4 w-px bg-black/35" /></span>
               </button>
               <button
                 onPointerDown={(event) => beginTimelineDrag('end', event)}
-                className="absolute top-[31px] z-40 h-[145px] w-[4px] -translate-x-1/2 cursor-ew-resize bg-white shadow-[0_0_10px_rgba(255,255,255,.5)]"
+                className={`absolute top-[31px] z-40 h-[145px] w-5 -translate-x-1/2 cursor-ew-resize transition-opacity ${dragMode === 'end' ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
                 style={{ left: `${clipEndLeft}%` }}
                 aria-label="Trim end"
               >
-                <span className="absolute left-0 top-1/2 flex h-12 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-white text-black shadow-lg"><i className="h-4 w-px bg-black/35" /></span>
+                <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/90" />
+                <span className="absolute left-1/2 top-1/2 flex h-11 w-3.5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded bg-white text-black shadow-lg"><i className="h-4 w-px bg-black/35" /></span>
               </button>
             </div>
           </div>
