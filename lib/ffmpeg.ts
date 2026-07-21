@@ -12,17 +12,15 @@ const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
 const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v13-fixed-region-authority';
-// Customer exports are streamed directly in the browser. The former 50-60 Mbps
-// envelope created unnecessarily large reels that buffered between card clicks.
-// Keep the 1080x1920 frame visually clean while making progressive playback
-// practical over normal broadband and mobile connections. Short reels should
-// not require buffering an 8-10 Mbps stream before playback can begin.
-const DEFAULT_X264_CRF = '22';
-const DEFAULT_X264_MAXRATE = '5M';
-const DEFAULT_X264_BUFSIZE = '10M';
-const DEFAULT_HW_VIDEO_BITRATE = '5M';
-const DEFAULT_HW_MAXRATE = '6M';
-const DEFAULT_HW_BUFSIZE = '12M';
+// Preserve detail through crop/scale, caption compositing, and the additional
+// recompression applied by social platforms. The separate playback preview
+// keeps dashboard playback responsive.
+const DEFAULT_X264_CRF = '18';
+const DEFAULT_X264_MAXRATE = '12M';
+const DEFAULT_X264_BUFSIZE = '24M';
+const DEFAULT_HW_VIDEO_BITRATE = '10M';
+const DEFAULT_HW_MAXRATE = '12M';
+const DEFAULT_HW_BUFSIZE = '24M';
 const HIGH_QUALITY_SCALE_FLAGS = 'lanczos+accurate_rnd+full_chroma_int';
 const SHARPEN_AFTER_UPSCALE_FILTER = 'unsharp=5:5:0.55:3:3:0.25';
 const MAX_EXTRA_SMART_CROP_UPSCALE = 1.04;
@@ -274,8 +272,8 @@ export async function renderCutVideo(
 /**
  * Produce the low-latency rendition used by project preview cards. The full
  * 1080x1920 export remains the download/editing master. The project cards only
- * render about 230 CSS pixels wide, so 360x640 keeps them sharp while remaining
- * small enough to begin and continue playing on constrained connections.
+ * render at multiple sizes, so use a 540x960 rendition that remains crisp when
+ * opened larger while still being much lighter than the 1080x1920 master.
  */
 export async function renderPlaybackPreview(inputPath: string, outputPath: string) {
   await runFfmpeg([
@@ -283,18 +281,18 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-i', inputPath,
     '-map', '0:v:0',
     '-map', '0:a:0?',
-    '-vf', 'scale=360:640:flags=lanczos,fps=24',
+    '-vf', 'scale=540:960:flags=lanczos+accurate_rnd+full_chroma_int,fps=30',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '27',
-    '-maxrate', '800k',
-    '-bufsize', '1600k',
+    '-crf', '23',
+    '-maxrate', '2500k',
+    '-bufsize', '5000k',
     '-pix_fmt', 'yuv420p',
-    '-g', '24',
-    '-keyint_min', '12',
+    '-g', '60',
+    '-keyint_min', '30',
     '-sc_threshold', '0',
     '-c:a', 'aac',
-    '-b:a', '64k',
+    '-b:a', '128k',
     '-ar', '48000',
     '-movflags', '+faststart',
     outputPath,
@@ -2086,7 +2084,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
 
   const defaultEncoder = process.platform === 'darwin' ? 'h264_videotoolbox' : 'libx264';
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || defaultEncoder).trim();
-  const configuredPreset = (opts.fastRender ? process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast' : process.env.FFMPEG_X264_PRESET || 'veryfast').trim();
+  const configuredPreset = (opts.fastRender ? process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast' : process.env.FFMPEG_X264_PRESET || 'medium').trim();
   const allowOversizedExports = process.env.FFMPEG_ALLOW_OVERSIZED_EXPORTS === 'true';
   const configuredCrf = (allowOversizedExports ? process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF : DEFAULT_X264_CRF).trim();
   const configuredX264Maxrate = (allowOversizedExports ? process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE : DEFAULT_X264_MAXRATE).trim();
