@@ -1818,6 +1818,12 @@ function CaptionTemplatesModal({
     setCaptionY(Math.max(0.03, Math.min(0.97, (event.clientY - rect.top) / rect.height)));
   }
 
+  function endCaptionMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   useEffect(() => {
     const video = previewVideoRef.current;
     if (!video) return;
@@ -1913,7 +1919,8 @@ function CaptionTemplatesModal({
                     moveCaption(event);
                   }}
                   onPointerMove={moveCaption}
-                  onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+                  onPointerUp={endCaptionMove}
+                  onPointerCancel={endCaptionMove}
                   title="Drag to position captions"
                 >
                   <span className={`inline-block text-center ${captionBackground ? 'rounded-lg bg-white px-2 py-1' : ''}`}>
@@ -1931,10 +1938,31 @@ function CaptionTemplatesModal({
                   </span>
                 </div>
               ) : null}
+              {previewHasBurnedCaptions && captionsEnabled ? (
+                <div
+                  className="absolute z-20 grid h-16 w-[72%] touch-none cursor-move select-none place-items-center rounded-lg border border-dashed border-cyan-300/75 bg-cyan-300/[0.04] text-center shadow-[0_0_0_1px_rgba(0,0,0,.28)] active:border-cyan-200 active:bg-cyan-300/[0.09]"
+                  style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    moveCaption(event);
+                  }}
+                  onPointerMove={moveCaption}
+                  onPointerUp={endCaptionMove}
+                  onPointerCancel={endCaptionMove}
+                  title="Drag to set the caption position"
+                  aria-label="Drag to set the caption position"
+                >
+                  <span className="pointer-events-none rounded-full bg-black/75 px-2.5 py-1 text-[10px] font-black text-cyan-100 shadow-lg">
+                    Drag caption position
+                  </span>
+                </div>
+              ) : null}
             </div>
             <p className="mt-3 text-center text-xs text-white/45">
               {previewHasBurnedCaptions
-                ? 'This older reel shows its existing burned captions without adding a second preview layer. Apply replaces them with your edited style.'
+                ? 'Drag the caption position box, then Apply. The existing burned caption stays visible until the reel is replaced—no second caption layer is added.'
                 : 'This is the reel’s real framing with one editable caption layer. Drag or resize it, then Apply.'}
             </p>
           </div>
