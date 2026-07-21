@@ -5,6 +5,8 @@ import { PricingCards } from '@/components/billing/PricingCards';
 import { createClient } from '@/lib/supabase/server';
 import { SignOutButton } from '@/components/auth/SignOutButton';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { effectivePlanId } from '@/lib/billing';
+import type { PlanId } from '@/lib/plans';
 
 type ProfileLike = { email?: string | null; user_metadata?: Record<string, unknown> | null };
 
@@ -44,15 +46,17 @@ export default async function PricingPage() {
   const avatarUrl = getAvatarUrl(user);
 
   let minuteBalance = 0;
+  let currentPlan: PlanId = 'free';
   if (user) {
     try {
       const admin = createAdminClient();
       const { data: profile } = await admin
         .from('profiles')
-        .select('processing_minutes_remaining')
+        .select('processing_minutes_remaining, subscription_plan, subscription_status')
         .eq('id', user.id)
         .maybeSingle();
       minuteBalance = Number(profile?.processing_minutes_remaining ?? 0);
+      if (profile) currentPlan = effectivePlanId(profile as { subscription_plan: PlanId; subscription_status: string });
     } catch {
       minuteBalance = 0;
     }
@@ -117,7 +121,7 @@ export default async function PricingPage() {
         </section>
 
         <div id="plans" className="scroll-mt-8">
-          <PricingCards plans={PLAN_CONFIG} interval={interval} />
+          <PricingCards plans={PLAN_CONFIG} interval={interval} currentPlan={currentPlan} />
         </div>
 
         <section className="mx-auto mt-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-5 text-center sm:flex-row sm:text-left">

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { BillingInterval, PlanConfig } from '@/lib/plans';
+import type { BillingInterval, PlanConfig, PlanId } from '@/lib/plans';
 import { buildPlanFeatures } from '@/lib/plans';
 import { PricingActions } from '@/components/billing/PricingActions';
 
@@ -10,11 +10,13 @@ function PlanCard({
   interval,
   selected,
   onSelect,
+  currentPlan,
 }: {
   plan: PlanConfig;
   interval: BillingInterval;
   selected: boolean;
   onSelect: (planId: string) => void;
+  currentPlan: PlanId;
 }) {
   const price = plan.monthlyPrice;
   const suffix = '/month';
@@ -62,7 +64,7 @@ function PlanCard({
         {plan.secondaryCta ? <p className="text-sm text-white/58">{plan.secondaryCta}</p> : null}
       </div>
 
-      <PricingActions plan={plan} interval={interval} selected={selected} onSelect={onSelect} />
+      <PricingActions plan={plan} interval={interval} selected={selected} onSelect={onSelect} currentPlan={currentPlan} />
 
       <ul className="mt-6 space-y-3 text-sm text-white/80">
         {features.map((feature, index) => (
@@ -76,20 +78,29 @@ function PlanCard({
   );
 }
 
-export function PricingCards({ plans, interval }: { plans: PlanConfig[]; interval: BillingInterval }) {
+export function PricingCards({ plans, interval, currentPlan }: { plans: PlanConfig[]; interval: BillingInterval; currentPlan: PlanId }) {
   const [selectedPlanId, setSelectedPlanId] = useState(plans.find((plan) => plan.highlighted)?.id ?? plans[0]?.id ?? '');
 
   return (
-    <section className="mt-10 grid items-stretch gap-6 lg:grid-cols-3">
-      {plans.map((plan) => (
-        <PlanCard
-          key={plan.id}
-          plan={plan}
-          interval={interval}
-          selected={selectedPlanId === plan.id}
-          onSelect={(planId) => setSelectedPlanId(planId as PlanConfig['id'])}
-        />
-      ))}
+    <section className="mt-10">
+      {currentPlan !== 'free' && currentPlan !== 'business' ? (
+        <div className="mb-6 rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.07] px-5 py-4 text-center text-sm text-emerald-50/85">
+          <span className="font-black text-emerald-200">Upgrading?</span>{' '}
+          You will not be charged the full plan price today. We credit unused time on your current plan and show the exact prorated difference before you confirm.
+        </div>
+      ) : null}
+      <div className="grid items-stretch gap-6 lg:grid-cols-3">
+        {plans.map((plan) => (
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            interval={interval}
+            selected={selectedPlanId === plan.id}
+            onSelect={(planId) => setSelectedPlanId(planId as PlanConfig['id'])}
+            currentPlan={currentPlan}
+          />
+        ))}
+      </div>
     </section>
   );
 }

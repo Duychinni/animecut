@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getOrCreateProfile, getPlanPriceId, getStripe, resolveAppUrl } from '@/lib/billing';
+import { getOrCreateProfile, getPlanPriceId, getStripe, hasPaidSubscriptionAccess, resolveAppUrl } from '@/lib/billing';
 import type { BillingInterval, PlanId } from '@/lib/plans';
+
+const PLAN_RANK: Record<PlanId, number> = {
+  free: 0,
+  starter: 1,
+  creator: 2,
+  pro: 3,
+  business: 4,
+};
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as { planId?: PlanId; interval?: BillingInterval };
+    const body = (await req.json()) as { planId?: PlanId; interval?: BillingInterval; confirmUpgrade?: boolean; prorationDate?: number };
     const planId = body.planId;
     const interval = body.interval;
 
@@ -42,6 +50,94 @@ export async function POST(req: Request) {
 
       const admin = (await import('@/lib/supabase/admin')).createAdminClient();
       await admin.from('profiles').update({ stripe_customer_id: customerId, updated_at: new Date().toISOString() }).eq('id', user.id);
+    }
+
+    if (hasPaidSubscriptionAccess(profile)) {
+      if (profile.subscription_plan === planId) {
+        return NextResponse.json({ error: `You are already subscribed to ${planId}.` }, { status: 400 });
+      }
+      if (PLAN_RANK[planId] < PLAN_RANK[profile.subscription_plan]) {
+        return NextResponse.json({ error: 'Use Manage billing to schedule a downgrade.' }, { status: 400 });
+      }
+
+      const activeSubscriptions = profile.stripe_subscription_id
+        ? null
+        : await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 10 });
+      const subscriptionId = profile.stripe_subscription_id
+        ?? activeSubscriptions?.data.find((subscription) => ['active', 'trialing', 'past_due'].includes(subscription.status))?.id;
+      if (!subscriptionId) {
+        return NextResponse.json({ error: 'Could not find the active subscription to upgrade.' }, { status: 400 });
+      }
+
+      const currentSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscriptionItem = currentSubscription.items.data[0];
+      if (!subscriptionItem) {
+        return NextResponse.json({ error: 'The active subscription has no billable plan item.' }, { status: 400 });
+      }
+
+      const nextPriceId = getPlanPriceId(planId, interval);
+      if (body.confirmUpgrade !== true) {
+        const prorationDate = Math.floor(Date.now() / 1000);
+        const preview = await stripe.invoices.createPreview({
+          customer: customerId,
+          subscription: subscriptionId,
+          subscription_details: {
+            items: [{ id: subscriptionItem.id, price: nextPriceId, quantity: 1 }],
+            billing_cycle_anchor: 'unchanged',
+            proration_behavior: 'always_invoice',
+            proration_date: prorationDate,
+          },
+        });
+        const prorationLines = preview.lines.data.filter((line) => (
+          line.parent?.subscription_item_details?.proration === true
+          || line.parent?.invoice_item_details?.proration === true
+        ));
+        const amountDue = prorationLines.reduce((total, line) => (
+          total + line.amount + (line.taxes ?? []).reduce((taxTotal, tax) => taxTotal + tax.amount, 0)
+        ), 0);
+
+        return NextResponse.json({
+          requiresUpgradeConfirmation: true,
+          amountDue: Math.max(0, amountDue),
+          currency: preview.currency,
+          prorationDate,
+          currentPlan: profile.subscription_plan,
+          nextPlan: planId,
+        });
+      }
+
+      const prorationDate = Number(body.prorationDate);
+      const now = Math.floor(Date.now() / 1000);
+      if (!Number.isInteger(prorationDate) || prorationDate > now || now - prorationDate > 15 * 60) {
+        return NextResponse.json({ error: 'The upgrade quote expired. Please review the latest prorated amount.' }, { status: 409 });
+      }
+
+      const upgradedSubscription = await stripe.subscriptions.update(subscriptionId, {
+        items: [{ id: subscriptionItem.id, price: nextPriceId, quantity: 1 }],
+        cancel_at_period_end: false,
+        proration_behavior: 'always_invoice',
+        proration_date: prorationDate,
+        payment_behavior: 'pending_if_incomplete',
+        metadata: {
+          ...currentSubscription.metadata,
+          userId: user.id,
+          planId,
+          interval,
+        },
+        expand: ['latest_invoice'],
+      });
+
+      const latestInvoice = typeof upgradedSubscription.latest_invoice === 'string'
+        ? null
+        : upgradedSubscription.latest_invoice;
+      const paymentUrl = latestInvoice?.status === 'open' && 'hosted_invoice_url' in latestInvoice
+        ? latestInvoice.hosted_invoice_url
+        : null;
+
+      return NextResponse.json({
+        url: paymentUrl || `${appUrl}/success?upgraded=1`,
+        upgraded: true,
+      });
     }
 
     const session = await stripe.checkout.sessions.create({
