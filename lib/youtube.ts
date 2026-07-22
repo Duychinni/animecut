@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getPublicPipelineError, isYouTubeSourceBlocked } from '@/lib/pipeline-errors';
 
@@ -76,12 +76,16 @@ const COMMON_YT_DLP_ARGS = [
 ];
 
 const YOUTUBE_CLIENT_ATTEMPTS = [
-  ['--extractor-args', 'youtube:player_client=android,web'],
-  ['--extractor-args', 'youtube:player_client=ios,android,web'],
+  // Let yt-dlp choose its current supported clients first. Forcing Android at
+  // the front can make YouTube expose only the combined 360p format while the
+  // same public video has separate 720p/1080p streams available.
+  [],
   ['--extractor-args', 'youtube:player_client=web'],
+  ['--extractor-args', 'youtube:player_client=ios,web'],
+  ['--extractor-args', 'youtube:player_client=android,web'],
 ];
 
-const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v4-strict-hd';
+const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v5-default-client-first';
 
 export async function fetchYouTubeDurationSeconds(url: string) {
   const command = await resolveYtDlpBinary();
@@ -116,8 +120,8 @@ function getYouTubeMaxSourceHeight() {
 }
 
 function getYouTubeMinCacheHeight() {
-  const raw = Number(process.env.YOUTUBE_MIN_CACHE_HEIGHT ?? 1440);
-  if (!Number.isFinite(raw) || raw < 480) return 1440;
+  const raw = Number(process.env.YOUTUBE_MIN_CACHE_HEIGHT ?? 1080);
+  if (!Number.isFinite(raw) || raw < 480) return 1080;
   return Math.min(getYouTubeMaxSourceHeight(), Math.round(raw));
 }
 
@@ -308,32 +312,57 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
   let formatSelector = formatAttempts.at(-1) ?? getYouTubeVideoFormat();
   let lastDownloadError: unknown = null;
   let downloadSucceeded = false;
+  let preferredDownloadSucceeded = false;
+  const lowResolutionFallbackPath = `${outPath}.low-resolution-fallback`;
 
+  downloadAttempts:
   for (const candidateFormat of formatAttempts) {
-    await unlink(outPath).catch(() => undefined);
-    try {
-      await runYtDlpWithFallbacks(ytDlp, [
-        '--concurrent-fragments', '8',
-        '--format-sort-force',
-        '--format-sort', 'res,fps,br,vcodec,hdr:12,acodec',
-        '-f', candidateFormat,
-        '--merge-output-format', 'mp4',
-        '-o', outPath,
-        url,
-      ]);
-      formatSelector = candidateFormat;
-      downloadSucceeded = true;
-      downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, candidateFormat);
-      break;
-    } catch (error) {
-      lastDownloadError = error;
-      console.warn('[youtube] source-quality-attempt-failed', {
-        projectId,
-        formatSelector: candidateFormat,
-        error: error instanceof Error ? error.message.split('\n').slice(-2).join(' | ') : 'Unknown download error',
-      });
+    for (const clientArgs of YOUTUBE_CLIENT_ATTEMPTS) {
+      await unlink(outPath).catch(() => undefined);
+      const clientLabel = clientArgs.length ? clientArgs.at(-1) ?? 'custom' : 'yt-dlp-default';
+      try {
+        await run(ytDlp, [
+          ...COMMON_YT_DLP_ARGS,
+          ...clientArgs,
+          '--concurrent-fragments', '8',
+          '--format-sort-force',
+          '--format-sort', 'res,fps,br,vcodec,hdr:12,acodec',
+          '-f', candidateFormat,
+          '--merge-output-format', 'mp4',
+          '-o', outPath,
+          url,
+        ]);
+        formatSelector = `${candidateFormat} (${clientLabel})`;
+        downloadSucceeded = true;
+        downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, formatSelector);
+        if (!downloadedInfo?.height || downloadedInfo.height >= getYouTubeMinCacheHeight()) {
+          preferredDownloadSucceeded = true;
+          break downloadAttempts;
+        }
+        await copyFile(outPath, lowResolutionFallbackPath);
+        console.warn('[youtube] source-client-returned-low-resolution', {
+          projectId,
+          sourceHeight: downloadedInfo.height,
+          preferredHeight: getYouTubeMinCacheHeight(),
+          client: clientLabel,
+        });
+      } catch (error) {
+        lastDownloadError = error;
+        console.warn('[youtube] source-quality-attempt-failed', {
+          projectId,
+          formatSelector: candidateFormat,
+          client: clientLabel,
+          error: error instanceof Error ? error.message.split('\n').slice(-2).join(' | ') : 'Unknown download error',
+        });
+      }
     }
   }
+
+  if (downloadSucceeded && !preferredDownloadSucceeded) {
+    await copyFile(lowResolutionFallbackPath, outPath).catch(() => undefined);
+    downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, `${formatSelector} (best fallback)`);
+  }
+  await unlink(lowResolutionFallbackPath).catch(() => undefined);
 
   if (!downloadSucceeded) {
     await unlink(outPath).catch(() => undefined);
