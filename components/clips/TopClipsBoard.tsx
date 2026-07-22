@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-presets';
 import type { ClipEditSettings } from '@/lib/clip-edit';
@@ -1772,7 +1772,6 @@ function CaptionTemplatesModal({
   const [captionTab, setCaptionTab] = useState<'text' | 'animation'>('text');
   const [captionTextTab, setCaptionTextTab] = useState<'basic' | 'templates'>('basic');
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
-  const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
   const previewSettings = previewData?.settings;
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
@@ -1817,20 +1816,6 @@ function CaptionTemplatesModal({
     setCaptionMaxWords(previewSettings.caption_max_words);
     setCaptionWordHighlight(previewSettings.caption_word_highlight);
   }, [previewSettings]);
-
-  function moveCaption(event: ReactPointerEvent<HTMLDivElement>) {
-    const frame = previewFrameRef.current;
-    if (!frame || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    const rect = frame.getBoundingClientRect();
-    setCaptionX(Math.max(0.03, Math.min(0.97, (event.clientX - rect.left) / rect.width)));
-    setCaptionY(Math.max(0.03, Math.min(0.97, (event.clientY - rect.top) / rect.height)));
-  }
-
-  function endCaptionMove(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
 
   useEffect(() => {
     const video = previewVideoRef.current;
@@ -1895,7 +1880,7 @@ function CaptionTemplatesModal({
 
         <div className="grid flex-1 gap-0 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="border-b border-white/10 p-4 sm:p-6 lg:border-b-0 lg:border-r">
-            <div ref={previewFrameRef} className="relative mx-auto max-w-[280px] overflow-hidden rounded-[18px] border border-white/10 bg-black lg:max-w-none">
+            <div className="relative mx-auto max-w-[280px] overflow-hidden rounded-[18px] border border-white/10 bg-black lg:max-w-none">
               {previewUrl ? (
                 <video
                   ref={previewVideoRef}
@@ -1918,18 +1903,8 @@ function CaptionTemplatesModal({
               )}
               {activeCaption && !previewHasBurnedCaptions ? (
                 <div
-                  className="absolute z-20 max-w-[92%] touch-none cursor-move select-none rounded-md text-center outline outline-1 outline-cyan-300/0 outline-offset-4 transition hover:outline-cyan-300/85 active:outline-cyan-300"
+                  className="pointer-events-none absolute z-20 max-w-[92%] select-none rounded-md text-center"
                   style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    moveCaption(event);
-                  }}
-                  onPointerMove={moveCaption}
-                  onPointerUp={endCaptionMove}
-                  onPointerCancel={endCaptionMove}
-                  title="Drag to position captions"
                 >
                   <span className={`inline-block text-center ${captionBackground ? 'rounded-lg bg-white px-2 py-1' : ''}`}>
                     {activeCaption.words.map((word, index) => (
@@ -1946,32 +1921,11 @@ function CaptionTemplatesModal({
                   </span>
                 </div>
               ) : null}
-              {previewHasBurnedCaptions && captionsEnabled ? (
-                <div
-                  className="absolute z-20 grid h-16 w-[72%] touch-none cursor-move select-none place-items-center rounded-lg border border-dashed border-cyan-300/75 bg-cyan-300/[0.04] text-center shadow-[0_0_0_1px_rgba(0,0,0,.28)] active:border-cyan-200 active:bg-cyan-300/[0.09]"
-                  style={{ left: `${captionX * 100}%`, top: `${captionY * 100}%`, transform: 'translate(-50%, -50%)' }}
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    moveCaption(event);
-                  }}
-                  onPointerMove={moveCaption}
-                  onPointerUp={endCaptionMove}
-                  onPointerCancel={endCaptionMove}
-                  title="Drag to set the caption position"
-                  aria-label="Drag to set the caption position"
-                >
-                  <span className="pointer-events-none rounded-full bg-black/75 px-2.5 py-1 text-[10px] font-black text-cyan-100 shadow-lg">
-                    Drag caption position
-                  </span>
-                </div>
-              ) : null}
             </div>
             <p className="mt-3 text-center text-xs text-white/45">
               {previewHasBurnedCaptions
-                ? 'Drag the caption position box, then Apply. The existing burned caption stays visible until the reel is replaced—no second caption layer is added.'
-                : 'This is the reel’s real framing with one editable caption layer. Drag or resize it, then Apply.'}
+                ? 'Choose a position from the dot grid, then Apply. The existing burned caption stays visible until the reel is replaced.'
+                : 'This is the reel’s real framing with one editable caption layer. Choose its position below, then Apply.'}
             </p>
           </div>
 
@@ -2032,14 +1986,16 @@ function CaptionTemplatesModal({
                       <section className="space-y-4 border-b border-white/10 pb-5">
                         <div className="flex items-center justify-between"><p className="text-xs font-bold text-white">Transform</p><button type="button" onClick={() => { setCaptionX(0.5); setCaptionY(0.8); setCaptionFontSize(12); }} className="text-[11px] font-bold text-white/45 hover:text-white">Reset</button></div>
                         <label className="block space-y-2"><span className="flex justify-between text-xs text-white/60">Scale <span className="font-mono text-white">{Math.round((captionFontSize / 12) * 100)}%</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
-                        <div className="grid grid-cols-[1fr_1fr] gap-3">
-                          <label className="flex items-center gap-2 rounded bg-black/30 px-3 py-2 text-xs text-white/45">X <input type="number" min={3} max={97} value={Math.round(captionX * 100)} onChange={(event) => setCaptionX(Math.max(0.03, Math.min(0.97, Number(event.target.value) / 100)))} className="w-full bg-transparent text-right font-mono text-white outline-none" /></label>
-                          <label className="flex items-center gap-2 rounded bg-black/30 px-3 py-2 text-xs text-white/45">Y <input type="number" min={3} max={97} value={Math.round(captionY * 100)} onChange={(event) => setCaptionY(Math.max(0.03, Math.min(0.97, Number(event.target.value) / 100)))} className="w-full bg-transparent text-right font-mono text-white outline-none" /></label>
+                        <div>
+                          <p className="mb-2 text-xs font-bold text-white/65">Caption position</p>
+                          <div className="grid w-36 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2" aria-label="Caption position grid">
+                            {[0.12, 0.5, 0.88].flatMap((y) => [0.12, 0.5, 0.88].map((x) => (
+                              <button key={`${x}-${y}`} type="button" onClick={() => { setCaptionX(x); setCaptionY(y); }} className={`grid aspect-square place-items-center rounded-md border transition ${Math.abs(captionX - x) < 0.08 && Math.abs(captionY - y) < 0.08 ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:bg-white/[0.06]'}`} aria-label={`Position captions at ${Math.round(x * 100)}%, ${Math.round(y * 100)}%`}>
+                                <span className="h-2 w-2 rounded-full bg-white/50" />
+                              </button>
+                            )))}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-6 gap-1 rounded-md bg-white/[0.06] p-1" aria-label="Caption alignment">
-                          {[{ x: .12, y: captionY, label: 'Left', icon: '⇤' }, { x: .5, y: captionY, label: 'Center', icon: '↔' }, { x: .88, y: captionY, label: 'Right', icon: '⇥' }, { x: captionX, y: .12, label: 'Top', icon: '↥' }, { x: captionX, y: .5, label: 'Middle', icon: '↕' }, { x: captionX, y: .88, label: 'Bottom', icon: '↧' }].map((item) => <button key={item.label} type="button" onClick={() => { setCaptionX(item.x); setCaptionY(item.y); }} className="rounded py-2 text-sm text-white/65 hover:bg-white/10 hover:text-white" title={item.label}>{item.icon}</button>)}
-                        </div>
-                        <p className="rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2 text-[11px] leading-5 text-cyan-50/65">Drag the caption directly on the video for free positioning.</p>
                       </section>
 
                       <section className="space-y-3">

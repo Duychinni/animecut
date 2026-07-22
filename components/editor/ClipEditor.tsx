@@ -228,7 +228,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const editableClipBoundsRef = useRef<TimelineRange | null>(null);
   const cropDragRef = useRef<{ clientX: number; clientY: number; cropX: number; cropY: number } | null>(null);
-  const captionDragRef = useRef(false);
   const [data, setData] = useState<EditorData | null>(null);
   const [settings, setSettings] = useState<ClipEditSettings | null>(null);
   const [baseline, setBaseline] = useState('');
@@ -676,37 +675,6 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     setToast('Crop reset');
   }
 
-  function moveCaptionOnPreview(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!captionDragRef.current || !settings) return;
-    const frame = previewFrameRef.current;
-    if (!frame) return;
-    const rect = frame.getBoundingClientRect();
-    const x = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0.03, 0.97);
-    const y = clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0.03, 0.97);
-    patchSettings({
-      caption_x: x,
-      caption_y: y,
-      caption_position: y < 0.34 ? 'upper' : y < 0.66 ? 'center' : 'lower-third',
-    });
-  }
-
-  function beginCaptionDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!settings || activeTool === 'crop') return;
-    event.preventDefault();
-    event.stopPropagation();
-    setActiveTool('captions');
-    setCaptionInspectorTab('transform');
-    captionDragRef.current = true;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    moveCaptionOnPreview(event);
-  }
-
-  function endCaptionDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!captionDragRef.current) return;
-    captionDragRef.current = false;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-
   function updateClipTranscriptText(text: string) {
     if (!settings) return;
     const paragraphs = text.split(/\n\s*\n/);
@@ -1141,13 +1109,8 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
               {previewUsesSource && settings.captions_enabled && activeCaptionText ? (
                 <div
-                  className={`absolute z-40 max-w-[92%] touch-none select-none text-center ${activeTool === 'crop' ? 'pointer-events-none' : 'cursor-move'} ${activeTool === 'captions' ? 'rounded-md outline outline-1 outline-cyan-300/80 outline-offset-4' : ''}`}
+                  className="pointer-events-none absolute z-40 max-w-[92%] select-none text-center"
                   style={{ left: `${settings.caption_x * 100}%`, top: `${settings.caption_y * 100}%`, transform: 'translate(-50%, -50%)' }}
-                  onPointerDown={beginCaptionDrag}
-                  onPointerMove={moveCaptionOnPreview}
-                  onPointerUp={endCaptionDrag}
-                  onPointerCancel={endCaptionDrag}
-                  title="Drag captions anywhere on the video"
                 >
                   <span
                     style={captionPreviewStyle(activePreset, settings)}
@@ -1372,14 +1335,12 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               ) : (
                 <div className="space-y-5">
-                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Drag the caption directly anywhere on the video, or use the controls below.</div>
+                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Choose one of the nine dot positions for a consistent caption layout.</div>
                   <div className="grid w-36 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
                     {[0.12, 0.5, 0.88].flatMap((y) => [0.12, 0.5, 0.88].map((x) => (
                       <button key={`${x}-${y}`} type="button" onClick={() => patchSettings({ caption_x: x, caption_y: y, caption_position: y < 0.34 ? 'upper' : y < 0.66 ? 'center' : 'lower-third' })} className={`grid aspect-square place-items-center rounded-md border ${Math.abs(settings.caption_x - x) < 0.08 && Math.abs(settings.caption_y - y) < 0.08 ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:bg-white/[0.06]'}`}><span className="h-2 w-2 rounded-full bg-white/50" /></button>
                     )))}
                   </div>
-                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Horizontal <span className="font-mono">{Math.round(settings.caption_x * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={settings.caption_x} onChange={(event) => patchSettings({ caption_x: Number(event.target.value) })} className="w-full accent-cyan-300" /></label>
-                  <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Vertical <span className="font-mono">{Math.round(settings.caption_y * 100)}</span></span><input type="range" min={0.03} max={0.97} step={0.01} value={settings.caption_y} onChange={(event) => patchSettings({ caption_y: Number(event.target.value) })} className="w-full accent-cyan-300" /></label>
                   <button type="button" onClick={() => patchSettings({ caption_x: 0.5, caption_y: 0.8, caption_position: 'lower-third' })} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset position</button>
                 </div>
               )}
