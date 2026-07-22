@@ -1,4 +1,4 @@
-export const DEFAULT_REEL_CAPTION_ACCENTS = ['#21F45A', '#FFD84D'] as const;
+export const DEFAULT_REEL_CAPTION_ACCENTS = ['#21F45A', '#FFFC00'] as const;
 
 function stableHash(value: string) {
   let hash = 2166136261;
@@ -11,7 +11,7 @@ function stableHash(value: string) {
 
 /**
  * Keep the default look recognizable while giving a restrained subset of
- * reels a gold/yellow keyword accent. The choice is stable across rerenders,
+ * reels a bright yellow keyword accent. The choice is stable across rerenders,
  * so it feels curated instead of changing randomly whenever a job retries.
  */
 export function resolveDefaultReelCaptionAccent(seed: string) {

@@ -13,7 +13,7 @@ test('default caption accent is stable and restricted to green or yellow', () =>
 
 test('yellow is an occasional variation rather than every other reel', () => {
   const accents = Array.from({ length: 120 }, (_, index) => resolveDefaultReelCaptionAccent(`candidate-${index}`));
-  const yellow = accents.filter((accent) => accent === '#FFD84D').length;
+  const yellow = accents.filter((accent) => accent === '#FFFC00').length;
   assert.ok(yellow >= 20 && yellow <= 40, `expected roughly 25% yellow accents, received ${yellow}/120`);
   assert.ok(accents.filter((accent) => accent === '#21F45A').length > yellow);
 });
