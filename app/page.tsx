@@ -8,6 +8,13 @@ import { AccountMenu } from '@/components/auth/AccountMenu';
 import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upload';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  clearPendingIngest,
+  getPendingIngest,
+  readPendingFile,
+  savePendingUploadIngest,
+  savePendingYouTubeIngest,
+} from '@/lib/pending-ingest';
 
 type MeResponse = {
   authenticated: boolean;
@@ -288,6 +295,7 @@ export default function Home() {
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [userLabel, setUserLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [allowanceLabel, setAllowanceLabel] = useState('1 free video');
@@ -298,6 +306,7 @@ export default function Home() {
   const [showcaseLoaded, setShowcaseLoaded] = useState(false);
   const [showcaseVisible, setShowcaseVisible] = useState(false);
   const showcaseSectionRef = useRef<HTMLElement | null>(null);
+  const pendingResumeStartedRef = useRef(false);
   const activeShowcaseClips = useMemo(() => {
     if (!liveShowcaseClips.length) return showcaseClips;
 
@@ -336,6 +345,8 @@ export default function Home() {
         }
       } catch {
         // best-effort only
+      } finally {
+        if (isMounted) setAuthChecked(true);
       }
     })();
 
@@ -442,6 +453,14 @@ export default function Home() {
       return;
     }
 
+    if (!isAuthenticated) {
+      savePendingYouTubeIngest(sourceUrl.trim());
+      setMsg('Create an account or log in and this video will start automatically.');
+      setAuthMode('signup');
+      setAuthModalOpen(true);
+      return;
+    }
+
     try {
       // This page has a large animated showcase. Schedule its loading-state
       // rerender as non-urgent so the button interaction can paint immediately
@@ -457,11 +476,13 @@ export default function Home() {
       });
 
       await startProjectProcessing(projectId);
+      await clearPendingIngest();
       router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
       if (text.toLowerCase().includes('unauthorized')) {
-        setMsg('Please log in first.');
+        savePendingYouTubeIngest(sourceUrl.trim());
+        setMsg('Log in and this video will start automatically.');
         setAuthMode('signup');
         setAuthModalOpen(true);
         return;
@@ -473,6 +494,22 @@ export default function Home() {
   }
 
   async function uploadFile(selectedFile: File) {
+    if (!isAuthenticated) {
+      try {
+        setLoading(true);
+        setMsg('Saving your video while you connect your account...');
+        await savePendingUploadIngest(selectedFile);
+        setMsg('Create an account or log in and this upload will start automatically.');
+        setAuthMode('signup');
+        setAuthModalOpen(true);
+      } catch (error) {
+        setMsg(`Error: ${error instanceof Error ? error.message : 'Could not save this video before login.'}`);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       setLoading(true);
       setUploadProgress(0);
@@ -523,11 +560,13 @@ export default function Home() {
       }
       setMsg('Upload complete. Starting processing...');
       await startProjectProcessing(projectId);
+      await clearPendingIngest();
       router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : 'Could not upload file';
       if (text.toLowerCase().includes('unauthorized')) {
-        setMsg('Please log in first.');
+        await savePendingUploadIngest(selectedFile).catch(() => undefined);
+        setMsg('Log in and this upload will start automatically.');
         setAuthMode('signup');
         setAuthModalOpen(true);
         return;
@@ -545,6 +584,56 @@ export default function Home() {
     await uploadFile(selected);
     e.target.value = '';
   }
+
+  useEffect(() => {
+    if (!authChecked || !isAuthenticated || pendingResumeStartedRef.current) return;
+    const shouldResume = new URLSearchParams(window.location.search).get('resumePending') === '1';
+    if (!shouldResume) return;
+
+    const pending = getPendingIngest();
+    if (!pending) {
+      router.replace('/dashboard');
+      return;
+    }
+
+    pendingResumeStartedRef.current = true;
+    if (pending.type === 'youtube') {
+      setSourceUrl(pending.sourceUrl);
+      void (async () => {
+        try {
+          setLoading(true);
+          setMsg('Starting your saved video...');
+          const projectId = await createProject({
+            title: makeProjectTitle(),
+            source_type: 'youtube',
+            source_url: pending.sourceUrl,
+          });
+          await startProjectProcessing(projectId);
+          await clearPendingIngest();
+          router.push(`/dashboard?created=${projectId}`);
+        } catch (error) {
+          setMsg(`Error: ${error instanceof Error ? error.message : 'Could not resume this video.'}`);
+          pendingResumeStartedRef.current = false;
+        } finally {
+          setLoading(false);
+        }
+      })();
+      return;
+    }
+
+    void (async () => {
+      const pendingFile = await readPendingFile();
+      if (!pendingFile) {
+        setMsg('Please select your video again. Your browser could not restore the file after login.');
+        pendingResumeStartedRef.current = false;
+        return;
+      }
+      setFile(pendingFile);
+      await uploadFile(pendingFile);
+    })();
+  // Run once after the returning auth session has been confirmed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked, isAuthenticated]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#05050a] text-white">
@@ -922,7 +1011,7 @@ export default function Home() {
       <AuthModal
         open={authModalOpen}
         mode={authMode}
-        next="/dashboard"
+        next="/?resumePending=1"
         onClose={() => setAuthModalOpen(false)}
         onSwitchMode={(mode) => setAuthMode(mode)}
       />

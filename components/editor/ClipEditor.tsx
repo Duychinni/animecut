@@ -728,7 +728,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const nextSettings: ClipEditSettings = {
       ...settings,
       caption_preset_id: DEFAULT_CAPTION_PRESET_ID,
-      caption_font_size: 12,
+      caption_font_size: 13,
       caption_text_color: '#FFFFFF',
       caption_highlight_color: preset.captionHighlightColor,
       caption_background: false,

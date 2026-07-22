@@ -128,7 +128,7 @@ export function AuthCard({
       const signupEmail = typeof data?.email === 'string' ? data.email : email;
       captureEvent('signup_completed');
       router.push(
-        `/auth/check-email?email=${encodeURIComponent(signupEmail)}&next=${encodeURIComponent('/')}`,
+        `/auth/check-email?email=${encodeURIComponent(signupEmail)}&next=${encodeURIComponent(next || '/dashboard')}`,
       );
       router.refresh();
     } catch (err: unknown) {

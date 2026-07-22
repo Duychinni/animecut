@@ -27,8 +27,28 @@ const HERO_REELS = [
     mediaUrl: '/hero-reels/capacity.mp4',
     posterUrl: '/hero-reels/capacity.jpg',
   },
-  { id: '1a67397f-8b68-4cc0-a0bd-01a52ce6083d', videoId: '_KaFS4Dxs5k', start: 249, end: 292, title: 'A founder shares the opportunities he is building', source: 'Starter Story', score: 94 },
-  { id: '5a4dd977-6401-4cc9-9535-b51c425daf49', videoId: '_KaFS4Dxs5k', start: 139, end: 175, title: 'A founder breaks down his product approach', source: 'Starter Story', score: 93 },
+  {
+    id: '7096eabc-ae81-4d02-8993-5989cb052fdd',
+    videoId: '3A8kawxMOcQ',
+    start: 327.84,
+    end: 333.84,
+    title: 'How MrBeast’s obsession defied odds in a small town',
+    source: 'PowerfulJRE',
+    score: 93,
+    mediaUrl: '/hero-reels/mrbeast.mp4',
+    posterUrl: '/hero-reels/mrbeast.jpg',
+  },
+  {
+    id: 'e5ae6592-d592-4d60-91b8-5194f5925c0b',
+    videoId: '75gr97-cQ-s',
+    start: 358.22,
+    end: 364.22,
+    title: 'For Explains Creator Will',
+    source: 'Arthur Spalanzani',
+    score: 89,
+    mediaUrl: '/hero-reels/creator.mp4',
+    posterUrl: '/hero-reels/creator.jpg',
+  },
   { id: '220a19a9-8bbe-4dac-823d-7877a234032e', videoId: '_KaFS4Dxs5k', start: 80, end: 111, title: 'A founder explains the tools behind his product', source: 'Starter Story', score: 92 },
   { id: '1fff2e2c-7171-4d2f-a47f-fa04472c54ce', videoId: 'w3zxMrwWrt0', start: 174, end: 211, title: 'A founder explains his daily side-project routine', source: 'Starter Story', score: 91 },
   { id: '54a6609e-2ac7-426c-9fe5-6e7058781fba', videoId: 'w3zxMrwWrt0', start: 82, end: 112, title: 'A founder explains how his product works', source: 'Starter Story', score: 90 },
@@ -64,25 +84,34 @@ function youtubeShowcaseUrl(videoId: string, start: number, end: number) {
 }
 
 function buildHardcodedShowcaseClips() {
-  return HERO_REELS.map((reel, index) => ({
-    id: reel.id,
-    title: reel.title,
-    score: reel.score,
-    caption: '',
-    platform: platforms[index],
-    length: formatClock(HERO_REEL_PREVIEW_SECONDS),
-    source: reel.source,
-    gradient: gradients[index],
-    mediaType: 'mediaUrl' in reel ? 'video' as const : 'youtube' as const,
-    mediaUrl: 'mediaUrl' in reel
-      ? reel.mediaUrl
-      : youtubeShowcaseUrl(reel.videoId, reel.start, reel.start + HERO_REEL_PREVIEW_SECONDS),
-    posterUrl: 'posterUrl' in reel
-      ? reel.posterUrl
-      : `https://i.ytimg.com/vi/${encodeURIComponent(reel.videoId)}/hqdefault.jpg`,
-    startSeconds: reel.start,
-    endSeconds: reel.start + HERO_REEL_PREVIEW_SECONDS,
-  }));
+  return HERO_REELS.map((reel, index) => {
+    const isSelfHosted = 'mediaUrl' in reel;
+    const previewSeconds = isSelfHosted
+      ? Math.min(7, Math.max(5, reel.end - reel.start))
+      : HERO_REEL_PREVIEW_SECONDS;
+
+    return {
+      id: reel.id,
+      title: reel.title,
+      score: reel.score,
+      caption: '',
+      platform: platforms[index],
+      length: formatClock(previewSeconds),
+      source: reel.source,
+      gradient: gradients[index],
+      mediaType: isSelfHosted ? 'video' as const : 'youtube' as const,
+      mediaUrl: isSelfHosted
+        ? reel.mediaUrl
+        : youtubeShowcaseUrl(reel.videoId, reel.start, reel.start + previewSeconds),
+      posterUrl: 'posterUrl' in reel
+        ? reel.posterUrl
+        : `https://i.ytimg.com/vi/${encodeURIComponent(reel.videoId)}/hqdefault.jpg`,
+      // Self-hosted assets are already trimmed, so starting them at their
+      // original YouTube timestamp would jump to the final frame before loop.
+      startSeconds: isSelfHosted ? 0 : reel.start,
+      endSeconds: isSelfHosted ? previewSeconds : reel.start + previewSeconds,
+    };
+  });
 }
 
 export async function GET() {

@@ -15,6 +15,7 @@ type Segment = {
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type StyledCaptionPreset = {
+  id?: string;
   caption_template?: CaptionTemplate;
   captionFontFamily?: string;
   captionFontSize?: number;
@@ -175,7 +176,9 @@ function resolveAssStyle(preset?: StyledCaptionPreset) {
     ? Math.round(exportSize.height * 0.375)
     : preset?.captionPosition === 'upper'
       ? Math.round(exportSize.height * 0.583)
-      : template === 'minimal'
+      : preset?.id === 'opus-clean'
+        ? Math.round(exportSize.height * 0.225)
+        : template === 'minimal'
         ? Math.round(exportSize.height * 0.156)
         : Math.round(exportSize.height * 0.198);
   const boxBackColor = preset?.captionBackgroundBox && preset?.captionTextColor?.toUpperCase() === '#111111'

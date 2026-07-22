@@ -12,17 +12,14 @@ test('default caption accent is stable and restricted to green or yellow', () =>
   assert.ok(DEFAULT_REEL_CAPTION_ACCENTS.includes(first));
 });
 
-test('about one third of default hook cards use the middle of the frame', () => {
+test('default hook cards always stay at the top of the frame', () => {
   const placements = Array.from({ length: 120 }, (_, index) => resolveDefaultReelHookPlacement(`candidate-${index}`));
-  const middle = placements.filter((placement) => placement === 'middle').length;
-  assert.ok(middle >= 30 && middle <= 50, `expected roughly one third middle hooks, received ${middle}/120`);
-  assert.equal(placements.filter((placement) => placement === 'top').length + middle, placements.length);
-  assert.equal(resolveDefaultReelHookPlacement('candidate-one'), resolveDefaultReelHookPlacement('candidate-one'));
+  assert.equal(placements.every((placement) => placement === 'top'), true);
 });
 
 test('default reels are split roughly evenly between green and bright yellow', () => {
   const accents = Array.from({ length: 120 }, (_, index) => resolveDefaultReelCaptionAccent(`candidate-${index}`));
-  const yellow = accents.filter((accent) => accent === '#FFFC00').length;
+  const yellow = accents.filter((accent) => accent === '#FFFF00').length;
   assert.ok(yellow >= 48 && yellow <= 72, `expected roughly 50% yellow accents, received ${yellow}/120`);
   assert.equal(accents.filter((accent) => accent === '#21F45A').length + yellow, accents.length);
 });
