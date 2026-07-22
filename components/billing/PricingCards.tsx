@@ -36,7 +36,7 @@ function PlanCard({
       }`}
     >
       {plan.highlighted ? (
-        <div className="absolute right-5 top-5 rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#ff9bdf]">
+        <div className="mb-4 w-fit rounded-full border border-[#ff7bd8]/30 bg-[#ff7bd8]/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#ff9bdf]">
           Most popular
         </div>
       ) : null}

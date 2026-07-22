@@ -64,7 +64,7 @@ export default async function PricingPage() {
 
   return (
     <main className="app-shell min-h-screen text-white">
-      <div className="relative mx-auto max-w-6xl px-6 py-6">
+      <div className="relative mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
         <header className="relative flex items-center justify-between border-b border-white/10 pb-4">
           <HomeLogoLink />
 
@@ -74,7 +74,7 @@ export default async function PricingPage() {
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex min-w-0 items-center justify-end gap-1.5 sm:gap-2">
             {user ? (
               <>
                 <div className="hidden items-center gap-2 whitespace-nowrap rounded-full border border-white/20 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/85 lg:inline-flex">
@@ -112,7 +112,7 @@ export default async function PricingPage() {
           <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">
             SIMPLE MONTHLY PRICING
           </p>
-          <h1 className="mt-4 text-[3rem] font-semibold leading-[1.02] tracking-[-0.03em] md:text-[4.6rem]">
+          <h1 className="mt-4 text-[2.35rem] font-semibold leading-[1.02] tracking-[-0.03em] sm:text-[3rem] md:text-[4.6rem]">
             <span className="block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent">
               Create more. Pay only for what you need.
             </span>

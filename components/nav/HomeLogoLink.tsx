@@ -7,7 +7,7 @@ export function HomeLogoLink() {
     <button
       type="button"
       onClick={() => window.location.assign('/')}
-      className="cursor-pointer flex h-[52px] w-[260px] items-center justify-start overflow-hidden"
+      className="flex h-[44px] w-[148px] cursor-pointer items-center justify-start overflow-hidden sm:h-[52px] sm:w-[260px]"
       aria-label="Go to AnimaCut home"
     >
       <Image
@@ -15,7 +15,7 @@ export function HomeLogoLink() {
         alt="AnimaCut"
         width={520}
         height={140}
-        className="ml-[-6px] h-[120px] w-auto max-w-none object-contain"
+        className="ml-[-4px] h-[78px] w-auto max-w-none object-contain sm:ml-[-6px] sm:h-[120px]"
         priority
       />
     </button>

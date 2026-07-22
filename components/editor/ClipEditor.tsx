@@ -1016,7 +1016,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </div>
       ) : null}
 
-      <section className="grid h-[720px] justify-center gap-3 xl:grid-cols-[minmax(420px,500px)_minmax(560px,640px)_minmax(280px,330px)]">
+      <section className="rounded-3xl border border-cyan-300/20 bg-[linear-gradient(145deg,rgba(34,211,238,0.10),rgba(255,255,255,0.035))] p-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.28)] xl:hidden">
+        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-cyan-300/15 text-2xl" aria-hidden="true">↗</div>
+        <h1 className="mt-4 text-xl font-black">Continue editing on desktop</h1>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/65">The precision editor needs a larger screen for transcript editing, timeline trimming, reframing, and caption positioning. Your reel is saved and ready when you open this project on a computer.</p>
+        <button onClick={handleBack} className="mt-5 rounded-xl bg-white px-5 py-3 text-sm font-black text-black">Back to reel previews</button>
+      </section>
+
+      <section className="hidden h-[720px] justify-center gap-3 xl:grid xl:grid-cols-[minmax(420px,500px)_minmax(560px,640px)_minmax(280px,330px)]">
         <aside className="flex min-h-0 flex-col overflow-hidden rounded-[12px] border border-white/[0.055] bg-[#1b1e24]">
           <div className="border-b border-white/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -1383,7 +1390,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
         </aside>
       </section>
 
-      <section className="mx-auto mt-3 w-full max-w-[1360px] overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95">
+      <section className="mx-auto mt-3 hidden w-full max-w-[1360px] overflow-hidden rounded-[12px] border border-white/[0.035] bg-[#111318]/95 xl:block">
         <div className="flex items-center gap-1 border-b border-white/[0.08] bg-[#1b1d21] px-3 py-2">
           {([
             ['trim', 'Trim', 'M6 7h12M8 4v6m8-6v6M7 14h10v5H7z'],

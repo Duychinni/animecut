@@ -1877,8 +1877,8 @@ function CaptionTemplatesModal({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70">
-      <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-l border-white/10 bg-[#0d0f14] shadow-[0_0_60px_rgba(0,0,0,0.5)]">
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+      <div className="flex h-full w-full max-w-3xl flex-col overflow-y-auto border-l border-white/10 bg-[#0d0f14] shadow-[0_0_60px_rgba(0,0,0,0.5)]">
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-white/40">Caption Templates</p>
             <h3 className="mt-1 text-lg font-semibold text-white">{clip.title}</h3>
@@ -1889,8 +1889,8 @@ function CaptionTemplatesModal({
         </div>
 
         <div className="grid flex-1 gap-0 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="border-b border-white/10 p-6 lg:border-b-0 lg:border-r">
-            <div ref={previewFrameRef} className="relative overflow-hidden rounded-[18px] border border-white/10 bg-black">
+          <div className="border-b border-white/10 p-4 sm:p-6 lg:border-b-0 lg:border-r">
+            <div ref={previewFrameRef} className="relative mx-auto max-w-[280px] overflow-hidden rounded-[18px] border border-white/10 bg-black lg:max-w-none">
               {previewUrl ? (
                 <video
                   ref={previewVideoRef}
@@ -1970,7 +1970,7 @@ function CaptionTemplatesModal({
             </p>
           </div>
 
-          <div className="flex min-h-0 flex-col p-6">
+          <div className="flex min-h-0 flex-col p-4 sm:p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-black text-white">Caption style</p>

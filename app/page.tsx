@@ -552,8 +552,8 @@ export default function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_22%,rgba(175,78,255,0.12),transparent_26%),radial-gradient(circle_at_80%_24%,rgba(255,83,196,0.08),transparent_24%),radial-gradient(circle_at_92%_38%,rgba(255,170,64,0.06),transparent_18%),radial-gradient(circle_at_50%_120%,rgba(255,255,255,0.02),transparent_36%)]" />
       </div>
 
-      <div className="relative mx-auto max-w-7xl px-6 py-6">
-        <header className="grid grid-cols-[260px_1fr_260px] items-center border-b border-white/10 pb-4">
+      <div className="relative mx-auto max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
+        <header className="flex items-center justify-between gap-2 border-b border-white/10 pb-4 md:grid md:grid-cols-[260px_1fr_260px]">
           <HomeLogoLink />
 
           <nav className="hidden items-center justify-center gap-8 text-[16px] font-medium text-white/90 md:flex">
@@ -563,7 +563,7 @@ export default function Home() {
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex min-w-0 items-center justify-end gap-1.5 sm:gap-2">
             {userLabel ? (
               <>
                 <div className="hidden items-center gap-2 whitespace-nowrap rounded-full border border-white/20 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/85 xl:inline-flex">
@@ -580,13 +580,13 @@ export default function Home() {
               <div className="flex items-center justify-end gap-2">
                 <Link
                   href={`/auth/login?next=${encodeURIComponent('/dashboard')}`}
-                  className="cursor-pointer rounded-xl px-3 py-2 text-sm font-semibold text-white/65 transition hover:text-white"
+                  className="cursor-pointer rounded-xl px-2 py-2 text-xs font-semibold text-white/65 transition hover:text-white sm:px-3 sm:text-sm"
                 >
                   Sign in
                 </Link>
                 <Link
                   href={`/auth/signup?next=${encodeURIComponent('/dashboard')}`}
-                  className="cursor-pointer whitespace-nowrap rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:-translate-y-0.5 hover:bg-white/90"
+                  className="cursor-pointer whitespace-nowrap rounded-xl bg-white px-3 py-2.5 text-xs font-semibold text-black transition hover:-translate-y-0.5 hover:bg-white/90 sm:px-4 sm:text-sm"
                 >
                   Sign up – It&apos;s FREE
                 </Link>
@@ -595,10 +595,10 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="relative pt-16 pb-10 lg:pt-24 lg:pb-12">
+        <section className="relative pb-10 pt-12 sm:pt-16 lg:pb-12 lg:pt-24">
           <div className="mx-auto max-w-4xl text-center">
             <p className="text-sm font-black tracking-[0.24em] text-[#ff7bd8] drop-shadow-[0_0_14px_rgba(255,123,216,0.75)] md:text-base">#1 AI VIDEO CLIPPING TOOL</p>
-            <h1 className="mt-4 text-[3.25rem] font-extrabold leading-[1.02] tracking-[-0.03em] md:text-[5.25rem]">
+            <h1 className="mt-4 text-[2.55rem] font-extrabold leading-[1.02] tracking-[-0.03em] sm:text-[3.25rem] md:text-[5.25rem]">
               Upload once.
               <span className="mt-1 block pb-[0.08em] bg-[linear-gradient(135deg,#b56dff_0%,#ff63c3_45%,#ffb347_100%)] bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(214,107,255,0.16)]">
                 Get weeks of content.
@@ -618,7 +618,7 @@ export default function Home() {
 
             <div className="mx-auto mt-8 w-full max-w-3xl rounded-[28px] border border-white/12 bg-[#08080f]/88 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-                <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 items-center gap-2">
+                <form onSubmit={onAnalyzeLink} className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
                   <input
                     type="url"
                     name="sourceUrl"
@@ -631,7 +631,7 @@ export default function Home() {
                     <button
                       type="submit"
                       disabled={loading}
-                      className="h-12 shrink-0 cursor-pointer rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="h-12 w-full shrink-0 cursor-pointer rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                     >
                       {loading ? 'Working...' : 'Get Clips'}
                     </button>
@@ -643,7 +643,7 @@ export default function Home() {
                         event.preventDefault();
                         setMsg(`Error: ${sourceUrl.trim() ? YOUTUBE_LINK_ERROR : 'Paste a YouTube link first, or use Upload files.'}`);
                       }}
-                      className="grid h-12 shrink-0 cursor-pointer place-items-center rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)]"
+                      className="grid h-12 w-full shrink-0 cursor-pointer place-items-center rounded-2xl bg-white px-5 text-sm font-semibold text-black transition duration-200 hover:-translate-y-0.5 hover:bg-white/90 hover:shadow-[0_12px_30px_rgba(255,255,255,0.12)] sm:w-auto"
                     >
                       Get Free Clips
                     </Link>

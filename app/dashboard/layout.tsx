@@ -60,8 +60,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="app-shell min-h-screen text-white">
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
-        <div className="mx-auto max-w-[1440px] px-6 py-6">
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-6 lg:gap-10">
+        <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6 sm:py-6">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-6 lg:gap-10">
             <HomeLogoLink />
 
             <nav className="hidden min-w-0 items-center justify-center gap-8 justify-self-center text-base font-medium text-white/90 md:flex">
@@ -91,6 +91,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
           <div className="mt-5 flex justify-center">
             <ProjectQuickStart compact />
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70 md:hidden">
+            <p className="font-bold text-white">Mobile-friendly browsing</p>
+            <p className="mt-1">Preview reels, check processing, manage billing, and download finished clips here. Uploading and detailed editing work best on a desktop.</p>
           </div>
 
           {(showUpgradeNotice || showLowMinutesNotice) ? (
