@@ -563,7 +563,7 @@ export default function Home() {
             <Link href="/dashboard" className="transition hover:text-white">Dashboard</Link>
           </nav>
 
-          <div className="flex min-w-0 items-center justify-end gap-1.5 sm:gap-2">
+          <div className="flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-2">
             {userLabel ? (
               <>
                 <div className="hidden items-center gap-2 whitespace-nowrap rounded-full border border-white/20 bg-white/[0.05] px-3 py-2 text-xs font-semibold text-white/85 xl:inline-flex">
@@ -577,10 +577,10 @@ export default function Home() {
                 <AccountMenu displayName={userLabel} avatarUrl={avatarUrl} />
               </>
             ) : (
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
                 <Link
                   href={`/auth/login?next=${encodeURIComponent('/dashboard')}`}
-                  className="cursor-pointer rounded-xl px-2 py-2 text-xs font-semibold text-white/65 transition hover:text-white sm:px-3 sm:text-sm"
+                  className="cursor-pointer whitespace-nowrap rounded-xl px-2 py-2 text-xs font-semibold text-white/70 transition hover:text-white sm:px-3 sm:text-sm"
                 >
                   Sign in
                 </Link>
@@ -588,7 +588,8 @@ export default function Home() {
                   href={`/auth/signup?next=${encodeURIComponent('/dashboard')}`}
                   className="cursor-pointer whitespace-nowrap rounded-xl bg-white px-3 py-2.5 text-xs font-semibold text-black transition hover:-translate-y-0.5 hover:bg-white/90 sm:px-4 sm:text-sm"
                 >
-                  Sign up – It&apos;s FREE
+                  <span className="sm:hidden">Sign up</span>
+                  <span className="hidden sm:inline">Sign up – It&apos;s FREE</span>
                 </Link>
               </div>
             )}
