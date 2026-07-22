@@ -3,12 +3,21 @@ import test from 'node:test';
 import {
   DEFAULT_REEL_CAPTION_ACCENTS,
   resolveDefaultReelCaptionAccent,
+  resolveDefaultReelHookPlacement,
 } from '../lib/reel-caption-style';
 
 test('default caption accent is stable and restricted to green or yellow', () => {
   const first = resolveDefaultReelCaptionAccent('candidate-one');
   assert.equal(resolveDefaultReelCaptionAccent('candidate-one'), first);
   assert.ok(DEFAULT_REEL_CAPTION_ACCENTS.includes(first));
+});
+
+test('about one third of default hook cards use the middle of the frame', () => {
+  const placements = Array.from({ length: 120 }, (_, index) => resolveDefaultReelHookPlacement(`candidate-${index}`));
+  const middle = placements.filter((placement) => placement === 'middle').length;
+  assert.ok(middle >= 30 && middle <= 50, `expected roughly one third middle hooks, received ${middle}/120`);
+  assert.equal(placements.filter((placement) => placement === 'top').length + middle, placements.length);
+  assert.equal(resolveDefaultReelHookPlacement('candidate-one'), resolveDefaultReelHookPlacement('candidate-one'));
 });
 
 test('default reels are split roughly evenly between green and bright yellow', () => {

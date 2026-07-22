@@ -10,7 +10,7 @@ import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } fro
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
-import { resolveDefaultReelCaptionAccent } from '@/lib/reel-caption-style';
+import { resolveDefaultReelCaptionAccent, resolveDefaultReelHookPlacement } from '@/lib/reel-caption-style';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { hasSettledSuccessfulExports } from '@/lib/project-completion';
 import { sendProjectStatusEmail } from '@/lib/project-notifications';
@@ -979,6 +979,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     captionFont,
     hookTextEnabled,
     hookText,
+    hookPlacement: resolveDefaultReelHookPlacement(bundle.clip_candidate_id),
     motionTracking: options?.motion_tracking === true,
     autoReframe: safeLayoutFallback ? false : useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
     reframeMode: safeLayoutFallback ? 'off' : options?.reframe_mode ?? getFallbackReframeMode(),

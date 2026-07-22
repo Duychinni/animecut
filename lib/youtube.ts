@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getPublicPipelineError, isYouTubeSourceBlocked } from '@/lib/pipeline-errors';
 
@@ -85,8 +85,7 @@ const YOUTUBE_CLIENT_ATTEMPTS = [
   ['--extractor-args', 'youtube:player_client=android,web'],
 ];
 
-const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v6-never-cache-sd';
-const MINIMUM_RENDERABLE_YOUTUBE_HEIGHT = 720;
+const SOURCE_QUALITY_CACHE_VERSION = 'yt-best-available-source-v7';
 
 export async function fetchYouTubeDurationSeconds(url: string) {
   const command = await resolveYtDlpBinary();
@@ -272,6 +271,13 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
       const qualityMarker = await getCachedQualityMarker(qualityMarkerPath);
       const minHeight = getYouTubeMinCacheHeight();
       const cachedHeight = cachedInfo?.height ?? qualityMarker?.checkedHeight ?? null;
+      if (qualityMarker?.qualityVersion === SOURCE_QUALITY_CACHE_VERSION) {
+        // This file already went through every YouTube client attempt and is
+        // the best rendition the link exposed. Keep it even when the original
+        // upload itself is SD rather than redownloading it for every export.
+        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo);
+        return outPath;
+      }
       if (cachedHeight && cachedHeight >= minHeight) {
         await writeCachedQualityMarker(qualityMarkerPath, cachedInfo);
         return outPath;
@@ -302,6 +308,8 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
   let downloadSucceeded = false;
   let preferredDownloadSucceeded = false;
   const lowResolutionFallbackPath = `${outPath}.low-resolution-fallback`;
+  let bestFallbackInfo: DownloadedVideoInfo | null = null;
+  let bestFallbackFormatSelector: string | null = null;
 
   downloadAttempts:
   for (const candidateFormat of formatAttempts) {
@@ -327,7 +335,15 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
           preferredDownloadSucceeded = true;
           break downloadAttempts;
         }
-        await copyFile(outPath, lowResolutionFallbackPath);
+        const isBetterFallback = !bestFallbackInfo?.height
+          || downloadedInfo.height > bestFallbackInfo.height
+          || (downloadedInfo.height === bestFallbackInfo.height
+            && (downloadedInfo.width ?? 0) > (bestFallbackInfo.width ?? 0));
+        if (isBetterFallback) {
+          await copyFile(outPath, lowResolutionFallbackPath);
+          bestFallbackInfo = downloadedInfo;
+          bestFallbackFormatSelector = formatSelector;
+        }
         console.warn('[youtube] source-client-returned-low-resolution', {
           projectId,
           sourceHeight: downloadedInfo.height,
@@ -347,8 +363,11 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
   }
 
   if (downloadSucceeded && !preferredDownloadSucceeded) {
-    await copyFile(lowResolutionFallbackPath, outPath).catch(() => undefined);
-    downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, `${formatSelector} (best fallback)`);
+    await rename(lowResolutionFallbackPath, outPath).catch(async () => {
+      await copyFile(lowResolutionFallbackPath, outPath);
+    });
+    formatSelector = bestFallbackFormatSelector ?? formatSelector;
+    downloadedInfo = await logDownloadedVideoInfo(outPath, projectId, `${formatSelector} (best available fallback)`);
   }
   await unlink(lowResolutionFallbackPath).catch(() => undefined);
 
@@ -367,17 +386,10 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
       formatSelector,
     });
   }
-  // A 720p source is accepted only when it is the best rendition YouTube made
-  // available after every client/format attempt. Exports are always validated
-  // separately at 1080x1920; we never silently reuse an SD source.
-  if (downloadedInfo?.height && downloadedInfo.height < MINIMUM_RENDERABLE_YOUTUBE_HEIGHT) {
-    await unlink(outPath).catch(() => undefined);
-    await unlink(qualityMarkerPath).catch(() => undefined);
-    throw new Error(
-      `YouTube only returned a ${downloadedInfo.width ?? '?'}x${downloadedInfo.height} source. `
-      + 'AnimaCut stopped before rendering a blurry export. Retry shortly or upload the original HD file.',
-    );
-  }
+  // Some original YouTube uploads genuinely top out below 720p. After trying
+  // every supported client, continue with the best rendition available rather
+  // than failing a valid link. Rendering cannot invent missing detail, but the
+  // pipeline can still produce a usable reel from the source it received.
   await writeCachedQualityMarker(qualityMarkerPath, downloadedInfo);
 
   return outPath;
