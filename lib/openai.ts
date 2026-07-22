@@ -159,6 +159,8 @@ CANDIDATE GENERATION RULES:
 - End on a completed sentence, punchline, answer, or clear speaker statement. Never end mid-sentence or mid-thought.
 - Avoid openings like "And...", "So...", "But...", "Yeah..." unless absolutely necessary.
 - Reject filler-only dialogue.
+- Reject show packaging rather than editorial content: theme music, opening credits, "welcome to the show," guest introductions, sponsor reads, recaps, calls to like/subscribe/follow, sign-offs, end cards, and closing credits must never become reel candidates.
+- A genuine cold open with an immediate substantive story or claim is allowed; do not reject content solely because it occurs near the beginning or end.
 - Build an OpusClip-style diverse set: each candidate must cover a distinct viral idea, not a slightly shifted version of another clip.
 - Avoid transcript overlap between candidates. If two candidates share the same setup, story beat, or payoff, keep only the stronger one.
 - Prefer unique hooks from different parts of the source over multiple clips from the same conversation section.
