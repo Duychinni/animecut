@@ -10,6 +10,7 @@ import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } fro
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
+import { resolveDefaultReelCaptionAccent } from '@/lib/reel-caption-style';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { hasSettledSuccessfulExports } from '@/lib/project-completion';
 import { sendProjectStatusEmail } from '@/lib/project-notifications';
@@ -936,6 +937,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     : {
         ...captionPreset,
         caption_template: captionTemplate,
+        captionHighlightColor: captionPreset.id === DEFAULT_CAPTION_PRESET_ID
+          ? resolveDefaultReelCaptionAccent(bundle.clip_candidate_id)
+          : captionPreset.captionHighlightColor,
       };
 
   const captionText = segmentsToCapcutAss(renderTranscriptSegments, effectiveRenderStart, effectiveRenderEnd, captionStyle);

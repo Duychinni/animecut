@@ -5,7 +5,16 @@ import { buildCandidateEditorialPlan } from '../lib/editorial-plan';
 
 test('normalizes MrBeast branding from common source-title spelling', () => {
   assert.equal(canonicalizeKnownNames('How Mr. Beast Became Successful'), 'How MrBeast Became Successful');
-  assert.match(verifiedSourceSubjectHint('How Mr. Beast Became Successful'), /Verified central subject: MrBeast/);
+  assert.match(verifiedSourceSubjectHint('How Mr. Beast Became Successful'), /Verified recognizable figures in source metadata: MrBeast/);
+});
+
+test('recognizes other notable figures without requiring their name in every reel', () => {
+  const hint = verifiedSourceSubjectHint('Joe Rogan talks to Logan Paul and IShowSpeed');
+  assert.match(hint, /Joe Rogan/);
+  assert.match(hint, /Logan Paul/);
+  assert.match(hint, /IShowSpeed/);
+  assert.match(hint, /mix named and topic-led titles\/hooks/);
+  assert.match(hint, /never repeat a celebrity name mechanically/);
 });
 
 test('does not invent a verified subject for an unrelated title', () => {
