@@ -358,15 +358,14 @@ function getClipFileName(clip: ClipItem) {
     .replace(/(^-|-$)/g, '') || 'clip'}.mp4`;
 }
 
-function downloadClipBlob(blob: Blob, fileName: string) {
-  const objectUrl = URL.createObjectURL(blob);
+function startNativeClipDownload(clip: ClipItem) {
   const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = fileName;
+  anchor.href = `/api/exports/${encodeURIComponent(clip.exportId)}/download`;
+  anchor.download = getClipFileName(clip);
+  anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(objectUrl);
 }
 
 export function TopClipsBoard({ projectId, clips }: Props) {
@@ -557,6 +556,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }
 
   function drainPreviewWarmQueue() {
+    if (shareClip) return;
     const maxConcurrentPreviewLoads = 3;
     while (
       previewWarmActiveRef.current.size < maxConcurrentPreviewLoads &&
@@ -789,10 +789,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
     try {
       setDownloadingId(clip.exportId);
-      const res = await fetch(clip.signedUrl);
-      if (!res.ok) throw new Error('Download failed');
-      const blob = await res.blob();
-      downloadClipBlob(blob, getClipFileName(clip));
+      startNativeClipDownload(clip);
       captureEvent('reel_downloaded', { export_id: clip.exportId });
       window.localStorage.setItem('animacut.onboarding.downloaded', 'true');
     } catch (error) {
@@ -805,6 +802,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function openShareModal(clip: ClipItem) {
     for (const video of Object.values(videoRefs.current)) video?.pause();
+    previewWarmQueueRef.current = [];
     setShareDownloadError(null);
     setShareClip(clip);
   }
@@ -815,12 +813,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     try {
       setSharingId(shareClip.exportId);
       setShareDownloadError(null);
-      const response = await fetch(shareClip.signedUrl);
-      if (!response.ok) throw new Error('Could not prepare this reel for sharing');
-
-      const blob = await response.blob();
-      downloadClipBlob(blob, getClipFileName(shareClip));
+      startNativeClipDownload(shareClip);
       setDownloadedShareClipId(shareClip.exportId);
+      captureEvent('reel_downloaded', { export_id: shareClip.exportId, source: 'share_publish' });
       return true;
     } catch (error) {
       console.error(error);
@@ -838,7 +833,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (!destination) return;
 
     window.open(destination.destinationUrl, '_blank', 'noopener,noreferrer');
-    if (downloadedShareClipId !== shareClip.exportId) await downloadShareClip();
+    if (downloadedShareClipId !== shareClip.exportId) void downloadShareClip();
   }
 
   async function applyPreset(options: {
