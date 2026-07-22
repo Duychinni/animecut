@@ -8,6 +8,7 @@ import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai'
 import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 import { buildCandidateEditorialPlan, type CandidateEditorialPlan } from '@/lib/editorial-plan';
+import { canonicalizeKnownNames, verifiedSourceSubjectHint } from '@/lib/source-identity';
 
 export const maxDuration = 60;
 
@@ -866,13 +867,14 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
     const sourceContext = [
       typeof projectRow?.source_title === 'string' && projectRow.source_title.trim()
-        ? `Source title: ${projectRow.source_title.trim()}`
+        ? `Source title: ${canonicalizeKnownNames(projectRow.source_title.trim())}`
         : typeof projectRow?.title === 'string' && projectRow.title.trim()
           ? `Project title: ${projectRow.title.trim()}`
           : '',
       typeof projectRow?.source_channel_name === 'string' && projectRow.source_channel_name.trim()
         ? `Source channel: ${projectRow.source_channel_name.trim()}`
         : '',
+      verifiedSourceSubjectHint(projectRow?.source_title),
     ].filter(Boolean).join('\n');
     const editorialGlobalContext = [sourceContext, String(transcriptRow.full_text ?? '')].filter(Boolean).join('\n');
 

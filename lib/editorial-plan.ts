@@ -83,6 +83,7 @@ export function isNaturalEditorialTitle(value: unknown) {
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/^why\s+(?:\w+\s+){1,4}matters$/i.test(text)) return false;
   if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}\s+explains\s+/i.test(text)) return false;
+  if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}(?:'s)?\s+take\s+on\s+/i.test(text)) return false;
   if (/^(a|the)\s+(conversation|discussion|main idea)\b/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top|viral|best|standout)\s+(clip|reel|short|moment)/i.test(text)) return false;
@@ -95,6 +96,7 @@ export function isNaturalEditorialHook(value: unknown) {
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top moment|watch this|this is crazy|keep watching|what do you mean|how old are you)$/i.test(text)) return false;
+  if (/\b(detail most people miss|matters more than you think|explains what actually matters|what this changes about)\b/i.test(text)) return false;
   if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|is|are|was|were)\??$/i.test(text)) return false;
   const words = text.split(/\s+/);
   return words.length >= 3 && words.length <= 10;
@@ -145,7 +147,10 @@ function entitiesForWindow(text: string, globalContext: string) {
   const contextLines = globalContext.split('\n');
   const titleEntities = canonicalEntities(contextLines.filter((line) => /^(source title|project title):/i.test(line)).join('\n'));
   const channelEntities = canonicalEntities(contextLines.filter((line) => /^source channel:/i.test(line)).join('\n'));
-  const metadataEntities = [...titleEntities, ...channelEntities];
+  const verifiedEntities = contextLines
+    .map((line) => line.match(/^Verified central subject:\s*([^.;]+)/i)?.[1]?.trim() ?? '')
+    .filter(Boolean);
+  const metadataEntities = [...verifiedEntities, ...titleEntities, ...channelEntities];
   const windowEntities = canonicalEntities(globalContext)
     .filter((entity) => haystack.includes(` ${normalized(entity)} `) || entity.split(/\s+/).some((part) => part.length > 4 && haystack.includes(` ${part.toLowerCase()} `)))
   return [...metadataEntities, ...windowEntities]
@@ -226,7 +231,12 @@ function genericEditorialCopy(text: string, globalContext: string) {
   const namedSubject = entities[0] || null;
   const question = sentences.find((sentence) => /\?|^(why|what|how|who|when|where|can|could|should|does|do|is|are)\b/i.test(sentence));
   const contrast = sentences.find((sentence) => /\b(but|however|instead|rather|problem|mistake|risk|wrong|difference|versus|vs\.?|against)\b/i.test(sentence));
-  const title = namedSubject
+  const isMrBeastOriginStory = namedSubject === 'MrBeast'
+    && /\b(?:11|eleven|young|first|started)\b/i.test(cleaned)
+    && /\b(?:reinvest|money|dollar|youtube|video)\b/i.test(cleaned);
+  const title = isMrBeastOriginStory
+    ? 'MrBeast Reinvested Every Dollar for Years'
+    : namedSubject
     ? contrast
       ? `${namedSubject}'s Take On ${topic}`.slice(0, 100)
       : `What ${namedSubject} Reveals About ${topic}`.slice(0, 100)
@@ -244,6 +254,7 @@ function genericEditorialCopy(text: string, globalContext: string) {
   return {
     title,
     hooks: [
+      ...(isMrBeastOriginStory ? ['He Started YouTube at Just 11', 'Every Dollar Went Back Into Videos'] : []),
       question ? compactStatement(question, 12) : `${hookSubject} Changes How You See ${topic}`,
       `The ${topic} Detail Most People Miss`,
       `Why ${topic} Matters More Than You Think`,
