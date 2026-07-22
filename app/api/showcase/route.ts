@@ -12,10 +12,22 @@ const gradients = [
   'from-[#241d42] via-[#141528] to-[#09090f]',
 ] as const;
 
+type HeroReel = {
+  id: string;
+  videoId: string;
+  start: number;
+  end: number;
+  title: string;
+  source: string;
+  score: number;
+  mediaUrl?: string;
+  posterUrl?: string;
+};
+
 // Deliberately hardcoded and manually reviewed frame-by-frame. Keep this list
 // at exactly six entries so every visitor sees the same face-led examples.
 // Do not replace it with recent exports or a database-driven fallback.
-const HERO_REELS = [
+const HERO_REELS: readonly HeroReel[] = [
   {
     id: '6ce069c4-7f50-4ad8-b972-a0870c5bf4bf',
     videoId: 'EonibwnAEME',
@@ -49,9 +61,39 @@ const HERO_REELS = [
     mediaUrl: '/hero-reels/creator.mp4',
     posterUrl: '/hero-reels/creator.jpg',
   },
-  { id: '220a19a9-8bbe-4dac-823d-7877a234032e', videoId: '_KaFS4Dxs5k', start: 80, end: 111, title: 'A founder explains the tools behind his product', source: 'Starter Story', score: 92 },
-  { id: '1fff2e2c-7171-4d2f-a47f-fa04472c54ce', videoId: 'w3zxMrwWrt0', start: 174, end: 211, title: 'A founder explains his daily side-project routine', source: 'Starter Story', score: 91 },
-  { id: '54a6609e-2ac7-426c-9fe5-6e7058781fba', videoId: 'w3zxMrwWrt0', start: 82, end: 112, title: 'A founder explains how his product works', source: 'Starter Story', score: 90 },
+  {
+    id: 'b84e01aa-98cf-4a62-9a7b-8090e1bca775',
+    videoId: 'ZWKxukGWF5U',
+    start: 85.84,
+    end: 91.84,
+    title: "Why Audience It's Niche Matters",
+    source: 'Aprilynne Alter',
+    score: 93,
+    mediaUrl: '/hero-reels/audience.mp4',
+    posterUrl: '/hero-reels/audience.jpg',
+  },
+  {
+    id: '8832eff5-8e39-4b8d-901f-e88db0b472db',
+    videoId: 'sGKXSLmZBz8',
+    start: 187.6,
+    end: 193.6,
+    title: 'What Step Reveals About Intermediate Features',
+    source: 'Think Media',
+    score: 94,
+    mediaUrl: '/hero-reels/intermediate.mp4',
+    posterUrl: '/hero-reels/intermediate.jpg',
+  },
+  {
+    id: 'df96d0e8-7b68-4346-80db-3580032934d3',
+    videoId: 'gUL6q-FndRE',
+    start: 61.82,
+    end: 67.82,
+    title: 'Why More Over Companies Matters',
+    source: 'Starter Story Build',
+    score: 93,
+    mediaUrl: '/hero-reels/companies.mp4',
+    posterUrl: '/hero-reels/companies.jpg',
+  },
 ] as const;
 
 const HERO_REEL_PREVIEW_SECONDS = 5;
@@ -85,7 +127,7 @@ function youtubeShowcaseUrl(videoId: string, start: number, end: number) {
 
 function buildHardcodedShowcaseClips() {
   return HERO_REELS.map((reel, index) => {
-    const isSelfHosted = 'mediaUrl' in reel;
+    const isSelfHosted = Boolean(reel.mediaUrl);
     const previewSeconds = isSelfHosted
       ? Math.min(7, Math.max(5, reel.end - reel.start))
       : HERO_REEL_PREVIEW_SECONDS;
@@ -101,9 +143,9 @@ function buildHardcodedShowcaseClips() {
       gradient: gradients[index],
       mediaType: isSelfHosted ? 'video' as const : 'youtube' as const,
       mediaUrl: isSelfHosted
-        ? reel.mediaUrl
+        ? reel.mediaUrl!
         : youtubeShowcaseUrl(reel.videoId, reel.start, reel.start + previewSeconds),
-      posterUrl: 'posterUrl' in reel
+      posterUrl: reel.posterUrl
         ? reel.posterUrl
         : `https://i.ytimg.com/vi/${encodeURIComponent(reel.videoId)}/hqdefault.jpg`,
       // Self-hosted assets are already trimmed, so starting them at their
