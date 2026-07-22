@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getPublicPipelineError, isYouTubeSourceBlocked } from '@/lib/pipeline-errors';
 
@@ -85,7 +85,8 @@ const YOUTUBE_CLIENT_ATTEMPTS = [
   ['--extractor-args', 'youtube:player_client=android,web'],
 ];
 
-const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v5-default-client-first';
+const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-source-v6-never-cache-sd';
+const MINIMUM_RENDERABLE_YOUTUBE_HEIGHT = 720;
 
 export async function fetchYouTubeDurationSeconds(url: string) {
   const command = await resolveYtDlpBinary();
@@ -209,7 +210,6 @@ async function getCachedQualityMarker(markerPath: string) {
   try {
     return JSON.parse(await readFile(markerPath, 'utf8')) as {
       checkedHeight?: number | null;
-      refreshedLowQuality?: boolean;
       qualityVersion?: string;
     };
   } catch {
@@ -217,12 +217,11 @@ async function getCachedQualityMarker(markerPath: string) {
   }
 }
 
-async function writeCachedQualityMarker(markerPath: string, info: DownloadedVideoInfo | null, refreshedLowQuality = false) {
+async function writeCachedQualityMarker(markerPath: string, info: DownloadedVideoInfo | null) {
   await writeFile(markerPath, JSON.stringify({
     checkedAt: new Date().toISOString(),
     checkedHeight: info?.height ?? null,
     checkedWidth: info?.width ?? null,
-    refreshedLowQuality,
     qualityVersion: SOURCE_QUALITY_CACHE_VERSION,
   }), 'utf8').catch(() => undefined);
 }
@@ -260,14 +259,12 @@ export async function downloadYouTubeAudio(url: string, projectId: string) {
   return path.join(dir, file);
 }
 
-export async function downloadYouTubeVideo(url: string, projectId: string) {
+async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
   const dir = path.join(process.cwd(), 'tmp', 'ingest', projectId);
   await mkdir(dir, { recursive: true });
   const outPath = path.join(dir, 'source.mp4');
   const qualityMarkerPath = `${outPath}.quality.json`;
   const ytDlp = await resolveYtDlpBinary();
-  let refreshedLowQualityCache = false;
-
   try {
     const cached = await stat(outPath);
     if (cached.size > 0) {
@@ -275,21 +272,13 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
       const qualityMarker = await getCachedQualityMarker(qualityMarkerPath);
       const minHeight = getYouTubeMinCacheHeight();
       const cachedHeight = cachedInfo?.height ?? qualityMarker?.checkedHeight ?? null;
-      const alreadyRefreshedLowQuality = qualityMarker?.refreshedLowQuality === true
-        && qualityMarker?.qualityVersion === SOURCE_QUALITY_CACHE_VERSION;
-
       if (cachedHeight && cachedHeight >= minHeight) {
-        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo, false);
-        return outPath;
-      }
-
-      if (cachedHeight && cachedHeight < minHeight && alreadyRefreshedLowQuality) {
-        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo, true);
+        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo);
         return outPath;
       }
 
       if (!cachedHeight && qualityMarker?.qualityVersion === SOURCE_QUALITY_CACHE_VERSION) {
-        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo, alreadyRefreshedLowQuality);
+        await writeCachedQualityMarker(qualityMarkerPath, cachedInfo);
         return outPath;
       }
 
@@ -301,7 +290,6 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
         currentQualityVersion: SOURCE_QUALITY_CACHE_VERSION,
       });
       await unlink(outPath).catch(() => undefined);
-      refreshedLowQualityCache = true;
     }
   } catch {
     // no cached video in this worker
@@ -379,7 +367,53 @@ export async function downloadYouTubeVideo(url: string, projectId: string) {
       formatSelector,
     });
   }
-  await writeCachedQualityMarker(qualityMarkerPath, downloadedInfo, refreshedLowQualityCache || stillBelowMin);
+  if (downloadedInfo?.height && downloadedInfo.height < MINIMUM_RENDERABLE_YOUTUBE_HEIGHT) {
+    await unlink(outPath).catch(() => undefined);
+    await unlink(qualityMarkerPath).catch(() => undefined);
+    throw new Error(
+      `YouTube only returned a ${downloadedInfo.width ?? '?'}x${downloadedInfo.height} source. `
+      + 'AnimaCut stopped before rendering a blurry export. Retry shortly or upload the original HD file.',
+    );
+  }
+  await writeCachedQualityMarker(qualityMarkerPath, downloadedInfo);
 
   return outPath;
+}
+
+async function acquireProjectVideoDownloadLock(lockPath: string) {
+  const startedAt = Date.now();
+  const staleAfterMs = 15 * 60 * 1000;
+  const waitTimeoutMs = 20 * 60 * 1000;
+
+  while (true) {
+    try {
+      await mkdir(lockPath);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw error;
+
+      const lockStat = await stat(lockPath).catch(() => null);
+      if (lockStat && Date.now() - lockStat.mtimeMs > staleAfterMs) {
+        await rm(lockPath, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() - startedAt > waitTimeoutMs) {
+        throw new Error('Timed out waiting for another worker to finish the HD YouTube source download.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+  }
+}
+
+export async function downloadYouTubeVideo(url: string, projectId: string) {
+  const dir = path.join(process.cwd(), 'tmp', 'ingest', projectId);
+  await mkdir(dir, { recursive: true });
+  const lockPath = path.join(dir, '.video-download.lock');
+  await acquireProjectVideoDownloadLock(lockPath);
+  try {
+    return await downloadYouTubeVideoUnlocked(url, projectId);
+  } finally {
+    await rm(lockPath, { recursive: true, force: true });
+  }
 }
