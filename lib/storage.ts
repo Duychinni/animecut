@@ -195,6 +195,16 @@ export async function createExportSignedUrl(objectPath: string, expiresIn = 60 *
   return data.signedUrl;
 }
 
+export async function createExportDownloadUrl(objectPath: string, fileName: string, expiresIn = 5 * 60) {
+  const admin = createAdminClient();
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'animacut-reel.mp4';
+  const { data, error } = await admin.storage
+    .from(EXPORT_BUCKET)
+    .createSignedUrl(objectPath, expiresIn, { download: safeName });
+  if (error) throw error;
+  return data.signedUrl;
+}
+
 export async function findExistingExportObjectPaths(objectPaths: string[]) {
   const paths = [...new Set(objectPaths.filter(Boolean))];
   const existing = new Set<string>();
