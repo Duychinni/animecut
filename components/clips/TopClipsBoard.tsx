@@ -307,9 +307,8 @@ function getMockCaption(title: string) {
 }
 
 function formatEta(totalSeconds: number) {
-  const seconds = Math.max(0, Math.round(totalSeconds));
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+  const minutes = Math.max(1, Math.ceil(totalSeconds / 60));
+  return `${minutes} min`;
 }
 
 function ReelEditProcessingOverlay({ clip }: { clip: ClipItem }) {

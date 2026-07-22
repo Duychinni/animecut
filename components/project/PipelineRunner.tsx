@@ -36,10 +36,8 @@ type ProgressPayload = {
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
-  const s = Math.max(0, Math.round(totalSec));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, '0')}`;
+  const minutes = Math.max(1, Math.ceil(totalSec / 60));
+  return `${minutes} min`;
 }
 
 function ClockIcon({ className = '' }: { className?: string }) {
