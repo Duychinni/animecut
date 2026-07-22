@@ -226,6 +226,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const playbackFrameRef = useRef<number | null>(null);
   const editableClipBoundsRef = useRef<TimelineRange | null>(null);
   const cropDragRef = useRef<{ clientX: number; clientY: number; cropX: number; cropY: number } | null>(null);
   const [data, setData] = useState<EditorData | null>(null);
@@ -687,23 +688,23 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     });
   }
 
-  function selectTimelineChunk(chunk: TranscriptChunk) {
+  function selectTimelineChunk(chunk: TranscriptChunk, seekTime = chunk.start) {
     if (!settings) return;
     const start = clamp(chunk.start, settings.clip_start_seconds, settings.clip_end_seconds);
     const end = clamp(chunk.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
     setSelectedRange({ id: chunk.id, start, end });
-    seekAbsolute(start);
+    seekAbsolute(clamp(seekTime, start, end));
     setToast('Segment selected — drag either edge to adjust it');
   }
 
-  function selectTimelineSegment(range: TimelineRange) {
+  function selectTimelineSegment(range: TimelineRange, seekTime = range.start) {
     if (!settings) return;
     const start = clamp(range.start, settings.clip_start_seconds, settings.clip_end_seconds);
     const end = clamp(range.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
     setSelectedRange({ ...range, start, end });
-    seekAbsolute(start);
+    seekAbsolute(clamp(seekTime, start, end));
     setToast('Segment selected — adjust its edges or press Delete segment');
   }
 
@@ -771,6 +772,21 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const relative = clamp(safe - (settings?.clip_start_seconds ?? 0), 0, Math.max(0, (settings?.clip_end_seconds ?? safe) - (settings?.clip_start_seconds ?? 0)));
     video.currentTime = relative;
   }
+
+  const syncPlayheadToVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.paused || !settings) {
+      playbackFrameRef.current = null;
+      return;
+    }
+    const absolute = previewUsesSource ? video.currentTime : settings.clip_start_seconds + video.currentTime;
+    setCurrentTime(clamp(absolute, settings.clip_start_seconds, settings.clip_end_seconds));
+    playbackFrameRef.current = window.requestAnimationFrame(syncPlayheadToVideo);
+  }, [previewUsesSource, settings]);
+
+  useEffect(() => () => {
+    if (playbackFrameRef.current !== null) window.cancelAnimationFrame(playbackFrameRef.current);
+  }, []);
 
   async function togglePlay() {
     const video = videoRef.current;
@@ -1083,8 +1099,16 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     }
                     setCurrentTime(clamp(absolute, settings.clip_start_seconds, settings.clip_end_seconds));
                   }}
-                  onPlay={() => setPaused(false)}
-                  onPause={() => setPaused(true)}
+                  onPlay={() => {
+                    setPaused(false);
+                    if (playbackFrameRef.current !== null) window.cancelAnimationFrame(playbackFrameRef.current);
+                    playbackFrameRef.current = window.requestAnimationFrame(syncPlayheadToVideo);
+                  }}
+                  onPause={() => {
+                    setPaused(true);
+                    if (playbackFrameRef.current !== null) window.cancelAnimationFrame(playbackFrameRef.current);
+                    playbackFrameRef.current = null;
+                  }}
                 />
               ) : (
                 <div className="grid h-full place-items-center text-sm text-white/45">Preview unavailable</div>
@@ -1486,7 +1510,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     onPointerDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      selectTimelineChunk(chunk);
+                      selectTimelineChunk(chunk, timelineSeconds(event));
                     }}
                     className={`absolute top-[38px] z-10 h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${selected ? 'bg-orange-100 ring-2 ring-white' : 'bg-orange-300/80'}`}
                     title={chunk.text}
@@ -1545,7 +1569,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   onPointerDown={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    selectTimelineSegment(segment);
+                    selectTimelineSegment(segment, timelineSeconds(event));
                   }}
                   className={`absolute bottom-0 top-[69px] z-[15] border-x transition ${
                     selectedRange?.id === segment.id
@@ -1622,9 +1646,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               ) : null}
 
               <div
-                className={`pointer-events-none absolute inset-y-0 z-30 w-px bg-white/90 shadow-[0_0_10px_rgba(255,255,255,.45)] transition-opacity ${dragMode === 'seek' || !paused ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
+                className="pointer-events-none absolute inset-y-0 z-50 w-0.5 bg-white shadow-[0_0_12px_rgba(255,255,255,.75)]"
                 style={{ left: playheadLeft }}
-              />
+              >
+                <span className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-black/60 bg-white shadow-lg" />
+              </div>
               <button
                 onPointerDown={(event) => beginTimelineDrag('start', event)}
                 className={`absolute top-[31px] z-40 h-[145px] w-5 -translate-x-1/2 cursor-ew-resize transition-opacity ${dragMode === 'start' ? 'opacity-100' : 'opacity-0 group-hover/timeline:opacity-100'}`}
