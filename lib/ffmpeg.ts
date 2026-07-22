@@ -4,6 +4,7 @@ import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getVerticalExportSize } from '@/lib/export-profile';
 import { buildRenderOutputArgs, type SourceColorMetadata } from '@/lib/ffmpeg-output-args';
+import { resolveHookPlacement, type HookPlacement } from '@/lib/reel-visual-style';
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
@@ -49,6 +50,7 @@ type RenderOpts = {
   hookRenderMode?: 'ass' | 'drawtext';
   hookTextFilePath?: string;
   hookAssPath?: string;
+  hookPlacement?: HookPlacement;
   motionTracking?: boolean;
   autoReframe?: boolean;
   reframeMode?: ReframeMode;
@@ -1503,17 +1505,19 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
   ].join(' ');
 }
 
-function buildHookAss(hookText: string) {
+function buildHookAss(hookText: string, placement: HookPlacement = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 780;
-  const cardHeight = twoLine ? 180 : 132;
+  const cardWidth = 690;
+  const cardHeight = twoLine ? 158 : 116;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const cardY = twoLine ? 72 : 84;
+  const cardY = placement === 'upper-middle'
+    ? Math.round(VERTICAL_EXPORT_HEIGHT * 0.31) - Math.round(cardHeight / 2)
+    : twoLine ? 78 : 90;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 68 : 76;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 25);
+  const hookFontSize = twoLine ? 58 : 64;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1534,7 +1538,7 @@ Dialogue: 1,0:00:00.00,0:00:04.50,HookText,,0,0,0,,{\\an5\\pos(${textX},${textY}
 `;
 }
 
-function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
+function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, placement: HookPlacement = 'top') {
   const wrapped = wrapHookTextForDrawtext(hookText);
   const source = hookTextFilePath
     ? `textfile='${escapeDrawtextPathForFilter(hookTextFilePath)}':reload=0`
@@ -1547,10 +1551,10 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=108',
+    'fontsize=90',
     'box=1',
     'boxcolor=white',
-    'boxborderw=38',
+    'boxborderw=30',
     'borderw=2',
     'bordercolor=black@0.28',
     'shadowx=0',
@@ -1559,7 +1563,7 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string) {
     'line_spacing=14',
     'fix_bounds=1',
     'x=(w-text_w)/2',
-    'y=74',
+    placement === 'upper-middle' ? 'y=h*0.31-text_h/2' : 'y=86',
     drawtextBetween(0, 4.5),
   ].join(':');
 }
@@ -1568,7 +1572,7 @@ function buildHookFilter(opts: RenderOpts) {
   if (opts.hookRenderMode !== 'drawtext' && opts.hookAssPath) {
     return `subtitles=filename='${escapeSubtitlesPathForFilter(opts.hookAssPath)}'${captionFontsDirOption()}`;
   }
-  return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath);
+  return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath, opts.hookPlacement);
 }
 
 function buildBaseVideoFilters(
@@ -2056,6 +2060,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
     // Debug overlays must be explicitly requested by a debug-only caller. An
     // environment variable can never burn guides into a customer export.
     debugReframeOverlay: opts.debugReframeOverlay === true,
+    hookPlacement: opts.hookPlacement ?? resolveHookPlacement(opts.debugCandidateId ?? opts.debugClipId ?? opts.hookText ?? 'reel', opts.editorialPlan),
   };
 
   let escapedPath: string | undefined;
@@ -2124,7 +2129,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
     effectiveOpts.hookTextFilePath = hookFilePath;
     if ((effectiveOpts.hookRenderMode ?? 'ass') === 'ass') {
       const hookAssPath = `${effectiveOpts.outputPath}.hook.ass`;
-      await writeFile(hookAssPath, buildHookAss(wrappedHookText), 'utf8');
+      await writeFile(hookAssPath, buildHookAss(wrappedHookText, effectiveOpts.hookPlacement), 'utf8');
       effectiveOpts.hookAssPath = hookAssPath;
     }
   }
@@ -2266,7 +2271,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
       const drawtextFilters = await buildDrawtextFiltersFromSrt(effectiveOpts.srtPath);
       const baseFilter = buildBaseVideoFilters(effectiveOpts, outputWidth, outputHeight, escapedMotionTransformPath, smartCropExpr);
       if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
-        baseFilter.push(buildHookDrawtextFilter(effectiveOpts.hookText.trim(), effectiveOpts.hookTextFilePath));
+        baseFilter.push(buildHookDrawtextFilter(effectiveOpts.hookText.trim(), effectiveOpts.hookTextFilePath, effectiveOpts.hookPlacement));
       }
       const vf = [...baseFilter, ...drawtextFilters].join(',');
 
