@@ -43,7 +43,6 @@ type CandidateRow = {
   reason: string;
   hook_strength: number;
   rank: number | null;
-  editorial_plan?: Record<string, unknown> | null;
 };
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
@@ -160,7 +159,7 @@ export default async function ProjectDetailPage({
     loadProjectExports(supabase, projectId),
     supabase
       .from('clip_candidates')
-      .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank, editorial_plan')
+      .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')
       .eq('project_id', projectId)
       .limit(50),
     supabase
@@ -242,7 +241,6 @@ export default async function ProjectDetailPage({
         reason: candidate?.reason ?? null,
         hookStrength: candidate ? Number(candidate.hook_strength) : null,
         rank: candidate?.rank ?? null,
-        editorialPlan: candidate?.editorial_plan ?? null,
       };
   }));
 
@@ -386,7 +384,6 @@ export default async function ProjectDetailPage({
               captionPresetId: row.caption_preset_id,
               hookTextEnabled: row.hook_text_enabled !== false,
               hookText: typeof row.hook_text === 'string' ? row.hook_text.trim() : null,
-              editorialPlan: row.editorialPlan,
               captionsEnabled: row.clip_edit_settings?.captions_enabled !== false,
               captionHighlightColor: row.clip_edit_settings?.caption_highlight_color ?? null,
               editStatus: row.edit_status ?? null,

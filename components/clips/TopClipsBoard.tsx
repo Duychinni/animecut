@@ -6,7 +6,6 @@ import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-preset
 import type { ClipEditSettings } from '@/lib/clip-edit';
 import { readJsonSafe } from '@/lib/safe-json';
 import { captureEvent } from '@/lib/analytics';
-import { resolveHookPlacement } from '@/lib/reel-visual-style';
 
 type ClipItem = {
   exportId: string;
@@ -29,7 +28,6 @@ type ClipItem = {
   captionPresetId?: string | null;
   hookTextEnabled?: boolean;
   hookText?: string | null;
-  editorialPlan?: Record<string, unknown> | null;
   captionsEnabled?: boolean;
   captionHighlightColor?: string | null;
   editStatus?: string | null;
@@ -287,14 +285,13 @@ function getSavedHookText(clip: ClipItem) {
   return text.length ? text : null;
 }
 
-function PosterHookOverlay({ text, seed, editorialPlan }: { text: string; seed: string; editorialPlan?: Record<string, unknown> | null }) {
-  const placement = resolveHookPlacement(seed, editorialPlan);
+function PosterHookOverlay({ text }: { text: string }) {
   return (
     <div
       aria-hidden="true"
-      className={`pointer-events-none absolute inset-x-[13%] z-30 flex min-h-[8.5%] max-h-[11%] items-center justify-center overflow-hidden rounded-[7px] bg-white px-3 py-1.5 text-center text-[11px] font-black leading-[1.08] tracking-[-0.02em] text-black shadow-[0_3px_12px_rgba(0,0,0,.30)] ring-1 ring-black/10 ${placement === 'upper-middle' ? 'top-[26%]' : 'top-[3.5%]'}`}
+      className="pointer-events-none absolute inset-x-[8.3%] top-[2.8%] z-30 flex h-[12.5%] items-center justify-center overflow-hidden rounded-[8px] bg-white px-3 py-2 text-center text-[13px] font-black leading-[1.1] tracking-[-0.025em] text-black shadow-[0_3px_12px_rgba(0,0,0,.34)] ring-1 ring-black/10"
     >
-      <span className="line-clamp-2">{text}</span>
+      <span className="line-clamp-3">{text}</span>
     </div>
   );
 }
@@ -1287,7 +1284,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           Your browser does not support the video tag.
                         </video>
 
-                        {showPosterHook && savedHookText ? <PosterHookOverlay text={savedHookText} seed={clip.clipCandidateId ?? clip.exportId} editorialPlan={clip.editorialPlan} /> : null}
+                        {showPosterHook && savedHookText ? <PosterHookOverlay text={savedHookText} /> : null}
 
                         {editRendering ? <ReelEditProcessingOverlay clip={clip} /> : null}
 

@@ -8,7 +8,6 @@ import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
-import { resolveReelCaptionAccent } from '@/lib/reel-visual-style';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
@@ -937,9 +936,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     : {
         ...captionPreset,
         caption_template: captionTemplate,
-        captionHighlightColor: captionPreset.id === DEFAULT_CAPTION_PRESET_ID
-          ? resolveReelCaptionAccent(bundle.clip_candidate_id)
-          : captionPreset.captionHighlightColor,
       };
 
   const captionText = segmentsToCapcutAss(renderTranscriptSegments, effectiveRenderStart, effectiveRenderEnd, captionStyle);
