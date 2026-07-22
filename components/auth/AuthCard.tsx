@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { readJsonSafe } from '@/lib/safe-json';
 import { createClient as createSupabaseBrowserClient } from '@/lib/supabase/client';
+import { captureEvent } from '@/lib/analytics';
 
 type Mode = 'login' | 'signup';
 type OAuthProvider = 'google';
@@ -125,6 +126,7 @@ export function AuthCard({
       }
 
       const signupEmail = typeof data?.email === 'string' ? data.email : email;
+      captureEvent('signup_completed');
       router.push(
         `/auth/check-email?email=${encodeURIComponent(signupEmail)}&next=${encodeURIComponent('/')}`,
       );

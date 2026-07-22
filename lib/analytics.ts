@@ -14,7 +14,8 @@ export type FunnelEvent =
   | 'upload_failed'
   | 'render_failed'
   | 'caption_applied'
-  | 'reel_edited';
+  | 'reel_edited'
+  | 'plan_upgraded';
 
 export function captureEvent(event: FunnelEvent, properties: Record<string, string | number | boolean | null> = {}) {
   if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;

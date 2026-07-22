@@ -396,6 +396,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const previewWarmQueueRef = useRef<string[]>([]);
   const previewWarmActiveRef = useRef(new Set<string>());
   const previewWarmCompleteRef = useRef(new Set<string>());
+  const previewTrackedRef = useRef(new Set<string>());
   const previewObserverRef = useRef<IntersectionObserver | null>(null);
   const playRecoveryTimersRef = useRef<Record<string, number>>({});
   const playRecoveryAttemptsRef = useRef<Record<string, number>>({});
@@ -1219,6 +1220,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             });
                           }}
                           onPlay={() => {
+                            if (!previewTrackedRef.current.has(clip.exportId)) {
+                              previewTrackedRef.current.add(clip.exportId);
+                              captureEvent('reel_previewed', { export_id: clip.exportId });
+                            }
                             pauseOtherVideos(clip.exportId);
                             playRecoveryAttemptsRef.current[clip.exportId] = 0;
                             window.clearTimeout(playRecoveryTimersRef.current[clip.exportId]);

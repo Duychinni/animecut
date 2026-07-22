@@ -4,6 +4,7 @@ import { AccountMenu } from '@/components/auth/AccountMenu';
 import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { ProjectQuickStart } from '@/components/project/ProjectQuickStart';
 import { effectivePlanId } from '@/lib/billing';
+import { AnalyticsIdentity } from '@/components/analytics/AnalyticsBridge';
 
 type ProfileLike = { email?: string | null; user_metadata?: Record<string, unknown> | null };
 
@@ -59,6 +60,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="app-shell min-h-screen text-white">
+      {user ? <AnalyticsIdentity userId={user.id} /> : null}
       <header className="border-b border-white/10 bg-black/20 backdrop-blur">
         <div className="mx-auto max-w-[1440px] px-4 py-4 sm:px-6 sm:py-6">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-6 lg:gap-10">

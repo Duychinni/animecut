@@ -192,7 +192,7 @@ export async function recordBillingEvent(event: Stripe.Event) {
     ? await admin.from('profiles').select('id').eq('stripe_customer_id', customerId).maybeSingle()
     : { data: null };
 
-  await admin.from('billing_events').upsert({
+  const { error } = await admin.from('billing_events').upsert({
     user_id: profile?.id ?? null,
     stripe_event_id: event.id,
     stripe_customer_id: customerId,
@@ -201,4 +201,6 @@ export async function recordBillingEvent(event: Stripe.Event) {
     payload: event as unknown as Record<string, unknown>,
     processed_at: new Date().toISOString(),
   });
+
+  if (error) throw error;
 }

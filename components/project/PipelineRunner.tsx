@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { readJsonSafe } from '@/lib/safe-json';
 import { formatLivePercent, useLiveProgress } from '@/components/project/LiveProgress';
 import { createClient } from '@/lib/supabase/client';
+import { captureEvent } from '@/lib/analytics';
 
 const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
 
@@ -84,11 +85,18 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const autoRanRef = useRef(false);
   const processingKickInFlightRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completionTrackedRef = useRef(false);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
   const activeExportCount = useMemo(() => Number(progress?.progress?.active_exports ?? 0), [progress]);
   const isCompleted = progress?.project?.status === 'completed';
   const liveProgressPct = useLiveProgress(progressPct, !isCompleted, progress?.project?.pipeline_stage);
+
+  useEffect(() => {
+    if (!isCompleted || completionTrackedRef.current) return;
+    completionTrackedRef.current = true;
+    captureEvent('analysis_completed', { project_id: projectId });
+  }, [isCompleted, projectId]);
 
   const refreshProgress = useCallback(async () => {
     try {

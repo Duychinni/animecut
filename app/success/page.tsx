@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getOrCreateProfile, getStripe, syncProfileFromSubscription } from '@/lib/billing';
+import { AnalyticsEvent } from '@/components/analytics/AnalyticsBridge';
 
 export default async function SuccessPage({
   searchParams,
@@ -44,6 +45,7 @@ export default async function SuccessPage({
 
   return (
     <main className="app-shell min-h-screen text-white">
+      <AnalyticsEvent event={params.upgraded === '1' ? 'plan_upgraded' : 'subscription_started'} />
       <div className="mx-auto flex min-h-screen max-w-3xl items-center justify-center px-6 py-16">
         <div className="w-full rounded-[32px] border border-white/10 bg-white/[0.03] p-10 text-center shadow-[0_30px_80px_rgba(0,0,0,0.32)] backdrop-blur-sm">
           <p className="text-6xl">🎉</p>

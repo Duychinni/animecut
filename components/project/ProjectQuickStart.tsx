@@ -85,6 +85,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
     }
 
     try {
+      captureEvent('upload_started', { source_type: 'youtube' });
       setLoading(true);
       setMsg('Creating project from link...');
       const project = await createProject({
@@ -94,6 +95,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       });
 
       await fetch(`/api/projects/${project.id}/start`, { method: 'POST' }).catch(() => null);
+      captureEvent('upload_completed', { source_type: 'youtube' });
 
       if (onProjectCreated) {
         onProjectCreated(project);
@@ -102,6 +104,7 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       }
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Could not analyze link';
+      captureEvent('upload_failed', { source_type: 'youtube', error_type: text.slice(0, 80) });
       setMsg(text);
     } finally {
       setLoading(false);
