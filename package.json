@@ -16,6 +16,7 @@
     "worker:check": "node scripts/reframe_runtime.mjs check",
     "worker": "npm run worker:check && npx tsx workers/pipelineWorker.ts",
     "worker:reload": "pm2 restart animacut-web animacut-worker-1 animacut-worker-2 --update-env",
+    "worker:sync": "zsh scripts/sync-production-workers.sh",
     "worker:once": "npm run worker:check && npx tsx workers/pipelineWorker.ts --once",
     "phase1:check": "python -m unittest scripts/test_phase1_diarization.py && node scripts/validate_phase1_migrations.mjs",
     "previews:backfill": "node --env-file-if-exists=.env.local scripts/backfill-export-previews.mjs",

@@ -1,4 +1,14 @@
 import process from 'node:process';
+import { execFileSync } from 'node:child_process';
+
+function getWorkerVersion() {
+  if (process.env.GIT_COMMIT_SHA) return process.env.GIT_COMMIT_SHA;
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 function getBaseUrl() {
   // APP_URL and NEXT_PUBLIC_APP_URL describe the customer-facing deployment.
@@ -49,7 +59,7 @@ async function runOnce() {
 async function main() {
   const once = process.argv.includes('--once');
   const baseUrl = getBaseUrl();
-  console.log('[worker] starting', { baseUrl, once });
+  console.log('[worker] starting', { baseUrl, once, commit: getWorkerVersion() });
   if (/\.vercel\.app\b/i.test(baseUrl)) {
     throw new Error('WORKER_API_URL must point to the persistent local render API (normally http://127.0.0.1:3000), not Vercel.');
   }

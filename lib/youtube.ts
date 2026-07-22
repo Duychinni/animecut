@@ -367,6 +367,9 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
       formatSelector,
     });
   }
+  // A 720p source is accepted only when it is the best rendition YouTube made
+  // available after every client/format attempt. Exports are always validated
+  // separately at 1080x1920; we never silently reuse an SD source.
   if (downloadedInfo?.height && downloadedInfo.height < MINIMUM_RENDERABLE_YOUTUBE_HEIGHT) {
     await unlink(outPath).catch(() => undefined);
     await unlink(qualityMarkerPath).catch(() => undefined);
