@@ -773,16 +773,29 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     video.currentTime = relative;
   }
 
-  const syncPlayheadToVideo = useCallback(() => {
+  const syncCurrentTimeFromVideo = useCallback(() => {
     const video = videoRef.current;
-    if (!video || video.paused || !settings) {
-      playbackFrameRef.current = null;
-      return;
-    }
+    if (!video || !settings) return;
     const absolute = previewUsesSource ? video.currentTime : settings.clip_start_seconds + video.currentTime;
     setCurrentTime(clamp(absolute, settings.clip_start_seconds, settings.clip_end_seconds));
-    playbackFrameRef.current = window.requestAnimationFrame(syncPlayheadToVideo);
   }, [previewUsesSource, settings]);
+
+  const startPlaybackClock = useCallback(() => {
+    if (playbackFrameRef.current !== null) window.cancelAnimationFrame(playbackFrameRef.current);
+
+    const tick = () => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.ended) {
+        playbackFrameRef.current = null;
+        return;
+      }
+      syncCurrentTimeFromVideo();
+      playbackFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    syncCurrentTimeFromVideo();
+    playbackFrameRef.current = window.requestAnimationFrame(tick);
+  }, [syncCurrentTimeFromVideo]);
 
   useEffect(() => () => {
     if (playbackFrameRef.current !== null) window.cancelAnimationFrame(playbackFrameRef.current);
@@ -1099,10 +1112,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                     }
                     setCurrentTime(clamp(absolute, settings.clip_start_seconds, settings.clip_end_seconds));
                   }}
+                  onSeeking={syncCurrentTimeFromVideo}
+                  onSeeked={syncCurrentTimeFromVideo}
                   onPlay={() => {
                     setPaused(false);
-                    if (playbackFrameRef.current !== null) window.cancelAnimationFrame(playbackFrameRef.current);
-                    playbackFrameRef.current = window.requestAnimationFrame(syncPlayheadToVideo);
+                    startPlaybackClock();
                   }}
                   onPause={() => {
                     setPaused(true);
