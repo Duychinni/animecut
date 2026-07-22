@@ -1,4 +1,4 @@
-export const DEFAULT_REEL_CAPTION_ACCENTS = ['#21F45A', '#FFFF00'] as const;
+export const DEFAULT_REEL_CAPTION_ACCENTS = ['#21F45A', '#FFFF00', '#A855F7'] as const;
 export type DefaultReelHookPlacement = 'top';
 
 function stableHash(value: string) {
@@ -11,14 +11,12 @@ function stableHash(value: string) {
 }
 
 /**
- * Split the default look evenly between green and bright yellow keyword
- * accents. The choice is stable across rerenders,
+ * Split the default look evenly between green, bright yellow, and purple
+ * keyword accents. The choice is stable across rerenders,
  * so it feels curated instead of changing randomly whenever a job retries.
  */
 export function resolveDefaultReelCaptionAccent(seed: string) {
-  return stableHash(seed || 'reel') % 2 === 0
-    ? DEFAULT_REEL_CAPTION_ACCENTS[1]
-    : DEFAULT_REEL_CAPTION_ACCENTS[0];
+  return DEFAULT_REEL_CAPTION_ACCENTS[stableHash(seed || 'reel') % DEFAULT_REEL_CAPTION_ACCENTS.length];
 }
 
 /** Keep generated hook cards in their original top-of-frame position. */
