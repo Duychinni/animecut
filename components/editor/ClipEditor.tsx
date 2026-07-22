@@ -189,7 +189,7 @@ function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEd
     'subtle-shadow': '0 2px 5px rgba(0,0,0,.8)',
     'neon-glow': `0 0 9px ${preset?.captionHighlightColor || '#FF4FD8'}, 0 5px 14px rgba(0,0,0,.9)`,
     'purple-glow': `0 0 10px ${preset?.captionHighlightColor || '#A855F7'}, 0 5px 14px rgba(0,0,0,.9)`,
-    'yellow-glow': '0 3px 0 #000, 0 0 8px rgba(255,216,77,.8), 0 8px 18px rgba(0,0,0,.9)',
+    'yellow-glow': '0 3px 0 #000, 0 0 8px rgba(255,252,0,.8), 0 8px 18px rgba(0,0,0,.9)',
     'soft-glow': `0 0 7px ${preset?.captionHighlightColor || '#5DE4FF'}, 0 6px 16px rgba(0,0,0,.86)`,
     'red-pop': '0 3px 0 #000, 3px 5px 0 rgba(255,59,48,.72), 0 8px 18px rgba(0,0,0,.9)',
   };

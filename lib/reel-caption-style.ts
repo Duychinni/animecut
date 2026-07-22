@@ -10,12 +10,12 @@ function stableHash(value: string) {
 }
 
 /**
- * Keep the default look recognizable while giving a restrained subset of
- * reels a bright yellow keyword accent. The choice is stable across rerenders,
+ * Split the default look evenly between green and bright yellow keyword
+ * accents. The choice is stable across rerenders,
  * so it feels curated instead of changing randomly whenever a job retries.
  */
 export function resolveDefaultReelCaptionAccent(seed: string) {
-  return stableHash(seed || 'reel') % 4 === 0
+  return stableHash(seed || 'reel') % 2 === 0
     ? DEFAULT_REEL_CAPTION_ACCENTS[1]
     : DEFAULT_REEL_CAPTION_ACCENTS[0];
 }

@@ -728,15 +728,18 @@ export default function Home() {
                             <div className="absolute inset-0 bg-[linear-gradient(160deg,rgba(255,123,216,0.14),rgba(139,124,255,0.08),#090910)]" />
                           )
                         ) : clip.mediaType === 'youtube' ? (
-                          <iframe
-                            src={clip.mediaUrl}
-                            title={clip.title}
-                            allow="autoplay; encrypted-media"
-                            loading="lazy"
-                            tabIndex={-1}
-                            aria-hidden="true"
-                            className="hero-showcase-youtube pointer-events-none absolute left-1/2 top-[54%] h-[122%] w-[350%] -translate-x-1/2 -translate-y-1/2 border-0"
-                          />
+                          <>
+                            <iframe
+                              src={clip.mediaUrl}
+                              title={clip.title}
+                              allow="autoplay; encrypted-media"
+                              loading="lazy"
+                              tabIndex={-1}
+                              aria-hidden="true"
+                              className="hero-showcase-youtube pointer-events-none absolute left-1/2 top-[47%] h-[132%] w-[378%] -translate-x-1/2 -translate-y-1/2 border-0"
+                            />
+                            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[13%] bg-[linear-gradient(180deg,#090910_0%,rgba(9,9,16,0.96)_58%,transparent_100%)]" />
+                          </>
                         ) : (
                           <video
                             src={clip.mediaUrl}
@@ -769,6 +772,10 @@ export default function Home() {
                           />
                         )
                       ) : null}
+                      <div className="pointer-events-none absolute right-2 top-2 z-20 inline-flex items-center gap-1 rounded-full border border-orange-300/35 bg-[#140b05]/90 px-2 py-1 text-[11px] font-black text-orange-100 shadow-[0_4px_18px_rgba(249,115,22,0.35)] backdrop-blur-sm">
+                        <span aria-hidden="true">🔥</span>
+                        <span>{clip.score}</span>
+                      </div>
                     </div>
                   </div>
                 </div>

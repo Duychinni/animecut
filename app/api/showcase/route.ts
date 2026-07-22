@@ -24,6 +24,8 @@ const HERO_REELS = [
   { id: '54a6609e-2ac7-426c-9fe5-6e7058781fba', videoId: 'w3zxMrwWrt0', start: 82, end: 112, title: 'A founder explains how his product works', source: 'Starter Story', score: 90 },
 ] as const;
 
+const HERO_REEL_PREVIEW_SECONDS = 5;
+
 function formatClock(totalSeconds: number) {
   const total = Math.max(0, Math.round(totalSeconds));
   const mins = Math.floor(total / 60);
@@ -58,14 +60,14 @@ function buildHardcodedShowcaseClips() {
     score: reel.score,
     caption: '',
     platform: platforms[index],
-    length: formatClock(reel.end - reel.start),
+    length: formatClock(HERO_REEL_PREVIEW_SECONDS),
     source: reel.source,
     gradient: gradients[index],
     mediaType: 'youtube' as const,
-    mediaUrl: youtubeShowcaseUrl(reel.videoId, reel.start, reel.end),
+    mediaUrl: youtubeShowcaseUrl(reel.videoId, reel.start, reel.start + HERO_REEL_PREVIEW_SECONDS),
     posterUrl: `https://i.ytimg.com/vi/${encodeURIComponent(reel.videoId)}/hqdefault.jpg`,
     startSeconds: reel.start,
-    endSeconds: reel.end,
+    endSeconds: reel.start + HERO_REEL_PREVIEW_SECONDS,
   }));
 }
 

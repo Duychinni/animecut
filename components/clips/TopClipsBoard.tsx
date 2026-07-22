@@ -204,7 +204,7 @@ function getPresetCaptionStyle(preset: (typeof CAPTION_PRESETS)[number], size: '
     'subtle-shadow': `0 ${1.5 * scale}px ${4 * scale}px rgba(0,0,0,.6)`,
     'neon-glow': `0 0 ${7 * scale}px ${glowColor}, 0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
     'purple-glow': `0 0 ${7 * scale}px #8b5cf6, 0 0 ${12 * scale}px ${glowColor}, 0 ${2 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
-    'yellow-glow': `0 ${3 * scale}px 0 #000, 0 0 ${7 * scale}px rgba(250,204,21,.75), 0 ${5 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
+    'yellow-glow': `0 ${3 * scale}px 0 #000, 0 0 ${7 * scale}px rgba(255,252,0,.75), 0 ${5 * scale}px ${8 * scale}px rgba(0,0,0,.85)`,
     'soft-glow': `0 0 ${5 * scale}px ${glowColor}, 0 ${3 * scale}px ${8 * scale}px rgba(0,0,0,.8)`,
     'red-pop': `0 ${3 * scale}px 0 #000, ${2 * scale}px ${4 * scale}px 0 rgba(255,59,48,.7), 0 ${6 * scale}px ${9 * scale}px rgba(0,0,0,.85)`,
     'bubble-shadow': `0 ${2 * scale}px ${6 * scale}px rgba(0,0,0,.3)`,

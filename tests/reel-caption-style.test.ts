@@ -11,9 +11,9 @@ test('default caption accent is stable and restricted to green or yellow', () =>
   assert.ok(DEFAULT_REEL_CAPTION_ACCENTS.includes(first));
 });
 
-test('yellow is an occasional variation rather than every other reel', () => {
+test('default reels are split roughly evenly between green and bright yellow', () => {
   const accents = Array.from({ length: 120 }, (_, index) => resolveDefaultReelCaptionAccent(`candidate-${index}`));
   const yellow = accents.filter((accent) => accent === '#FFFC00').length;
-  assert.ok(yellow >= 20 && yellow <= 40, `expected roughly 25% yellow accents, received ${yellow}/120`);
-  assert.ok(accents.filter((accent) => accent === '#21F45A').length > yellow);
+  assert.ok(yellow >= 48 && yellow <= 72, `expected roughly 50% yellow accents, received ${yellow}/120`);
+  assert.equal(accents.filter((accent) => accent === '#21F45A').length + yellow, accents.length);
 });
