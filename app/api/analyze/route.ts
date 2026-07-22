@@ -9,7 +9,6 @@ import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 import { buildCandidateEditorialPlan, type CandidateEditorialPlan } from '@/lib/editorial-plan';
 import { canonicalizeKnownNames, verifiedSourceSubjectHint } from '@/lib/source-identity';
-import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 
 export const maxDuration = 60;
 
@@ -538,14 +537,6 @@ function buildTranscriptCoverageCandidates(params: {
       const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, params.segments);
       if (!openingLine || !closingLine || endsWithFiller(closingLine) || isIncompleteTrailingPhrase(closingLine)) continue;
 
-      const transcriptText = transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, params.segments);
-      if (editorialExclusionReason({
-        text: transcriptText,
-        startSec: cleaned.start_sec,
-        endSec: cleaned.end_sec,
-        totalSeconds: params.totalSeconds,
-      })) continue;
-
       const index = pass * params.desiredCount + bucket;
       const title = keywordDisplayTitle(openingLine, closingLine, 'Transcript coverage moment', index);
       const hookText = resolveCandidateHookText({
@@ -557,7 +548,7 @@ function buildTranscriptCoverageCandidates(params: {
         endSec: cleaned.end_sec,
       });
       const editorialPlan = buildCandidateEditorialPlan({
-        transcriptText,
+        transcriptText: transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, params.segments),
         raw: {},
         fallbackTitle: title,
         fallbackHook: hookText,
@@ -933,12 +924,6 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           fallbackHook: resolvedHook,
         });
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
-        const packagingExclusion = editorialExclusionReason({
-          text: transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, segments),
-          startSec: cleaned.start_sec,
-          endSec: cleaned.end_sec,
-          totalSeconds: policyDurationSeconds,
-        });
         const payoffStrong = hasStrongPayoff(closingLine);
         const cleanEnding = !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
         const completeEnding = cleanEnding && (cleaned.end_complete || !punctuationReliable || localAnalysisCandidate);
@@ -998,9 +983,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           educational_value: educationalValue,
           speaker_energy: speakerEnergy,
           overall_score: clamp100(calibratedOverall),
-          reject_reason: packagingExclusion
-              ? packagingExclusion
-              : duration < analysisMinClipSec
+          reject_reason: duration < analysisMinClipSec
               ? 'duration_below_minimum'
               : transcriptWordCount < minimumWordCount
                 ? 'word_count_below_minimum'
@@ -1018,7 +1001,6 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       });
 
     const scoredCandidates = allScoredCandidates
-      .filter((c: RankedCandidate) => c.reject_reason !== 'intro_or_cold_open' && c.reject_reason !== 'outro_or_end_card')
       .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
       .filter((c: RankedCandidate) => c.duration_seconds >= analysisMinClipSec)
       .filter((c: RankedCandidate) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= minimumWordCount)
@@ -1033,7 +1015,6 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     if (selected.length < minimumFinalCount) {
       const fallbackPool = distinctCandidates(allScoredCandidates)
-        .filter((c) => c.reject_reason !== 'intro_or_cold_open' && c.reject_reason !== 'outro_or_end_card')
         .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked)))
         .filter((c) => c.duration_seconds >= analysisMinClipSec)
         .filter((c) => c.self_contained_confidence >= Math.max(0.42, SELF_CONTAINED_MIN_CONFIDENCE - 0.1))

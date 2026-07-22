@@ -1,7 +1,6 @@
 import { getClipPolicy, getTargetClipCount } from '@/lib/clip-policy';
 import { generateHookTextFromText } from '@/lib/hook-text';
 import { buildCandidateEditorialPlan } from '@/lib/editorial-plan';
-import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 
 type TranscriptSegment = {
   start?: number;
@@ -320,7 +319,6 @@ export function analyzeTranscriptLocally(
       opening_line: openingLine(text),
       closing_line: closingLine(text),
       label: labelForText(text),
-      editorial_exclusion_reason: editorialExclusionReason({ text, startSec: start, endSec: end, totalSeconds }),
     };
   });
 
@@ -329,7 +327,6 @@ export function analyzeTranscriptLocally(
   const candidates = rawCandidates
     .sort((a, b) => b.overall_score - a.overall_score)
     .filter((candidate) => {
-      if (candidate.editorial_exclusion_reason) return false;
       const key = `${Math.round(candidate.adjusted_start / 8)}:${candidate.title.toLowerCase()}`;
       if (seen.has(key)) return false;
       if (overlapsSelected(candidate.adjusted_start, candidate.adjusted_end, selectedWindows)) return false;
