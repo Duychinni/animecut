@@ -370,7 +370,7 @@ export async function POST() {
       try {
         analyzeData = await withTimeout(
           callInternalJson('/api/analyze', { project_id: projectId }),
-          65000,
+          360000,
           'finding_hooks timeout before local fallback',
         ) as Record<string, unknown>;
       } catch (analysisError) {

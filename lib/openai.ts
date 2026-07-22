@@ -5,8 +5,11 @@ import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'local-analysis-disabled-key' });
 
-const OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS ?? 12000);
-const OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS ?? 25000);
+// Editorial analysis is the quality-critical step. Long sources are split into
+// several transcript windows, so short request/total limits caused otherwise
+// healthy model calls to fall back to generic local titles and hooks.
+const OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_REQUEST_TIMEOUT_MS ?? 120000);
+const OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.OPENAI_ANALYSIS_TOTAL_TIMEOUT_MS ?? 300000);
 
 type AnalysisResponse = {
   output_text: string;
@@ -350,21 +353,24 @@ export async function analyzeClipCandidates(
       const allCandidates: unknown[] = [];
 
       if (chunked.length) {
-        for (const chunk of chunked) {
+        const chunkCandidates = await Promise.all(chunked.map(async (chunk) => {
           const timeline = buildTimeline(chunk);
+          const candidatesForWindow = Math.max(
+            policy.targetMax * 2,
+            Math.ceil(targetCandidates / chunked.length) + 4,
+          );
           const res = await createAnalysisResponse({
             model: 'gpt-4.1-mini',
             input: [
-              { role: 'system', content: prompt },
+              { role: 'system', content: buildPrompt(candidatesForWindow, totalSeconds) },
               { role: 'user', content: `${sourceContext ? `SOURCE METADATA:\n${sourceContext}\n\n` : ''}TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
             ],
           });
 
           const parsed = await parseJsonWithRepair(res.output_text);
-          if (Array.isArray(parsed?.candidates)) {
-            allCandidates.push(...parsed.candidates);
-          }
-        }
+          return Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+        }));
+        allCandidates.push(...chunkCandidates.flat());
       } else {
         const userInput = transcript.slice(0, 100000);
         const res = await createAnalysisResponse({
@@ -386,6 +392,17 @@ export async function analyzeClipCandidates(
         return {
           ...analyzeTranscriptLocally(transcript, segments, sourceContext),
           diagnostics: { provider: 'local', openai_timed_out: false, fallback_used: true, fallback_reason: 'openai_returned_no_candidates' },
+        };
+      }
+
+      // Window prompts already apply the full editorial rules. A second pass
+      // over dozens of verbose candidate objects is slow and can time out,
+      // discarding otherwise strong model-written titles and hooks. Keep it
+      // opt-in for offline experiments instead of risking production fallback.
+      if (process.env.OPENAI_ENABLE_ANALYSIS_REFINEMENT !== 'true') {
+        return {
+          ...merged,
+          diagnostics: { provider: 'openai', openai_timed_out: false, fallback_used: false, fallback_reason: null },
         };
       }
 

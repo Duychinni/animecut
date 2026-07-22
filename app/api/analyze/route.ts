@@ -885,12 +885,13 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           provider: 'unknown', openai_timed_out: false, fallback_used: false, fallback_reason: null,
         });
     const aiReturnedCount = Array.isArray(parsed.candidates) ? parsed.candidates.length : 0;
-    const localSupplement = options.forceLocal
+    const localSupplement = options.forceLocal || aiReturnedCount >= targetClipCount
       ? { candidates: [] }
       : analyzeTranscriptLocally(transcriptRow.full_text as string, segments, sourceContext);
+    const localSupplementNeeded = Math.max(0, targetClipCount - aiReturnedCount);
     const analysisCandidates = [
       ...(parsed.candidates ?? []).slice(0, candidateLimit),
-      ...(localSupplement.candidates ?? []).slice(0, candidateLimit),
+      ...(localSupplement.candidates ?? []).slice(0, localSupplementNeeded),
     ];
 
     const allScoredCandidates: RankedCandidate[] = analysisCandidates

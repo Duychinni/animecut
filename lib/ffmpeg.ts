@@ -1463,7 +1463,7 @@ function wrapHookTextForDrawtext(hookText: string) {
 
   for (const word of words) {
     const next = [...current, word].join(' ');
-    const shouldWrap = current.length > 0 && (next.length > 21 || current.length >= 4);
+    const shouldWrap = current.length > 0 && (next.length > 24 || current.length >= 5);
 
     if (shouldWrap) {
       lines.push(current.join(' '));
@@ -1506,14 +1506,14 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string) {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 900;
-  const cardHeight = twoLine ? 238 : 170;
+  const cardWidth = 780;
+  const cardHeight = twoLine ? 180 : 132;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const cardY = twoLine ? 54 : 68;
+  const cardY = twoLine ? 72 : 84;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 38);
-  const hookFontSize = twoLine ? 96 : 108;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
+  const hookFontSize = twoLine ? 68 : 76;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]

@@ -61,6 +61,7 @@ const ENTITY_STOPWORDS = new Set([
   'They', 'Thing', 'This', 'Those', 'Timely', 'Two', 'Uh', 'We', 'Well', 'What', 'When', 'Who', 'Why', 'Yeah',
   'You', 'Your', 'Youre', 'Youve', 'Youll', 'Im', 'Ive', 'Ill', 'Started', 'Make', 'Money', 'Ain',
   'Source', 'Project', 'Title', 'Channel',
+  'Really', 'Essentially', 'Especially', 'Mostly', 'Most', 'Wow', 'Were', 'Was',
 ]);
 
 function clean(text: unknown) {
@@ -90,12 +91,13 @@ export function isNaturalEditorialTitle(value: unknown) {
 
 export function isNaturalEditorialHook(value: unknown) {
   const text = clean(value);
-  if (text.length < 5 || text.length > 80) return false;
+  if (text.length < 5 || text.length > 48) return false;
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top moment|watch this|this is crazy|keep watching|what do you mean|how old are you)$/i.test(text)) return false;
   if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|is|are|was|were)\??$/i.test(text)) return false;
-  return text.split(/\s+/).length >= 3;
+  const words = text.split(/\s+/);
+  return words.length >= 3 && words.length <= 10;
 }
 
 function sentenceCandidates(text: string) {
