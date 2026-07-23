@@ -666,16 +666,22 @@ function escapeFfmpegExpr(expr: string) {
 }
 
 function resolveSmartReframePython() {
+  const localCandidates = process.platform === 'win32'
+    ? [path.join(/* turbopackIgnore: true */ process.cwd(), '.venv', 'Scripts', 'python.exe')]
+    : [path.join(/* turbopackIgnore: true */ process.cwd(), '.venv', 'bin', 'python')];
+  const localPython = localCandidates.find((candidate) => existsSync(candidate));
+  if (localPython) return localPython;
+
+  // The checked, repo-local runtime is authoritative. A stale machine-level
+  // SMART_REFRAME_PYTHON previously bypassed `worker:check`, loaded a newer
+  // incompatible MediaPipe package, and silently disabled subject framing.
   const configured = process.env.SMART_REFRAME_PYTHON?.trim();
   if (configured) {
     const looksLikePath = configured.includes('/') || configured.includes('\\') || path.isAbsolute(configured);
     if (!looksLikePath || existsSync(path.resolve(configured))) return configured;
   }
 
-  const localCandidates = process.platform === 'win32'
-    ? [path.join(/* turbopackIgnore: true */ process.cwd(), '.venv', 'Scripts', 'python.exe')]
-    : [path.join(/* turbopackIgnore: true */ process.cwd(), '.venv', 'bin', 'python')];
-  return localCandidates.find((candidate) => existsSync(candidate)) ?? (process.platform === 'win32' ? 'python' : 'python3');
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 function resolveSmartReframeScript() {
@@ -1017,6 +1023,7 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         candidateId: opts.debugCandidateId ?? null,
         reason: probe.code !== 0 ? 'python_probe_nonzero_exit' : 'raw_not_ok',
         probeCode: probe.code,
+        detectorError: raw?.error ?? (probe.stderr.trim() || null),
         raw,
       };
       console.log('[smart-reframe-detector-retry]', primaryFailure);
@@ -2070,6 +2077,20 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const splitStackLayout = smartReframe.layout;
   const adaptiveWideIntervals = smartReframe.wideIntervals ?? [];
   const reframeTimeline = smartReframe.timeline ?? [];
+
+  if (
+    effectiveMode === 'smart'
+    && reframeTimeline.length === 0
+    && !splitStackLayout
+    && adaptiveWideIntervals.length === 0
+    && !smartCropExpr
+  ) {
+    // Never publish a center crop when subject-aware analysis failed. On a
+    // two-person source that fallback lands on the divider and cuts both
+    // faces in half. Retrying/failing the export is safer than shipping a
+    // composition we already know is invalid.
+    throw new Error('smart_reframe_analysis_unavailable');
+  }
 
   if (effectiveOpts.captionsEnabled !== false && effectiveOpts.srtPath) {
     try {
