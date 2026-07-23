@@ -39,6 +39,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   } = await supabase.auth.getUser();
   const displayName = getDisplayName(user);
   const avatarUrl = getAvatarUrl(user);
+  const adminEmails = new Set((process.env.ADMIN_EMAILS || '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
+  const isAdmin = Boolean(user?.email && adminEmails.has(user.email.toLowerCase()));
   const { data: profile } = user
     ? await supabase
         .from('profiles')
@@ -76,6 +78,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <Link href="/dashboard" className="transition hover:text-white">
                 Dashboard
               </Link>
+              {isAdmin ? (
+                <Link href="/dashboard/admin/ad-studio" className="transition hover:text-white">
+                  Ad Studio
+                </Link>
+              ) : null}
             </nav>
 
             <div className="flex min-w-0 items-center justify-end gap-2 justify-self-end">
