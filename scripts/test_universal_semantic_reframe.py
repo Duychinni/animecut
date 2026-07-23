@@ -99,6 +99,15 @@ def test_walking_left_to_right_smoothly():
     assert max(b - a for a, b in zip(centers, centers[1:])) < W * 0.18, centers
 
 
+def test_stationary_subject_jitter_does_not_pan_camera():
+    samples = []
+    for index, x in enumerate((700, 716, 688, 710, 692, 718, 696, 708, 690, 712)):
+        samples.append(sample(index * 0.25, subject('body', box(x, 130, 360, 820), 'body:still')))
+    result = timeline(samples)
+    centers = [point['cropCenterX'] for point in result[0]['points']]
+    assert max(centers) - min(centers) < W * 0.015, centers
+
+
 def test_short_detection_loss_holds_subject():
     prior = semantic_subject_choice(body_box=(240, 120, 420, 840))
     held = semantic_subject_choice(prior=prior, scene_cut=False)

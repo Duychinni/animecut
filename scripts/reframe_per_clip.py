@@ -1656,14 +1656,23 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         segment['points'].insert(0, leading_point)
 
     # Smooth the semantic virtual camera inside each uninterrupted subject
-    # segment. A dead zone removes micro-jitter; velocity and acceleration
-    # limits keep walking/action tracking natural. Scene and identity changes
-    # remain hard cuts and therefore never slide from the previous shot.
+    # segment. Hold the current composition through small detector changes and
+    # require sustained movement before choosing a new target. Velocity and
+    # acceleration limits then make the intentional move feel like an operator
+    # following the subject instead of a camera correcting every sample.
+    # Scene and identity changes remain hard cuts and therefore never slide
+    # from the previous shot.
     for segment in clean_segments:
         if segment['mode'] != 'single' or len(segment['points']) < 2:
             continue
         smoothed_x = float(segment['points'][0]['cropX'])
         smoothed_y = float(segment['points'][0]['cropY'])
+        target_x = smoothed_x
+        target_y = smoothed_y
+        pending_x = target_x
+        pending_y = target_y
+        pending_x_samples = 0
+        pending_y_samples = 0
         velocity_x = 0.0
         velocity_y = 0.0
         previous_t = float(segment['points'][0]['t'])
@@ -1672,17 +1681,44 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             delta_t = max(0.05, current_t - previous_t)
             crop_w = float(point['cropW'])
             crop_h = float(point['cropH'])
-            delta_x = float(point['cropX']) - smoothed_x
-            delta_y = float(point['cropY']) - smoothed_y
-            if abs(delta_x) <= crop_w * 0.035:
-                delta_x = 0.0
-            if abs(delta_y) <= crop_h * 0.025:
-                delta_y = 0.0
+            raw_x = float(point['cropX'])
+            raw_y = float(point['cropY'])
+            dead_zone_x = crop_w * 0.06
+            dead_zone_y = crop_h * 0.04
 
-            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.42, crop_w * 0.42)
-            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.24, crop_h * 0.24)
-            acceleration_x = crop_w * 1.30 * delta_t
-            acceleration_y = crop_h * 0.80 * delta_t
+            if abs(raw_x - target_x) <= dead_zone_x:
+                pending_x_samples = 0
+            else:
+                same_direction = (raw_x - target_x) * (pending_x - target_x) > 0
+                pending_x_samples = pending_x_samples + 1 if same_direction else 1
+                pending_x = raw_x
+                if pending_x_samples >= 3 or abs(raw_x - target_x) >= crop_w * 0.20:
+                    target_x = raw_x
+                    pending_x_samples = 0
+
+            if abs(raw_y - target_y) <= dead_zone_y:
+                pending_y_samples = 0
+            else:
+                same_direction = (raw_y - target_y) * (pending_y - target_y) > 0
+                pending_y_samples = pending_y_samples + 1 if same_direction else 1
+                pending_y = raw_y
+                if pending_y_samples >= 3 or abs(raw_y - target_y) >= crop_h * 0.16:
+                    target_y = raw_y
+                    pending_y_samples = 0
+
+            delta_x = target_x - smoothed_x
+            delta_y = target_y - smoothed_y
+            if abs(delta_x) <= crop_w * 0.012:
+                delta_x = 0.0
+                velocity_x *= 0.30
+            if abs(delta_y) <= crop_h * 0.010:
+                delta_y = 0.0
+                velocity_y *= 0.30
+
+            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.24, crop_w * 0.24)
+            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.14, crop_h * 0.14)
+            acceleration_x = crop_w * 0.62 * delta_t
+            acceleration_y = crop_h * 0.38 * delta_t
             velocity_x += clamp(desired_velocity_x - velocity_x, -acceleration_x, acceleration_x)
             velocity_y += clamp(desired_velocity_y - velocity_y, -acceleration_y, acceleration_y)
 
