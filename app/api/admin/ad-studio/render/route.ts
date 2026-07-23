@@ -4,13 +4,13 @@ import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { requireAdmin } from '@/lib/admin-auth';
+import { AD_STUDIO_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const ALLOWED_REELS = new Set(['creator', 'mrbeast', 'companies', 'intermediate', 'capacity', 'audience']);
 const COLORS: Record<string, string> = { pink: '&H00C84FFF', yellow: '&H0000FFFF', green: '&H005AF421', purple: '&H00F755A8' };
-const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
 
 function clean(value: FormDataEntryValue | null, max: number) {
   return String(value || '').replace(/[\r\n]+/g, ' ').trim().slice(0, max);
@@ -71,9 +71,17 @@ export async function POST(request: Request) {
     const upload = form.get('file');
     let inputPath: string;
     if (upload instanceof File && upload.size > 0) {
-      if (upload.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: 'Uploaded footage must be under 300 MB' }, { status: 413 });
+      if (upload.size > AD_STUDIO_MAX_UPLOAD_BYTES) return NextResponse.json({ error: 'Uploaded footage must be under 300 MB' }, { status: 413 });
+      if (!isAllowedAdStudioUpload(upload)) {
+        return NextResponse.json({ error: 'Choose an OBS video in MP4, MOV, WebM, MKV, or FLV format.' }, { status: 415 });
+      }
       inputPath = path.join(workdir, 'input-video');
       await writeFile(inputPath, Buffer.from(await upload.arrayBuffer()));
+      try {
+        await run('ffmpeg', ['-v', 'error', '-i', inputPath, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-']);
+      } catch {
+        return NextResponse.json({ error: 'This recording does not contain a readable video stream. Try remuxing it to MP4 in OBS.' }, { status: 415 });
+      }
     } else {
       if (!ALLOWED_REELS.has(reel)) return NextResponse.json({ error: 'Choose valid footage' }, { status: 400 });
       inputPath = path.join(process.cwd(), 'public', 'hero-reels', `${reel}.mp4`);

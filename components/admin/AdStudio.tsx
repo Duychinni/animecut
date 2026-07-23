@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { AD_STUDIO_MAX_UPLOAD_BYTES, AD_STUDIO_UPLOAD_ACCEPT, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
 
 const REELS = [
   ['creator', 'Creator Will'],
@@ -73,6 +74,25 @@ export function AdStudio() {
     setVoiceover(CONCEPTS[next].voiceover);
   }
 
+  function chooseFile(nextFile: File | null) {
+    setError('');
+    if (!nextFile) {
+      setFile(null);
+      return;
+    }
+    if (!isAllowedAdStudioUpload(nextFile)) {
+      setFile(null);
+      setError('Choose an OBS video in MP4, MOV, WebM, MKV, or FLV format.');
+      return;
+    }
+    if (nextFile.size > AD_STUDIO_MAX_UPLOAD_BYTES) {
+      setFile(null);
+      setError('Uploaded footage must be under 300 MB.');
+      return;
+    }
+    setFile(nextFile);
+  }
+
   async function renderAd() {
     setBusy(true);
     setError('');
@@ -136,7 +156,8 @@ export function AdStudio() {
               </select>
             </Field>
             <Field label="Or upload footage">
-              <input type="file" accept="video/mp4,video/quicktime,video/webm" onChange={(event) => setFile(event.target.files?.[0] || null)} className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white/65 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-black" />
+              <input type="file" accept={AD_STUDIO_UPLOAD_ACCEPT} onChange={(event) => chooseFile(event.target.files?.[0] || null)} className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white/65 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-black" />
+              <p className="mt-2 text-xs leading-5 text-white/40">OBS MP4, MOV, WebM, MKV, or FLV · maximum 300 MB</p>
               {file ? <button type="button" onClick={() => setFile(null)} className="mt-2 text-xs text-white/50 underline">Use a permanent reel instead</button> : null}
             </Field>
           </div>
