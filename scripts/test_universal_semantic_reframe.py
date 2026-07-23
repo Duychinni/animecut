@@ -187,7 +187,7 @@ def test_reaction_face_does_not_steal_active_speaker():
     assert speaker_centering_error(result, [speaker['cx']] * 16) < 0.12, result
 
 
-def test_sustained_two_person_exchange_uses_stable_vertical_stack():
+def test_sustained_two_person_exchange_keeps_one_person_framed():
     left = box(120, 130, 380, 780, 1, 0.92)
     right = box(1420, 130, 380, 780, 2, 0.92)
     samples = []
@@ -200,11 +200,9 @@ def test_sustained_two_person_exchange_uses_stable_vertical_stack():
             [left, right], active, 0.92, 0.55,
         ))
     result = timeline(samples)
-    stacked = [segment for segment in result if segment['mode'] == 'stacked']
-    assert stacked, result
-    assert all(segment.get('renderBranch') == 'stacked_conversation' for segment in stacked), result
-    assert all(segment.get('topTrackId') == 1 and segment.get('bottomTrackId') == 2 for segment in stacked), result
-    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in stacked), result
+    assert result, result
+    assert all(segment['mode'] == 'single' for segment in result), result
+    assert all(segment.get('subjectStableId') in ('face:1', 'face:2') for segment in result), result
 
 
 def test_visible_listener_does_not_force_vertical_stack():
@@ -324,7 +322,7 @@ def test_speaking_reel_rejects_mid_clip_empty_stage_fallback():
     assert reason == 'sustained_unframed_speaking_subject'
 
 
-def test_one_confirmed_exchange_enters_stack_then_returns_to_single():
+def test_one_confirmed_exchange_always_keeps_one_person_framed():
     left = box(130, 140, 360, 740, 1, 0.92)
     right = box(1430, 140, 360, 740, 2, 0.92)
     samples = []
@@ -345,8 +343,8 @@ def test_one_confirmed_exchange_enters_stack_then_returns_to_single():
             [left, right], 2, 0.92, 0.55, audio_activity=0.75,
         ))
     result = timeline(samples, duration=7.0)
-    assert any(segment.get('renderBranch') == 'stacked_conversation' for segment in result), result
-    assert result[-1]['mode'] == 'single', result
+    assert all(segment['mode'] == 'single' for segment in result), result
+    assert all(segment.get('subjectStableId') in ('face:1', 'face:2') for segment in result), result
     assert result[-1].get('subjectStableId') == 'face:2', result
 
 

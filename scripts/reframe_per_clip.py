@@ -1139,18 +1139,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and loses_context_in_single
             and stacked_score >= single_score + STACK_SCORE_MARGIN
         )
-        # Opus-style conversational rhythm: once both stable participants have
-        # taken a turn, preserve them in top/bottom panes for the active
-        # exchange. The rolling turn window naturally releases back to a close
-        # single-person crop when one person resumes a monologue.
-        active_exchange = STACK_LAYOUT_ENABLED and (
-            visual_pair is not None
-            and two_stable_speakers
-            and both_actively_participating
-            and participation_balance >= 0.30
-            and recent_switches >= 1
-        )
-
         subject_height_ratio = (
             float(selected.get('h', 0)) / max(source_h, 1.0)
             if selected is not None
@@ -1239,17 +1227,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif silence_state in ('widen', 'lock'):
             desired_mode = 'wide_context'
             fixed_render_branch = f'silence_{silence_state}_safe_full_frame'
-        elif (
-            (stack_eligible or active_exchange)
-            and visual_pair is not None
-            and not fixed_confident
-        ):
-            # A sustained, balanced exchange is composed like a deliberate
-            # interview: stable left participant on top, stable right
-            # participant on bottom. Do this before active-speaker routing so
-            # the renderer does not keep panning or jump-cutting every turn.
-            desired_mode = 'stacked'
-            fixed_render_branch = 'stacked_conversation'
         elif fixed_confident:
             desired_mode = 'single'
             fixed_render_branch = f'active_speaker_{fixed_active_panel}'
@@ -1271,11 +1248,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             # confirms a speaker switch.
             desired_mode = 'single'
             fixed_render_branch = 'single_subject_uncertain'
-        elif fixed_two_panel and visual_pair is not None and (
-            stack_eligible or active_exchange or selected is None
-        ):
-            desired_mode = 'stacked'
-            fixed_render_branch = 'stacked_uncertain'
         elif fixed_two_panel:
             desired_mode = 'wide_context'
             fixed_render_branch = 'safe_full_frame'
@@ -1317,9 +1289,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif wide_context_trigger:
             desired_mode = 'wide_context'
             fixed_render_branch = 'safe_full_frame'
-        elif stack_eligible:
-            desired_mode = 'stacked'
-            fixed_render_branch = 'stacked_uncertain'
         else:
             desired_mode = 'single'
             fixed_render_branch = 'single_subject'
