@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { accessSync, constants } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -35,8 +36,13 @@ function run(command: string, args: string[]) {
 
 function mediaCommand() {
   if (process.env.FFMPEG_PATH?.trim()) return process.env.FFMPEG_PATH.trim();
-  if (process.env.VERCEL) return path.join(process.cwd(), 'public', 'bin', 'ffmpeg');
-  return ffmpegPath || 'ffmpeg';
+  const bundledPath = path.join(process.cwd(), 'public', 'bin', 'ffmpeg');
+  try {
+    accessSync(bundledPath, constants.X_OK);
+    return bundledPath;
+  } catch {
+    return ffmpegPath || 'ffmpeg';
+  }
 }
 
 function subtitleFile(hook: string, support: string, cta: string, accent: string, duration: number) {
