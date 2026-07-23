@@ -16,6 +16,8 @@ SAFE_EDGE_MARGIN_X = 0.10
 FACE_SOURCE_EDGE_MARGIN_RATIO = 0.012
 FACE_SOURCE_TOP_MARGIN_RATIO = 0.008
 UNSAFE_FACE_REJECT_RATIO = 0.35
+UNSAFE_OPENING_SEC = 1.25
+UNSAFE_SPEECH_CONTEXT_SEC = 1.50
 MOTION_MIN_AREA_RATIO = 0.0035
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_WINDOW_SEC = 0.18
@@ -79,6 +81,70 @@ def face_source_completeness(face, source_w: float, source_h: float) -> float:
 
 def face_is_complete_in_source(face, source_w: float, source_h: float) -> bool:
     return face_source_completeness(face, source_w, source_h) >= 1.0
+
+
+def visual_usability(points, timeline):
+    """Reject shorts that open on, or sustain, unusable context during speech.
+
+    A full-source fallback can avoid cutting a face while still producing a
+    terrible vertical reel: tiny people around an empty set, furniture, or a
+    divider. Those frames are acceptable only for a deliberate long silence.
+    """
+    if not points:
+        return False, 'no_visual_samples'
+
+    def point_is_speaking(point):
+        return float(point.get('audio_activity', 0.0)) >= SILENCE_AUDIO_THRESHOLD
+
+    def segment_at(timestamp):
+        return next(
+            (
+                segment for segment in timeline
+                if float(segment.get('start', 0.0)) - 0.001
+                <= timestamp
+                <= float(segment.get('end', 0.0)) + 0.001
+            ),
+            None,
+        )
+
+    unsafe_speech_times = []
+    unsafe_opening_times = []
+    for point in points:
+        timestamp = float(point.get('t', 0.0))
+        segment = segment_at(timestamp)
+        unsafe_context = bool(
+            segment
+            and segment.get('mode') == 'wide_context'
+            and segment.get('wideKind') != 'broll'
+        )
+        if not unsafe_context or not point_is_speaking(point):
+            continue
+        unsafe_speech_times.append(timestamp)
+        if timestamp <= UNSAFE_OPENING_SEC:
+            unsafe_opening_times.append(timestamp)
+
+    analysis_rate = max(
+        1.0,
+        len(points) / max(0.25, float(points[-1].get('t', 0.0)) - float(points[0].get('t', 0.0)) + 0.25),
+    )
+    if len(unsafe_opening_times) >= max(2, math.ceil(analysis_rate * 0.50)):
+        return False, 'unframed_speaking_subject_at_open'
+
+    longest_run = 0
+    current_run = 0
+    previous_time = None
+    max_gap = 1.5 / analysis_rate
+    for timestamp in unsafe_speech_times:
+        if previous_time is not None and timestamp - previous_time <= max_gap:
+            current_run += 1
+        else:
+            current_run = 1
+        longest_run = max(longest_run, current_run)
+        previous_time = timestamp
+    if longest_run >= max(2, math.ceil(analysis_rate * UNSAFE_SPEECH_CONTEXT_SEC)):
+        return False, 'sustained_unframed_speaking_subject'
+
+    return True, None
 
 
 def box_match_score(a, b, width: float, height: float) -> float:
@@ -2616,6 +2682,13 @@ def main():
         partial_face_only_ratio >= UNSAFE_FACE_REJECT_RATIO
         and complete_face_samples == 0
     )
+    context_usable, context_reject_reason = visual_usability(points, reframe_timeline)
+    visual_clip_usable = not reject_for_partial_faces and context_usable
+    visual_reject_reason = (
+        'sustained_partial_faces_only'
+        if reject_for_partial_faces
+        else context_reject_reason
+    )
 
     result = {
         'ok': True,
@@ -2678,8 +2751,8 @@ def main():
             'partial_face_only_samples': partial_face_only_samples,
             'partial_face_only_ratio': round(partial_face_only_ratio, 4),
             'complete_face_samples': complete_face_samples,
-            'visual_clip_usable': not reject_for_partial_faces,
-            'visual_reject_reason': 'sustained_partial_faces_only' if reject_for_partial_faces else None,
+            'visual_clip_usable': visual_clip_usable,
+            'visual_reject_reason': visual_reject_reason,
             'debug_overlay_path': debug_overlay_path,
         },
         'reframe_timeline': reframe_timeline,

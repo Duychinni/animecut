@@ -7,6 +7,7 @@ from reframe_per_clip import (
     face_is_complete_in_source,
     portrait_crop_for_subject,
     semantic_subject_choice,
+    visual_usability,
 )
 
 
@@ -223,6 +224,32 @@ def test_only_half_faces_fail_closed_to_context():
     result = timeline(samples)
     assert all(segment['mode'] == 'wide_context' for segment in result), result
     assert all(segment.get('selectionReason') == 'only_partial_faces_visible' for segment in result), result
+
+
+def test_speaking_reel_cannot_open_on_empty_safe_wide():
+    points = [
+        {'t': index * 0.25, 'audio_activity': 0.65}
+        for index in range(6)
+    ]
+    timeline_result = [{
+        'start': 0.0, 'end': 1.5, 'mode': 'wide_context', 'wideKind': 'safe_wide',
+    }]
+    usable, reason = visual_usability(points, timeline_result)
+    assert not usable
+    assert reason == 'unframed_speaking_subject_at_open'
+
+
+def test_deliberate_silent_wide_context_remains_allowed():
+    points = [
+        {'t': index * 0.25, 'audio_activity': 0.0}
+        for index in range(10)
+    ]
+    timeline_result = [{
+        'start': 0.0, 'end': 2.5, 'mode': 'wide_context', 'wideKind': 'safe_wide',
+    }]
+    usable, reason = visual_usability(points, timeline_result)
+    assert usable
+    assert reason is None
 
 
 def fixed_two_region_fixture():

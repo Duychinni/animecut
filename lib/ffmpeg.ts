@@ -1012,6 +1012,8 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
         timeline_segments?: number;
         layout_mode_changes?: number;
         layout_modes?: string[];
+        visual_clip_usable?: boolean;
+        visual_reject_reason?: string | null;
       };
       detected_faces?: Array<{ faces?: Array<{ x?: number; y?: number; w?: number; h?: number }> }>;
       error?: string;
@@ -1066,6 +1068,12 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
     const candidateId = opts.debugCandidateId ?? null;
     const backendScript = script;
     let jsonSaved = false;
+
+    if (raw.meta?.visual_clip_usable === false) {
+      throw new Error(
+        `VISUAL_CLIP_UNUSABLE:${raw.meta.visual_reject_reason || 'unsafe_vertical_composition'}`,
+      );
+    }
 
     if (process.env.DEBUG_REFRAME_SAVE_JSON === 'true') {
       const debugDir = process.env.SMART_REFRAME_DEBUG_DIR?.trim() || path.join(/* turbopackIgnore: true */ process.cwd(), 'tmp', 'reframe-debug');

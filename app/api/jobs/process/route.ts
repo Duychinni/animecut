@@ -437,6 +437,10 @@ function buildFallbackExportPayload(exportId: string, extra: Record<string, unkn
 }
 
 function normalizeRenderErrorMessage(message: string) {
+  if (/VISUAL_CLIP_UNUSABLE/i.test(message)) {
+    return 'This clip was skipped because no complete speaking subject could be framed safely.';
+  }
+
   if (/Upload source file could not be read|Failed to download raw media|source_storage_path|raw media/i.test(message)) {
     return 'Upload source file could not be read yet. The render was retried automatically.';
   }
@@ -458,6 +462,7 @@ function normalizeRenderErrorMessage(message: string) {
 
 function renderFailureDiagnostics(message: string) {
   const category =
+    /VISUAL_CLIP_UNUSABLE/i.test(message) ? 'visual_quality_rejection' :
     /crop=.*(?:negative|invalid)|Invalid too big or non positive size|crop area/i.test(message) ? 'invalid_crop_coordinates' :
     /filter|filtergraph|subtitles|drawtext/i.test(message) ? 'ffmpeg_filter_graph' :
     /No such file|could not be read|download raw media|source_storage_path/i.test(message) ? 'missing_or_unreadable_input' :
@@ -1506,7 +1511,7 @@ export async function POST(req: Request) {
         && exportId
         && !isEditRerender
         && item.payload?.safe_layout_fallback !== true
-        && !['missing_or_unreadable_input', 'upload_or_storage_failure'].includes(failureDiagnostics.category),
+        && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection'].includes(failureDiagnostics.category),
       );
 
       if (safeFallbackEligible && item.jobId && exportId) {
@@ -1549,7 +1554,7 @@ export async function POST(req: Request) {
         && !isEditRerender
         && item.payload?.safe_layout_fallback === true
         && item.payload?.compatibility_fallback !== true
-        && !['missing_or_unreadable_input', 'upload_or_storage_failure'].includes(failureDiagnostics.category),
+        && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection'].includes(failureDiagnostics.category),
       );
 
       if (compatibilityFallbackEligible && item.jobId && exportId) {
