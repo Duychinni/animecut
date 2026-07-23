@@ -34,7 +34,9 @@ function run(command: string, args: string[]) {
 }
 
 function mediaCommand() {
-  return process.env.FFMPEG_PATH?.trim() || ffmpegPath || 'ffmpeg';
+  if (process.env.FFMPEG_PATH?.trim()) return process.env.FFMPEG_PATH.trim();
+  if (process.env.VERCEL) return path.join(process.cwd(), 'public', 'bin', 'ffmpeg');
+  return ffmpegPath || 'ffmpeg';
 }
 
 function subtitleFile(hook: string, support: string, cta: string, accent: string, duration: number) {

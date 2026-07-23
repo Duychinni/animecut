@@ -52,3 +52,4 @@ PRODUCTION_ROADMAP.md
 scripts/__pycache__/
 /.venv/
 /.tools/
+/public/bin/ffmpeg

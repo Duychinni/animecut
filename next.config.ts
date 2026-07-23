@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     '/api/admin/ad-studio/render': [
-      './node_modules/ffmpeg-static/ffmpeg',
+      './public/bin/ffmpeg',
       './public/hero-reels/*.mp4',
     ],
   },
