@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import { AD_STUDIO_MAX_UPLOAD_BYTES, AD_STUDIO_UPLOAD_ACCEPT, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
+import { useMemo, useState } from 'react';
+import { AdAssetLibrary } from '@/components/admin/AdAssetLibrary';
+import type { AdAsset } from '@/lib/ad-studio-assets';
 
 const REELS = [
   ['creator', 'Creator Will'],
@@ -36,13 +37,12 @@ const CONCEPTS = {
 
 type ConceptKey = keyof typeof CONCEPTS;
 type Palette = 'pink' | 'yellow' | 'green' | 'purple';
+type CompletedRender = { downloadUrl: string; fileName: string; sourceName: string };
 
 export function AdStudio() {
   const [concept, setConcept] = useState<ConceptKey>('problem');
   const [reel, setReel] = useState<(typeof REELS)[number][0]>('creator');
-  const [files, setFiles] = useState<File[]>([]);
-  const [activeFileIndex, setActiveFileIndex] = useState(0);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedAssets, setSelectedAssets] = useState<AdAsset[]>([]);
   const [hook, setHook] = useState<string>(CONCEPTS.problem.hook);
   const [support, setSupport] = useState<string>(CONCEPTS.problem.support);
   const [voiceover, setVoiceover] = useState<string>(CONCEPTS.problem.voiceover);
@@ -51,20 +51,11 @@ export function AdStudio() {
   const [palette, setPalette] = useState<Palette>('pink');
   const [campaign, setCampaign] = useState('ugc-test-01');
   const [busy, setBusy] = useState(false);
+  const [renderProgress, setRenderProgress] = useState('');
+  const [completedRenders, setCompletedRenders] = useState<CompletedRender[]>([]);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const file = files[activeFileIndex];
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [files, activeFileIndex]);
-
-  const sourceUrl = previewUrl || `/hero-reels/${reel}.mp4`;
+  const sourceUrl = selectedAssets[0]?.previewUrl || `/hero-reels/${reel}.mp4`;
   const accent = useMemo(() => ({
     pink: '#ff4fc8', yellow: '#ffff00', green: '#21f45a', purple: '#a855f7',
   })[palette], [palette]);
@@ -76,35 +67,16 @@ export function AdStudio() {
     setVoiceover(CONCEPTS[next].voiceover);
   }
 
-  function chooseFiles(nextFiles: File[]) {
-    setError('');
-    if (nextFiles.length === 0) {
-      setFiles([]);
-      setActiveFileIndex(0);
-      return;
-    }
-    const invalid = nextFiles.find((nextFile) => !isAllowedAdStudioUpload(nextFile));
-    if (invalid) {
-      setFiles([]);
-      setError('Choose OBS videos in MP4, MOV, WebM, MKV, or FLV format.');
-      return;
-    }
-    const oversized = nextFiles.find((nextFile) => nextFile.size > AD_STUDIO_MAX_UPLOAD_BYTES);
-    if (oversized) {
-      setFiles([]);
-      setError(`Each uploaded video must be under 300 MB. ${oversized.name} is too large.`);
-      return;
-    }
-    setFiles(nextFiles);
-    setActiveFileIndex(0);
-  }
-
   async function renderAd() {
     setBusy(true);
     setError('');
+    setCompletedRenders([]);
+    setRenderProgress('');
     try {
-      const sources: Array<File | null> = files.length > 0 ? files : [null];
-      for (const [index, file] of sources.entries()) {
+      const sources: Array<AdAsset | null> = selectedAssets.length > 0 ? selectedAssets : [null];
+      const completed: CompletedRender[] = [];
+      for (const [index, asset] of sources.entries()) {
+        setRenderProgress(`Rendering ${index + 1} of ${sources.length}: ${asset?.name || 'Permanent reel'}`);
         const body = new FormData();
         body.set('concept', concept);
         body.set('reel', reel);
@@ -114,26 +86,30 @@ export function AdStudio() {
         body.set('duration', duration);
         body.set('palette', palette);
         body.set('campaign', campaign);
-        if (file) body.set('file', file);
+        if (asset) body.set('assetPath', asset.path);
         const response = await fetch('/api/admin/ad-studio/render', { method: 'POST', body });
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          throw new Error(`${file?.name || 'Permanent reel'}: ${payload?.error || 'Could not render the ad'}`);
+          throw new Error(`${asset?.name || 'Permanent reel'}: ${payload?.error || 'Could not render the ad'}`);
         }
         const payload = await response.json() as { downloadUrl?: string; fileName?: string };
-        if (!payload.downloadUrl) throw new Error(`${file?.name || 'Permanent reel'}: Render completed without a download link`);
-        const anchor = document.createElement('a');
-        const sourceName = file?.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'reel';
-        anchor.href = payload.downloadUrl;
-        anchor.download = payload.fileName || `animacut-${campaign || 'ad'}-${sourceName}-${index + 1}.mp4`;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
+        if (!payload.downloadUrl) throw new Error(`${asset?.name || 'Permanent reel'}: Render completed without a download link`);
+        const sourceName = asset?.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'reel';
+        completed.push({
+          downloadUrl: payload.downloadUrl,
+          fileName: payload.fileName || `animacut-${campaign || 'ad'}-${sourceName}-${index + 1}.mp4`,
+          sourceName: asset?.name || 'Permanent reel',
+        });
+        setCompletedRenders([...completed]);
+      }
+      if (completed.length === 1) {
+        window.location.assign(completed[0].downloadUrl);
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not render the ad');
     } finally {
       setBusy(false);
+      setRenderProgress('');
     }
   }
 
@@ -148,6 +124,15 @@ export function AdStudio() {
         <span className="rounded-full border border-[#21f45a]/25 bg-[#21f45a]/10 px-3 py-1.5 text-xs font-bold text-[#7dff9c]">Admin only</span>
       </div>
 
+      <AdAssetLibrary
+        selectedPaths={selectedAssets.map((asset) => asset.path)}
+        onSelectionChange={(assets) => {
+          setSelectedAssets(assets);
+          setCompletedRenders([]);
+          setError('');
+        }}
+      />
+
       <div className="mt-8 grid gap-7 lg:grid-cols-[minmax(0,1fr)_390px]">
         <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 sm:p-7">
           <div className="grid gap-6 sm:grid-cols-2">
@@ -160,24 +145,15 @@ export function AdStudio() {
               <input value={campaign} onChange={(event) => setCampaign(event.target.value)} className={controlClass} maxLength={48} />
             </Field>
             <Field label="Footage">
-              <select value={reel} disabled={files.length > 0} onChange={(event) => setReel(event.target.value as typeof reel)} className={controlClass}>
+              <select value={reel} disabled={selectedAssets.length > 0} onChange={(event) => setReel(event.target.value as typeof reel)} className={controlClass}>
                 {REELS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </Field>
-            <Field label="Or upload footage">
-              <input type="file" multiple accept={AD_STUDIO_UPLOAD_ACCEPT} onChange={(event) => chooseFiles(Array.from(event.target.files || []))} className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white/65 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-black" />
-              <p className="mt-2 text-xs leading-5 text-white/40">Select multiple OBS videos · MP4, MOV, WebM, MKV, or FLV · maximum 300 MB each</p>
-              {files.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs font-semibold text-white/65">{files.length} video{files.length === 1 ? '' : 's'} selected</p>
-                  <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto">
-                    {files.map((selectedFile, index) => (
-                      <button key={`${selectedFile.name}-${selectedFile.lastModified}`} type="button" onClick={() => setActiveFileIndex(index)} className={`max-w-full truncate rounded-lg border px-2.5 py-1.5 text-xs ${index === activeFileIndex ? 'border-[#ff63c3]/70 bg-[#ff63c3]/15 text-white' : 'border-white/10 text-white/50'}`}>{selectedFile.name}</button>
-                    ))}
-                  </div>
-                  <button type="button" onClick={() => chooseFiles([])} className="text-xs text-white/50 underline">Use a permanent reel instead</button>
-                </div>
-              ) : null}
+            <Field label="Selected library footage">
+              <p className="rounded-xl border border-white/10 bg-black/25 px-3.5 py-3 text-sm text-white/60">
+                {selectedAssets.length > 0 ? `${selectedAssets.length} saved asset${selectedAssets.length === 1 ? '' : 's'} selected above` : 'No saved assets selected; using the permanent reel'}
+              </p>
+              {selectedAssets.length > 0 ? <button type="button" onClick={() => setSelectedAssets([])} className="mt-2 text-xs text-white/50 underline">Use a permanent reel instead</button> : null}
             </Field>
           </div>
 
@@ -204,8 +180,26 @@ export function AdStudio() {
           </div>
 
           {error ? <p className="mt-5 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</p> : null}
+          {renderProgress ? <p className="mt-5 text-sm font-semibold text-white/65">{renderProgress}</p> : null}
+          {completedRenders.length > 1 ? (
+            <div className="mt-5 rounded-2xl border border-[#21f45a]/25 bg-[#21f45a]/10 p-4">
+              <p className="text-sm font-bold text-[#9affb1]">Your rendered ads are ready</p>
+              <div className="mt-3 grid gap-2">
+                {completedRenders.map((render, index) => (
+                  <a
+                    key={render.downloadUrl}
+                    href={render.downloadUrl}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white transition hover:border-white/25 hover:bg-black/40"
+                  >
+                    <span className="truncate">{index + 1}. {render.sourceName}</span>
+                    <span className="shrink-0 font-bold text-[#9affb1]">Download MP4</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <button type="button" disabled={busy || !hook.trim() || !cta.trim()} onClick={renderAd} className="mt-7 w-full rounded-2xl bg-white px-5 py-3.5 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50">
-            {busy ? `Rendering ${files.length > 1 ? `${files.length} MP4s` : 'MP4'}…` : files.length > 1 ? `Render and download ${files.length} MP4s` : 'Render and download MP4'}
+            {busy ? `Rendering ${selectedAssets.length > 1 ? `${selectedAssets.length} MP4s` : 'MP4'}…` : selectedAssets.length > 1 ? `Render ${selectedAssets.length} MP4s` : 'Render and download MP4'}
           </button>
         </section>
 
