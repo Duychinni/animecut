@@ -5,7 +5,7 @@ import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upl
 import { readJsonSafe } from '@/lib/safe-json';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { captureEvent } from '@/lib/analytics';
-import { SOURCE_UPLOAD_LIMIT_LABEL, sourceUploadSizeError } from '@/lib/upload-limits';
+import { isUploadLimitError, sourceUploadSizeError } from '@/lib/upload-limits';
 
 type ProjectCreatedPayload = {
   id: string;
@@ -246,8 +246,6 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
         </div>
 
         <p className="mt-2 max-w-[520px] text-center text-[11px] leading-4 text-white/45">
-          {SOURCE_UPLOAD_LIMIT_LABEL}
-          <br />
           By continuing, you confirm you have permission to use this content.
         </p>
 
@@ -261,7 +259,11 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
             </div>
           </div>
         ) : null}
-        {msg ? <p className="mt-2 text-xs text-white/60">{msg}</p> : null}
+        {msg ? (
+          <p className={`mt-2 text-xs ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/60'}`}>
+            {msg}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -303,8 +305,6 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       </div>
 
       <p className="mt-3 text-xs leading-5 text-white/50">
-        {SOURCE_UPLOAD_LIMIT_LABEL}
-        <br />
         By continuing, you confirm you have permission to use this content.
       </p>
 
@@ -319,7 +319,11 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
         </div>
       ) : null}
 
-      {msg ? <p className="mt-3 text-sm text-white/70">{msg}</p> : null}
+      {msg ? (
+        <p className={`mt-3 text-sm ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/70'}`}>
+          {msg}
+        </p>
+      ) : null}
     </div>
   );
 }
