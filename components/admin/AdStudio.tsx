@@ -40,7 +40,8 @@ type Palette = 'pink' | 'yellow' | 'green' | 'purple';
 export function AdStudio() {
   const [concept, setConcept] = useState<ConceptKey>('problem');
   const [reel, setReel] = useState<(typeof REELS)[number][0]>('creator');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [hook, setHook] = useState<string>(CONCEPTS.problem.hook);
   const [support, setSupport] = useState<string>(CONCEPTS.problem.support);
@@ -53,6 +54,7 @@ export function AdStudio() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const file = files[activeFileIndex];
     if (!file) {
       setPreviewUrl(null);
       return;
@@ -60,7 +62,7 @@ export function AdStudio() {
     const url = URL.createObjectURL(file);
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [file]);
+  }, [files, activeFileIndex]);
 
   const sourceUrl = previewUrl || `/hero-reels/${reel}.mp4`;
   const accent = useMemo(() => ({
@@ -74,53 +76,61 @@ export function AdStudio() {
     setVoiceover(CONCEPTS[next].voiceover);
   }
 
-  function chooseFile(nextFile: File | null) {
+  function chooseFiles(nextFiles: File[]) {
     setError('');
-    if (!nextFile) {
-      setFile(null);
+    if (nextFiles.length === 0) {
+      setFiles([]);
+      setActiveFileIndex(0);
       return;
     }
-    if (!isAllowedAdStudioUpload(nextFile)) {
-      setFile(null);
-      setError('Choose an OBS video in MP4, MOV, WebM, MKV, or FLV format.');
+    const invalid = nextFiles.find((nextFile) => !isAllowedAdStudioUpload(nextFile));
+    if (invalid) {
+      setFiles([]);
+      setError('Choose OBS videos in MP4, MOV, WebM, MKV, or FLV format.');
       return;
     }
-    if (nextFile.size > AD_STUDIO_MAX_UPLOAD_BYTES) {
-      setFile(null);
-      setError('Uploaded footage must be under 300 MB.');
+    const oversized = nextFiles.find((nextFile) => nextFile.size > AD_STUDIO_MAX_UPLOAD_BYTES);
+    if (oversized) {
+      setFiles([]);
+      setError(`Each uploaded video must be under 300 MB. ${oversized.name} is too large.`);
       return;
     }
-    setFile(nextFile);
+    setFiles(nextFiles);
+    setActiveFileIndex(0);
   }
 
   async function renderAd() {
     setBusy(true);
     setError('');
     try {
-      const body = new FormData();
-      body.set('concept', concept);
-      body.set('reel', reel);
-      body.set('hook', hook);
-      body.set('support', support);
-      body.set('cta', cta);
-      body.set('duration', duration);
-      body.set('palette', palette);
-      body.set('campaign', campaign);
-      if (file) body.set('file', file);
-      const response = await fetch('/api/admin/ad-studio/render', { method: 'POST', body });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || 'Could not render the ad');
+      const sources: Array<File | null> = files.length > 0 ? files : [null];
+      for (const [index, file] of sources.entries()) {
+        const body = new FormData();
+        body.set('concept', concept);
+        body.set('reel', reel);
+        body.set('hook', hook);
+        body.set('support', support);
+        body.set('cta', cta);
+        body.set('duration', duration);
+        body.set('palette', palette);
+        body.set('campaign', campaign);
+        if (file) body.set('file', file);
+        const response = await fetch('/api/admin/ad-studio/render', { method: 'POST', body });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(`${file?.name || 'Permanent reel'}: ${payload?.error || 'Could not render the ad'}`);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        const sourceName = file?.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'reel';
+        anchor.href = url;
+        anchor.download = `animacut-${campaign || 'ad'}-${sourceName}-${index + 1}.mp4`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
       }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `animacut-${campaign || 'ad'}.mp4`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not render the ad');
     } finally {
@@ -151,14 +161,24 @@ export function AdStudio() {
               <input value={campaign} onChange={(event) => setCampaign(event.target.value)} className={controlClass} maxLength={48} />
             </Field>
             <Field label="Footage">
-              <select value={reel} disabled={Boolean(file)} onChange={(event) => setReel(event.target.value as typeof reel)} className={controlClass}>
+              <select value={reel} disabled={files.length > 0} onChange={(event) => setReel(event.target.value as typeof reel)} className={controlClass}>
                 {REELS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
             </Field>
             <Field label="Or upload footage">
-              <input type="file" accept={AD_STUDIO_UPLOAD_ACCEPT} onChange={(event) => chooseFile(event.target.files?.[0] || null)} className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white/65 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-black" />
-              <p className="mt-2 text-xs leading-5 text-white/40">OBS MP4, MOV, WebM, MKV, or FLV · maximum 300 MB</p>
-              {file ? <button type="button" onClick={() => setFile(null)} className="mt-2 text-xs text-white/50 underline">Use a permanent reel instead</button> : null}
+              <input type="file" multiple accept={AD_STUDIO_UPLOAD_ACCEPT} onChange={(event) => chooseFiles(Array.from(event.target.files || []))} className="block w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-white/65 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-black" />
+              <p className="mt-2 text-xs leading-5 text-white/40">Select multiple OBS videos · MP4, MOV, WebM, MKV, or FLV · maximum 300 MB each</p>
+              {files.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-semibold text-white/65">{files.length} video{files.length === 1 ? '' : 's'} selected</p>
+                  <div className="flex max-h-28 flex-wrap gap-2 overflow-y-auto">
+                    {files.map((selectedFile, index) => (
+                      <button key={`${selectedFile.name}-${selectedFile.lastModified}`} type="button" onClick={() => setActiveFileIndex(index)} className={`max-w-full truncate rounded-lg border px-2.5 py-1.5 text-xs ${index === activeFileIndex ? 'border-[#ff63c3]/70 bg-[#ff63c3]/15 text-white' : 'border-white/10 text-white/50'}`}>{selectedFile.name}</button>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => chooseFiles([])} className="text-xs text-white/50 underline">Use a permanent reel instead</button>
+                </div>
+              ) : null}
             </Field>
           </div>
 
@@ -186,7 +206,7 @@ export function AdStudio() {
 
           {error ? <p className="mt-5 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</p> : null}
           <button type="button" disabled={busy || !hook.trim() || !cta.trim()} onClick={renderAd} className="mt-7 w-full rounded-2xl bg-white px-5 py-3.5 text-sm font-black text-black transition hover:-translate-y-0.5 hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50">
-            {busy ? 'Rendering MP4…' : 'Render and download MP4'}
+            {busy ? `Rendering ${files.length > 1 ? `${files.length} MP4s` : 'MP4'}…` : files.length > 1 ? `Render and download ${files.length} MP4s` : 'Render and download MP4'}
           </button>
         </section>
 
