@@ -171,6 +171,41 @@ def test_reaction_face_does_not_steal_active_speaker():
     assert speaker_centering_error(result, [speaker['cx']] * 16) < 0.12, result
 
 
+def test_sustained_two_person_exchange_uses_stable_vertical_stack():
+    left = box(120, 130, 380, 780, 1, 0.92)
+    right = box(1420, 130, 380, 780, 2, 0.92)
+    samples = []
+    for index in range(32):
+        active = 1 if (index // 4) % 2 == 0 else 2
+        active_box = left if active == 1 else right
+        samples.append(sample(
+            index * 0.25,
+            subject('face', active_box, f'face:{active}', 0.92),
+            [left, right], active, 0.92, 0.55,
+        ))
+    result = timeline(samples)
+    stacked = [segment for segment in result if segment['mode'] == 'stacked']
+    assert stacked, result
+    assert all(segment.get('renderBranch') == 'stacked_conversation' for segment in stacked), result
+    assert all(segment.get('topTrackId') == 1 and segment.get('bottomTrackId') == 2 for segment in stacked), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in stacked), result
+
+
+def test_visible_listener_does_not_force_vertical_stack():
+    speaker = box(120, 130, 380, 780, 1, 0.94)
+    listener = box(1420, 130, 380, 780, 2, 0.18)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', speaker, 'face:1', 0.94),
+            [speaker, listener], 1, 0.94, 0.62,
+        )
+        for index in range(32)
+    ]
+    result = timeline(samples)
+    assert all(segment['mode'] != 'stacked' for segment in result), result
+
+
 def test_source_edge_half_face_is_not_complete():
     half_face = box(0, 160, 210, 560, 1, 0.95)
     complete_face = box(1320, 150, 330, 700, 2, 0.55)

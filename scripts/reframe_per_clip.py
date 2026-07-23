@@ -1037,7 +1037,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         )
         rapid_alternation = recent_switches >= STACK_MIN_RAPID_SWITCHES
         reaction_matters = len(reaction_samples) >= 2
-        loses_context_in_single = rapid_alternation and participation_balance >= 0.45 and reaction_matters
+        # Back-and-forth speech is enough reason to preserve both participants.
+        # Requiring visible reaction-mouth motion made the stacked renderer
+        # effectively unreachable for normal interviews where the listener is
+        # attentive but still.
+        loses_context_in_single = rapid_alternation and participation_balance >= 0.45
 
         turn_score = clamp(recent_switches / 3.0, 0.0, 1.0)
         reaction_score = clamp(len(reaction_samples) / 3.0, 0.0, 1.0)
@@ -1054,7 +1058,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             two_stable_speakers
             and both_actively_participating
             and both_meaningful
-            and reaction_matters
             and rapid_alternation
             and loses_context_in_single
             and stacked_score >= single_score + STACK_SCORE_MARGIN
@@ -1148,6 +1151,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif silence_state in ('widen', 'lock'):
             desired_mode = 'wide_context'
             fixed_render_branch = f'silence_{silence_state}_safe_full_frame'
+        elif stack_eligible and visual_pair is not None:
+            # A sustained, balanced exchange is composed like a deliberate
+            # interview: stable left participant on top, stable right
+            # participant on bottom. Do this before active-speaker routing so
+            # the renderer does not keep panning or jump-cutting every turn.
+            desired_mode = 'stacked'
+            fixed_render_branch = 'stacked_conversation'
         elif fixed_confident:
             desired_mode = 'single'
             fixed_render_branch = f'active_speaker_{fixed_active_panel}'
@@ -1287,10 +1297,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         }
         layout_pair_ids = tuple(
             int(face.get('track_id')) for face in sorted(
-                layout_faces[:2], key=lambda face: (
-                    0 if active_id is not None and int(face.get('track_id')) == int(active_id) else 1,
-                    float(face.get('cx', 0.0)),
-                )
+                layout_faces[:2], key=lambda face: float(face.get('cx', 0.0))
             )
         ) if len(layout_faces) == 2 else None
         primary_face = (
