@@ -1,4 +1,4 @@
-import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById } from '@/lib/caption-presets';
+import { DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, getCaptionPresetById, type CaptionFont } from '@/lib/caption-presets';
 
 export type TranscriptPhrase = {
   id: string;
@@ -16,6 +16,7 @@ export type ClipEditSettings = {
   captions_enabled: boolean;
   volume: number;
   caption_preset_id: string;
+  caption_font: CaptionFont;
   caption_font_size: number;
   caption_text_color: string;
   caption_highlight_color: string;
@@ -139,6 +140,7 @@ export function buildDefaultClipEditSettings(params: {
     captions_enabled: true,
     volume: 1,
     caption_preset_id: preset.id,
+    caption_font: preset.caption_font,
     caption_font_size: preset.captionFontSize,
     caption_text_color: preset.captionTextColor,
     caption_highlight_color: preset.captionHighlightColor,
@@ -172,6 +174,9 @@ export function normalizeClipEditSettings(raw: unknown, defaults: ClipEditSettin
     captions_enabled: row.captions_enabled !== false,
     volume: clamp(finiteNumber(row.volume, defaults.volume), 0, 2),
     caption_preset_id: preset.id,
+    caption_font: getCaptionFontById(
+      typeof row.caption_font === 'string' ? row.caption_font : defaults.caption_font,
+    ).id,
     caption_font_size: Math.round(clamp(finiteNumber(row.caption_font_size, defaults.caption_font_size), 8, 24)),
     caption_text_color: normalizeColor(row.caption_text_color, defaults.caption_text_color),
     caption_highlight_color: normalizeColor(row.caption_highlight_color, defaults.caption_highlight_color),

@@ -9,7 +9,7 @@ import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaption
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
 import { getTargetClipCount } from '@/lib/clip-policy';
-import { DEFAULT_CAPTION_PRESET_ID, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
+import { DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { resolveDefaultReelCaptionAccent, resolveDefaultReelHookPlacement } from '@/lib/reel-caption-style';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { hasSettledSuccessfulExports } from '@/lib/project-completion';
@@ -929,6 +929,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const captionStyle = useEditSettings
     ? {
         ...captionPreset,
+        caption_font: editSettings.caption_font,
+        captionFontFamily: getCaptionFontById(editSettings.caption_font).family,
         captionFontSize: editSettings.caption_font_size,
         captionTextColor: editSettings.caption_text_color,
         captionHighlightColor: editSettings.caption_highlight_color,

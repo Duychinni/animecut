@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { DEFAULT_CAPTION_PRESET_ID, type CaptionPreset } from '@/lib/caption-presets';
+import { CAPTION_FONTS, DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, type CaptionPreset } from '@/lib/caption-presets';
 import type { ClipEditSettings, TranscriptPhrase, TranscriptSegment } from '@/lib/clip-edit';
 
 type EditorData = {
@@ -235,7 +235,7 @@ function buildTranscriptChunks(phrases: TranscriptPhrase[], maxChunks = 5): Tran
 function captionPreviewStyle(preset: CaptionPreset | undefined, settings: ClipEditSettings) {
   const textColor = settings.caption_text_color || preset?.captionTextColor || '#ffffff';
   const strokeColor = preset?.captionStrokeColor || '#000000';
-  const fontFamily = preset?.captionFontFamily || 'Arial Black';
+  const fontFamily = getCaptionFontById(settings.caption_font).family;
   const fontSize = settings.caption_font_size * 2.55;
   const shadowMap: Record<string, string> = {
     'black-heavy': '0 3px 0 #000, 0 8px 18px rgba(0,0,0,.9)',
@@ -800,17 +800,21 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     if (!settings) return;
     const nextSettings: ClipEditSettings = {
       ...settings,
-      caption_preset_id: DEFAULT_CAPTION_PRESET_ID,
-      caption_font_size: 13,
-      caption_text_color: '#FFFFFF',
+      caption_preset_id: preset.id,
+      caption_font: preset.caption_font,
+      caption_font_size: preset.captionFontSize,
+      caption_text_color: preset.captionTextColor,
       caption_highlight_color: preset.captionHighlightColor,
-      caption_background: false,
-      caption_word_highlight: true,
-      caption_max_words: 2,
-      caption_position: 'lower-third',
+      caption_background: preset.captionBackgroundBox,
+      caption_word_highlight: preset.captionWordHighlight,
+      caption_max_words: preset.captionMaxWords,
+      caption_position: preset.captionPosition === 'upper' || preset.captionPosition === 'center'
+        ? preset.captionPosition
+        : 'lower-third',
+      caption_y: preset.captionPosition === 'upper' ? 0.2 : preset.captionPosition === 'center' ? 0.5 : 0.8,
     };
     setSettings(nextSettings);
-    setToast('Caption color preview updated');
+    setToast(`${preset.name} caption selected`);
   }
 
   useEffect(() => {
@@ -1461,12 +1465,46 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
               ) : captionInspectorTab === 'style' ? (
                 <div className="space-y-5">
                   <div className="space-y-2">
+                    <p className="text-xs font-black text-white/70">Templates</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {presetOptions.map((preset) => {
+                        const selected = preset.id === settings.caption_preset_id;
+                        return (
+                          <button key={preset.id} type="button" onClick={() => selectCaptionPreset(preset)} className={`min-h-20 overflow-hidden rounded-xl border p-2 text-left transition hover:border-white/35 ${selected ? 'border-cyan-300 bg-cyan-300/10 ring-1 ring-cyan-300/60' : 'border-white/10 bg-black/25'}`}>
+                            <span className="flex min-h-10 items-center justify-center rounded-lg bg-[radial-gradient(circle_at_50%_35%,#3d4654,#111318_72%)] px-1 text-center">
+                              <span
+                                className="text-[11px] font-black uppercase leading-none"
+                                style={{
+                                  color: preset.captionTextColor,
+                                  fontFamily: preset.captionFontFamily,
+                                  WebkitTextStroke: preset.captionBackgroundBox ? '0 transparent' : `1px ${preset.captionStrokeColor}`,
+                                  textShadow: preset.captionShadow.includes('glow') ? `0 0 7px ${preset.captionHighlightColor}` : '0 2px 3px #000',
+                                  background: preset.captionBackgroundBox ? '#fff' : undefined,
+                                  borderRadius: preset.captionBackgroundBox ? 4 : undefined,
+                                  padding: preset.captionBackgroundBox ? '3px 5px' : undefined,
+                                }}
+                              >
+                                MAKE <span style={{ color: preset.captionHighlightColor }}>IT</span> COUNT
+                              </span>
+                            </span>
+                            <span className="mt-1.5 block text-[10px] font-bold text-white/68">{preset.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <label className="block space-y-2">
+                    <span className="text-xs font-black text-white/70">Font</span>
+                    <select value={settings.caption_font} onChange={(event) => patchSettings({ caption_font: event.target.value as ClipEditSettings['caption_font'] })} className="w-full rounded-lg border border-white/10 bg-[#181b21] px-3 py-2.5 text-xs font-bold text-white">
+                      {CAPTION_FONTS.map((font) => <option key={font.id} value={font.id}>{font.name}</option>)}
+                    </select>
+                  </label>
+                  <div className="space-y-2">
                     <p className="text-xs font-black text-white/70">Highlight color</p>
                     <div className="flex flex-wrap gap-2">
-                      {presetOptions.map((preset) => {
-                        const selected = preset.captionHighlightColor.toLowerCase() === settings.caption_highlight_color.toLowerCase();
-                        return <button key={preset.id} type="button" onClick={() => selectCaptionPreset(preset)} className={`h-9 w-9 rounded-lg border-2 transition hover:scale-105 ${selected ? 'border-white ring-2 ring-cyan-300/70' : 'border-white/15'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={`Use ${preset.name} highlight color`} />;
-                      })}
+                      {['#FFFF00', '#21F45A', '#5DE4FF', '#FF4FD8', '#A855F7', '#FF3B30', '#FFFFFF'].map((color) => (
+                        <button key={color} type="button" onClick={() => patchSettings({ caption_highlight_color: color })} className={`h-8 w-8 rounded-lg border-2 ${settings.caption_highlight_color.toLowerCase() === color.toLowerCase() ? 'border-white ring-2 ring-cyan-300/70' : 'border-white/15'}`} style={{ backgroundColor: color }} aria-label={`Use ${color} highlight`} />
+                      ))}
                     </div>
                   </div>
                   <label className="block space-y-2">

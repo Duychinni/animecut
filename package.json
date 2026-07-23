@@ -22,7 +22,8 @@
     "phase1:check": "python -m unittest scripts/test_phase1_diarization.py && node scripts/validate_phase1_migrations.mjs",
     "previews:backfill": "node --env-file-if-exists=.env.local scripts/backfill-export-previews.mjs",
     "launch:check": "node scripts/launch-readiness.mjs",
-    "plans:test": "npx tsx scripts/test_plan_entitlements.ts"
+    "plans:test": "npx tsx scripts/test_plan_entitlements.ts",
+    "captions:test": "npx tsx scripts/test_caption_system.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",
