@@ -14,7 +14,8 @@ test('recognizes other notable figures without requiring their name in every ree
   assert.match(hint, /Logan Paul/);
   assert.match(hint, /IShowSpeed/);
   assert.match(hint, /mix named and topic-led titles\/hooks/);
-  assert.match(hint, /never repeat a celebrity name mechanically/);
+  assert.match(hint, /repeating it mechanically/);
+  assert.match(hint, /recognition, search value, curiosity, or virality/);
 });
 
 test('does not invent a verified subject for an unrelated title', () => {

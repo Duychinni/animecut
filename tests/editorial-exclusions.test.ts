@@ -37,3 +37,30 @@ test('does not reject a meaningful payoff near the end', () => {
     totalSeconds: 3600,
   }), null);
 });
+
+test('rejects sponsor reads anywhere in the source', () => {
+  assert.equal(editorialExclusionReason({
+    text: 'A quick word from our sponsor. Use promo code ROGAN for twenty percent off at checkout.',
+    startSec: 1800,
+    endSec: 1840,
+    totalSeconds: 3600,
+  }), 'sponsor_or_promotional_break');
+});
+
+test('rejects intermissions and transition breaks anywhere in the source', () => {
+  assert.equal(editorialExclusionReason({
+    text: 'We will be right back after this break. Stay tuned for the rest of the conversation.',
+    startSec: 900,
+    endSec: 930,
+    totalSeconds: 3600,
+  }), 'recap_or_transition_break');
+});
+
+test('does not mistake a substantive discussion of taking breaks for packaging', () => {
+  assert.equal(editorialExclusionReason({
+    text: 'Taking a break from training helped me recover, and I came back stronger the next season.',
+    startSec: 900,
+    endSec: 945,
+    totalSeconds: 3600,
+  }), null);
+});

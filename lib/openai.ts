@@ -159,7 +159,9 @@ CANDIDATE GENERATION RULES:
 - End on a completed sentence, punchline, answer, or clear speaker statement. Never end mid-sentence or mid-thought.
 - Avoid openings like "And...", "So...", "But...", "Yeah..." unless absolutely necessary.
 - Reject filler-only dialogue.
-- Reject show packaging rather than editorial content: theme music, opening credits, "welcome to the show," guest introductions, sponsor reads, recaps, calls to like/subscribe/follow, sign-offs, end cards, and closing credits must never become reel candidates.
+- Reject show packaging rather than editorial content: theme music, opening credits, "welcome to the show," guest introductions, sponsor reads, promotional offers, recaps, intermissions, transition breaks, calls to like/subscribe/follow, sign-offs, end cards, and closing credits must never become reel candidates.
+- Never include an intro, outro, sponsor read, recap, long pause, dead-air break, slate, or transition just to reach the target duration. Trim it away when the substantive moment still forms a complete story; otherwise reject the candidate and choose another moment.
+- If a candidate overlaps any excluded packaging or break, do not render it. A smaller set of clean reels is better than filling the quota with weak or non-editorial footage.
 - A genuine cold open with an immediate substantive story or claim is allowed; do not reject content solely because it occurs near the beginning or end.
 - Build an OpusClip-style diverse set: each candidate must cover a distinct viral idea, not a slightly shifted version of another clip.
 - Avoid transcript overlap between candidates. If two candidates share the same setup, story beat, or payoff, keep only the stronger one.
@@ -176,7 +178,7 @@ REEL TITLE RULES:
 - Make it specific, human-readable, and grounded in the clip.
 - Name the person, topic, decision, lesson, or event discussed when the transcript makes it clear.
 - Treat names explicitly present in SOURCE METADATA as verified context. Use a recognizable person's name when they are central to this specific reel and the name materially adds clarity, discovery value, or curiosity. Do not force the same famous name into every clip from a source.
-- Across the candidate set, create a natural mix of named and topic-led titles. Unless identity itself is the story, most candidates should not repeat the same person's name in both the title and hook, and a famous name should not appear mechanically in nearly every candidate.
+- Across the candidate set, create a natural mix of named and topic-led titles. When a recognizable figure such as Joe Rogan or MrBeast is genuinely central to a clip, use that verified name in some of the strongest titles or hooks because it can improve recognition, search value, and virality. Unless identity itself is the story, most candidates should not repeat the same person's name in both the title and hook, and a famous name should not appear mechanically in nearly every candidate.
 - A source title or channel can establish who appears in the source, but do not assign an individual statement to that person unless the transcript or source metadata supports it.
 - Use 4-10 words in title case or sentence case.
 - Avoid invented drama, hashtags, emojis, quotation marks, and all-caps.
@@ -194,7 +196,7 @@ REEL HOOK TEXT RULES:
 - Use curiosity, conflict, surprise, emotion, stakes, or an unresolved question from the actual dialogue.
 - Keep it grounded in the transcript. Do not invent facts, names, outcomes, or drama.
 - Every factual word in the hook must be supported by the reel transcript, even when the wording is lightly tightened.
-- A recognizable name from SOURCE METADATA may be used when that person is central to the reel, the hook remains accurate, and the name makes the hook stronger than the underlying idea alone. Do not force a celebrity name into every hook.
+- A recognizable name from SOURCE METADATA should be considered for the strongest relevant hooks when that person is central to the reel, the hook remains accurate, and the name makes the hook stronger than the underlying idea alone. Aim for occasional high-value named hooks across a reel set, not zero and not every clip. Do not force a celebrity name into unrelated hooks.
 - The hook must make sense before the video starts; reject fragments that only make sense after hearing the previous sentence.
 - Prefer specificity over vague hype. Numbers, concrete stakes, named conflicts, and surprising outcomes beat phrases such as "This Is Crazy".
 - Keep it short enough for a 9:16 title card: 3-9 words, max 42 characters.
