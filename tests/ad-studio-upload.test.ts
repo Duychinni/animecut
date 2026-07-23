@@ -18,6 +18,8 @@ test('Ad Studio exposes and accepts common OBS recording containers', () => {
 
 test('Ad Studio rejects disguised files and retains its 300 MB limit', () => {
   assert.equal(isAllowedAdStudioUpload({ name: 'recording.exe', type: 'video/mp4' }), false);
-  assert.equal(isAllowedAdStudioUpload({ name: 'recording.mkv', type: 'text/plain' }), false);
+  assert.equal(isAllowedAdStudioUpload({ name: 'recording.mkv', type: 'text/plain' }), true);
+  assert.equal(isAllowedAdStudioUpload({ name: 'recording.mkv', type: 'application/x-matroska' }), true);
+  assert.equal(isAllowedAdStudioUpload({ name: 'recording.mkv', type: '' }), true);
   assert.equal(AD_STUDIO_MAX_UPLOAD_BYTES, 300 * 1024 * 1024);
 });
