@@ -6,6 +6,7 @@ import path from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
 import { requireAdmin } from '@/lib/admin-auth';
 import { AD_STUDIO_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
+import { createExportDownloadUrl, uploadExportObject } from '@/lib/storage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,7 +62,8 @@ Dialogue: 1,0:00:${ctaStart},${end},CTA,,0,0,0,,${assText(cta)}
 }
 
 export async function POST(request: Request) {
-  if (!await requireAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const adminUser = await requireAdmin();
+  if (!adminUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const workdir = await mkdtemp(path.join(tmpdir(), 'animacut-ad-'));
   try {
     const form = await request.formData();
@@ -70,6 +72,7 @@ export async function POST(request: Request) {
     const cta = clean(form.get('cta'), 40);
     const reel = clean(form.get('reel'), 30);
     const palette = clean(form.get('palette'), 20);
+    const campaign = clean(form.get('campaign'), 48).replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'ad';
     const requestedDuration = Number(form.get('duration'));
     const duration = [15, 20, 25].includes(requestedDuration) ? requestedDuration : 15;
     if (!hook || !cta) return NextResponse.json({ error: 'Hook and CTA are required' }, { status: 400 });
@@ -105,14 +108,16 @@ export async function POST(request: Request) {
       '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '30',
       '-c:a', 'aac', '-b:a', '160k', '-af', `apad=pad_dur=${duration}`, '-movflags', '+faststart', '-shortest', outputPath,
     ]);
+    // Vercel function responses are limited to a few megabytes, while a
+    // campaign-ready ad is commonly 8–20 MB. Put the completed render in the
+    // existing private exports bucket and return a short-lived download URL.
     const bytes = await readFile(outputPath);
-    return new NextResponse(bytes, {
-      headers: {
-        'Content-Type': 'video/mp4',
-        'Content-Disposition': 'attachment; filename="animacut-ad.mp4"',
-        'Cache-Control': 'no-store',
-      },
-    });
+    const renderId = crypto.randomUUID();
+    const objectPath = `ad-studio/${adminUser.id}/${campaign}/${renderId}.mp4`;
+    const fileName = `animacut-${campaign}-${renderId.slice(0, 8)}.mp4`;
+    await uploadExportObject(objectPath, bytes);
+    const downloadUrl = await createExportDownloadUrl(objectPath, fileName, 60 * 60);
+    return NextResponse.json({ downloadUrl, fileName }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('Ad render failed', error);
     return NextResponse.json({ error: 'Ad render failed. Check the footage and try again.' }, { status: 500 });

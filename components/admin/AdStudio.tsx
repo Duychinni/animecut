@@ -120,16 +120,15 @@ export function AdStudio() {
           const payload = await response.json().catch(() => null);
           throw new Error(`${file?.name || 'Permanent reel'}: ${payload?.error || 'Could not render the ad'}`);
         }
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        const payload = await response.json() as { downloadUrl?: string; fileName?: string };
+        if (!payload.downloadUrl) throw new Error(`${file?.name || 'Permanent reel'}: Render completed without a download link`);
         const anchor = document.createElement('a');
         const sourceName = file?.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'reel';
-        anchor.href = url;
-        anchor.download = `animacut-${campaign || 'ad'}-${sourceName}-${index + 1}.mp4`;
+        anchor.href = payload.downloadUrl;
+        anchor.download = payload.fileName || `animacut-${campaign || 'ad'}-${sourceName}-${index + 1}.mp4`;
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 30_000);
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not render the ad');

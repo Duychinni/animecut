@@ -9,7 +9,10 @@ const nextConfig: NextConfig = {
     '/*': ['.venv/**/*', 'tmp/**/*', 'outputs/**/*', '.tools/**/*'],
   },
   outputFileTracingIncludes: {
-    '/api/admin/ad-studio/render': ['./node_modules/ffmpeg-static/ffmpeg'],
+    '/api/admin/ad-studio/render': [
+      './node_modules/ffmpeg-static/ffmpeg',
+      './public/hero-reels/*.mp4',
+    ],
   },
   ...(process.env.NODE_ENV === 'development'
     ? {
