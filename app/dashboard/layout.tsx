@@ -79,9 +79,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 Dashboard
               </Link>
               {isAdmin ? (
-                <Link href="/dashboard/admin/ad-studio" className="transition hover:text-white">
-                  Ad Studio
-                </Link>
+                <>
+                  <Link href="/dashboard/admin/ad-studio" className="transition hover:text-white">
+                    Ad Studio
+                  </Link>
+                  <Link href="/dashboard/admin/framing-lab" className="transition hover:text-white">
+                    Framing Lab
+                  </Link>
+                </>
               ) : null}
             </nav>
 
