@@ -971,6 +971,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif fixed_hold:
             desired_mode = 'single'
             fixed_render_branch = f'active_speaker_{fixed_last_confident_panel}'
+        elif fixed_two_panel and selected is not None:
+            # During speech, an uncertain voice-to-face association must not
+            # strand the crop on the divider between two people. Hold the
+            # best tracked face until stronger mouth/diarization evidence
+            # confirms a speaker switch.
+            desired_mode = 'single'
+            fixed_render_branch = 'single_subject_uncertain'
         elif fixed_two_panel and visual_pair is not None and (stack_eligible or recent_switches >= STACK_MIN_RAPID_SWITCHES):
             desired_mode = 'stacked'
             fixed_render_branch = 'stacked_uncertain'
@@ -988,9 +995,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif participant_count == 2 and active_speaker_mapped:
             desired_mode = 'single'
             fixed_render_branch = 'single_subject'
+        elif participant_count == 2 and selected is not None:
+            # Prefer one complete person over a center crop between two
+            # people. Identity continuity keeps this face stable until active
+            # speaker evidence is strong enough to cut to the other person.
+            desired_mode = 'single'
+            fixed_render_branch = 'single_subject_uncertain'
         elif participant_count == 2:
-            # Two people without a trustworthy voice-to-face association are
-            # kept as independent vertical panes. Never crop their midpoint.
             desired_mode = 'stacked'
             fixed_render_branch = 'stacked_uncertain'
         elif subject_kind in ('context', 'screen'):

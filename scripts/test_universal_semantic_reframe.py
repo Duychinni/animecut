@@ -214,6 +214,27 @@ def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():
     assert panel_segments[1]['points'][0]['cropX'] >= fixed['right_region'][0] - 1
 
 
+def test_uncertain_two_person_speech_holds_one_person_not_midpoint():
+    left, right, fixed = fixed_two_region_fixture()
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', left, 'face:1', 0.45),
+            [left, right], 1, 0.12, 0.01, fixed_layout=fixed, audio_activity=0.6,
+        )
+        for index in range(10)
+    ]
+    result = timeline(samples)
+    uncertain = [segment for segment in result if segment.get('renderBranch') == 'single_subject_uncertain']
+    assert uncertain, result
+    assert all(segment['mode'] == 'single' for segment in uncertain), result
+    assert all(segment.get('primaryPanel') == 'left' for segment in uncertain), result
+    for segment in uncertain:
+        for point in segment['points']:
+            assert point['cropX'] + point['cropW'] <= fixed['left_region'][1] + 1, point
+            assert point['cropCenterX'] < fixed['divider_x'], point
+
+
 def test_fixed_two_region_long_silence_holds_then_stacks_and_locks():
     left, right, fixed = fixed_two_region_fixture()
     samples = []
