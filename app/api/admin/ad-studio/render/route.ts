@@ -3,11 +3,13 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ffmpegPath from 'ffmpeg-static';
 import { requireAdmin } from '@/lib/admin-auth';
 import { AD_STUDIO_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const ALLOWED_REELS = new Set(['creator', 'mrbeast', 'companies', 'intermediate', 'capacity', 'audience']);
 const COLORS: Record<string, string> = { pink: '&H00C84FFF', yellow: '&H0000FFFF', green: '&H005AF421', purple: '&H00F755A8' };
@@ -28,6 +30,10 @@ function run(command: string, args: string[]) {
     child.on('error', reject);
     child.on('close', (code) => code === 0 ? resolve() : reject(new Error(stderr || `${command} exited with ${code}`)));
   });
+}
+
+function mediaCommand() {
+  return process.env.FFMPEG_PATH?.trim() || ffmpegPath || 'ffmpeg';
 }
 
 function subtitleFile(hook: string, support: string, cta: string, accent: string, duration: number) {
@@ -78,7 +84,7 @@ export async function POST(request: Request) {
       inputPath = path.join(workdir, 'input-video');
       await writeFile(inputPath, Buffer.from(await upload.arrayBuffer()));
       try {
-        await run('ffmpeg', ['-v', 'error', '-i', inputPath, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-']);
+        await run(mediaCommand(), ['-v', 'error', '-i', inputPath, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-']);
       } catch {
         return NextResponse.json({ error: 'This recording does not contain a readable video stream. Try remuxing it to MP4 in OBS.' }, { status: 415 });
       }
@@ -93,7 +99,7 @@ export async function POST(request: Request) {
 
     const escapedAss = subtitlePath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
     const filter = `[0:v]split=2[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=36[blur];[fg]scale=1080:1920:force_original_aspect_ratio=decrease[front];[blur][front]overlay=(W-w)/2:(H-h)/2,subtitles='${escapedAss}'[v]`;
-    await run('ffmpeg', [
+    await run(mediaCommand(), [
       '-y', '-stream_loop', '-1', '-i', inputPath, '-t', String(duration),
       '-filter_complex', filter, '-map', '[v]', '-map', '0:a?',
       '-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p', '-r', '30',

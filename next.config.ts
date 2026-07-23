@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
   outputFileTracingExcludes: {
     '/*': ['.venv/**/*', 'tmp/**/*', 'outputs/**/*', '.tools/**/*'],
   },
+  outputFileTracingIncludes: {
+    '/api/admin/ad-studio/render': ['./node_modules/ffmpeg-static/ffmpeg'],
+  },
   ...(process.env.NODE_ENV === 'development'
     ? {
         turbopack: {
