@@ -116,6 +116,8 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                 safe_subject = _head_shoulders(primary, source_w, source_h)
                 if not _contains(crop, safe_subject, margin=max(2.0, crop['w'] * 0.025)):
                     issues['primary_head_shoulders_cut'] += 1
+                if not _contains(crop, primary, margin=max(2.0, crop['w'] * 0.012)):
+                    issues['primary_face_cut'] += 1
 
                 if fixed_two_panel and crop['x'] < panel_boundary < crop['x'] + crop['w']:
                     issues['crop_crosses_panel_boundary'] += 1
@@ -130,7 +132,14 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
             if checked == 0:
                 issues['no_primary_samples_checked'] += 1
 
-        invalid_samples = sum(issues.values())
+        # A tight portrait may intentionally omit some shoulders. That is a
+        # composition warning, not a reason to replace a complete speaker with
+        # the full multi-person source. Face cuts, divider crossings, and
+        # partially visible secondary faces remain hard safety failures.
+        invalid_samples = sum(
+            count for name, count in issues.items()
+            if name != 'primary_head_shoulders_cut'
+        )
         invalid_ratio = invalid_samples / max(1, checked)
         if segment.get('mode') == 'single' and (checked == 0 or invalid_ratio > 0.20):
             rejected_segments += 1
