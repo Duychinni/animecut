@@ -13,6 +13,9 @@ from layout_qa import validate_layout_timeline
 
 DEBUG_FRAME_NAME = 'debug-still.jpg'
 SAFE_EDGE_MARGIN_X = 0.10
+FACE_SOURCE_EDGE_MARGIN_RATIO = 0.012
+FACE_SOURCE_TOP_MARGIN_RATIO = 0.008
+UNSAFE_FACE_REJECT_RATIO = 0.35
 MOTION_MIN_AREA_RATIO = 0.0035
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_WINDOW_SEC = 0.18
@@ -54,6 +57,28 @@ def clamp(v: float, lo: float, hi: float) -> float:
 def center(b: Tuple[float, float, float, float]) -> Tuple[float, float]:
     x, y, w, h = b
     return x + w / 2.0, y + h / 2.0
+
+
+def face_source_completeness(face, source_w: float, source_h: float) -> float:
+    """Return how safely a detected face clears the source-frame edges.
+
+    A detector box touching the source edge usually means the source itself
+    contains only part of that person's face. No crop movement can recover
+    pixels that are not present, so those detections must not become camera
+    targets.
+    """
+    x, y, w, h = (float(value) for value in face[:4])
+    horizontal_margin = min(x, source_w - (x + w))
+    top_margin = y
+    horizontal_required = max(2.0, source_w * FACE_SOURCE_EDGE_MARGIN_RATIO)
+    top_required = max(2.0, source_h * FACE_SOURCE_TOP_MARGIN_RATIO)
+    horizontal_score = clamp(horizontal_margin / horizontal_required, 0.0, 1.0)
+    top_score = clamp(top_margin / top_required, 0.0, 1.0)
+    return min(horizontal_score, top_score)
+
+
+def face_is_complete_in_source(face, source_w: float, source_h: float) -> bool:
+    return face_source_completeness(face, source_w, source_h) >= 1.0
 
 
 def box_match_score(a, b, width: float, height: float) -> float:
@@ -637,6 +662,17 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
+        complete_faces = [
+            face for face in faces
+            if face_is_complete_in_source(
+                (
+                    float(face.get('x', 0.0)), float(face.get('y', 0.0)),
+                    float(face.get('w', 0.0)), float(face.get('h', 0.0)),
+                ),
+                source_w,
+                source_h,
+            )
+        ]
         active_id = frame.get('active_track_id')
         speaker_confidence = float(point.get('speaker_confidence', 0.0))
         audio_activity = float(point.get('audio_activity', 0.0))
@@ -668,9 +704,39 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             or (f'face:{active_id}' if active_id is not None else subject_kind)
         )
         fixed_two_panel = frame.get('fixed_two_panel')
-        face_by_id = {int(face.get('track_id')): face for face in faces if face.get('track_id') is not None}
+        complete_face_by_id = {
+            int(face.get('track_id')): face
+            for face in complete_faces
+            if face.get('track_id') is not None
+        }
+        if subject_kind == 'face' and active_id is not None and int(active_id) not in complete_face_by_id:
+            # Prefer camera movement to another complete person over holding a
+            # source-edge half face. If nobody complete is visible, fail closed
+            # to context; metadata below marks sustained cases for rejection.
+            replacement = max(
+                complete_faces,
+                key=lambda face: (
+                    float(face.get('active_speaker_confidence', 0.0)),
+                    float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+                ),
+                default=None,
+            )
+            if replacement is not None:
+                active_id = int(replacement.get('track_id'))
+                selected = replacement
+                subject_stable_id = f'face:{active_id}'
+                selection_reason = 'complete_face_replacement'
+                subject_confidence = max(0.32, float(replacement.get('active_speaker_confidence', 0.0)))
+            else:
+                active_id = None
+                selected = None
+                subject_kind = 'context'
+                subject_stable_id = 'context'
+                subject_confidence = 0.0
+                selection_reason = 'only_partial_faces_visible'
+        face_by_id = complete_face_by_id
         speaker_score_margin = float(point.get('speaker_score_margin', frame.get('speaker_score_margin', 0.0)))
-        pair = strongest_face_pair(faces, source_w)
+        pair = strongest_face_pair(complete_faces, source_w)
         pair_ids = None if pair is None else tuple(int(face.get('track_id')) for face in pair)
 
         # A conversation composition is a visual decision, not an editorial
@@ -679,7 +745,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         # horizontal regions of the source frame. This handles pre-composed
         # podcast panels without letting logos/audience faces force the mode.
         visible_faces = [
-            face for face in faces
+            face for face in complete_faces
             if not bool(face.get('predicted')) and face.get('track_id') is not None
         ]
         layout_faces = sorted(
@@ -1909,6 +1975,8 @@ def main():
     speaker_switches = 0
     confident_speaker_samples = 0
     wide_context_samples = 0
+    partial_face_only_samples = 0
+    complete_face_samples = 0
     face_tracks = []
     next_face_track_id = 1
     previous_track_boxes = {}
@@ -2015,9 +2083,23 @@ def main():
         speaker_score_margin = 0.0
         speaker_scores_by_track = {}
 
-        if faces:
+        complete_face_indexes = [
+            index for index, face in enumerate(faces)
+            if face_is_complete_in_source(face, source_w, source_h)
+        ]
+        if faces and not complete_face_indexes:
+            partial_face_only_samples += 1
+        if complete_face_indexes:
+            complete_face_samples += 1
+
+        if complete_face_indexes:
+            complete_track_ids = [face_track_ids[index] for index in complete_face_indexes]
             scored_faces = []
-            for face, mouth_score, track_id, observed in zip(faces, mouth_scores, face_track_ids, face_observed):
+            for face_index in complete_face_indexes:
+                face = faces[face_index]
+                mouth_score = mouth_scores[face_index]
+                track_id = face_track_ids[face_index]
+                observed = face_observed[face_index]
                 area_quality = clamp((face[2] * face[3]) / max(1.0, source_w * source_h * 0.08), 0.0, 1.0)
                 continuity = 1.0 if track_id == active_track_id else box_match_score(face, active_box, source_w, source_h)
                 prior_evidence = float(speaker_evidence_history.get(track_id, 0.0))
@@ -2051,7 +2133,7 @@ def main():
                 and (active_box is None or active_match >= 0.48 or candidate_mouth >= active_mouth + 0.045)
             )
 
-            if active_box is None or scene_change >= 0.72:
+            if active_box is None or active_track_id not in complete_track_ids or scene_change >= 0.72:
                 if active_box is not None:
                     shot_id += 1
                     speaker_switches += 1
@@ -2075,10 +2157,10 @@ def main():
             else:
                 # Refresh from the same persistent track, including Kalman
                 # predictions while a face is briefly turned or occluded.
-                if active_track_id in face_track_ids:
+                if active_track_id in complete_track_ids:
                     active_box = faces[face_track_ids.index(active_track_id)]
                 else:
-                    best_continuation_index = max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], active_box, source_w, source_h))
+                    best_continuation_index = max(complete_face_indexes, key=lambda idx: box_match_score(faces[idx], active_box, source_w, source_h))
                     if box_match_score(faces[best_continuation_index], active_box, source_w, source_h) >= 0.32:
                         active_box = faces[best_continuation_index]
                         active_track_id = face_track_ids[best_continuation_index]
@@ -2086,7 +2168,7 @@ def main():
                 pending_count = 0
 
             selected_box = active_box
-            selected_index = face_track_ids.index(active_track_id) if active_track_id in face_track_ids else max(range(len(faces)), key=lambda idx: box_match_score(faces[idx], selected_box, source_w, source_h))
+            selected_index = face_track_ids.index(active_track_id) if active_track_id in face_track_ids else max(complete_face_indexes, key=lambda idx: box_match_score(faces[idx], selected_box, source_w, source_h))
             selected_mouth_score = mouth_scores[selected_index]
             selected_speaker_confidence = float(speaker_scores_by_track.get(active_track_id, candidate_score))
             runner_up_score = max(
@@ -2096,6 +2178,13 @@ def main():
             speaker_score_margin = max(0.0, selected_speaker_confidence - runner_up_score)
             if strong_speaker_evidence:
                 confident_speaker_samples += 1
+
+        elif faces:
+            # Do not let stale tracking keep a half face selected. Motion and
+            # saliency can still preserve non-interview action, but a partial
+            # face alone is never a valid camera target.
+            active_box = None
+            active_track_id = None
 
         motion_boxes = motion_regions(cv2, prev_gray, gray, source_w, source_h)
         if motion_boxes:
@@ -2159,6 +2248,8 @@ def main():
                     'mouth_motion': round(float(mouth_score), 4),
                     'active_speaker_confidence': round(float(speaker_scores_by_track.get(track_id, 0.0)), 4),
                     'person_box': dict_box(person_box_from_face(face, source_w, source_h)),
+                    'source_complete': face_is_complete_in_source(face, source_w, source_h),
+                    'source_completeness': round(face_source_completeness(face, source_w, source_h), 4),
                 }
                 for face, track_id, observed, mouth_score in list(zip(faces, face_track_ids, face_observed, mouth_scores))[:4]
             ],
@@ -2483,6 +2574,11 @@ def main():
     scene_cut_count = sum(1 for frame in detected_faces if frame.get('scene_cut'))
     layout_changes = max(0, len(reframe_timeline) - 1)
     layout_modes = sorted({str(segment.get('mode')) for segment in reframe_timeline})
+    partial_face_only_ratio = partial_face_only_samples / max(1, len(points))
+    reject_for_partial_faces = bool(
+        partial_face_only_ratio >= UNSAFE_FACE_REJECT_RATIO
+        and complete_face_samples == 0
+    )
 
     result = {
         'ok': True,
@@ -2542,6 +2638,11 @@ def main():
             'layout_modes': layout_modes,
             'editorial_planner': editorial_summary,
             'layout_qa': layout_qa_summary,
+            'partial_face_only_samples': partial_face_only_samples,
+            'partial_face_only_ratio': round(partial_face_only_ratio, 4),
+            'complete_face_samples': complete_face_samples,
+            'visual_clip_usable': not reject_for_partial_faces,
+            'visual_reject_reason': 'sustained_partial_faces_only' if reject_for_partial_faces else None,
             'debug_overlay_path': debug_overlay_path,
         },
         'reframe_timeline': reframe_timeline,

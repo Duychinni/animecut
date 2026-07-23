@@ -4,6 +4,7 @@
 from reframe_per_clip import (
     build_reframe_timeline,
     detect_fixed_two_panel_layout,
+    face_is_complete_in_source,
     portrait_crop_for_subject,
     semantic_subject_choice,
 )
@@ -158,6 +159,61 @@ def test_reaction_face_does_not_steal_active_speaker():
     ]
     result = timeline(samples)
     assert speaker_centering_error(result, [speaker['cx']] * 16) < 0.12, result
+
+
+def test_source_edge_half_face_is_not_complete():
+    half_face = box(0, 160, 210, 560, 1, 0.95)
+    complete_face = box(1320, 150, 330, 700, 2, 0.55)
+    assert not face_is_complete_in_source(
+        (half_face['x'], half_face['y'], half_face['w'], half_face['h']), W, H
+    )
+    assert face_is_complete_in_source(
+        (complete_face['x'], complete_face['y'], complete_face['w'], complete_face['h']), W, H
+    )
+
+
+def test_half_face_active_target_moves_to_complete_person():
+    half_face = box(0, 160, 210, 560, 1, 0.96)
+    complete_face = box(1320, 150, 330, 700, 2, 0.42)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', half_face, 'face:1', 0.96),
+            [half_face, complete_face],
+            1,
+            0.96,
+            0.6,
+        )
+        for index in range(10)
+    ]
+    result = timeline(samples)
+    singles = [segment for segment in result if segment['mode'] == 'single']
+    assert singles, result
+    assert all(segment.get('subjectStableId') == 'face:2' for segment in singles), result
+    assert all(
+        point['cropCenterX'] > W * 0.60
+        for segment in singles
+        for point in segment['points']
+    ), result
+
+
+def test_only_half_faces_fail_closed_to_context():
+    left_half = box(0, 150, 210, 620, 1, 0.92)
+    right_half = box(1740, 150, 180, 620, 2, 0.88)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', left_half, 'face:1', 0.92),
+            [left_half, right_half],
+            1,
+            0.92,
+            0.5,
+        )
+        for index in range(10)
+    ]
+    result = timeline(samples)
+    assert all(segment['mode'] == 'wide_context' for segment in result), result
+    assert all(segment.get('selectionReason') == 'only_partial_faces_visible' for segment in result), result
 
 
 def fixed_two_region_fixture():
