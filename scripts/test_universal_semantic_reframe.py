@@ -257,6 +257,30 @@ def test_fixed_two_region_long_silence_holds_then_stacks_and_locks():
     assert all(segment.get('silenceState') in ('widen', 'lock') for segment in widened + locked), result
 
 
+def test_two_person_uncertain_context_chooses_one_face_not_midpoint():
+    left = box(110, 150, 360, 720, 1, 0.22)
+    right = box(1450, 150, 360, 720, 2, 0.18)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('context', None, 'context', 0.0),
+            [left, right],
+            None,
+            0.0,
+            0.0,
+            audio_activity=0.55,
+        )
+        for index in range(12)
+    ]
+    result = timeline(samples)
+    singles = [segment for segment in result if segment['mode'] == 'single']
+    assert singles, result
+    assert all(segment.get('subjectStableId') == 'face:1' for segment in singles), result
+    for segment in singles:
+        for point in segment['points']:
+            assert point['cropCenterX'] < W * 0.40, point
+
+
 def test_long_silence_resume_hard_cuts_to_confirmed_panel():
     left, right, fixed = fixed_two_region_fixture()
     samples = []

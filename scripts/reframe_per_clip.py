@@ -631,6 +631,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     fixed_last_confident_track = None
     fixed_last_confident_panel = None
     fixed_last_confident_time = -1e9
+    conversation_last_track = None
     silence_started_at = None
     previous_silence_elapsed = 0.0
 
@@ -709,6 +710,64 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             )
             if horizontal_separation >= source_w * 0.24:
                 visual_pair = tuple(dominant_faces)
+
+        # Podcast/interview footage must never fall back to a portrait crop
+        # centered between two people. When speaker evidence is uncertain,
+        # keep the last framed participant; on first acquisition choose the
+        # strongest complete visible face. Confirmed active-speaker changes
+        # still create an intentional hard cut later in the state machine.
+        conversation_speaker_changed = False
+        if visual_pair is not None:
+            visual_pair_by_id = {
+                int(face.get('track_id')): face
+                for face in visual_pair
+                if face.get('track_id') is not None
+            }
+            reliable_active = bool(
+                active_id is not None
+                and int(active_id) in visual_pair_by_id
+                and not point.get('fallback_used')
+                and speaker_confidence >= 0.18
+            )
+            if reliable_active:
+                conversation_speaker_changed = bool(
+                    conversation_last_track is not None
+                    and int(conversation_last_track) != int(active_id)
+                )
+                conversation_last_track = int(active_id)
+            elif conversation_last_track not in visual_pair_by_id:
+                if active_id is not None and int(active_id) in visual_pair_by_id:
+                    conversation_last_track = int(active_id)
+                else:
+                    fallback_face = max(
+                        visual_pair,
+                        key=lambda face: (
+                            float(face.get('active_speaker_confidence', 0.0)),
+                            float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+                            -abs(float(face.get('cx', 0.0)) - source_w / 2.0),
+                        ),
+                    )
+                    conversation_last_track = int(fallback_face.get('track_id'))
+
+            framed_face = visual_pair_by_id.get(conversation_last_track)
+            if framed_face is not None and not reliable_active:
+                active_id = conversation_last_track
+                selected = framed_face
+                semantic_subject = {
+                    'kind': 'face',
+                    'box': framed_face,
+                    'face_box': framed_face,
+                    'confidence': max(0.32, float(framed_face.get('active_speaker_confidence', 0.0))),
+                    'reason': 'conversation_face_hold',
+                    'predicted': False,
+                    'stable_id': f'face:{conversation_last_track}',
+                    'velocity_x': 0.0,
+                }
+                subject_kind = 'face'
+                subject_confidence = float(semantic_subject['confidence'])
+                selection_reason = 'conversation_face_hold'
+                subject_predicted = False
+                subject_stable_id = f'face:{conversation_last_track}'
 
         if scene_cut:
             wide_pair_hold_ids = None
@@ -944,8 +1003,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             active_id = int(fixed_last_confident_track)
             fixed_hold = True
         elif silence_state in ('widen', 'lock') and fixed_two_panel and visual_pair is not None:
-            # Never pull a portrait crop toward the divider. A fixed podcast
-            # widens structurally into two valid panes and then stays locked.
+            # During a long break, use two complete portrait panes rather than
+            # a midpoint crop. Speech immediately returns to one face.
             desired_mode = 'stacked'
             fixed_render_branch = f'silence_{silence_state}_stacked'
         elif silence_state in ('widen', 'lock') and fixed_two_panel:
@@ -1002,8 +1061,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             desired_mode = 'single'
             fixed_render_branch = 'single_subject_uncertain'
         elif participant_count == 2:
-            desired_mode = 'stacked'
-            fixed_render_branch = 'stacked_uncertain'
+            # The conversation fallback above normally supplies a face. If a
+            # detector sample is incomplete, hold a single composition rather
+            # than displaying a midpoint or two cropped participants.
+            desired_mode = 'single'
+            fixed_render_branch = 'single_subject_uncertain'
         elif subject_kind in ('context', 'screen'):
             desired_mode = 'wide_context'
             fixed_render_branch = 'safe_full_frame'
@@ -1027,7 +1089,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
 
         # Returning from a deliberate group composition to a trustworthy
         # speaker is an editorial cut, not a camera pan across the room.
-        if speech_resumed_after_long_pause and active_speaker_mapped:
+        if (speech_resumed_after_long_pause or conversation_speaker_changed) and active_speaker_mapped:
             fixed_hard_cut = True
 
         two_person_context = wide_pair_hold_ids is not None
@@ -1209,6 +1271,16 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'zoom': 1.0,
             }
 
+        if (
+            current_mode == 'single'
+            and active_id is not None
+            and decisions
+            and decisions[-1].get('primary_track_id') is not None
+            and int(decisions[-1]['primary_track_id']) != int(active_id)
+            and speaker_confidence >= 0.18
+        ):
+            fixed_hard_cut = True
+
         subject_faces = []
         if current_mode == 'grid':
             ordered_layout_faces = sorted(
@@ -1318,7 +1390,16 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             decision.get('grid_template') if decision['mode'] == 'grid' else None,
             grid_subject_ids if decision['mode'] == 'grid' else None,
         )
-        force_boundary = bool(decision.get('scene_cut') or decision.get('hard_cut'))
+        identity_switch = bool(
+            segments
+            and decision['mode'] == 'single'
+            and segments[-1].get('mode') == 'single'
+            and decision.get('primary_track_id') is not None
+            and segments[-1].get('primaryTrackId') is not None
+            and int(decision['primary_track_id']) != int(segments[-1]['primaryTrackId'])
+            and float(decision.get('speaker_confidence', 0.0)) >= 0.18
+        )
+        force_boundary = bool(decision.get('scene_cut') or decision.get('hard_cut') or identity_switch)
         if not segments or identity_key != segments[-1]['_key'] or force_boundary:
             segments.append({
                 '_key': identity_key,
@@ -1345,7 +1426,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'renderBranch': decision.get('render_branch'),
                 'speakerScoreMargin': decision.get('speaker_score_margin'),
                 'trackRegionMap': decision.get('track_region_map'),
-                'hardCutStart': bool(decision.get('hard_cut')),
+                'hardCutStart': bool(decision.get('hard_cut') or identity_switch),
                 'silenceState': decision.get('silence_state'),
                 'sceneCutStart': bool(decision.get('scene_cut')),
                 'points': [],
@@ -1439,7 +1520,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and segment.get('renderBranch') in ('active_speaker_left', 'active_speaker_right')
             and segment_duration >= FIXED_MIN_CONFIRMED_TURN_SEC
         )
-        if segment_duration >= 0.9 or is_confirmed_fixed_turn:
+        # A speaker/identity change is an intentional jump frame even when the
+        # incoming turn begins near the end of a short clip. Never merge that
+        # boundary back into the outgoing speaker and accidentally animate a
+        # slow pan across both faces.
+        if segment_duration >= 0.9 or is_confirmed_fixed_turn or segment.get('hardCutStart'):
             index += 1
             continue
         previous = clean_segments[index - 1] if index > 0 else None
