@@ -309,6 +309,47 @@ def test_speaking_reel_cannot_open_on_empty_safe_wide():
     assert reason == 'unframed_speaking_subject_at_open'
 
 
+def test_speaking_reel_rejects_mid_clip_empty_stage_fallback():
+    points = [
+        {'t': index * 0.25, 'audio_activity': 0.75}
+        for index in range(24)
+    ]
+    timeline_result = [
+        {'start': 0.0, 'end': 2.0, 'mode': 'single', 'points': []},
+        {'start': 2.0, 'end': 2.75, 'mode': 'wide_context', 'wideKind': 'safe_wide'},
+        {'start': 2.75, 'end': 6.0, 'mode': 'single', 'points': []},
+    ]
+    usable, reason = visual_usability(points, timeline_result)
+    assert not usable
+    assert reason == 'sustained_unframed_speaking_subject'
+
+
+def test_one_confirmed_exchange_enters_stack_then_returns_to_single():
+    left = box(130, 140, 360, 740, 1, 0.92)
+    right = box(1430, 140, 360, 740, 2, 0.92)
+    samples = []
+    # Establish the first speaker, then let the other person answer.
+    for index in range(8):
+        active_id = 1 if index < 4 else 2
+        active_box = left if active_id == 1 else right
+        samples.append(sample(
+            index * 0.25,
+            subject('face', active_box, f'face:{active_id}', 0.92),
+            [left, right], active_id, 0.92, 0.55, audio_activity=0.75,
+        ))
+    # A sustained monologue should age the exchange out and return to one face.
+    for index in range(8, 28):
+        samples.append(sample(
+            index * 0.25,
+            subject('face', right, 'face:2', 0.92),
+            [left, right], 2, 0.92, 0.55, audio_activity=0.75,
+        ))
+    result = timeline(samples, duration=7.0)
+    assert any(segment.get('renderBranch') == 'stacked_conversation' for segment in result), result
+    assert result[-1]['mode'] == 'single', result
+    assert result[-1].get('subjectStableId') == 'face:2', result
+
+
 def test_deliberate_silent_wide_context_remains_allowed():
     points = [
         {'t': index * 0.25, 'audio_activity': 0.0}

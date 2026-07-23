@@ -161,7 +161,13 @@ def visual_usability(points, timeline):
             current_run = 1
         longest_run = max(longest_run, current_run)
         previous_time = timestamp
-    if longest_run >= max(2, math.ceil(analysis_rate * UNSAFE_SPEECH_CONTEXT_SEC)):
+    # A speaking reel must remain people-led throughout, not merely at its
+    # opening. Even a short safe-wide fallback is conspicuous in 9:16: the
+    # crop lands on the set/desk while the participants sit outside the
+    # portrait window. Reject after half a second so candidate replacement
+    # happens instead of publishing an empty-stage interlude.
+    max_unframed_speech_sec = min(0.50, UNSAFE_SPEECH_CONTEXT_SEC)
+    if longest_run >= max(2, math.ceil(analysis_rate * max_unframed_speech_sec)):
         return False, 'sustained_unframed_speaking_subject'
 
     longest_small_run = 0
@@ -1133,6 +1139,17 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and loses_context_in_single
             and stacked_score >= single_score + STACK_SCORE_MARGIN
         )
+        # Opus-style conversational rhythm: once both stable participants have
+        # taken a turn, preserve them in top/bottom panes for the active
+        # exchange. The rolling turn window naturally releases back to a close
+        # single-person crop when one person resumes a monologue.
+        active_exchange = STACK_LAYOUT_ENABLED and (
+            visual_pair is not None
+            and two_stable_speakers
+            and both_actively_participating
+            and participation_balance >= 0.30
+            and recent_switches >= 1
+        )
 
         subject_height_ratio = (
             float(selected.get('h', 0)) / max(source_h, 1.0)
@@ -1222,7 +1239,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif silence_state in ('widen', 'lock'):
             desired_mode = 'wide_context'
             fixed_render_branch = f'silence_{silence_state}_safe_full_frame'
-        elif stack_eligible and visual_pair is not None:
+        elif (
+            (stack_eligible or active_exchange)
+            and visual_pair is not None
+            and not fixed_confident
+        ):
             # A sustained, balanced exchange is composed like a deliberate
             # interview: stable left participant on top, stable right
             # participant on bottom. Do this before active-speaker routing so
@@ -1250,7 +1271,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             # confirms a speaker switch.
             desired_mode = 'single'
             fixed_render_branch = 'single_subject_uncertain'
-        elif fixed_two_panel and visual_pair is not None and (stack_eligible or recent_switches >= STACK_MIN_RAPID_SWITCHES):
+        elif fixed_two_panel and visual_pair is not None and (
+            stack_eligible or active_exchange or selected is None
+        ):
             desired_mode = 'stacked'
             fixed_render_branch = 'stacked_uncertain'
         elif fixed_two_panel:
