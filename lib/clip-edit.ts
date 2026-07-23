@@ -63,15 +63,30 @@ export function transcriptSegmentsToPhrases(segments: TranscriptSegment[]) {
     .filter((phrase): phrase is TranscriptPhrase => Boolean(phrase));
 }
 
-export function phrasesToSegments(phrases: TranscriptPhrase[]): TranscriptSegment[] {
+export function phrasesToSegments(
+  phrases: TranscriptPhrase[],
+  originalSegments: TranscriptSegment[] = [],
+): TranscriptSegment[] {
   return phrases
     .filter((phrase) => !phrase.deleted && phrase.text.trim() && phrase.end > phrase.start)
-    .map((phrase) => ({
-      start: phrase.start,
-      end: phrase.end,
-      text: phrase.text.trim(),
-      words: [],
-    }));
+    .map((phrase) => {
+      const original = originalSegments.find((segment) => (
+        Math.abs(Number(segment.start ?? 0) - phrase.start) < 0.05
+        && Math.abs(Number(segment.end ?? 0) - phrase.end) < 0.05
+      ));
+      const originalText = String(original?.text ?? '').replace(/\s+/g, ' ').trim();
+      const editedText = phrase.text.replace(/\s+/g, ' ').trim();
+      return {
+        start: phrase.start,
+        end: phrase.end,
+        text: editedText,
+        // Keep model-provided word boundaries whenever the phrase wording has
+        // not changed. Caption grouping can then change without changing sync.
+        words: originalText === editedText && Array.isArray(original?.words)
+          ? original.words
+          : [],
+      };
+    });
 }
 
 function finiteNumber(value: unknown, fallback: number) {

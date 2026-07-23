@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { CAPTION_FONTS, CAPTION_PRESETS } from '../lib/caption-presets';
-import { buildDefaultClipEditSettings, normalizeClipEditSettings } from '../lib/clip-edit';
+import { buildDefaultClipEditSettings, normalizeClipEditSettings, phrasesToSegments } from '../lib/clip-edit';
 import { segmentsToCapcutAss } from '../lib/srt';
 
 assert.ok(CAPTION_PRESETS.length >= 8, 'caption picker should offer a focused template library');
@@ -31,5 +31,34 @@ const ass = segmentsToCapcutAss(
 );
 assert.match(ass, /Style: Default,Anton,/, 'ASS export should use the chosen template font');
 assert.match(ass, /Dialogue:/, 'ASS export should contain timed caption events');
+
+const originalWords = [
+  { start: 0, end: 0.22, word: 'Every' },
+  { start: 0.22, end: 0.61, word: 'caption' },
+  { start: 0.61, end: 0.94, word: 'stays' },
+  { start: 0.94, end: 1.4, word: 'in' },
+  { start: 1.4, end: 1.8, word: 'sync' },
+];
+const preserved = phrasesToSegments(
+  [{ id: 'sync', start: 0, end: 1.8, text: 'Every caption stays in sync', originalText: 'Every caption stays in sync' }],
+  [{ start: 0, end: 1.8, text: 'Every caption stays in sync', words: originalWords }],
+);
+assert.deepEqual(preserved[0]?.words, originalWords, 'unchanged edited captions must retain real word timestamps');
+
+for (let maxWords = 1; maxWords <= 6; maxWords += 1) {
+  const grouped = segmentsToCapcutAss(preserved, 0, 1.8, {
+    ...CAPTION_PRESETS[0],
+    captionMaxWords: maxWords,
+  });
+  const dialogueStarts = grouped
+    .split('\n')
+    .filter((line) => line.startsWith('Dialogue:'))
+    .map((line) => line.split(',')[1]);
+  assert.deepEqual(
+    dialogueStarts,
+    ['0:00:00.00', '0:00:00.22', '0:00:00.61', '0:00:00.94', '0:00:01.39'],
+    `${maxWords} words per caption must preserve the same spoken-word boundaries`,
+  );
+}
 
 console.log(`caption system: ${CAPTION_PRESETS.length} templates, ${CAPTION_FONTS.length} font choices`);

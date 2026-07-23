@@ -881,7 +881,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const editedTranscriptPhrases = Array.isArray(editSettings.edited_transcript)
     ? editSettings.edited_transcript.filter(isTranscriptPhraseRow)
     : [];
-  let renderTranscriptSegments = useEditSettings ? phrasesToSegments(editedTranscriptPhrases) : transcriptSegments;
+  let renderTranscriptSegments = useEditSettings
+    ? phrasesToSegments(editedTranscriptPhrases, transcriptSegments)
+    : transcriptSegments;
 
   if (useEditSettings && editSettings.removed_ranges.length) {
     const removed = editSettings.removed_ranges
@@ -914,11 +916,20 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
         const overlapStart = Math.max(segmentStart, range.start);
         const overlapEnd = Math.min(segmentEnd, range.end);
         if (overlapEnd > overlapStart) {
+          const mappedWords = Array.isArray(segment.words)
+            ? segment.words
+                .filter((word) => Number(word.end ?? 0) > overlapStart && Number(word.start ?? 0) < overlapEnd)
+                .map((word) => ({
+                  ...word,
+                  start: elapsed + (Math.max(Number(word.start ?? overlapStart), overlapStart) - range.start),
+                  end: elapsed + (Math.min(Number(word.end ?? overlapEnd), overlapEnd) - range.start),
+                }))
+            : [];
           mapped.push({
             ...segment,
             start: elapsed + (overlapStart - range.start),
             end: elapsed + (overlapEnd - range.start),
-            words: [],
+            words: mappedWords,
           });
         }
         elapsed += range.end - range.start;

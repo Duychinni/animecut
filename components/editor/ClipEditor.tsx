@@ -1515,11 +1515,10 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                 </div>
               ) : (
                 <div className="space-y-5">
-                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Choose one of the nine dot positions for a consistent caption layout.</div>
-                  <div className="grid w-36 grid-cols-3 gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
-                    {[0.12, 0.5, 0.88].flatMap((y) => [0.12, 0.5, 0.88].map((x) => (
-                      <button key={`${x}-${y}`} type="button" onClick={() => patchSettings({ caption_x: x, caption_y: y, caption_position: y < 0.34 ? 'upper' : y < 0.66 ? 'center' : 'lower-third' })} className={`grid aspect-square place-items-center rounded-md border ${Math.abs(settings.caption_x - x) < 0.08 && Math.abs(settings.caption_y - y) < 0.08 ? 'border-cyan-300 bg-cyan-300/15' : 'border-white/10 hover:bg-white/[0.06]'}`}><span className="h-2 w-2 rounded-full bg-white/50" /></button>
-                    )))}
+                  <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/[0.06] p-3 text-xs font-semibold leading-5 text-cyan-50/75">Place captions anywhere with continuous horizontal and vertical controls.</div>
+                  <div className="space-y-4 rounded-xl border border-white/10 bg-black/25 p-3">
+                    <label className="block"><span className="mb-1 flex justify-between text-xs text-white/60">Horizontal <span className="font-mono text-white">{Math.round(settings.caption_x * 100)}%</span></span><input type="range" min={8} max={92} value={settings.caption_x * 100} onChange={(event) => patchSettings({ caption_x: Number(event.target.value) / 100 })} className="w-full accent-cyan-300" /></label>
+                    <label className="block"><span className="mb-1 flex justify-between text-xs text-white/60">Vertical <span className="font-mono text-white">{Math.round(settings.caption_y * 100)}%</span></span><input type="range" min={6} max={94} value={settings.caption_y * 100} onChange={(event) => { const y = Number(event.target.value) / 100; patchSettings({ caption_y: y, caption_position: y < 0.34 ? 'upper' : y < 0.66 ? 'center' : 'lower-third' }); }} className="w-full accent-cyan-300" /></label>
                   </div>
                   <button type="button" onClick={() => patchSettings({ caption_x: 0.5, caption_y: 0.8, caption_position: 'lower-third' })} className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-xs font-bold text-white/70 hover:bg-white/[0.06]">Reset position</button>
                 </div>
