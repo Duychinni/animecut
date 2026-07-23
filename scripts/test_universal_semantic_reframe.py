@@ -90,6 +90,20 @@ def test_silent_far_right():
     assert crop['cx'] > W * 0.68, crop
 
 
+def test_small_speaking_face_gets_intentional_close_portrait():
+    tiny_face = box(860, 210, 90, 90, 1, 0.94)
+    crop = portrait_crop_for_subject(
+        (tiny_face['x'], tiny_face['y'], tiny_face['w'], tiny_face['h']),
+        W,
+        H,
+        'face',
+        (tiny_face['x'], tiny_face['y'], tiny_face['w'], tiny_face['h']),
+    )
+    assert crop['h'] < H, crop
+    assert crop['h'] >= H * 0.48, crop
+    assert abs(crop['w'] / crop['h'] - 9.0 / 16.0) < 0.001, crop
+
+
 def test_walking_left_to_right_smoothly():
     samples = []
     for index, x in enumerate((80, 200, 360, 540, 740, 940, 1140, 1320)):

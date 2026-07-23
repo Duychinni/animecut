@@ -428,6 +428,16 @@ def portrait_crop_for_subject(subject, source_w: float, source_h: float, subject
     """
     x, y, w, h = (float(value) for value in subject)
     crop_h = float(source_h)
+    if face_box is not None:
+        # A small but confidently detected speaking face must not leave the
+        # entire stage shrunk inside a vertical reel. Compose an intentional
+        # head-and-torso crop, while bounding enlargement to retain usable
+        # source detail.
+        face_height = max(1.0, float(face_box[3]))
+        crop_h = min(
+            float(source_h),
+            max(float(source_h) * 0.48, face_height * 4.6),
+        )
     crop_w = min(float(source_w), crop_h * 9.0 / 16.0)
     if crop_w >= source_w:
         crop_w = float(source_w)
@@ -2380,18 +2390,11 @@ def main():
             subject_w = semantic_box[2]
             subject_h = semantic_box[3]
             mode = semantic_kind
-            face_height_ratio = semantic_box[3] / max(source_h, 1.0)
-            face_width_ratio = semantic_box[2] / max(source_w, 1.0)
-            desired_framing = 'wide_context' if (
-                semantic_kind in {'context', 'screen'}
-                or (
-                    semantic_kind == 'face'
-                    and (
-                        face_height_ratio <= WIDE_FACE_HEIGHT_RATIO
-                        or face_width_ratio <= WIDE_FACE_WIDTH_RATIO
-                    )
-                )
-            ) else 'single'
+            # Size is not permission to preserve an entire stage. A reliable
+            # face remains a single-subject portrait target even when the
+            # source camera is wide; portrait_crop_for_subject supplies the
+            # bounded close composition.
+            desired_framing = 'wide_context' if semantic_kind in {'context', 'screen'} else 'single'
 
             if desired_framing == active_framing:
                 pending_framing = None

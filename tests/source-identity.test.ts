@@ -66,3 +66,20 @@ test('uses verified MrBeast identity for a local origin-story fallback', () => {
   assert.equal(plan.title, 'MrBeast Reinvested Every Dollar for Years');
   assert.equal(plan.selected_hook, 'He Started YouTube at Just 11');
 });
+
+test('repairs MrBeast hook fragments split by transcript boundaries', () => {
+  const context = 'Source title: MrBeast Interview\nVerified central subject: MrBeast.';
+  const trailingMr = buildCandidateEditorialPlan({
+    transcriptText: 'How tall are you, Mr. Six two.',
+    globalContext: context,
+    raw: { title: 'MrBeast Reveals His Height', hook_text: 'How tall are you, Mr.' },
+  });
+  assert.equal(trailingMr.selected_hook, 'How tall are you, MrBeast');
+
+  const leadingBeast = buildCandidateEditorialPlan({
+    transcriptText: 'Beast came from, what, an Xbox?',
+    globalContext: context,
+    raw: { title: 'Where MrBeast Got His Name', hook_text: 'Beast came from, what, an Xbox?' },
+  });
+  assert.equal(leadingBeast.selected_hook, 'MrBeast came from, what, an Xbox?');
+});

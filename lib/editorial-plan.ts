@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { canonicalizeKnownNames } from './source-identity';
 
 export const EditorialSceneTypeSchema = z.enum([
   'SINGLE_SPEAKER',
@@ -65,12 +66,27 @@ const ENTITY_STOPWORDS = new Set([
 ]);
 
 function clean(text: unknown) {
-  return String(text ?? '')
+  return canonicalizeKnownNames(String(text ?? ''))
     .replace(/\[[^\]]+]/g, ' ')
     .replace(/[â€œâ€]/g, '"')
     .replace(/[â€˜â€™]/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function repairKnownEntityFragments(value: string, globalContext: string) {
+  const context = canonicalizeKnownNames(globalContext);
+  let text = clean(value);
+  if (/\bMrBeast\b/i.test(context)) {
+    // Transcript windows can split the spoken name at a segment boundary,
+    // yielding hooks such as "How tall are you, Mr." or "Beast came from…".
+    // Metadata verifies the identity; restore the complete brand before the
+    // hook is validated or displayed.
+    text = text
+      .replace(/\bMr\.?(?=\s*(?:[?!.,;:]|$))/gi, 'MrBeast')
+      .replace(/\bBeast\b/gi, 'MrBeast');
+  }
+  return canonicalizeKnownNames(text);
 }
 
 function normalized(text: string) {
@@ -295,14 +311,16 @@ export function buildCandidateEditorialPlan(params: {
   fallbackHook?: string;
 }): CandidateEditorialPlan {
   const raw = params.raw ?? {};
-  const generated = copyForTranscript(params.transcriptText, params.globalContext ?? params.transcriptText);
-  const rawTitle = clean(raw.title);
+  const globalContext = params.globalContext ?? params.transcriptText;
+  const generated = copyForTranscript(params.transcriptText, globalContext);
+  const rawTitle = repairKnownEntityFragments(clean(raw.title), globalContext);
   const title = isNaturalEditorialTitle(rawTitle)
     ? rawTitle
     : isNaturalEditorialTitle(generated.title)
       ? generated.title
       : clean(params.fallbackTitle) || 'The Key Idea Explained';
-  const rawHooks = [clean(raw.hook_text), ...rawHookOptions(raw)];
+  const rawHooks = [clean(raw.hook_text), ...rawHookOptions(raw)]
+    .map((hook) => repairKnownEntityFragments(hook, globalContext));
   const hookCandidates = [...rawHooks, ...generated.hooks]
     .filter(isNaturalEditorialHook)
     .filter((hook, index, all) => all.findIndex((other) => normalized(other) === normalized(hook)) === index)
