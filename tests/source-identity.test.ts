@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { canonicalizeKnownNames, verifiedSourceSubjectHint } from '../lib/source-identity';
+import { canonicalizeKnownNames, editorialSourceContext, verifiedSourceSubjectHint } from '../lib/source-identity';
 import { buildCandidateEditorialPlan } from '../lib/editorial-plan';
 
 test('normalizes MrBeast branding from common source-title spelling', () => {
@@ -20,6 +20,41 @@ test('recognizes other notable figures without requiring their name in every ree
 
 test('does not invent a verified subject for an unrelated title', () => {
   assert.equal(verifiedSourceSubjectHint('How creators make videos'), '');
+});
+
+test('canonicalizes common Steven Seagal transcription variants', () => {
+  assert.equal(canonicalizeKnownNames('Steve Seagel story'), 'Steven Seagal story');
+  assert.equal(canonicalizeKnownNames('Steven Seagal fight'), 'Steven Seagal fight');
+});
+
+test('never sends an upload filename into editorial analysis', () => {
+  assert.equal(editorialSourceContext({
+    sourcePlatform: 'upload',
+    sourceTitle: '2025-10-14 13-50-51.mp4',
+    projectTitle: '2025-10-14 13-50-51',
+    sourceChannelName: null,
+  }), '');
+});
+
+test('keeps useful YouTube metadata as editorial context', () => {
+  const context = editorialSourceContext({
+    sourcePlatform: 'youtube',
+    sourceTitle: 'Steven Seagel Changed Action Movies',
+    projectTitle: null,
+    sourceChannelName: 'Interview Archive',
+  });
+  assert.match(context, /Source title: Steven Seagal Changed Action Movies/);
+  assert.match(context, /Source channel: Interview Archive/);
+  assert.match(context, /Verified recognizable figures.*Steven Seagal/);
+});
+
+test('uses a transcript-proven person instead of timestamp numbers', () => {
+  const plan = buildCandidateEditorialPlan({
+    transcriptText: 'Steven Seagal told me he wanted to fight, but the whole challenge changed when we met in person.',
+    globalContext: 'Steven Seagal told me he wanted to fight, but the whole challenge changed when we met in person.',
+  });
+  assert.match(`${plan.title} ${plan.selected_hook}`, /Steven Seagal/);
+  assert.doesNotMatch(`${plan.title} ${plan.selected_hook}`, /\b14 13\b/);
 });
 
 test('uses verified MrBeast identity for a local origin-story fallback', () => {

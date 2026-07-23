@@ -113,8 +113,11 @@ function canonicalEntities(context: string) {
   const source = clean(context);
   const counts = new Map<string, number>();
   const multiWordEntities = new Set<string>();
-  const namedToken = String.raw`(?:[A-Z][a-z]+(?:[A-Z][a-z0-9]+)*|[A-Z]{2,}|\d{2,})`;
-  const multi = source.match(new RegExp(`\\b${namedToken}(?:\\s+(?:${namedToken}|Cent)){1,2}\\b`, 'g')) ?? [];
+  const namedToken = String.raw`(?:[A-Z][a-z]+(?:[A-Z][a-z0-9]+)*|[A-Z]{2,})`;
+  const multi = [
+    ...(source.match(new RegExp(`\\b${namedToken}(?:\\s+${namedToken}){1,2}\\b`, 'g')) ?? []),
+    ...(source.match(/\b\d{1,2}\s+Cent\b/g) ?? []),
+  ];
   for (const rawEntity of multi) {
     const words = rawEntity.split(/\s+/).filter((word, index) => index > 0 || !ENTITY_STOPWORDS.has(word));
     if (words.every((word) => ENTITY_STOPWORDS.has(word))) continue;

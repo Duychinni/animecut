@@ -8,7 +8,7 @@ import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai'
 import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 import { buildCandidateEditorialPlan, type CandidateEditorialPlan } from '@/lib/editorial-plan';
-import { canonicalizeKnownNames, verifiedSourceSubjectHint } from '@/lib/source-identity';
+import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 
 export const maxDuration = 60;
@@ -830,7 +830,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const { data: projectRow, error: projectError } = await supabase
       .from('projects')
-      .select('title, source_title, source_channel_name, source_duration_seconds')
+      .select('title, source_platform, source_title, source_channel_name, source_duration_seconds')
       .eq('id', project_id)
       .single();
     if (projectError) throw projectError;
@@ -874,17 +874,12 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const targetClipCount = getTargetClipCount(policyDurationSeconds);
     const minimumCandidatePool = Math.max(policy.candidateCount, targetClipCount * 4);
     const candidateLimit = Math.max(minimumCandidatePool, targetClipCount * 4);
-    const sourceContext = [
-      typeof projectRow?.source_title === 'string' && projectRow.source_title.trim()
-        ? `Source title: ${canonicalizeKnownNames(projectRow.source_title.trim())}`
-        : typeof projectRow?.title === 'string' && projectRow.title.trim()
-          ? `Project title: ${projectRow.title.trim()}`
-          : '',
-      typeof projectRow?.source_channel_name === 'string' && projectRow.source_channel_name.trim()
-        ? `Source channel: ${projectRow.source_channel_name.trim()}`
-        : '',
-      verifiedSourceSubjectHint(projectRow?.source_title),
-    ].filter(Boolean).join('\n');
+    const sourceContext = editorialSourceContext({
+      sourcePlatform: projectRow?.source_platform,
+      sourceTitle: projectRow?.source_title,
+      projectTitle: projectRow?.title,
+      sourceChannelName: projectRow?.source_channel_name,
+    });
     const editorialGlobalContext = [sourceContext, String(transcriptRow.full_text ?? '')].filter(Boolean).join('\n');
 
     const parsed = options.forceLocal
