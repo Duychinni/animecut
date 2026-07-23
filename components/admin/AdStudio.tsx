@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { AdAssetLibrary } from '@/components/admin/AdAssetLibrary';
+import { AdStoryboardBuilder } from '@/components/admin/AdStoryboardBuilder';
 import type { AdAsset } from '@/lib/ad-studio-assets';
 
 const REELS = [
@@ -132,6 +133,8 @@ export function AdStudio() {
           setError('');
         }}
       />
+
+      <AdStoryboardBuilder selectedAsset={selectedAssets[0] || null} />
 
       <div className="mt-8 grid gap-7 lg:grid-cols-[minmax(0,1fr)_390px]">
         <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 sm:p-7">
