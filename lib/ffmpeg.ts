@@ -1838,6 +1838,36 @@ function buildInterpolatedSegmentExpr(
   return expression;
 }
 
+const MAX_TIMELINE_POINTS_PER_FILTER = 24;
+
+function splitLongTimelineSegment(segment: ReframeTimelineSegment): ReframeTimelineSegment[] {
+  if (segment.mode !== 'single' || segment.points.length <= MAX_TIMELINE_POINTS_PER_FILTER) {
+    return [segment];
+  }
+
+  const chunks: ReframeTimelineSegment[] = [];
+  let pointIndex = 0;
+  while (pointIndex < segment.points.length - 1) {
+    const lastPointIndex = Math.min(
+      segment.points.length - 1,
+      pointIndex + MAX_TIMELINE_POINTS_PER_FILTER - 1,
+    );
+    const firstChunk = pointIndex === 0;
+    const lastChunk = lastPointIndex === segment.points.length - 1;
+    chunks.push({
+      ...segment,
+      start: firstChunk ? segment.start : segment.points[pointIndex].t,
+      end: lastChunk ? segment.end : segment.points[lastPointIndex].t,
+      points: segment.points.slice(pointIndex, lastPointIndex + 1),
+    });
+    // Reuse the boundary observation in both chunks. Their trim intervals are
+    // adjacent, so this preserves continuous interpolation without duplicating
+    // a rendered frame.
+    pointIndex = lastPointIndex;
+  }
+  return chunks;
+}
+
 function buildTimelineStackPane(
   inputLabel: string,
   outputLabel: string,
@@ -1956,7 +1986,10 @@ function buildTimedReframeFilter(
   escapedPath?: string,
   captionPath?: string,
 ) {
-  const segments = timeline.filter((segment) => segment.end - segment.start >= 0.05);
+  const segments = timeline
+    .filter((segment) => segment.end - segment.start >= 0.05)
+    .flatMap(splitLongTimelineSegment)
+    .filter((segment) => segment.end - segment.start >= 0.05);
   if (!segments.length) throw new Error('Timed reframe plan has no renderable segments');
   const graph: string[] = [`[0:v]split=${segments.length}${segments.map((_, index) => `[timeline${index}]`).join('')}`];
   const outputs: string[] = [];
