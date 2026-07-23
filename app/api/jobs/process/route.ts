@@ -988,11 +988,12 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     startSec: effectiveRenderStart,
     endSec: effectiveRenderEnd,
     srtPath,
-    captionsEnabled: compatibilityFallback
-      ? false
-      : useEditSettings
-        ? editSettings.captions_enabled
-        : options?.captions_enabled !== false,
+    // Compatibility recovery may simplify framing and hook overlays, but it
+    // must never silently remove spoken captions from a published reel.
+    // renderVerticalClip already has its own libass -> drawtext fallback.
+    captionsEnabled: useEditSettings
+      ? editSettings.captions_enabled
+      : options?.captions_enabled !== false,
     captionTemplate,
     captionFont,
     hookTextEnabled,
