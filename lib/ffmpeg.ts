@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getVerticalExportSize } from '@/lib/export-profile';
-import { buildRenderOutputArgs, type SourceColorMetadata } from '@/lib/ffmpeg-output-args';
+import { buildRenderOutputArgs, resolveStorageSafeVideoRates, type SourceColorMetadata } from '@/lib/ffmpeg-output-args';
 
 type CaptionTemplate = 'clean' | 'bold' | 'viral' | 'karaoke' | 'cinematic' | 'rage' | 'minimal' | 'capcut';
 type CaptionFont = 'arial' | 'montserrat' | 'impact' | 'bangers' | 'anton' | 'bebas' | 'poppins';
@@ -2186,6 +2186,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const configuredCrf = (allowOversizedExports ? process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF : DEFAULT_X264_CRF).trim();
   const configuredX264Maxrate = (allowOversizedExports ? process.env.FFMPEG_X264_MAXRATE || DEFAULT_X264_MAXRATE : DEFAULT_X264_MAXRATE).trim();
   const configuredX264Bufsize = (allowOversizedExports ? process.env.FFMPEG_X264_BUFSIZE || DEFAULT_X264_BUFSIZE : DEFAULT_X264_BUFSIZE).trim();
+  const storageSafeRates = resolveStorageSafeVideoRates(Math.max(1, effectiveOpts.endSec - effectiveOpts.startSec));
 
   const debugClipId = (effectiveOpts.debugClipId ?? effectiveOpts.outputPath.split('/').pop()?.replace(/\.mp4$/, '')) || 'unknown';
   if (effectiveOpts.hookTextEnabled !== false && effectiveOpts.hookText?.trim()) {
@@ -2266,11 +2267,11 @@ export async function renderVerticalClip(opts: RenderOpts) {
       encoder,
       preset: configuredPreset,
       crf: configuredCrf,
-      x264Maxrate: configuredX264Maxrate,
-      x264Bufsize: configuredX264Bufsize,
-      hardwareBitrate: allowOversizedExports ? process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE : DEFAULT_HW_VIDEO_BITRATE,
-      hardwareMaxrate: allowOversizedExports ? process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE : DEFAULT_HW_MAXRATE,
-      hardwareBufsize: allowOversizedExports ? process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE : DEFAULT_HW_BUFSIZE,
+      x264Maxrate: allowOversizedExports ? configuredX264Maxrate : storageSafeRates.maxrate,
+      x264Bufsize: allowOversizedExports ? configuredX264Bufsize : storageSafeRates.bufsize,
+      hardwareBitrate: allowOversizedExports ? process.env.FFMPEG_HW_VIDEO_BITRATE || DEFAULT_HW_VIDEO_BITRATE : storageSafeRates.bitrate,
+      hardwareMaxrate: allowOversizedExports ? process.env.FFMPEG_HW_MAXRATE || DEFAULT_HW_MAXRATE : storageSafeRates.maxrate,
+      hardwareBufsize: allowOversizedExports ? process.env.FFMPEG_HW_BUFSIZE || DEFAULT_HW_BUFSIZE : storageSafeRates.bufsize,
       outputFps: configuredOutputFps,
       sourceColor: sourceColorMetadata,
       volume: Number(effectiveOpts.volume ?? 1),

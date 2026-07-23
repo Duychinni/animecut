@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildRenderOutputArgs, buildSourceAwareColorArgs } from '../lib/ffmpeg-output-args';
+import { buildRenderOutputArgs, buildSourceAwareColorArgs, resolveStorageSafeVideoRates } from '../lib/ffmpeg-output-args';
 
 const baseOptions = {
   preset: 'medium',
@@ -69,6 +69,15 @@ assert.deepEqual(buildSourceAwareColorArgs({
   colorSpace: 'bt2020nc', colorTransfer: 'smpte2084', colorPrimaries: 'bt2020',
 }), [], 'HDR must not be relabelled as BT.709 without tone mapping');
 assert.deepEqual(buildSourceAwareColorArgs(null), []);
+
+assert.deepEqual(resolveStorageSafeVideoRates(30), {
+  bitrate: '10000k',
+  maxrate: '10000k',
+  bufsize: '20000k',
+});
+const longClipRates = resolveStorageSafeVideoRates(90);
+assert(Number.parseInt(longClipRates.bitrate, 10) < 4_000, 'long reels must stay below the object-storage upload ceiling');
+assert(Number.parseInt(longClipRates.bitrate, 10) >= 1_800, 'long reels must retain a usable video bitrate');
 
 const layoutPrefixes = [
   ['-filter_complex', '[0:v]crop=608:1080:176:0,scale=1080:1920:flags=lanczos+accurate_rnd+full_chroma_int[outv]', '-map', '[outv]', '-map', '0:a?'],

@@ -20,6 +20,26 @@ export type RenderOutputArgsOptions = {
 };
 
 const BT709_ALIASES = new Set(['bt709', 'bt709nc']);
+const DEFAULT_EXPORT_STORAGE_BUDGET_BYTES = 44 * 1024 * 1024;
+
+export function resolveStorageSafeVideoRates(
+  durationSeconds: number,
+  maxVideoKbps = 10_000,
+  storageBudgetBytes = DEFAULT_EXPORT_STORAGE_BUDGET_BYTES,
+) {
+  const duration = Math.max(1, Number(durationSeconds) || 1);
+  const audioAndContainerKbps = 256;
+  const budgetKbps = Math.floor((storageBudgetBytes * 8) / duration / 1000) - audioAndContainerKbps;
+  const bitrateKbps = Math.max(1_800, Math.min(maxVideoKbps, budgetKbps));
+  const maxrateKbps = Math.max(bitrateKbps, Math.min(maxVideoKbps, Math.round(bitrateKbps * 1.12)));
+  const bufsizeKbps = maxrateKbps * 2;
+
+  return {
+    bitrate: `${bitrateKbps}k`,
+    maxrate: `${maxrateKbps}k`,
+    bufsize: `${bufsizeKbps}k`,
+  };
+}
 
 export function buildSourceAwareColorArgs(sourceColor?: SourceColorMetadata | null) {
   if (!sourceColor) return [];
