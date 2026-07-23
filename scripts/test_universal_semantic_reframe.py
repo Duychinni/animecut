@@ -220,6 +220,25 @@ def test_visible_listener_does_not_force_vertical_stack():
     assert all(segment['mode'] != 'stacked' for segment in result), result
 
 
+def test_unframed_speech_holds_one_complete_visible_person():
+    visible_person = box(1280, 130, 390, 780, 7, 0.28)
+    samples = [
+        sample(
+            index * 0.25,
+            faces=[visible_person],
+            active_id=None,
+            speaker_conf=0.0,
+            audio_activity=0.7,
+        )
+        for index in range(12)
+    ]
+    result = timeline(samples)
+    assert result
+    assert all(segment['mode'] == 'single' for segment in result), result
+    assert all(segment.get('subjectStableId') == 'face:7' for segment in result), result
+    assert speaker_centering_error(result, [visible_person['cx']] * 12) < 0.12, result
+
+
 def test_source_edge_half_face_is_not_complete():
     half_face = box(0, 160, 210, 560, 1, 0.95)
     complete_face = box(1320, 150, 330, 700, 2, 0.55)

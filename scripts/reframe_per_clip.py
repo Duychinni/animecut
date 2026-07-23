@@ -810,6 +810,34 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 subject_stable_id = 'context'
                 subject_confidence = 0.0
                 selection_reason = 'only_partial_faces_visible'
+        if (
+            audio_activity >= SILENCE_AUDIO_THRESHOLD
+            and complete_faces
+            and (
+                selected is None
+                or subject_kind == 'context'
+                or selection_reason in ('safe_full_frame', 'no_reliable_visual_subject', 'only_partial_faces_visible')
+            )
+        ):
+            # Speech with no useful cutaway/context should never publish an
+            # empty-stage or divider-centered frame. Hold one complete visible
+            # person—even an attentive listener—until a trustworthy active
+            # speaker target appears.
+            replacement = max(
+                complete_faces,
+                key=lambda face: (
+                    float(face.get('active_speaker_confidence', 0.0)),
+                    float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+                    -abs(float(face.get('cx', 0.0)) - source_w / 2.0),
+                ),
+            )
+            active_id = int(replacement.get('track_id')) if replacement.get('track_id') is not None else active_id
+            selected = replacement
+            subject_kind = 'face'
+            subject_stable_id = f'face:{active_id}' if active_id is not None else 'face:visible-person'
+            subject_confidence = max(0.32, float(replacement.get('active_speaker_confidence', 0.0)))
+            selection_reason = 'visible_person_during_unframed_speech'
+            subject_predicted = False
         face_by_id = complete_face_by_id
         speaker_score_margin = float(point.get('speaker_score_margin', frame.get('speaker_score_margin', 0.0)))
         pair = strongest_face_pair(complete_faces, source_w)
