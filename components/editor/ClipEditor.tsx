@@ -69,6 +69,9 @@ type TimelineRange = {
   id: string;
   start: number;
   end: number;
+  originalStart?: number;
+  originalEnd?: number;
+  kind?: 'transcript' | 'video';
 };
 
 type TimelineFilmstrip = {
@@ -112,6 +115,56 @@ function clamp(value: number, min: number, max: number) {
 
 function buildTimelineViewport(start: number, end: number) {
   return { start, end: Math.max(start + 0.1, end) };
+}
+
+function mergeTimelineRanges(ranges: Array<{ start: number; end: number }>) {
+  const sorted = ranges
+    .filter((range) => range.end - range.start >= 0.15)
+    .sort((a, b) => a.start - b.start);
+  const merged: Array<{ start: number; end: number }> = [];
+
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start <= previous.end + 0.01) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+function subtractTimelineRange(
+  ranges: Array<{ start: number; end: number }>,
+  removedStart: number,
+  removedEnd: number,
+) {
+  return ranges.flatMap((range) => {
+    if (range.end <= removedStart || range.start >= removedEnd) return [range];
+    const pieces: Array<{ start: number; end: number }> = [];
+    if (range.start < removedStart) pieces.push({ start: range.start, end: removedStart });
+    if (range.end > removedEnd) pieces.push({ start: removedEnd, end: range.end });
+    return pieces;
+  });
+}
+
+function visibleSegmentRange(
+  originalStart: number,
+  originalEnd: number,
+  removedRanges: Array<{ start: number; end: number }>,
+) {
+  let start = originalStart;
+  let end = originalEnd;
+  const merged = mergeTimelineRanges(removedRanges);
+
+  for (const range of merged) {
+    if (range.start <= start + 0.01 && range.end > start) start = Math.min(originalEnd, range.end);
+  }
+  for (let index = merged.length - 1; index >= 0; index -= 1) {
+    const range = merged[index];
+    if (range.end >= end - 0.01 && range.start < end) end = Math.max(originalStart, range.start);
+  }
+  return { start, end };
 }
 
 function safeJson(value: unknown) {
@@ -338,11 +391,18 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       ...settings.cut_points.filter((point) => point > settings.clip_start_seconds && point < settings.clip_end_seconds),
       settings.clip_end_seconds,
     ].sort((a, b) => a - b);
-    return boundaries.slice(0, -1).map((start, index) => ({
-      id: `segment-${index}-${start.toFixed(3)}`,
-      start,
-      end: boundaries[index + 1],
-    }));
+    return boundaries.slice(0, -1).map((originalStart, index) => {
+      const originalEnd = boundaries[index + 1];
+      const visible = visibleSegmentRange(originalStart, originalEnd, settings.removed_ranges);
+      return {
+        id: `segment-${index}-${originalStart.toFixed(3)}`,
+        start: visible.start,
+        end: visible.end,
+        originalStart,
+        originalEnd,
+        kind: 'video' as const,
+      };
+    }).filter((segment) => segment.end - segment.start >= 0.15);
   }, [settings]);
   const clipTranscriptText = useMemo(() => (
     transcriptChunks.map((chunk) => chunk.text.trim()).filter(Boolean).join('\n\n')
@@ -698,7 +758,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const start = clamp(chunk.start, settings.clip_start_seconds, settings.clip_end_seconds);
     const end = clamp(chunk.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
-    setSelectedRange({ id: chunk.id, start, end });
+    setSelectedRange({ id: chunk.id, start, end, kind: 'transcript' });
     seekAbsolute(clamp(seekTime, start, end));
     setToast('Segment selected — drag either edge to adjust it');
   }
@@ -708,7 +768,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     const start = clamp(range.start, settings.clip_start_seconds, settings.clip_end_seconds);
     const end = clamp(range.end, start, settings.clip_end_seconds);
     if (end - start < 0.15) return;
-    setSelectedRange({ ...range, start, end });
+    setSelectedRange({
+      ...range,
+      start,
+      end,
+      originalStart: range.originalStart ?? start,
+      originalEnd: range.originalEnd ?? end,
+      kind: 'video',
+    });
     seekAbsolute(clamp(seekTime, start, end));
     setToast('Segment selected — adjust its edges or press Delete segment');
   }
@@ -904,11 +971,49 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
     if (mode === 'end' && settings) patchTimes(settings.clip_start_seconds, seconds);
     if (mode === 'seek') seekAbsolute(Math.min(seconds, editableClipBoundsRef.current?.end ?? sourceDuration));
     if (mode === 'selection-start' && selectedRange) {
-      setSelectedRange({ ...selectedRange, start: clamp(seconds, settings?.clip_start_seconds ?? 0, selectedRange.end - 0.15) });
+      trimSelectedSegmentEdge('start', seconds);
     }
     if (mode === 'selection-end' && selectedRange) {
-      setSelectedRange({ ...selectedRange, end: clamp(seconds, selectedRange.start + 0.15, settings?.clip_end_seconds ?? sourceDuration) });
+      trimSelectedSegmentEdge('end', seconds);
     }
+  }
+
+  function trimSelectedSegmentEdge(edge: 'start' | 'end', seconds: number) {
+    if (!settings || !selectedRange) return;
+    if (selectedRange.kind !== 'video' || selectedRange.originalStart === undefined || selectedRange.originalEnd === undefined) {
+      setSelectedRange((range) => {
+        if (!range) return range;
+        return edge === 'start'
+          ? { ...range, start: clamp(seconds, settings.clip_start_seconds, range.end - 0.15) }
+          : { ...range, end: clamp(seconds, range.start + 0.15, settings.clip_end_seconds) };
+      });
+      return;
+    }
+
+    const originalStart = selectedRange.originalStart;
+    const originalEnd = selectedRange.originalEnd;
+    const nextStart = edge === 'start'
+      ? clamp(seconds, originalStart, selectedRange.end - 0.15)
+      : selectedRange.start;
+    const nextEnd = edge === 'end'
+      ? clamp(seconds, selectedRange.start + 0.15, originalEnd)
+      : selectedRange.end;
+    const previousEdgeStart = edge === 'start' ? selectedRange.start : originalStart;
+    const previousEdgeEnd = edge === 'end' ? selectedRange.end : originalEnd;
+    const removedRanges = edge === 'start'
+      ? subtractTimelineRange(settings.removed_ranges, originalStart, previousEdgeStart)
+      : subtractTimelineRange(settings.removed_ranges, previousEdgeEnd, originalEnd);
+
+    if (edge === 'start' && nextStart > originalStart + 0.01) {
+      removedRanges.push({ start: originalStart, end: nextStart });
+    }
+    if (edge === 'end' && nextEnd < originalEnd - 0.01) {
+      removedRanges.push({ start: nextEnd, end: originalEnd });
+    }
+
+    patchSettings({ removed_ranges: mergeTimelineRanges(removedRanges) });
+    setSelectedRange({ ...selectedRange, start: nextStart, end: nextEnd });
+    seekAbsolute(edge === 'start' ? nextStart : nextEnd);
   }
 
   useEffect(() => {
@@ -920,16 +1025,10 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
       if (dragMode === 'end') patchTimes(settings.clip_start_seconds, seconds);
       if (dragMode === 'seek') seekAbsolute(Math.min(seconds, editableClipBoundsRef.current?.end ?? sourceDuration));
       if (dragMode === 'selection-start') {
-        setSelectedRange((range) => range ? {
-          ...range,
-          start: clamp(seconds, settings.clip_start_seconds, range.end - 0.15),
-        } : range);
+        trimSelectedSegmentEdge('start', seconds);
       }
       if (dragMode === 'selection-end') {
-        setSelectedRange((range) => range ? {
-          ...range,
-          end: clamp(seconds, range.start + 0.15, settings.clip_end_seconds),
-        } : range);
+        trimSelectedSegmentEdge('end', seconds);
       }
     };
     const onUp = () => setDragMode(null);
@@ -1650,14 +1749,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   <button
                     type="button"
                     onPointerDown={(event) => beginTimelineDrag('selection-start', event)}
-                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-cyan-200 shadow-[0_0_12px_rgba(165,243,252,.7)]"
+                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-white shadow-[0_0_12px_rgba(255,255,255,.7)]"
                     style={{ left: `${clamp(((selectedRange.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%` }}
                     aria-label="Adjust selected segment start"
                   />
                   <button
                     type="button"
                     onPointerDown={(event) => beginTimelineDrag('selection-end', event)}
-                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-cyan-200 shadow-[0_0_12px_rgba(165,243,252,.7)]"
+                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-white shadow-[0_0_12px_rgba(255,255,255,.7)]"
                     style={{ left: `${clamp(((selectedRange.end - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%` }}
                     aria-label="Adjust selected segment end"
                   />
