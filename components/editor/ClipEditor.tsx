@@ -31,6 +31,7 @@ type EditorData = {
   };
   source: {
     previewUrl: string | null;
+    previewKind: 'caption-free-reel' | 'source' | 'burned-reel';
     fallbackClipUrl: string | null;
     posterUrl: string | null;
     durationSeconds: number;
@@ -279,7 +280,11 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
   }
 
   const previewUrl = data?.source.previewUrl || data?.clip.signedUrl || data?.source.fallbackClipUrl || null;
-  const previewUsesSource = Boolean(previewUrl && data?.source.previewUrl && previewUrl === data.source.previewUrl && previewUrl !== data?.clip.signedUrl);
+  const previewUsesSource = Boolean(
+    previewUrl
+    && data?.source.previewKind === 'source'
+    && previewUrl === data.source.previewUrl,
+  );
   const sourceDuration = Math.max(1, data?.source.durationSeconds ?? settings?.clip_end_seconds ?? 90);
   const clipStartSeconds = settings?.clip_start_seconds;
   const clipEndSeconds = settings?.clip_end_seconds;
@@ -1526,7 +1531,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                       event.stopPropagation();
                       selectTimelineChunk(chunk, timelineSeconds(event));
                     }}
-                    className={`absolute top-[38px] z-10 h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${selected ? 'bg-orange-100 ring-2 ring-white' : 'bg-orange-300/80'}`}
+                    className={`absolute top-[38px] z-10 h-[22px] overflow-hidden rounded-[4px] px-2 text-left text-[9px] font-black leading-[22px] text-black/78 ${selected ? 'bg-cyan-100 ring-2 ring-white' : 'bg-orange-300/80'}`}
                     title={chunk.text}
                     style={{
                       left: `${(start / timelineDuration) * 100}%`,
@@ -1587,7 +1592,7 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   }}
                   className={`absolute bottom-0 top-[69px] z-[15] border-x transition ${
                     selectedRange?.id === segment.id
-                      ? 'border-orange-100 bg-orange-300/12'
+                      ? 'border-cyan-100 bg-cyan-300/12'
                       : index % 2 === 0
                         ? 'border-cyan-100/30 bg-white/[0.015] hover:bg-white/[0.035]'
                         : 'border-cyan-100/30 bg-cyan-200/[0.025] hover:bg-white/[0.035]'
@@ -1628,13 +1633,13 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
               {selectedRange ? (
                 <div
-                  className="pointer-events-none absolute bottom-0 top-[31px] z-30 border-y border-orange-200/90 bg-orange-300/18"
+                  className="pointer-events-none absolute bottom-0 top-[31px] z-30 border-y border-cyan-200/90 bg-cyan-300/10"
                   style={{
                     left: `${clamp(((selectedRange.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%`,
                     width: `${clamp(((selectedRange.end - selectedRange.start) / timelineDuration) * 100, 0, 100)}%`,
                   }}
                 >
-                  <span className="absolute left-1 top-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-bold text-orange-100">
+                  <span className="absolute left-1 top-1 rounded bg-black/65 px-1.5 py-0.5 text-[9px] font-bold text-cyan-100">
                     {formatClock(selectedRange.end - selectedRange.start)} selected · Delete/Backspace to remove
                   </span>
                 </div>
@@ -1645,14 +1650,14 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
                   <button
                     type="button"
                     onPointerDown={(event) => beginTimelineDrag('selection-start', event)}
-                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-orange-200 shadow-[0_0_12px_rgba(253,186,116,.7)]"
+                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-cyan-200 shadow-[0_0_12px_rgba(165,243,252,.7)]"
                     style={{ left: `${clamp(((selectedRange.start - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%` }}
                     aria-label="Adjust selected segment start"
                   />
                   <button
                     type="button"
                     onPointerDown={(event) => beginTimelineDrag('selection-end', event)}
-                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-orange-200 shadow-[0_0_12px_rgba(253,186,116,.7)]"
+                    className="absolute bottom-0 top-[31px] z-40 w-3 -translate-x-1/2 cursor-ew-resize bg-cyan-200 shadow-[0_0_12px_rgba(165,243,252,.7)]"
                     style={{ left: `${clamp(((selectedRange.end - timelineViewport.start) / timelineDuration) * 100, 0, 100)}%` }}
                     aria-label="Adjust selected segment end"
                   />
