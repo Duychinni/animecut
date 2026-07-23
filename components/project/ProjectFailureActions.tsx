@@ -28,7 +28,7 @@ export function ProjectFailureActions({ projectId, detail }: { projectId: string
       {message ? <p className="mt-3 text-sm text-red-200">{message}</p> : null}
       <div className="mt-5 flex flex-wrap justify-center gap-3">
         <button disabled={retrying} onClick={() => { captureEvent('render_failed', { recovery: 'retry_clicked' }); void retry(); }} className="rounded-xl bg-white px-4 py-2.5 font-bold text-black disabled:opacity-50">{retrying ? 'Retrying…' : 'Retry processing'}</button>
-        <a href={`mailto:support@animacut.com?subject=Project%20processing%20help%20${encodeURIComponent(projectId)}`} className="rounded-xl border border-white/15 px-4 py-2.5 font-bold">Contact support</a>
+        <a href={`/contact?project=${encodeURIComponent(projectId)}`} className="rounded-xl border border-white/15 px-4 py-2.5 font-bold">Contact support</a>
       </div>
     </section>
   );

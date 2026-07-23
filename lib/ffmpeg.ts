@@ -1439,7 +1439,8 @@ function buildCropFilter(opts: RenderOpts, smartCropExpr?: string) {
   }
 
   if (framingMode === 'center') {
-    return `crop=${cropWidth}:${cropHeight}:(iw-${cropWidth})/2:min(max((ih-${cropHeight})*0.34,0),ih-${cropHeight})`;
+    const yExpr = escapeFfmpegExpr(`min(max((ih-${cropHeight})*0.34,0),ih-${cropHeight})`);
+    return `crop=${cropWidth}:${cropHeight}:(iw-${cropWidth})/2:${yExpr}`;
   }
 
   if (!enabled) {
