@@ -9,6 +9,7 @@ import { requireAdmin } from '@/lib/admin-auth';
 import { AD_STUDIO_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
 import { createExportDownloadUrl, uploadExportObject } from '@/lib/storage';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { downloadR2Object, isR2Configured, r2ObjectExists } from '@/lib/r2';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,11 +106,15 @@ export async function POST(request: Request) {
       if (!assetPath.startsWith(`${adminUser.id}/ad-assets/`) || assetPath.includes('..')) {
         return NextResponse.json({ error: 'Choose a valid saved ad asset.' }, { status: 400 });
       }
-      const admin = createAdminClient();
-      const { data, error } = await admin.storage.from('raw-media').download(assetPath);
-      if (error || !data) throw error || new Error('Saved ad asset could not be downloaded.');
       inputPath = path.join(workdir, 'saved-asset');
-      await writeFile(inputPath, Buffer.from(await data.arrayBuffer()));
+      if (isR2Configured() && await r2ObjectExists(assetPath)) {
+        await writeFile(inputPath, await downloadR2Object(assetPath));
+      } else {
+        const admin = createAdminClient();
+        const { data, error } = await admin.storage.from('raw-media').download(assetPath);
+        if (error || !data) throw error || new Error('Saved ad asset could not be downloaded.');
+        await writeFile(inputPath, Buffer.from(await data.arrayBuffer()));
+      }
     } else {
       if (!ALLOWED_REELS.has(reel)) return NextResponse.json({ error: 'Choose valid footage' }, { status: 400 });
       inputPath = path.join(process.cwd(), 'public', 'hero-reels', `${reel}.mp4`);

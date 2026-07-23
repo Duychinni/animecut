@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AD_ASSET_CATEGORIES, AD_ASSET_CATEGORY_LABELS, type AdAsset, type AdAssetCategory } from '@/lib/ad-studio-assets';
-import { AD_STUDIO_MAX_UPLOAD_BYTES, AD_STUDIO_UPLOAD_ACCEPT, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
+import { AD_STUDIO_MAX_UPLOAD_BYTES, AD_STUDIO_UPLOAD_ACCEPT } from '@/lib/ad-studio-upload';
 
 type Props = {
   selectedPaths: string[];
@@ -37,8 +37,6 @@ export function AdAssetLibrary({ selectedPaths, onSelectionChange }: Props) {
   async function uploadFiles(files: File[]) {
     setError('');
     if (!files.length) return;
-    const invalid = files.find((file) => !isAllowedAdStudioUpload(file));
-    if (invalid) return setError(`${invalid.name} must be MP4, MOV, WebM, MKV, or FLV.`);
     const oversized = files.find((file) => file.size > AD_STUDIO_MAX_UPLOAD_BYTES);
     if (oversized) return setError(`${oversized.name} is over the 300 MB limit.`);
 
@@ -54,7 +52,10 @@ export function AdAssetLibrary({ selectedPaths, onSelectionChange }: Props) {
         const target = await prepare.json();
         if (!prepare.ok) throw new Error(target.error || `Could not prepare ${file.name}`);
         const upload = await fetch(target.uploadUrl, { method: 'PUT', headers: target.headers, body: file });
-        if (!upload.ok) throw new Error(`Storage upload failed for ${file.name}`);
+        if (!upload.ok) {
+          const detail = (await upload.text().catch(() => '')).trim();
+          throw new Error(`${file.name} could not be uploaded (${upload.status})${detail ? `: ${detail.slice(0, 240)}` : ''}`);
+        }
       }
       setStatus('Upload complete');
       await loadAssets();

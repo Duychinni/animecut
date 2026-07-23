@@ -3,6 +3,15 @@ import { requireAdmin } from '@/lib/admin-auth';
 import { AD_ASSET_CATEGORIES, isAdAssetCategory } from '@/lib/ad-studio-assets';
 import { AD_STUDIO_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
 import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  copyR2Object,
+  createSignedR2GetUrl,
+  createSignedR2PutUrl,
+  deleteR2Object,
+  isR2Configured,
+  listR2Objects,
+  r2ObjectExists,
+} from '@/lib/r2';
 
 const BUCKET = 'raw-media';
 
@@ -33,8 +42,30 @@ export async function GET() {
   const adminUser = await requireAdmin();
   if (!adminUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const admin = createAdminClient();
   const assets = [];
+  if (isR2Configured()) {
+    const objects = await listR2Objects(`${assetRoot(adminUser.id)}/`);
+    for (const item of objects) {
+      if (!item.Key || !item.Size) continue;
+      const relative = item.Key.slice(`${assetRoot(adminUser.id)}/`.length);
+      const category = relative.split('/', 1)[0];
+      if (!isAdAssetCategory(category)) continue;
+      assets.push({
+        id: item.ETag || item.Key,
+        path: item.Key,
+        name: decodeName(item.Key.split('/').pop() || ''),
+        category,
+        contentType: 'video/mp4',
+        size: item.Size,
+        createdAt: item.LastModified?.toISOString() || null,
+        previewUrl: await createSignedR2GetUrl(item.Key, 60 * 60),
+        provider: 'r2',
+      });
+    }
+  }
+
+  const admin = createAdminClient();
+  const r2Paths = new Set(assets.map((asset) => asset.path));
   for (const category of AD_ASSET_CATEGORIES) {
     const directory = `${assetRoot(adminUser.id)}/${category}`;
     const { data, error } = await admin.storage.from(BUCKET).list(directory, {
@@ -45,6 +76,7 @@ export async function GET() {
     for (const item of data || []) {
       if (!item.id) continue;
       const objectPath = `${directory}/${item.name}`;
+      if (r2Paths.has(objectPath)) continue;
       const { data: signed, error: signedError } = await admin.storage.from(BUCKET).createSignedUrl(objectPath, 60 * 60);
       if (signedError) throw signedError;
       assets.push({
@@ -80,6 +112,15 @@ export async function POST(request: Request) {
   if (!isAdAssetCategory(category)) return NextResponse.json({ error: 'Choose a valid asset category.' }, { status: 400 });
 
   const objectPath = `${assetRoot(adminUser.id)}/${category}/${crypto.randomUUID()}--${encodeName(name)}`;
+  if (isR2Configured()) {
+    const uploadUrl = await createSignedR2PutUrl(objectPath, contentType);
+    return NextResponse.json({
+      path: objectPath,
+      uploadUrl,
+      headers: { 'content-type': contentType || 'application/octet-stream' },
+      provider: 'r2',
+    });
+  }
   const admin = createAdminClient();
   const { data, error } = await admin.storage.from(BUCKET).createSignedUploadUrl(objectPath);
   if (error) throw error;
@@ -103,6 +144,13 @@ export async function PATCH(request: Request) {
   const objectName = sourcePath.split('/').pop() || '';
   const id = objectName.split('--', 1)[0] || crypto.randomUUID();
   const targetPath = `${assetRoot(adminUser.id)}/${category}/${id}--${encodeName(name)}`;
+  if (isR2Configured() && await r2ObjectExists(sourcePath)) {
+    if (targetPath !== sourcePath) {
+      await copyR2Object(sourcePath, targetPath);
+      await deleteR2Object(sourcePath);
+    }
+    return NextResponse.json({ ok: true, path: targetPath });
+  }
   const admin = createAdminClient();
   if (targetPath !== sourcePath) {
     const { error } = await admin.storage.from(BUCKET).move(sourcePath, targetPath);
@@ -117,6 +165,10 @@ export async function DELETE(request: Request) {
   const body = await request.json() as { path?: string };
   const objectPath = safeAssetPath(adminUser.id, body.path);
   if (!objectPath) return NextResponse.json({ error: 'Choose a valid asset.' }, { status: 400 });
+  if (isR2Configured() && await r2ObjectExists(objectPath)) {
+    await deleteR2Object(objectPath);
+    return NextResponse.json({ ok: true });
+  }
   const admin = createAdminClient();
   const { error } = await admin.storage.from(BUCKET).remove([objectPath]);
   if (error) throw error;

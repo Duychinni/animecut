@@ -1,9 +1,11 @@
 import {
   CompleteMultipartUploadCommand,
+  CopyObjectCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -172,6 +174,55 @@ export async function createSignedR2GetUrl(key: string, expiresIn = 60 * 60 * 24
   if (!cfg) throw new Error('R2 is not configured');
   const client = getR2Client();
   return getSignedUrl(client, new GetObjectCommand({ Bucket: cfg.bucket, Key: key }), { expiresIn });
+}
+
+export async function createSignedR2PutUrl(key: string, contentType: string, expiresIn = 60 * 60) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  return getSignedUrl(
+    getR2Client(),
+    new PutObjectCommand({
+      Bucket: cfg.bucket,
+      Key: key,
+      ContentType: contentType || 'application/octet-stream',
+    }),
+    { expiresIn },
+  );
+}
+
+export async function listR2Objects(prefix: string) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const objects = [];
+  let continuationToken: string | undefined;
+  do {
+    const result = await getR2Client().send(new ListObjectsV2Command({
+      Bucket: cfg.bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+    objects.push(...(result.Contents || []));
+    continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return objects;
+}
+
+export async function copyR2Object(sourceKey: string, targetKey: string) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  await getR2Client().send(new CopyObjectCommand({
+    Bucket: cfg.bucket,
+    CopySource: `${cfg.bucket}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+    Key: targetKey,
+  }));
+}
+
+export async function downloadR2Object(key: string) {
+  const cfg = getR2Config();
+  if (!cfg) throw new Error('R2 is not configured');
+  const result = await getR2Client().send(new GetObjectCommand({ Bucket: cfg.bucket, Key: key }));
+  if (!result.Body) throw new Error('R2 object has no body');
+  return Buffer.from(await result.Body.transformToByteArray());
 }
 
 export async function deleteR2Object(key: string) {
