@@ -1601,8 +1601,12 @@ function buildBaseVideoFilters(
   const fitMode = opts.framingMode === 'fit';
 
   if (fitMode) {
-    filters.push(`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS}`);
-    filters.push(`pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2:black`);
+    // A published reel must always fill its 9:16 canvas. "Fit" used to
+    // letterbox horizontal footage, which made interview clips look like a
+    // tiny 16:9 video floating between black bars. Compatibility fallbacks
+    // still use a deterministic center crop, but never add borders.
+    filters.push(`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS}`);
+    filters.push(`crop=${outputWidth}:${outputHeight}:(iw-${outputWidth})/2:(ih-${outputHeight})/2`);
     filters.push(SHARPEN_AFTER_UPSCALE_FILTER);
     filters.push('setsar=1');
     return filters;
@@ -2007,7 +2011,7 @@ function buildTimedReframeFilter(
     const normalizedOutput = `[segment${index}]`;
 
     if (segment.mode === 'source_vertical') {
-      graph.push(`${base},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS},pad=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
+      graph.push(`${base},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:(iw-${VERTICAL_EXPORT_WIDTH})/2:(ih-${VERTICAL_EXPORT_HEIGHT})/2,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
     } else if (segment.mode === 'grid' && sourceW > 0 && sourceH > 0) {
       graph.push(...buildTimelineGrid(base, normalizedOutput, index, segment, sourceW, sourceH));
     } else if ((segment.mode === 'stacked' || (segment.mode === 'wide_context' && segment.wideKind === 'two_person')) && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {

@@ -991,7 +991,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     autoReframe: safeLayoutFallback ? false : useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
     reframeMode: safeLayoutFallback ? 'off' : options?.reframe_mode ?? getFallbackReframeMode(),
     reframePreset: options?.reframe_preset ?? 'auto',
-    framingMode: safeLayoutFallback ? 'fit' : useEditSettings ? editSettings.framing_mode : 'auto',
+    // Even a compatibility render must fill 9:16. The old fit mode produced
+    // black letterbox bars around horizontal interview footage.
+    framingMode: safeLayoutFallback ? 'center' : useEditSettings ? editSettings.framing_mode : 'auto',
     cropX: useEditSettings ? editSettings.crop_x : undefined,
     cropY: useEditSettings ? editSettings.crop_y : undefined,
     zoom: useEditSettings ? editSettings.zoom : undefined,

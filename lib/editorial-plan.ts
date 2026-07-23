@@ -93,10 +93,37 @@ function normalized(text: string) {
   return clean(text).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const EDITORIAL_FILLER_WORDS = new Set([
+  'ah', 'hmm', 'like', 'okay', 'right', 'uh', 'um', 'well', 'yeah',
+]);
+
+function hasRepetitiveEditorialWords(text: string) {
+  const words = normalized(text).split(/\s+/).filter(Boolean);
+  for (let index = 1; index < words.length; index += 1) {
+    if (words[index] === words[index - 1]) return true;
+  }
+
+  // Catch malformed AI copy such as "Inside MrBeast's MrBeast Games" while
+  // allowing ordinary function words to repeat naturally.
+  const meaningful = words
+    .map((word, index) => ({ word: word.replace(/s$/, ''), index }))
+    .filter(({ word }) => word.length >= 4 && !TOPIC_STOPWORDS.has(word));
+  return meaningful.some(({ word, index }, itemIndex) =>
+    meaningful.slice(0, itemIndex).some((prior) => prior.word === word && index - prior.index <= 3));
+}
+
+function isFillerLedCopy(text: string) {
+  const words = normalized(text).split(/\s+/).filter(Boolean);
+  return words.length > 0 && EDITORIAL_FILLER_WORDS.has(words[0])
+    && (words.length === 1 || EDITORIAL_FILLER_WORDS.has(words[1]));
+}
+
 export function isNaturalEditorialTitle(value: unknown) {
   const text = clean(value);
   if (text.length < 5 || text.length > 100) return false;
+  if (hasRepetitiveEditorialWords(text) || isFillerLedCopy(text)) return false;
   if (/\bmoment\s*$/i.test(text)) return false;
+  if (/^what\s+.+\s+reveals\s+about\b/i.test(text)) return false;
   if (/^why\s+(?:\w+\s+){1,4}matters$/i.test(text)) return false;
   if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}\s+explains\s+/i.test(text)) return false;
   if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}(?:'s)?\s+take\s+on\s+/i.test(text)) return false;
@@ -109,6 +136,7 @@ export function isNaturalEditorialTitle(value: unknown) {
 export function isNaturalEditorialHook(value: unknown) {
   const text = clean(value);
   if (text.length < 5 || text.length > 48) return false;
+  if (hasRepetitiveEditorialWords(text) || isFillerLedCopy(text)) return false;
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top moment|watch this|this is crazy|keep watching|what do you mean|how old are you)$/i.test(text)) return false;

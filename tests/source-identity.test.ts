@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canonicalizeKnownNames, editorialSourceContext, verifiedSourceSubjectHint } from '../lib/source-identity';
-import { buildCandidateEditorialPlan } from '../lib/editorial-plan';
+import {
+  buildCandidateEditorialPlan,
+  isNaturalEditorialHook,
+  isNaturalEditorialTitle,
+} from '../lib/editorial-plan';
 
 test('normalizes MrBeast branding from common source-title spelling', () => {
   assert.equal(canonicalizeKnownNames('How Mr. Beast Became Successful'), 'How MrBeast Became Successful');
@@ -82,4 +86,11 @@ test('repairs MrBeast hook fragments split by transcript boundaries', () => {
     raw: { title: 'Where MrBeast Got His Name', hook_text: 'Beast came from, what, an Xbox?' },
   });
   assert.equal(leadingBeast.selected_hook, 'MrBeast came from, what, an Xbox?');
+});
+
+test('rejects repetitive filler and malformed generated titles', () => {
+  assert.equal(isNaturalEditorialTitle('What Leaves Another Message Reveals About Yeah Yeah'), false);
+  assert.equal(isNaturalEditorialTitle("Inside MrBeast's MrBeast Games Competition Show"), false);
+  assert.equal(isNaturalEditorialHook('Yeah Yeah This Is Wild'), false);
+  assert.equal(isNaturalEditorialHook('MrBeast MrBeast Changed Everything'), false);
 });

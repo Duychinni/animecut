@@ -7,7 +7,11 @@ import { getClipPolicy, getRequiredClipCount, getTargetClipCount } from '@/lib/c
 import { isLikelyMockTranscript, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
-import { buildCandidateEditorialPlan, type CandidateEditorialPlan } from '@/lib/editorial-plan';
+import {
+  buildCandidateEditorialPlan,
+  isNaturalEditorialHook,
+  type CandidateEditorialPlan,
+} from '@/lib/editorial-plan';
 import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 
@@ -658,7 +662,7 @@ function resolveCandidateHookText(params: {
   const rawHook = normalizeOptionalHookText(params.rawHookText);
   const title = String(params.title ?? '');
 
-  if (rawHook) {
+  if (rawHook && isNaturalEditorialHook(rawHook)) {
     if (!isTitleLikeHook(rawHook, title) && !isGenericHookText(rawHook)) return rawHook;
   }
 
@@ -669,12 +673,12 @@ function resolveCandidateHookText(params: {
     endSec: params.endSec,
   }));
 
-  if (transcriptHook && !isGenericHookText(transcriptHook) && !isTitleLikeHook(transcriptHook, title)) {
+  if (transcriptHook && isNaturalEditorialHook(transcriptHook) && !isGenericHookText(transcriptHook) && !isTitleLikeHook(transcriptHook, title)) {
     return transcriptHook;
   }
 
   const openingHook = normalizeHookText(params.openingLine, '');
-  if (!isGenericHookText(openingHook) && !isTitleLikeHook(openingHook, title)) return openingHook;
+  if (isNaturalEditorialHook(openingHook) && !isGenericHookText(openingHook) && !isTitleLikeHook(openingHook, title)) return openingHook;
 
   return 'This Is The Part That Matters';
 }
