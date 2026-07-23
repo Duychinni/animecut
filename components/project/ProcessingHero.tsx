@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
 import { readJsonSafe } from '@/lib/safe-json';
 import { formatLivePercent, useLiveProgress } from '@/components/project/LiveProgress';
+import { createClient } from '@/lib/supabase/client';
 
 type ProgressPayload = {
   project?: {
@@ -80,26 +81,81 @@ export function ProcessingHero({
 
   useEffect(() => {
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+
+    const isTerminal = (payload: ProgressPayload | null) => {
+      const project = payload?.project;
+      if (!project) return false;
+      return project.status === 'completed'
+        || project.pipeline_status === 'completed'
+        || Boolean(project.pipeline_error);
+    };
+
+    const scheduleFallback = () => {
+      if (!alive || stopped || timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void tick();
+      }, 30_000);
+    };
 
     const tick = async () => {
+      if (!alive || stopped || document.visibilityState !== 'visible') return;
       try {
         const res = await fetch(`/api/projects/${projectId}/progress`, { cache: 'no-store' });
         const json = (await readJsonSafe(res)) as ProgressPayload;
         if (!alive || !res.ok) return;
         setData(json);
+        if (isTerminal(json)) {
+          stopped = true;
+          if (timer) clearTimeout(timer);
+          timer = null;
+          return;
+        }
       } catch {
         // ignore transient errors
       }
+      scheduleFallback();
     };
 
-    void tick();
-    const timer = setInterval(() => {
+    const supabase = createClient();
+    const onRealtimeUpdate = () => {
+      if (!alive || stopped || document.visibilityState !== 'visible') return;
+      if (timer) clearTimeout(timer);
+      timer = null;
       void tick();
-    }, 1500);
+    };
+    const channel = supabase
+      .channel(`project-hero-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'projects', filter: `id=eq.${projectId}` },
+        onRealtimeUpdate,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'exports', filter: `project_id=eq.${projectId}` },
+        onRealtimeUpdate,
+      )
+      .subscribe();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible' || stopped) {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        return;
+      }
+      void tick();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    void tick();
 
     return () => {
       alive = false;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      void supabase.removeChannel(channel);
     };
   }, [projectId]);
 

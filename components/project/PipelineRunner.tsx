@@ -86,7 +86,6 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const completionTrackedRef = useRef(false);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
-  const activeExportCount = useMemo(() => Number(progress?.progress?.active_exports ?? 0), [progress]);
   const isCompleted = progress?.project?.status === 'completed';
   const liveProgressPct = useLiveProgress(progressPct, !isCompleted, progress?.project?.pipeline_stage);
 
@@ -128,6 +127,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   useEffect(() => {
     const supabase = createClient();
     const scheduleRefresh = () => {
+      if (document.visibilityState !== 'visible') return;
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
       realtimeRefreshTimerRef.current = setTimeout(() => {
         void refreshProgress().then((latest) => {
@@ -157,8 +157,6 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   }, [projectId, refreshProgress, router]);
 
   useEffect(() => {
-    if (progressPct >= 100 && activeExportCount <= 0) return;
-
     let timer: ReturnType<typeof setInterval> | null = null;
 
     const tick = async () => {
@@ -166,9 +164,19 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
       const latestProgress = await refreshProgress();
       const snapshot = latestProgress ?? progressRef.current;
 
+      const projectStatus = snapshot?.project?.status ?? 'created';
       const pipelineStatus = snapshot?.project?.pipeline_status ?? 'idle';
+      const pipelineError = snapshot?.project?.pipeline_error;
       const activeExports = Number(snapshot?.progress?.active_exports ?? 0);
       const doneExports = Number(snapshot?.progress?.done_exports ?? 0);
+
+      if (projectStatus === 'completed' || pipelineStatus === 'completed' || pipelineError) {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+        return;
+      }
 
       if (pipelineStatus === 'queued' || pipelineStatus === 'processing' || activeExports > 0 || doneExports === 0) {
         await kickBackgroundProcessing();
@@ -178,7 +186,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     void tick();
     timer = setInterval(() => {
       void tick();
-    }, 8000);
+    }, 30_000);
 
     return () => {
       if (timer) clearInterval(timer);
