@@ -1109,6 +1109,16 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif fixed_two_panel:
             desired_mode = 'wide_context'
             fixed_render_branch = 'safe_full_frame'
+        elif participant_count >= 2 and active_speaker_mapped:
+            desired_mode = 'single'
+            fixed_render_branch = 'single_subject'
+        elif participant_count >= 2 and selected is not None:
+            # Prefer one complete person over a center crop between two
+            # or more people. Identity continuity keeps this face stable until
+            # active-speaker evidence is strong enough to cut to another
+            # person. Multi-person layouts are reserved for sustained silence.
+            desired_mode = 'single'
+            fixed_render_branch = 'single_subject_uncertain'
         elif participant_count >= 4:
             desired_mode = 'grid'
             fixed_render_branch = 'grid'
@@ -1116,16 +1126,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif participant_count == 3:
             desired_mode = 'grid'
             fixed_render_branch = 'grid'
-            desired_grid_template = 'hero_3' if active_speaker_mapped else 'grid_3'
-        elif participant_count == 2 and active_speaker_mapped:
-            desired_mode = 'single'
-            fixed_render_branch = 'single_subject'
-        elif participant_count == 2 and selected is not None:
-            # Prefer one complete person over a center crop between two
-            # people. Identity continuity keeps this face stable until active
-            # speaker evidence is strong enough to cut to the other person.
-            desired_mode = 'single'
-            fixed_render_branch = 'single_subject_uncertain'
+            desired_grid_template = 'grid_3'
         elif participant_count == 2:
             # The conversation fallback above normally supplies a face. If a
             # detector sample is incomplete, hold a single composition rather

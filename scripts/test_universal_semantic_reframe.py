@@ -368,7 +368,7 @@ def test_general_conversation_long_silence_resumes_with_editorial_cut():
     assert resumed and resumed[-1]['hardCutStart'], result
 
 
-def test_three_and_four_person_grids():
+def test_three_and_four_person_speech_stays_on_one_speaker():
     three = [box(100 + index * 580, 170, 320, 600, index + 1) for index in range(3)]
     four = [
         box(100, 80, 320, 430, 1), box(1100, 80, 320, 430, 2),
@@ -376,8 +376,10 @@ def test_three_and_four_person_grids():
     ]
     three_result = timeline([sample(i * 0.25, subject('face', three[0], 'face:1'), three, 1, 0.8) for i in range(8)])
     four_result = timeline([sample(i * 0.25, subject('face', four[0], 'face:1'), four, 1, 0.8) for i in range(8)])
-    assert any(segment['gridTemplate'] == 'hero_3' for segment in three_result), three_result
-    assert any(segment['gridTemplate'] == 'grid_4' for segment in four_result), four_result
+    assert all(segment['mode'] == 'single' for segment in three_result), three_result
+    assert all(segment.get('subjectStableId') == 'face:1' for segment in three_result), three_result
+    assert all(segment['mode'] == 'single' for segment in four_result), four_result
+    assert all(segment.get('subjectStableId') == 'face:1' for segment in four_result), four_result
 
 
 def test_sports_action_without_face():
