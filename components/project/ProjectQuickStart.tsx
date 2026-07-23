@@ -5,6 +5,7 @@ import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upl
 import { readJsonSafe } from '@/lib/safe-json';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { captureEvent } from '@/lib/analytics';
+import { SOURCE_UPLOAD_LIMIT_LABEL, sourceUploadSizeError } from '@/lib/upload-limits';
 
 type ProjectCreatedPayload = {
   id: string;
@@ -199,6 +200,12 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
   async function onUploadFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
     if (!selected) return;
+    const sizeError = sourceUploadSizeError(selected.size);
+    if (sizeError) {
+      setMsg(sizeError);
+      e.target.value = '';
+      return;
+    }
     await uploadFile(selected);
     e.target.value = '';
   }
@@ -239,6 +246,8 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
         </div>
 
         <p className="mt-2 max-w-[520px] text-center text-[11px] leading-4 text-white/45">
+          {SOURCE_UPLOAD_LIMIT_LABEL}
+          <br />
           By continuing, you confirm you have permission to use this content.
         </p>
 
@@ -294,6 +303,8 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       </div>
 
       <p className="mt-3 text-xs leading-5 text-white/50">
+        {SOURCE_UPLOAD_LIMIT_LABEL}
+        <br />
         By continuing, you confirm you have permission to use this content.
       </p>
 

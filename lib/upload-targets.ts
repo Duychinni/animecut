@@ -5,6 +5,7 @@ import {
   getUploadProvider,
   isR2Configured,
 } from '@/lib/r2';
+import { MAX_SOURCE_UPLOAD_BYTES } from '@/lib/upload-limits';
 
 export type UploadPreparationInput = {
   userId: string;
@@ -65,6 +66,10 @@ function getSupabaseStorageContentType(filename: string, contentType: string) {
 }
 
 export async function prepareUploadTarget(input: UploadPreparationInput): Promise<UploadPreparationResult> {
+  if (typeof input.size === 'number' && input.size > MAX_SOURCE_UPLOAD_BYTES) {
+    throw new Error('This file is over the 5 GB upload limit. Choose a smaller file.');
+  }
+
   const ext = (input.filename.split('.').pop() || 'mp4').toLowerCase();
   const objectPath = makeRawObjectPath(input.userId, input.projectId, ext);
 

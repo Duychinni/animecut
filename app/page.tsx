@@ -6,6 +6,7 @@ import { HomeLogoLink } from '@/components/nav/HomeLogoLink';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { AccountMenu } from '@/components/auth/AccountMenu';
 import { getDirectUploadError, uploadFileMultipartToR2 } from '@/lib/browser-upload';
+import { SOURCE_UPLOAD_LIMIT_LABEL, sourceUploadSizeError } from '@/lib/upload-limits';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -581,6 +582,12 @@ export default function Home() {
     const selected = e.target.files?.[0] ?? null;
     setFile(selected);
     if (!selected) return;
+    const sizeError = sourceUploadSizeError(selected.size);
+    if (sizeError) {
+      setMsg(`Error: ${sizeError}`);
+      e.target.value = '';
+      return;
+    }
     await uploadFile(selected);
     e.target.value = '';
   }
@@ -754,6 +761,9 @@ export default function Home() {
                   </label>
                 </div>
               </div>
+              <p className="px-2 pb-1 pt-2 text-center text-[11px] font-medium text-white/45">
+                {SOURCE_UPLOAD_LIMIT_LABEL}
+              </p>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm font-semibold text-white/95">
