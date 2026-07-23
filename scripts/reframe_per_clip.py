@@ -18,6 +18,7 @@ FACE_SOURCE_TOP_MARGIN_RATIO = 0.008
 UNSAFE_FACE_REJECT_RATIO = 0.35
 UNSAFE_OPENING_SEC = 1.25
 UNSAFE_SPEECH_CONTEXT_SEC = 1.50
+MIN_OUTPUT_FACE_HEIGHT_RATIO = 0.135
 MOTION_MIN_AREA_RATIO = 0.0035
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_WINDOW_SEC = 0.18
@@ -109,6 +110,7 @@ def visual_usability(points, timeline):
 
     unsafe_speech_times = []
     unsafe_opening_times = []
+    undersized_speech_times = []
     for point in points:
         timestamp = float(point.get('t', 0.0))
         segment = segment_at(timestamp)
@@ -118,6 +120,24 @@ def visual_usability(points, timeline):
             and segment.get('wideKind') != 'broll'
         )
         if not unsafe_context or not point_is_speaking(point):
+            face_box = point.get('face_box') or {}
+            face_height = float(face_box.get('h', 0.0))
+            segment_points = (segment or {}).get('points') or []
+            nearest = min(
+                segment_points,
+                key=lambda item: abs(float(item.get('t', timestamp)) - timestamp),
+                default={},
+            )
+            crop_height = float(nearest.get('cropH', 0.0))
+            if (
+                point_is_speaking(point)
+                and segment
+                and segment.get('mode') == 'single'
+                and face_height > 0
+                and crop_height > 0
+                and face_height / crop_height < MIN_OUTPUT_FACE_HEIGHT_RATIO
+            ):
+                undersized_speech_times.append(timestamp)
             continue
         unsafe_speech_times.append(timestamp)
         if timestamp <= UNSAFE_OPENING_SEC:
@@ -143,6 +163,19 @@ def visual_usability(points, timeline):
         previous_time = timestamp
     if longest_run >= max(2, math.ceil(analysis_rate * UNSAFE_SPEECH_CONTEXT_SEC)):
         return False, 'sustained_unframed_speaking_subject'
+
+    longest_small_run = 0
+    current_small_run = 0
+    previous_time = None
+    for timestamp in undersized_speech_times:
+        if previous_time is not None and timestamp - previous_time <= max_gap:
+            current_small_run += 1
+        else:
+            current_small_run = 1
+        longest_small_run = max(longest_small_run, current_small_run)
+        previous_time = timestamp
+    if longest_small_run >= max(2, math.ceil(analysis_rate * UNSAFE_SPEECH_CONTEXT_SEC)):
+        return False, 'speaking_subject_too_small'
 
     return True, None
 
@@ -436,7 +469,7 @@ def portrait_crop_for_subject(subject, source_w: float, source_h: float, subject
         face_height = max(1.0, float(face_box[3]))
         crop_h = min(
             float(source_h),
-            max(float(source_h) * 0.48, face_height * 4.6),
+            max(float(source_h) * 0.38, face_height * 4.8),
         )
     crop_w = min(float(source_w), crop_h * 9.0 / 16.0)
     if crop_w >= source_w:

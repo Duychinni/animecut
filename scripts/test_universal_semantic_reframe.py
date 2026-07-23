@@ -52,6 +52,7 @@ def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
         'subject_predicted': subject.get('predicted', False),
         'subject_stable_id': subject.get('stable_id', subject.get('kind')),
         'subject_velocity_x': subject.get('velocity_x', 0.0),
+        'face_box': subject.get('face_box'),
     }
     return point, frame
 
@@ -100,7 +101,8 @@ def test_small_speaking_face_gets_intentional_close_portrait():
         (tiny_face['x'], tiny_face['y'], tiny_face['w'], tiny_face['h']),
     )
     assert crop['h'] < H, crop
-    assert crop['h'] >= H * 0.48, crop
+    assert crop['h'] >= H * 0.38, crop
+    assert tiny_face['h'] / crop['h'] >= 0.18, crop
     assert abs(crop['w'] / crop['h'] - 9.0 / 16.0) < 0.001, crop
 
 
@@ -504,6 +506,27 @@ def test_no_subject_uses_safe_full_frame():
     assert result[0]['mode'] == 'wide_context', result
     assert result[0]['fallbackReason'] == 'no_reliable_visual_subject', result
     assert result[0]['points'][0]['cropX'] == 0.0 and result[0]['points'][0]['cropW'] == W
+
+
+def test_sustained_tiny_speaking_face_is_rejected():
+    tiny = box(820, 420, 75, 75, 1, 0.92)
+    samples = [
+        sample(i * 0.25, subject('face', tiny, 'face:1', 0.92), [tiny], 1, 0.92, audio_activity=0.8)
+        for i in range(12)
+    ]
+    points, _ = zip(*samples)
+    fake_timeline = [{
+        'start': 0.0,
+        'end': 3.0,
+        'mode': 'single',
+        'wideKind': None,
+        'points': [
+            {'t': i * 0.25, 'cropH': H}
+            for i in range(12)
+        ],
+    }]
+    usable, reason = visual_usability(list(points), fake_timeline)
+    assert not usable and reason == 'speaking_subject_too_small', (usable, reason)
 
 
 if __name__ == '__main__':

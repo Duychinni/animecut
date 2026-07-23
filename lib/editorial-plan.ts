@@ -124,11 +124,14 @@ export function isNaturalEditorialTitle(value: unknown) {
   if (hasRepetitiveEditorialWords(text) || isFillerLedCopy(text)) return false;
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/^what\s+.+\s+reveals\s+about\b/i.test(text)) return false;
-  if (/^why\s+(?:\w+\s+){1,4}matters$/i.test(text)) return false;
+  if (/^why\s+.+\s+matters$/i.test(text)) return false;
   if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}\s+explains\s+/i.test(text)) return false;
   if (/^[\w'’-]+(?:\s+[\w'’-]+){0,3}(?:'s)?\s+take\s+on\s+/i.test(text)) return false;
   if (/^(a|the)\s+(conversation|discussion|main idea)\b/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
+  if (/\b(?:let'?s|there'?s|that'?s|what'?s|who'?s)\s+(?:there'?s|let'?s|is|are|was|were)\b/i.test(text)) return false;
+  if (/\b(?:don't|doesn't|isn't|aren't|wasn't|weren't)\s+(?:first|last|best|worst|matters?)\b/i.test(text)) return false;
+  if (/\b(?:battle|fight|game|show|video)\s+(?:first|last)\s+\w+\s+matters\b/i.test(text)) return false;
   if (/^(top|viral|best|standout)\s+(clip|reel|short|moment)/i.test(text)) return false;
   return /[a-z]{2}/i.test(text);
 }
@@ -215,9 +218,9 @@ const TOPIC_STOPWORDS = new Set([
 ]);
 
 function titleCase(text: string) {
-  return clean(text)
+  return canonicalizeKnownNames(clean(text)
     .toLowerCase()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()));
 }
 
 function topicWords(text: string, limit = 3, excludedEntities: string[] = []) {
@@ -269,6 +272,50 @@ function compactStatement(text: string, maxWords = 10) {
   return words.join(' ');
 }
 
+const GROUNDING_STOPWORDS = new Set([
+  ...TOPIC_STOPWORDS,
+  'after', 'before', 'behind', 'could', 'every', 'first', 'inside', 'matters', 'might', 'reveals',
+  'should', 'story', 'thing', 'video', 'watch', 'worth',
+]);
+
+function groundingTokens(text: string) {
+  return normalized(text)
+    .split(/\s+/)
+    .filter((word) => word.length >= 3 && !GROUNDING_STOPWORDS.has(word));
+}
+
+export function isEditorialCopyGrounded(value: unknown, transcriptText: string, globalContext = '') {
+  const copyTokens = groundingTokens(clean(value));
+  if (!copyTokens.length) return false;
+  // Transcript claims are authoritative. Source metadata may verify a proper
+  // name, but it must not smuggle an unsupported event or result into a clip.
+  const verifiedNames = canonicalEntities(globalContext).join(' ');
+  const evidence = new Set(groundingTokens(`${transcriptText} ${verifiedNames}`));
+  const supported = copyTokens.filter((word) => evidence.has(word));
+  if (copyTokens.length <= 3) return supported.length >= 1;
+  return supported.length >= 2 || supported.length / copyTokens.length >= 0.4;
+}
+
+function specificHeadline(text: string, namedSubject: string | null) {
+  const candidates = sentenceCandidates(text)
+    .map((sentence) => compactStatement(sentence, 12))
+    .filter((sentence) => sentence.split(/\s+/).length >= 5)
+    .sort((left, right) => {
+      const specificity = (value: string) =>
+        (/\d/.test(value) ? 5 : 0)
+        + (/\b(?:started|built|changed|counted|created|earned|failed|lost|made|moved|named|posted|reached|spent|won)\b/i.test(value) ? 4 : 0)
+        + (namedSubject && normalized(value).includes(normalized(namedSubject)) ? 3 : 0)
+        - Math.abs(value.split(/\s+/).length - 9) * 0.2;
+      return specificity(right) - specificity(left);
+    });
+  const sentence = candidates[0] || compactStatement(text, 11);
+  if (!sentence) return '';
+  const withSubject = namedSubject && !normalized(sentence).includes(normalized(namedSubject))
+    ? `${namedSubject}: ${sentence}`
+    : sentence;
+  return titleCase(withSubject).slice(0, 100);
+}
+
 function genericEditorialCopy(text: string, globalContext: string) {
   const cleaned = clean(text);
   const sentences = sentenceCandidates(cleaned);
@@ -280,18 +327,11 @@ function genericEditorialCopy(text: string, globalContext: string) {
   const contrast = sentences.find((sentence) => /\b(but|however|instead|rather|problem|mistake|risk|wrong|difference|versus|vs\.?|against)\b/i.test(sentence));
   const isMrBeastOriginStory = namedSubject === 'MrBeast'
     && /\b(?:11|eleven|young|first|started)\b/i.test(cleaned)
-    && /\b(?:reinvest|money|dollar|youtube|video)\b/i.test(cleaned);
+    && /\b(?:reinvest|money|dollar)\b/i.test(cleaned);
   const title = isMrBeastOriginStory
     ? 'MrBeast Reinvested Every Dollar for Years'
-    : namedSubject
-    ? contrast
-      ? `${namedSubject}'s Take On ${topic}`.slice(0, 100)
-      : `What ${namedSubject} Reveals About ${topic}`.slice(0, 100)
-    : question
-      ? titleCase(compactStatement(question, 11)).slice(0, 100)
-      : contrast
-        ? `The Hidden Tradeoff Behind ${topic}`.slice(0, 100)
-        : `What Most People Miss About ${topic}`.slice(0, 100);
+    : specificHeadline(cleaned, namedSubject)
+      || (question ? titleCase(compactStatement(question, 11)).slice(0, 100) : `The Hidden Tradeoff Behind ${topic}`.slice(0, 100));
   const hookSubject = namedSubject || `This ${keywords[0] ? titleCase(keywords[0]) : 'Idea'}`;
   const quote = sentences
     .sort((a, b) => Math.abs(a.length - 90) - Math.abs(b.length - 90))[0]
@@ -342,15 +382,19 @@ export function buildCandidateEditorialPlan(params: {
   const globalContext = params.globalContext ?? params.transcriptText;
   const generated = copyForTranscript(params.transcriptText, globalContext);
   const rawTitle = repairKnownEntityFragments(clean(raw.title), globalContext);
-  const title = isNaturalEditorialTitle(rawTitle)
+  const fallbackTitle = repairKnownEntityFragments(clean(params.fallbackTitle), globalContext);
+  const title = isNaturalEditorialTitle(rawTitle) && isEditorialCopyGrounded(rawTitle, params.transcriptText, globalContext)
     ? rawTitle
-    : isNaturalEditorialTitle(generated.title)
+    : isNaturalEditorialTitle(generated.title) && isEditorialCopyGrounded(generated.title, params.transcriptText, globalContext)
       ? generated.title
-      : clean(params.fallbackTitle) || 'The Key Idea Explained';
+      : isNaturalEditorialTitle(fallbackTitle) && isEditorialCopyGrounded(fallbackTitle, params.transcriptText, globalContext)
+        ? fallbackTitle
+        : specificHeadline(params.transcriptText, entitiesForWindow(params.transcriptText, globalContext)[0] || null);
   const rawHooks = [clean(raw.hook_text), ...rawHookOptions(raw)]
     .map((hook) => repairKnownEntityFragments(hook, globalContext));
   const hookCandidates = [...rawHooks, ...generated.hooks]
     .filter(isNaturalEditorialHook)
+    .filter((hook) => isEditorialCopyGrounded(hook, params.transcriptText, globalContext))
     .filter((hook, index, all) => all.findIndex((other) => normalized(other) === normalized(hook)) === index)
     .filter((hook) => normalized(hook) !== normalized(title));
   while (hookCandidates.length < 5) hookCandidates.push(generated.hooks[hookCandidates.length % generated.hooks.length]);

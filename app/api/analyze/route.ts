@@ -9,7 +9,9 @@ import { generateHookText } from '@/lib/hook-text';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
 import {
   buildCandidateEditorialPlan,
+  isEditorialCopyGrounded,
   isNaturalEditorialHook,
+  isNaturalEditorialTitle,
   type CandidateEditorialPlan,
 } from '@/lib/editorial-plan';
 import { editorialSourceContext } from '@/lib/source-identity';
@@ -70,19 +72,25 @@ function clamp100(value: number) {
 function calibrateFinalScores<T extends { overall_score: number; passes_quality?: boolean }>(items: T[]) {
   if (!items.length) return items;
   if (items.length === 1) {
-    return items.map((item) => ({ ...item, overall_score: Math.max(78, Math.min(96, Math.round(item.overall_score))) }));
+    return items.map((item) => ({
+      ...item,
+      overall_score: item.passes_quality === false
+        ? Math.min(64, Math.round(item.overall_score))
+        : Math.max(55, Math.min(96, Math.round(item.overall_score))),
+    }));
   }
 
-  const spread = 24;
+  const spread = 26;
   return items.map((item, index) => {
     const rankRatio = index / Math.max(1, items.length - 1);
-    const rankTarget = 97 - rankRatio * spread;
-    const qualityPenalty = item.passes_quality === false ? 4 : 0;
+    const rankTarget = 94 - rankRatio * spread;
     const raw = Number.isFinite(item.overall_score) ? item.overall_score : rankTarget;
-    const blended = raw * 0.25 + rankTarget * 0.75 - qualityPenalty;
+    const blended = raw * 0.58 + rankTarget * 0.42;
     return {
       ...item,
-      overall_score: Math.max(70, Math.min(98, Math.round(blended))),
+      overall_score: item.passes_quality === false
+        ? Math.min(64, Math.round(blended - 18))
+        : Math.max(50, Math.min(96, Math.round(blended))),
     };
   });
 }
@@ -397,6 +405,9 @@ function storyTokens(candidate: RankedCandidate) {
   return new Set(normalizeLooseText([
     candidate.title,
     candidate.hook_text,
+    candidate.editorial_plan?.topic,
+    candidate.editorial_plan?.story,
+    candidate.editorial_plan?.conflict,
     candidate.opening_line,
     candidate.closing_line,
   ].join(' '))
@@ -460,7 +471,14 @@ function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
     && overlapRatio >= 0.55;
   // Similar subject matter is not enough to delete a clip. A debate can revisit
   // the same matchup with a different claim, payoff, or challenge minutes later.
-  const sameStory = similarity >= 0.9 && overlapRatio >= 0.35;
+  const curTopic = normalizeLooseText(cur.editorial_plan?.topic ?? '');
+  const pickedTopic = normalizeLooseText(picked.editorial_plan?.topic ?? '');
+  const sameTopic = curTopic.length >= 8 && pickedTopic.length >= 8 && (
+    curTopic === pickedTopic
+    || curTopic.includes(pickedTopic)
+    || pickedTopic.includes(curTopic)
+  );
+  const sameStory = similarity >= 0.72 && (overlapRatio >= 0.2 || sameTopic);
   const sameWindow = isNearDuplicateWindow(
     Number(cur.start_sec ?? 0),
     Number(cur.end_sec ?? 0),
@@ -931,9 +949,17 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           fallbackTitle: displayTitle,
           fallbackHook: resolvedHook,
         });
+        const transcriptWindow = transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, segments);
+        const editorialCopyPass = (
+          isNaturalEditorialTitle(editorialPlan.title)
+          && isNaturalEditorialHook(editorialPlan.selected_hook)
+          && isEditorialCopyGrounded(editorialPlan.title, transcriptWindow, sourceContext)
+          && isEditorialCopyGrounded(editorialPlan.selected_hook, transcriptWindow, sourceContext)
+          && !isTitleLikeHook(editorialPlan.selected_hook, editorialPlan.title)
+        );
         const transcriptWordCount = countTranscriptWordsInRange(segments, cleaned.start_sec, cleaned.end_sec);
         const packagingExclusion = editorialExclusionReason({
-          text: transcriptTextForWindow(cleaned.start_sec, cleaned.end_sec, segments),
+          text: transcriptWindow,
           startSec: cleaned.start_sec,
           endSec: cleaned.end_sec,
           totalSeconds: policyDurationSeconds,
@@ -942,9 +968,10 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         const cleanEnding = !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
         const completeEnding = cleanEnding && (cleaned.end_complete || !punctuationReliable || localAnalysisCandidate);
         const strictQualityPass = startsLikeNaturalBoundary(openingLine) && completeEnding && (payoffStrong || !punctuationReliable);
-        const passesQuality = localAnalysisCandidate
+        const boundaryQualityPass = localAnalysisCandidate
           ? Boolean(startsLikeNaturalBoundary(openingLine) && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
           : strictQualityPass;
+        const passesQuality = boundaryQualityPass && editorialCopyPass;
 
         const hookStrength = clamp100(num(c.hook_strength) || 0);
         const retentionPotential = clamp100(num(c.retention_potential ?? c.rewatch_potential) || 0);
@@ -962,7 +989,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           speakerEnergy * 0.10
         );
 
-        const qualityPenalty = passesQuality ? 0 : (localAnalysisCandidate ? 6 : 22);
+        const qualityPenalty = passesQuality ? 0 : (editorialCopyPass ? (localAnalysisCandidate ? 6 : 22) : 30);
         const duration = cleaned.end_sec - cleaned.start_sec;
         const durationPenalty =
           duration < policy.minSec ? 24 :
@@ -999,6 +1026,8 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           overall_score: clamp100(calibratedOverall),
           reject_reason: packagingExclusion
               ? packagingExclusion
+              : !editorialCopyPass
+                ? 'invalid_or_ungrounded_editorial_copy'
               : duration < analysisMinClipSec
               ? 'duration_below_minimum'
               : transcriptWordCount < minimumWordCount
