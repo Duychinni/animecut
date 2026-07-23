@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin-auth';
 import { AD_ASSET_CATEGORIES, isAdAssetCategory } from '@/lib/ad-studio-assets';
-import { AD_STUDIO_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
+import { AD_ASSET_MAX_UPLOAD_BYTES, isAllowedAdStudioUpload } from '@/lib/ad-studio-upload';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   copyR2Object,
@@ -106,8 +106,8 @@ export async function POST(request: Request) {
   if (!isAllowedAdStudioUpload({ name, type: contentType })) {
     return NextResponse.json({ error: 'Choose an OBS video in MP4, MOV, WebM, MKV, or FLV format.' }, { status: 415 });
   }
-  if (!Number.isFinite(size) || size <= 0 || size > AD_STUDIO_MAX_UPLOAD_BYTES) {
-    return NextResponse.json({ error: 'Each uploaded video must be under 300 MB.' }, { status: 413 });
+  if (!Number.isFinite(size) || size <= 0 || size > AD_ASSET_MAX_UPLOAD_BYTES) {
+    return NextResponse.json({ error: 'Each uploaded video must be under 5 GB.' }, { status: 413 });
   }
   if (!isAdAssetCategory(category)) return NextResponse.json({ error: 'Choose a valid asset category.' }, { status: 400 });
 

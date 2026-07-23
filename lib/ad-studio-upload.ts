@@ -10,6 +10,7 @@ export const AD_STUDIO_UPLOAD_ACCEPT = [
 ].join(',');
 
 export const AD_STUDIO_MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
+export const AD_ASSET_MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024;
 
 export function isAllowedAdStudioUpload(file: Pick<File, 'name' | 'type'>) {
   const name = file.name.toLowerCase();

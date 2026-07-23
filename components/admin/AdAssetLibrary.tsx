@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AD_ASSET_CATEGORIES, AD_ASSET_CATEGORY_LABELS, type AdAsset, type AdAssetCategory } from '@/lib/ad-studio-assets';
-import { AD_STUDIO_MAX_UPLOAD_BYTES, AD_STUDIO_UPLOAD_ACCEPT } from '@/lib/ad-studio-upload';
+import { AD_ASSET_MAX_UPLOAD_BYTES, AD_STUDIO_UPLOAD_ACCEPT } from '@/lib/ad-studio-upload';
 
 type Props = {
   selectedPaths: string[];
@@ -37,8 +37,8 @@ export function AdAssetLibrary({ selectedPaths, onSelectionChange }: Props) {
   async function uploadFiles(files: File[]) {
     setError('');
     if (!files.length) return;
-    const oversized = files.find((file) => file.size > AD_STUDIO_MAX_UPLOAD_BYTES);
-    if (oversized) return setError(`${oversized.name} is over the 300 MB limit.`);
+    const oversized = files.find((file) => file.size > AD_ASSET_MAX_UPLOAD_BYTES);
+    if (oversized) return setError(`${oversized.name} is over the 5 GB limit.`);
 
     setBusy(true);
     try {
@@ -97,7 +97,7 @@ export function AdAssetLibrary({ selectedPaths, onSelectionChange }: Props) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-xl font-black">Ad Asset Library</h2>
-          <p className="mt-1 text-sm text-white/50">Upload recordings once, organize them, and reuse them in future AI ad projects.</p>
+          <p className="mt-1 text-sm text-white/50">Upload recordings up to 5 GB each, organize them, and reuse them in future AI ad projects.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <select value={category} onChange={(event) => setCategory(event.target.value as AdAssetCategory)} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white">
