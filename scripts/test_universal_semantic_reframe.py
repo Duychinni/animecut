@@ -53,6 +53,7 @@ def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
         'subject_stable_id': subject.get('stable_id', subject.get('kind')),
         'subject_velocity_x': subject.get('velocity_x', 0.0),
         'face_box': subject.get('face_box'),
+        'face_source_complete': bool(subject.get('kind') == 'face' and subject.get('face_box')),
     }
     return point, frame
 
@@ -84,6 +85,50 @@ def speaker_centering_error(result, expected_centers):
 def test_silent_far_left():
     crop = portrait_crop_for_subject((40, 130, 420, 850), W, H, 'body')
     assert crop['cx'] < W * 0.32, crop
+
+
+def test_single_layout_without_verified_person_is_rejected_during_speech():
+    points = [
+        {
+            't': index * 0.25,
+            'audio_activity': 0.7,
+            'subject_kind': 'context',
+            'face_box': None,
+            'face_source_complete': False,
+        }
+        for index in range(5)
+    ]
+    layout = [{
+        'start': 0.0,
+        'end': 1.25,
+        'mode': 'single',
+        'points': [{'t': point['t'], 'cropH': H} for point in points],
+    }]
+    usable, reason = visual_usability(points, layout)
+    assert not usable
+    assert reason == 'unframed_speaking_subject_at_open'
+
+
+def test_complete_face_single_layout_remains_usable_during_speech():
+    visible = box(760, 120, 360, 500, 1, 0.9)
+    points = [
+        {
+            't': index * 0.25,
+            'audio_activity': 0.7,
+            'subject_kind': 'face',
+            'face_box': visible,
+            'face_source_complete': True,
+        }
+        for index in range(5)
+    ]
+    layout = [{
+        'start': 0.0,
+        'end': 1.25,
+        'mode': 'single',
+        'points': [{'t': point['t'], 'cropH': 800.0} for point in points],
+    }]
+    usable, reason = visual_usability(points, layout)
+    assert usable, reason
 
 
 def test_silent_far_right():
@@ -309,7 +354,13 @@ def test_speaking_reel_cannot_open_on_empty_safe_wide():
 
 def test_speaking_reel_rejects_mid_clip_empty_stage_fallback():
     points = [
-        {'t': index * 0.25, 'audio_activity': 0.75}
+        {
+            't': index * 0.25,
+            'audio_activity': 0.75,
+            'subject_kind': 'context' if 2.0 <= index * 0.25 <= 2.75 else 'face',
+            'face_box': None if 2.0 <= index * 0.25 <= 2.75 else box(760, 120, 360, 500, 1, 0.9),
+            'face_source_complete': not (2.0 <= index * 0.25 <= 2.75),
+        }
         for index in range(24)
     ]
     timeline_result = [

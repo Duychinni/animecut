@@ -3,6 +3,7 @@ import {
   buildCandidateEditorialPlan,
   isEditorialCopyGrounded,
   isNaturalEditorialTitle,
+  reusesSourceTitleAsEditorialPrefix,
 } from '../lib/editorial-plan';
 
 const brokenTitles = [
@@ -16,6 +17,25 @@ const brokenTitles = [
 for (const title of brokenTitles) {
   assert.equal(isNaturalEditorialTitle(title), false, `expected broken title to fail: ${title}`);
 }
+
+const sourceTitleContext = [
+  'Source title: MrBeast Counted to 100,000 in His First Viral Video, Leaves Another Message for Himself in 10 Years',
+  'Project title: MrBeast Counted to 100,000 in His First Viral Video, Leaves Another Message for Himself in 10 Years',
+].join('\n');
+assert.equal(
+  reusesSourceTitleAsEditorialPrefix(
+    "Leaves Another Message: I Didn't Realize You Had This Many People",
+    sourceTitleContext,
+  ),
+  true,
+);
+assert.equal(
+  reusesSourceTitleAsEditorialPrefix(
+    'MrBeast Lost 6,000 in a Single Moment',
+    sourceTitleContext,
+  ),
+  false,
+);
 
 const transcript = [
   'MrBeast said his first viral video was counting to one hundred thousand.',

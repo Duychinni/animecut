@@ -93,6 +93,33 @@ function normalized(text: string) {
   return clean(text).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function sourceTitleFromContext(globalContext: string) {
+  const line = globalContext
+    .split('\n')
+    .find((value) => /^(source title|project title):/i.test(value.trim()));
+  return clean(line?.replace(/^[^:]+:\s*/i, '') ?? '');
+}
+
+function contentTokens(text: string) {
+  return normalized(text)
+    .split(/\s+/)
+    .filter((word) => word.length >= 4 && !TOPIC_STOPWORDS.has(word));
+}
+
+export function reusesSourceTitleAsEditorialPrefix(value: unknown, globalContext: string) {
+  const title = clean(value);
+  const sourceTitle = sourceTitleFromContext(globalContext);
+  if (!title || !sourceTitle) return false;
+
+  const sourceTokens = new Set(contentTokens(sourceTitle));
+  const prefix = title.includes(':') ? title.split(':', 1)[0] : title;
+  const prefixTokens = contentTokens(prefix);
+  if (prefixTokens.length < 2) return false;
+
+  const overlap = prefixTokens.filter((word) => sourceTokens.has(word)).length;
+  return overlap >= 2 && overlap / prefixTokens.length >= 0.6;
+}
+
 const EDITORIAL_FILLER_WORDS = new Set([
   'ah', 'hmm', 'like', 'okay', 'right', 'uh', 'um', 'well', 'yeah',
 ]);
@@ -383,11 +410,17 @@ export function buildCandidateEditorialPlan(params: {
   const generated = copyForTranscript(params.transcriptText, globalContext);
   const rawTitle = repairKnownEntityFragments(clean(raw.title), globalContext);
   const fallbackTitle = repairKnownEntityFragments(clean(params.fallbackTitle), globalContext);
-  const title = isNaturalEditorialTitle(rawTitle) && isEditorialCopyGrounded(rawTitle, params.transcriptText, globalContext)
+  const title = isNaturalEditorialTitle(rawTitle)
+    && !reusesSourceTitleAsEditorialPrefix(rawTitle, globalContext)
+    && isEditorialCopyGrounded(rawTitle, params.transcriptText, globalContext)
     ? rawTitle
-    : isNaturalEditorialTitle(generated.title) && isEditorialCopyGrounded(generated.title, params.transcriptText, globalContext)
+    : isNaturalEditorialTitle(generated.title)
+      && !reusesSourceTitleAsEditorialPrefix(generated.title, globalContext)
+      && isEditorialCopyGrounded(generated.title, params.transcriptText, globalContext)
       ? generated.title
-      : isNaturalEditorialTitle(fallbackTitle) && isEditorialCopyGrounded(fallbackTitle, params.transcriptText, globalContext)
+      : isNaturalEditorialTitle(fallbackTitle)
+        && !reusesSourceTitleAsEditorialPrefix(fallbackTitle, globalContext)
+        && isEditorialCopyGrounded(fallbackTitle, params.transcriptText, globalContext)
         ? fallbackTitle
         : specificHeadline(params.transcriptText, entitiesForWindow(params.transcriptText, globalContext)[0] || null);
   const rawHooks = [clean(raw.hook_text), ...rawHookOptions(raw)]

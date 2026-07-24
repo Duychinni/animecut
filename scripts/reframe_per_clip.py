@@ -114,10 +114,24 @@ def visual_usability(points, timeline):
     for point in points:
         timestamp = float(point.get('t', 0.0))
         segment = segment_at(timestamp)
+        # The layout name alone is not proof that a person is actually in the
+        # portrait crop. A "single" fallback can still land on a desk, stage,
+        # or a source-edge sliver of somebody. During speech, require a
+        # detector-verified complete face target; otherwise reject the
+        # candidate after a very short tolerance window and let the pipeline
+        # choose another reel.
+        verified_person = bool(
+            point.get('subject_kind') == 'face'
+            and point.get('face_source_complete') is True
+            and point.get('face_box')
+        )
         unsafe_context = bool(
-            segment
-            and segment.get('mode') == 'wide_context'
-            and segment.get('wideKind') != 'broll'
+            not verified_person
+            or (
+                segment
+                and segment.get('mode') == 'wide_context'
+                and segment.get('wideKind') != 'broll'
+            )
         )
         if not unsafe_context or not point_is_speaking(point):
             face_box = point.get('face_box') or {}
@@ -2537,6 +2551,15 @@ def main():
             'subject_predicted': bool(semantic_subject.get('predicted')),
             'subject_stable_id': semantic_subject.get('stable_id'),
             'subject_velocity_x': semantic_subject.get('velocity_x', 0.0),
+            'face_box': dict_box(semantic_subject.get('face_box')),
+            'face_source_complete': bool(
+                semantic_subject.get('face_box')
+                and face_is_complete_in_source(
+                    semantic_subject.get('face_box'),
+                    source_w,
+                    source_h,
+                )
+            ),
         })
         detected_faces[-1].update({
             'active_track_id': active_track_id,
