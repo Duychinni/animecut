@@ -21,7 +21,7 @@ const cleanMetrics = transcriptTechnicalMetrics(
   24.5,
 );
 const strong = calculateAiClipScore({ semantic: strongSemantic, technicalMetrics: cleanMetrics, technicalQuality: 92 });
-assert.ok(strong.final_score >= 80 && strong.final_score <= 97);
+assert.ok(strong.final_score >= 80 && strong.final_score <= 100);
 assert.equal(strong.label, clipScoreLabel(strong.final_score));
 
 const silent = calculateAiClipScore({
@@ -68,5 +68,37 @@ const weak = calculateAiClipScore({
 });
 assert.ok(weak.final_score < 70);
 assert.equal(weak.label, 'Weak');
+
+const almostPerfectButUncertain = calculateAiClipScore({
+  semantic: {
+    hook_strength: 100,
+    payoff_value: 100,
+    standalone_clarity: 100,
+    emotion_novelty: 100,
+    shareability: 100,
+    semantic_pacing: 100,
+    explanations: {},
+  },
+  technicalMetrics: cleanMetrics,
+  technicalQuality: 100,
+  scoreConfidence: 0.8,
+});
+assert.equal(almostPerfectButUncertain.final_score, 99, '100 requires high-confidence near-perfect evidence');
+
+const perfect = calculateAiClipScore({
+  semantic: {
+    hook_strength: 100,
+    payoff_value: 100,
+    standalone_clarity: 100,
+    emotion_novelty: 100,
+    shareability: 100,
+    semantic_pacing: 100,
+    explanations: {},
+  },
+  technicalMetrics: cleanMetrics,
+  technicalQuality: 100,
+  scoreConfidence: 0.95,
+});
+assert.equal(perfect.final_score, 100);
 
 console.log('AI Clip Score regression tests passed.');

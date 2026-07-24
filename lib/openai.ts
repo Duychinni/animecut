@@ -242,6 +242,8 @@ VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 
 SEMANTIC SCORING:
 Return integer component scores from 0-100. Do not calculate or return a final weighted total.
+The resulting AI Clip Score measures estimated clip strength. It is not a percentage, view prediction, or guarantee of virality.
+Scores from 95-100 must be extremely rare. Do not inflate component scores merely because a candidate is the best moment in a weak source.
 - hook_strength: Does the first 1-3 seconds create immediate curiosity, tension, surprise, emotion, or a strong promise?
 - payoff_value: Does the clip deliver an answer, reveal, lesson, conclusion, twist, joke, or memorable statement?
 - standalone_clarity: Does it make sense without earlier portions of the source?

@@ -106,8 +106,8 @@ function formatClock(totalSeconds: number) {
 
 function toDisplayScore(score: number) {
   if (!Number.isFinite(score)) return 0;
-  if (score > 10) return Math.max(0, Math.min(97, Math.round(score)));
-  return Math.max(0, Math.min(97, Math.round(score * 10)));
+  if (score > 10) return Math.max(0, Math.min(100, Math.round(score)));
+  return Math.max(0, Math.min(100, Math.round(score * 10)));
 }
 
 function formatDisplayScore(score: number) {
@@ -1099,6 +1099,11 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                       {clip.scoreReasons?.length ? (
                         <p className="mt-1 line-clamp-2 text-[10px] font-medium leading-4 text-white/58">
                           {clip.scoreReasons.slice(0, 3).join(' • ')}
+                        </p>
+                      ) : null}
+                      {clip.scoreConfidence != null ? (
+                        <p className="mt-0.5 text-[9px] font-semibold text-white/38">
+                          Analysis confidence: {clip.scoreConfidence >= 0.85 ? 'High' : clip.scoreConfidence >= 0.65 ? 'Medium' : 'Low'}
                         </p>
                       ) : null}
 

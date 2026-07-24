@@ -180,7 +180,24 @@ export function calculateAiClipScore(input: {
     + pacing * 0.10
     + technicalQuality * 0.05;
   const penaltyTotal = penalties.reduce((total, penalty) => total + penalty.points, 0);
-  const finalScore = Math.max(0, Math.min(97, Math.round(rawScore - penaltyTotal)));
+  const roundedScore = Math.max(0, Math.min(100, Math.round(rawScore - penaltyTotal)));
+  const nearPerfectComponents = [
+    semantic.hook_strength,
+    semantic.payoff_value,
+    semantic.standalone_clarity,
+    semantic.emotion_novelty,
+    semantic.shareability,
+    semantic.semantic_pacing,
+  ].every((score) => score >= 97);
+  const qualifiesForPerfectScore = nearPerfectComponents
+    && pacing >= 95
+    && technicalQuality >= 95
+    && penalties.length === 0
+    && (input.scoreConfidence ?? 0.75) >= 0.9;
+  // Scores of 95-100 must be rare. A perfect score requires near-perfect
+  // evidence in every component; being the best candidate in a weak source
+  // never raises or normalizes its score.
+  const finalScore = roundedScore === 100 && !qualifiesForPerfectScore ? 99 : roundedScore;
 
   const reasonEntries = [
     ['hook_strength', semantic.hook_strength, semantic.explanations.hook_strength],

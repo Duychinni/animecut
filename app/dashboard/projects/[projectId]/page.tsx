@@ -225,7 +225,7 @@ export default async function ProjectDetailPage({
       const derivedDuration = startSec != null && endSec != null ? Math.max(0, endSec - startSec) : 0;
       const durationSeconds = Number(derivedDuration ?? 0);
       const rawScore = Number(candidate?.overall_score ?? 0);
-      const score = Math.max(0, Math.min(97, Math.round(rawScore <= 10 ? rawScore * 10 : rawScore)));
+      const score = Math.max(0, Math.min(100, Math.round(rawScore <= 10 ? rawScore * 10 : rawScore)));
 
       return {
         ...row,

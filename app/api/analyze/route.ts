@@ -85,7 +85,7 @@ function clamp100(value: number) {
 function calibrateFinalScores<T extends { overall_score: number; passes_quality?: boolean }>(items: T[]) {
   return items.map((item) => ({
     ...item,
-    overall_score: Math.max(0, Math.min(97, Math.round(item.overall_score))),
+    overall_score: Math.max(0, Math.min(100, Math.round(item.overall_score))),
   }));
 }
 
