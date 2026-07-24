@@ -13,11 +13,11 @@ type ReframeMode = 'off' | 'basic' | 'smart';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v14-source-fingerprint';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v15-crisp-hooks';
 // Preserve detail through crop/scale, caption compositing, and the additional
 // recompression applied by social platforms. The separate playback preview
 // keeps dashboard playback responsive.
-const DEFAULT_X264_CRF = '18';
+const DEFAULT_X264_CRF = '16';
 const DEFAULT_X264_MAXRATE = '12M';
 const DEFAULT_X264_BUFSIZE = '24M';
 const DEFAULT_HW_VIDEO_BITRATE = '10M';
@@ -342,10 +342,10 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-map', '0:a:0?',
     '-vf', `scale=${constrained ? '360:640' : '1080:1920'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
-    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', constrained ? '22' : '16',
-    '-maxrate', constrained ? '1400k' : '9000k',
-    '-bufsize', constrained ? '2800k' : '18000k',
+    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || (constrained ? 'veryfast' : 'medium'),
+    '-crf', constrained ? '22' : '10',
+    '-maxrate', constrained ? '1400k' : '12000k',
+    '-bufsize', constrained ? '2800k' : '24000k',
     '-pix_fmt', 'yuv420p',
     '-g', constrained ? '48' : '60',
     '-keyint_min', constrained ? '24' : '30',
@@ -401,10 +401,10 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '[v540]',
     '-map', '0:a:0?',
     '-c:v', 'libx264',
-    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '16',
-    '-maxrate', '9000k',
-    '-bufsize', '18000k',
+    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'medium',
+    '-crf', '10',
+    '-maxrate', '12000k',
+    '-bufsize', '24000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',
@@ -1726,7 +1726,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,24,24,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,1.2,0,5,24,24,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1752,8 +1752,8 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     'box=1',
     'boxcolor=white',
     'boxborderw=12',
-    'borderw=0',
-    'bordercolor=black@0',
+    'borderw=2',
+    'bordercolor=black',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
@@ -2454,7 +2454,10 @@ export async function renderVerticalClip(opts: RenderOpts) {
     }
   }
 
-  const defaultEncoder = process.platform === 'darwin' ? 'h264_videotoolbox' : 'libx264';
+  // Hook cards contain high-contrast letter edges that visibly smear under
+  // VideoToolbox's bitrate-driven encode. Prefer x264 everywhere for stable
+  // CRF quality; hardware encoding remains available as an explicit override.
+  const defaultEncoder = 'libx264';
   const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || defaultEncoder).trim();
   const configuredPreset = (opts.fastRender ? process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast' : process.env.FFMPEG_X264_PRESET || 'medium').trim();
   const allowOversizedExports = process.env.FFMPEG_ALLOW_OVERSIZED_EXPORTS === 'true';
