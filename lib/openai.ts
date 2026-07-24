@@ -226,6 +226,7 @@ EDITORIAL PLAN (ANALYSIS ONLY IN THIS PHASE):
 - State the story and central conflict in plain English.
 - Identify the primary speaker only when the transcript supports the identity; otherwise use null.
 - List supporting speakers only when their identities are transcript-proven.
+- Treat recognizable names verified by source metadata as identity evidence, not claim evidence. When a verified interview host asks the question, reacts, challenges the guest, or materially drives the exchange, use the host's name in some (not all) relevant titles or hooks. Do not omit a notable host from the entire reel set when several selected moments clearly depend on that host's participation.
 - Set visual_context_required when reactions, B-roll, a grid, or another participant is necessary to understand the moment.
 - Classify scene_type as SINGLE_SPEAKER, TWO_PERSON, THREE_PERSON, FOUR_PERSON, BROLL, PICTURE_IN_PICTURE, or UNKNOWN. Use UNKNOWN when transcript evidence alone cannot prove the visual scene.
 - Recommend a layout only when the transcript supports it: SINGLE_SPEAKER_CROP, TWO_PERSON_CONVERSATION, THREE_PERSON_COMPOSITION, PRESERVE_GRID, BROLL_FILL, PICTURE_IN_PICTURE, SPEAKER_WITH_CONTEXT, or SAFE_ORIGINAL.

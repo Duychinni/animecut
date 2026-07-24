@@ -22,6 +22,16 @@ test('recognizes other notable figures without requiring their name in every ree
   assert.match(hint, /recognition, search value, curiosity, or virality/);
 });
 
+test('recognizes a notable interview host from channel metadata', () => {
+  const context = editorialSourceContext({
+    sourcePlatform: 'youtube',
+    sourceTitle: 'MrBeast Counted to 100,000 in His First Viral Video',
+    sourceChannelName: 'The Tonight Show Starring Jimmy Fallon',
+  });
+  assert.match(context, /Verified recognizable figures in source metadata: MrBeast, Jimmy Fallon/);
+  assert.match(context, /verified host may be named/i);
+});
+
 test('does not invent a verified subject for an unrelated title', () => {
   assert.equal(verifiedSourceSubjectHint('How creators make videos'), '');
 });

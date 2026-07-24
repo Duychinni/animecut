@@ -212,7 +212,17 @@ export async function POST(req: Request) {
       blockedCount = blockedCandidateIds.size;
 
       const strongCandidates = (topCandidates ?? []).filter((row) => Number(row.overall_score ?? 0) >= 7.0);
-      const candidatePool = strongCandidates.length ? strongCandidates : (topCandidates ?? []);
+      // Analysis has already applied transcript, boundary, editorial, overlap,
+      // and minimum-score QA. A transient AI fallback can calibrate otherwise
+      // usable candidates below 7.0; restricting the queue to only the strong
+      // subset collapsed a 12-minute interview from the expected reel range to
+      // five exports. Keep strong candidates first, then backfill from the
+      // remaining analysis-approved candidates until the requested target is
+      // covered. Render-time visual QA still rejects unsafe framing.
+      const candidatePool = [
+        ...strongCandidates,
+        ...(topCandidates ?? []).filter((row) => !strongCandidates.some((strong) => String(strong.id) === String(row.id))),
+      ];
 
       const durationFiltered = candidatePool.filter((row) => {
         const duration = Math.max(0, Number(row.end_sec ?? 0) - Number(row.start_sec ?? 0));
@@ -223,7 +233,7 @@ export async function POST(req: Request) {
         project_id,
         fetched_count: (topCandidates ?? []).length,
         strong_count: strongCandidates.length,
-        using_score_fallback: strongCandidates.length === 0 && (topCandidates ?? []).length > 0,
+        using_score_backfill: strongCandidates.length < targetCount && (topCandidates ?? []).length > strongCandidates.length,
         duration_filtered_count: durationFiltered.length,
         blocked_count: blockedCount,
       });
