@@ -641,7 +641,7 @@ export default function DashboardPage() {
                 {!canOpenProject ? (
                   <div className="cursor-pointer" aria-disabled="true">{thumb}</div>
                 ) : (
-                  <Link href={`/dashboard/projects/${p.id}`} prefetch={false}>{thumb}</Link>
+                  <Link href={`/dashboard/projects/${p.id}`}>{thumb}</Link>
                 )}
 
                 <div className="mt-3">

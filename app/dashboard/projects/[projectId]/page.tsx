@@ -3,7 +3,7 @@ import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { ProjectFailureActions } from '@/components/project/ProjectFailureActions';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
-import { createExportPreviewUrl, createExportSignedUrls, findExistingExportObjectPaths, makeExportPreviewObjectPath } from '@/lib/storage';
+import { createExportPreviewUrl, createExportSignedUrls } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -76,12 +76,6 @@ function getProcessingLabel(status: string) {
   if (status === 'analyzed') return 'Rendering clips and packaging exports';
   if (status === 'completed') return 'Completed';
   return 'Processing your video';
-}
-
-function getExportPosterPath(outputPath: string | null) {
-  if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return null;
-  if (!/\.mp4$/i.test(outputPath)) return null;
-  return outputPath.replace(/\.mp4$/i, '.jpg');
 }
 
 function hasSavedPlayableOutput(row: { status?: string | null; output_storage_path?: string | null; signedUrl?: string | null }) {
@@ -180,40 +174,26 @@ export default async function ProjectDetailPage({
   const candidatesById = new Map<string, CandidateRow>(((candidateRows ?? []) as CandidateRow[]).map((c) => [String(c.id), c]));
 
   const exportRows = (exportsRows ?? []) as ExportRow[];
-  const projectUserId = String((projectRow as { user_id?: string | null } | null)?.user_id ?? '');
   const requiredOutputPaths: string[] = [];
-  const optionalMediaPaths: string[] = [];
   exportRows.forEach((row) => {
     const outputPath = row.output_storage_path;
     if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return;
     requiredOutputPaths.push(outputPath);
-    const posterPath = getExportPosterPath(outputPath);
-    const previewPath = projectUserId
-      ? makeExportPreviewObjectPath(projectUserId, projectId, String(row.id))
-      : null;
-    optionalMediaPaths.push(...[posterPath, previewPath].filter((value): value is string => Boolean(value)));
   });
-  // Supabase can sign a path even when no object exists there. Legacy exports
-  // predate preview renditions, so signing their guessed `.preview.mp4` paths
-  // makes the browser wait for a failing request before it can use the master.
-  const existingOptionalPaths = await findExistingExportObjectPaths(optionalMediaPaths).catch(() => new Set<string>());
-  const signablePaths = [...requiredOutputPaths, ...existingOptionalPaths];
-  const signedUrls = await createExportSignedUrls(signablePaths, 60 * 60).catch(() => new Map<string, string>());
+  // The old detail page performed remote existence checks for every guessed
+  // poster and legacy preview before it could render. Modern exports already
+  // store their exact adaptive-preview paths, so sign only known master paths
+  // and let adaptive preview signing run in parallel below.
+  const signedUrls = await createExportSignedUrls(requiredOutputPaths, 60 * 60).catch(() => new Map<string, string>());
 
   const exportItems = await Promise.all(exportRows.map(async (row) => {
     const signedUrl = row.output_storage_path ? signedUrls.get(row.output_storage_path) ?? null : null;
-    const posterPath = row.output_storage_path ? getExportPosterPath(row.output_storage_path) : null;
-    const posterUrl = posterPath ? signedUrls.get(posterPath) ?? null : null;
-    const previewPath = row.output_storage_path && projectUserId
-      ? makeExportPreviewObjectPath(projectUserId, projectId, String(row.id))
-      : null;
-    const legacyPreviewUrl = previewPath ? signedUrls.get(previewPath) ?? null : null;
     const previewProvider = row.preview_storage_provider ?? 'supabase';
     const [preview360Url, preview540Url] = await Promise.all([
       row.preview_360_storage_path ? createExportPreviewUrl(previewProvider, row.preview_360_storage_path).catch(() => null) : Promise.resolve(null),
       row.preview_540_storage_path ? createExportPreviewUrl(previewProvider, row.preview_540_storage_path).catch(() => null) : Promise.resolve(null),
     ]);
-    const previewUrl = preview540Url ?? preview360Url ?? legacyPreviewUrl;
+    const previewUrl = preview540Url ?? preview360Url ?? signedUrl;
 
       const candidate = row.clip_candidate_id ? candidatesById.get(String(row.clip_candidate_id)) : undefined;
 
@@ -235,7 +215,7 @@ export default async function ProjectDetailPage({
         preview540Url,
         preview360SizeBytes: row.preview_360_size_bytes ?? null,
         preview540SizeBytes: row.preview_540_size_bytes ?? null,
-        posterUrl,
+        posterUrl: null,
         title: candidate?.title ?? 'Untitled clip',
         score,
         startSec,
