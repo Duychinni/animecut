@@ -15,6 +15,8 @@ const brokenTitles = [
   "Leaves Another Message: I Didn't Realize You Had This Many People",
   'Leaves Another Message: 11, 12, 15, 14, 15, 17, 18',
   'Leaves Another Message: You Recorded This Video In 2015',
+  'Leaves Another Message: You First Started Posting Videos, Was It On Youtube 15 Years Ago',
+  'MrBeast Leaves Another Message for Himself',
 ];
 
 for (const title of brokenTitles) {

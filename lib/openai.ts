@@ -177,6 +177,7 @@ REEL TITLE RULES:
 - Do not use the first words of the transcript as the title.
 - Do not copy the opening_line, hook_text, or any raw transcript phrase as the title.
 - Never prepend, append, or reuse the source video's title as a reel-title template. Each reel needs its own independently written headline based on that reel's transcript and payoff.
+- SOURCE METADATA may verify a person's identity, but its title wording is not editorial evidence. Apart from verified proper names, do not borrow phrases from the source title. Derive the reel headline from only the words, claims, and payoff inside this candidate's transcript window.
 - A construction like "Source Video Phrase: transcript quote" is invalid, even when both halves are factually grounded.
 - Do not use a colon to attach a raw transcript quote to a reused source phrase. Rewrite the actual payoff as a standalone headline.
 - Before returning a title, silently ask: "Would this make complete grammatical sense to someone who never saw the source video?" If not, rewrite it.

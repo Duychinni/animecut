@@ -1694,11 +1694,8 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  // Keep the opening hook deliberately large and readable on a phone. Face
-  // avoidance changes only the vertical position; it must never shrink the
-  // headline to make it fit around a subject.
-  const cardWidth = 880;
-  const cardHeight = twoLine ? 214 : 158;
+  const cardWidth = 780;
+  const cardHeight = twoLine ? 180 : 132;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const topCardY = twoLine ? 72 : 84;
   const cardY = placement === 'middle'
@@ -1707,7 +1704,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 82 : 92;
+  const hookFontSize = twoLine ? 68 : 76;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -2173,6 +2170,31 @@ function buildCropToFillContext(
   return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:0,scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1${outputLabel}`;
 }
 
+function normalizePortraitCropSize(
+  requestedWidth: number,
+  requestedHeight: number,
+  sourceWidth: number,
+  sourceHeight: number,
+) {
+  const portraitAspect = VERTICAL_EXPORT_WIDTH / VERTICAL_EXPORT_HEIGHT;
+  let cropHeight = Math.max(requestedHeight, requestedWidth / portraitAspect);
+  let cropWidth = cropHeight * portraitAspect;
+
+  if (cropWidth > sourceWidth) {
+    cropWidth = sourceWidth;
+    cropHeight = cropWidth / portraitAspect;
+  }
+  if (cropHeight > sourceHeight) {
+    cropHeight = sourceHeight;
+    cropWidth = cropHeight * portraitAspect;
+  }
+
+  return {
+    width: floorEven(Math.max(2, cropWidth)),
+    height: floorEven(Math.max(2, cropHeight)),
+  };
+}
+
 function buildLargeSafeWideContext(
   base: string,
   normalizedOutput: string,
@@ -2233,12 +2255,23 @@ function buildTimedReframeFilter(
         outputs.push(normalizedOutput);
         return;
       }
-      const cropWidth = floorEven(firstPoint?.cropW ?? Math.min(sourceW, sourceH * 9 / 16));
-      const cropHeight = floorEven(firstPoint?.cropH ?? sourceH);
-      const fallbackX = firstPoint?.cropX ?? Math.max(0, (sourceW - cropWidth) / 2);
-      const fallbackY = firstPoint?.cropY ?? 0;
-      const xExpr = escapeFfmpegExpr(buildInterpolatedSegmentExpr(segment, (point) => point.cropX, fallbackX));
-      const yExpr = escapeFfmpegExpr(buildInterpolatedSegmentExpr(segment, (point) => point.cropY, fallbackY));
+      const requestedWidth = firstPoint?.cropW ?? Math.min(sourceW, sourceH * 9 / 16);
+      const requestedHeight = firstPoint?.cropH ?? sourceH;
+      const normalizedCrop = normalizePortraitCropSize(requestedWidth, requestedHeight, sourceW, sourceH);
+      const cropWidth = normalizedCrop.width;
+      const cropHeight = normalizedCrop.height;
+      const fallbackCenterX = (firstPoint?.cropX ?? Math.max(0, (sourceW - requestedWidth) / 2)) + requestedWidth / 2;
+      const fallbackCenterY = (firstPoint?.cropY ?? 0) + requestedHeight / 2;
+      const xExpr = escapeFfmpegExpr(buildInterpolatedSegmentExpr(
+        segment,
+        (point) => clamp(point.cropX + point.cropW / 2 - cropWidth / 2, 0, Math.max(0, sourceW - cropWidth)),
+        clamp(fallbackCenterX - cropWidth / 2, 0, Math.max(0, sourceW - cropWidth)),
+      ));
+      const yExpr = escapeFfmpegExpr(buildInterpolatedSegmentExpr(
+        segment,
+        (point) => clamp(point.cropY + point.cropH / 2 - cropHeight / 2, 0, Math.max(0, sourceH - cropHeight)),
+        clamp(fallbackCenterY - cropHeight / 2, 0, Math.max(0, sourceH - cropHeight)),
+      ));
       graph.push(`${base},crop=${cropWidth}:${cropHeight}:${xExpr}:${yExpr},scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:flags=${HIGH_QUALITY_SCALE_FLAGS},${SHARPEN_AFTER_UPSCALE_FILTER},setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
     }
     outputs.push(normalizedOutput);
