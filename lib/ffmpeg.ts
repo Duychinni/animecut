@@ -1694,17 +1694,17 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 900;
-  const cardHeight = twoLine ? 230 : 164;
+  const cardWidth = 1000;
+  const cardHeight = twoLine ? 310 : 210;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const topCardY = twoLine ? 68 : 82;
+  const topCardY = twoLine ? 54 : 70;
   const cardY = placement === 'middle'
     ? Math.round((VERTICAL_EXPORT_HEIGHT - cardHeight) / 2)
     : topCardY;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 34);
-  const hookFontSize = twoLine ? 82 : 94;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 40);
+  const hookFontSize = twoLine ? 110 : 126;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1716,7 +1716,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00303030,&H00000000,-1,0,0,0,100,100,0,0,1,1.4,0,5,70,70,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00303030,&H00000000,-1,0,0,0,100,100,0,0,1,1.8,0,5,36,36,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1738,19 +1738,19 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=124',
+    'fontsize=156',
     'box=1',
     'boxcolor=white',
-    'boxborderw=46',
+    'boxborderw=58',
     'borderw=2',
     'bordercolor=black@0.28',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=18',
+    'line_spacing=24',
     'fix_bounds=1',
     'x=(w-text_w)/2',
-    placement === 'middle' ? 'y=(h-text_h)/2' : 'y=74',
+    placement === 'middle' ? 'y=(h-text_h)/2' : 'y=58',
     drawtextBetween(0, 4.5),
   ].join(':');
 }
@@ -1772,7 +1772,7 @@ function resolveFaceAwareHookPlacement(
   if (!openingPoints.length) return requested ?? 'top';
 
   const topHookStart = 60;
-  const topHookEnd = 290;
+  const topHookEnd = 390;
   const overlappingSamples = openingPoints.filter((point) => {
     const face = point.faceBox!;
     const scaleY = VERTICAL_EXPORT_HEIGHT / Math.max(1, point.cropH);
