@@ -1857,8 +1857,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             crop_h = float(point['cropH'])
             raw_x = float(point['cropX'])
             raw_y = float(point['cropY'])
-            dead_zone_x = crop_w * 0.06
-            dead_zone_y = crop_h * 0.04
+            # Keep the virtual tripod planted through ordinary head sway,
+            # posture changes, and detector noise. A subject should be able to
+            # move within roughly the central tenth of the portrait before the
+            # camera considers following them.
+            dead_zone_x = crop_w * 0.10
+            dead_zone_y = crop_h * 0.07
 
             if abs(raw_x - target_x) <= dead_zone_x:
                 pending_x_samples = 0
@@ -1866,7 +1870,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 same_direction = (raw_x - target_x) * (pending_x - target_x) > 0
                 pending_x_samples = pending_x_samples + 1 if same_direction else 1
                 pending_x = raw_x
-                if pending_x_samples >= 3 or abs(raw_x - target_x) >= crop_w * 0.20:
+                if pending_x_samples >= 5 or abs(raw_x - target_x) >= crop_w * 0.30:
                     target_x = raw_x
                     pending_x_samples = 0
 
@@ -1876,7 +1880,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 same_direction = (raw_y - target_y) * (pending_y - target_y) > 0
                 pending_y_samples = pending_y_samples + 1 if same_direction else 1
                 pending_y = raw_y
-                if pending_y_samples >= 3 or abs(raw_y - target_y) >= crop_h * 0.16:
+                if pending_y_samples >= 5 or abs(raw_y - target_y) >= crop_h * 0.24:
                     target_y = raw_y
                     pending_y_samples = 0
 
@@ -1889,10 +1893,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 delta_y = 0.0
                 velocity_y *= 0.30
 
-            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.24, crop_w * 0.24)
-            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.14, crop_h * 0.14)
-            acceleration_x = crop_w * 0.62 * delta_t
-            acceleration_y = crop_h * 0.38 * delta_t
+            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.14, crop_w * 0.14)
+            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.08, crop_h * 0.08)
+            acceleration_x = crop_w * 0.28 * delta_t
+            acceleration_y = crop_h * 0.18 * delta_t
             velocity_x += clamp(desired_velocity_x - velocity_x, -acceleration_x, acceleration_x)
             velocity_y += clamp(desired_velocity_y - velocity_y, -acceleration_y, acceleration_y)
 

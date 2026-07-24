@@ -186,6 +186,15 @@ def test_stationary_subject_jitter_does_not_pan_camera():
     assert max(centers) - min(centers) < W * 0.015, centers
 
 
+def test_gentle_head_sway_keeps_camera_planted():
+    samples = []
+    for index, x in enumerate((700, 732, 758, 740, 704, 674, 692, 728, 754, 718, 686, 706)):
+        samples.append(sample(index * 0.25, subject('body', box(x, 130, 360, 820), 'body:still')))
+    result = timeline(samples)
+    centers = [point['cropCenterX'] for point in result[0]['points']]
+    assert max(centers) - min(centers) < W * 0.02, centers
+
+
 def test_short_detection_loss_holds_subject():
     prior = semantic_subject_choice(body_box=(240, 120, 420, 840))
     held = semantic_subject_choice(prior=prior, scene_cut=False)
