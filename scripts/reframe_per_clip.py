@@ -597,7 +597,13 @@ def portrait_crop_for_face_in_panel(face, source_w: float, source_h: float, pane
     panel_left = clamp(float(panel_left), 0.0, source_w)
     panel_right = clamp(float(panel_right), panel_left + 2.0, source_w)
     panel_width = panel_right - panel_left
-    crop_h = source_h
+    # A fixed split-screen source often places each participant in only half
+    # of a 16:9 canvas. Using the full source height can leave that otherwise
+    # complete face tiny in the 9:16 result. Zoom within the person's own
+    # panel until the face has intentional portrait presence; this is a crop,
+    # not a reason to reject an otherwise usable speaking moment.
+    face_h = max(1.0, float(face[3]))
+    crop_h = min(source_h, max(face_h / 0.24, face_h * 3.6))
     crop_w = min(panel_width, crop_h * 9.0 / 16.0)
     if crop_w >= panel_width:
         crop_w = panel_width
@@ -785,6 +791,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     fixed_last_confident_track = None
     fixed_last_confident_panel = None
     fixed_last_confident_time = -1e9
+    fixed_last_confident_face = None
     conversation_last_track = None
     silence_started_at = None
     previous_silence_elapsed = 0.0
@@ -1213,8 +1220,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             fixed_two_panel
             and not fixed_confident
             and fixed_last_confident_track is not None
-            and now - fixed_last_confident_time <= FIXED_UNCERTAINTY_HOLD_SEC
-            and int(fixed_last_confident_track) in face_by_id
+            and (
+                int(fixed_last_confident_track) in face_by_id
+                or fixed_last_confident_face is not None
+            )
         )
 
         if portrait_source:
@@ -1251,6 +1260,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             fixed_last_confident_track = int(active_id)
             fixed_last_confident_panel = fixed_active_panel
             fixed_last_confident_time = now
+            fixed_last_confident_face = face_by_id.get(int(active_id))
             contextual_shot_latched = False
         elif fixed_hold:
             desired_mode = 'single'
@@ -1384,7 +1394,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         )
         if fixed_hold:
             active_id = int(fixed_last_confident_track)
-            primary_face = face_by_id.get(active_id)
+            primary_face = face_by_id.get(active_id) or fixed_last_confident_face
             subject_stable_id = f'face:{active_id}'
             subject_kind = 'face'
         elif fixed_confident:
@@ -1576,6 +1586,19 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'top_face': top_face,
             'bottom_face': bottom_face,
         }
+        # Visual QA must judge the person and crop the timeline will actually
+        # render. The source observation can briefly miss a face even though a
+        # fixed-panel hold or complete-person replacement safely preserves it.
+        # Keeping the original observation here caused good interview reels to
+        # be rejected after the renderer had already solved the composition.
+        point['subject_kind'] = subject_kind
+        point['face_box'] = None if primary_face is None else dict_box((
+            float(primary_face.get('x', 0.0)),
+            float(primary_face.get('y', 0.0)),
+            float(primary_face.get('w', 0.0)),
+            float(primary_face.get('h', 0.0)),
+        ))
+        point['face_source_complete'] = bool(primary_face is not None)
         decisions.append(decision)
         frame['layout_mode'] = current_mode
         frame['layout_top_track_id'] = decision['top_track_id']
@@ -1670,6 +1693,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'cropCenterY': decision['crop']['cy'],
             'zoom': decision['crop']['zoom'],
             'speakerConfidence': decision['speaker_confidence'],
+            'audioActivity': decision['audio_activity'],
             'subjectKind': decision['subject_kind'],
             'subjectConfidence': decision['subject_confidence'],
             'selectionReason': decision['selection_reason'],

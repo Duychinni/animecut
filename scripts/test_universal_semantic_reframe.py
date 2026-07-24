@@ -5,6 +5,7 @@ from reframe_per_clip import (
     build_reframe_timeline,
     detect_fixed_two_panel_layout,
     face_is_complete_in_source,
+    portrait_crop_for_face_in_panel,
     portrait_crop_for_subject,
     semantic_subject_choice,
     visual_usability,
@@ -149,6 +150,21 @@ def test_small_speaking_face_gets_intentional_close_portrait():
     assert crop['h'] >= H * 0.38, crop
     assert tiny_face['h'] / crop['h'] >= 0.18, crop
     assert abs(crop['w'] / crop['h'] - 9.0 / 16.0) < 0.001, crop
+
+
+def test_small_panel_face_is_zoomed_instead_of_rejected():
+    small_face = box(1330, 260, 150, 150, 2, 0.9)
+    crop = portrait_crop_for_face_in_panel(
+        (small_face['x'], small_face['y'], small_face['w'], small_face['h']),
+        W,
+        H,
+        980,
+        1920,
+    )
+    assert crop['h'] < H, crop
+    assert small_face['h'] / crop['h'] >= 0.22, crop
+    assert crop['x'] >= 980, crop
+    assert crop['x'] + crop['w'] <= 1920, crop
 
 
 def test_walking_left_to_right_smoothly():
@@ -443,6 +459,38 @@ def test_fixed_two_region_right_speaker_never_uses_midpoint():
         for point in segment['points']:
             assert point['cropX'] >= fixed['right_region'][0], point
             assert point['cropX'] > fixed['divider_x'], point
+
+
+def test_fixed_two_region_holds_person_through_detector_gap():
+    left, right, fixed = fixed_two_region_fixture()
+    samples = []
+    for index in range(20):
+        if 4 <= index < 14:
+            samples.append(sample(
+                index * 0.25,
+                faces=[],
+                active_id=None,
+                speaker_conf=0.0,
+                audio_activity=0.75,
+                fixed_layout=fixed,
+            ))
+        else:
+            samples.append(sample(
+                index * 0.25,
+                subject('face', right, 'face:2', 0.92),
+                [left, right],
+                2,
+                0.92,
+                0.55,
+                fixed_layout=fixed,
+                audio_activity=0.75,
+            ))
+    points, frames = zip(*samples)
+    result = build_reframe_timeline(list(points), list(frames), W, H, 5.0)
+    usable, reason = visual_usability(list(points), result)
+    assert usable, reason
+    assert all(segment['mode'] == 'single' for segment in result), result
+    assert all(segment.get('primaryTrackId') == 2 for segment in result), result
 
 
 def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():

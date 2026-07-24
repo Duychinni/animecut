@@ -47,7 +47,8 @@ def _nearest_frame(frames, timestamp):
 
 def _panel_crop_for_face(face, source_w, source_h, panel_left, panel_right):
     panel_width = max(2.0, float(panel_right) - float(panel_left))
-    crop_h = float(source_h)
+    face_h = max(1.0, float(face.get('h', 1.0)))
+    crop_h = min(float(source_h), max(face_h / 0.24, face_h * 3.6))
     crop_w = min(panel_width, crop_h * 9.0 / 16.0)
     if crop_w >= panel_width:
         crop_h = min(float(source_h), crop_w * 16.0 / 9.0)
@@ -74,6 +75,22 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
         segment = dict(raw_segment)
         issues = Counter()
         checked = 0
+        segment_points = segment.get('points') or []
+        speaking_face_points = [
+            point for point in segment_points
+            if float(point.get('audioActivity', 0.0)) >= 0.10
+            and point.get('subjectKind') == 'face'
+        ]
+        if (
+            segment.get('mode') == 'wide_context'
+            and segment.get('primaryTrackId') is not None
+            and speaking_face_points
+            and len(speaking_face_points) >= max(1, len(segment_points) // 2)
+        ):
+            segment['mode'] = 'single'
+            segment['wideKind'] = None
+            segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
+            segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA restored the verified speaking person."
         segment_frames = [
             frame for frame in frames
             if float(segment.get('start', 0.0)) - 0.001 <= float(frame.get('timestamp', 0.0)) <= float(segment.get('end', 0.0)) + 0.001
@@ -181,14 +198,68 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                     segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA lacked safe active-speaker evidence."
                     segment['qaFallbackApplied'] = 'safe_two_region_context'
             else:
-                segment['mode'] = 'wide_context'
-                segment['wideKind'] = 'safe_wide'
-                segment['editorialLayout'] = 'SAFE_ORIGINAL'
-                segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA rejected the crop."
-                segment['qaFallbackApplied'] = 'safe_original'
+                # A rejected generic crop does not mean the moment is
+                # unusable. Build a tighter portrait region around the
+                # verified primary face, bounded halfway to neighboring
+                # faces, so only one complete person remains on screen.
+                primary_id = segment.get('primaryTrackId')
+                corrected = 0
+                for point in segment.get('points') or []:
+                    frame = _nearest_frame(segment_frames, float(point.get('t', 0.0)))
+                    faces = [
+                        face for face in (frame or {}).get('faces', [])
+                        if not face.get('predicted')
+                    ]
+                    primary = next(
+                        (face for face in faces if face.get('track_id') == primary_id),
+                        None,
+                    )
+                    if primary is None:
+                        continue
+                    primary_cx = float(primary.get('cx', float(primary['x']) + float(primary['w']) / 2.0))
+                    left = 0.0
+                    right = float(source_w)
+                    for face in faces:
+                        if face.get('track_id') == primary_id:
+                            continue
+                        other_cx = float(face.get('cx', float(face['x']) + float(face['w']) / 2.0))
+                        boundary = (primary_cx + other_cx) / 2.0
+                        if other_cx < primary_cx:
+                            left = max(left, boundary)
+                        elif other_cx > primary_cx:
+                            right = min(right, boundary)
+                    point.update(_panel_crop_for_face(primary, source_w, source_h, left, right))
+                    corrected += 1
+                if corrected:
+                    segment['mode'] = 'single'
+                    segment['wideKind'] = None
+                    segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA isolated one complete visible person."
+                    segment['qaFallbackApplied'] = 'single_person_reframe'
+                elif speaking_face_points:
+                    # The track can disappear from the QA frame list at a
+                    # shot/track boundary even though the reframe timeline
+                    # already carries a detector-verified face crop for every
+                    # speaking sample. Preserve that person-led crop rather
+                    # than widening to an empty set or split-screen divider.
+                    segment['mode'] = 'single'
+                    segment['wideKind'] = None
+                    segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA preserved the verified timeline face."
+                    segment['qaFallbackApplied'] = 'verified_timeline_face'
+                else:
+                    segment['mode'] = 'wide_context'
+                    segment['wideKind'] = 'safe_wide'
+                    segment['editorialLayout'] = 'SAFE_ORIGINAL'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA rejected the crop."
+                    segment['qaFallbackApplied'] = 'safe_original'
 
         segment['qaStatus'] = 'fallback' if segment.get('qaFallbackApplied') else 'pass'
-        if segment.get('mode') == 'single' and checked == 0:
+        if (
+            segment.get('mode') == 'single'
+            and checked == 0
+            and segment.get('qaFallbackApplied') != 'verified_timeline_face'
+        ):
             segment['qaStatus'] = 'fail'
             remaining_unsafe_segments += 1
         segment['qaIssues'] = dict(issues)

@@ -69,6 +69,17 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
     for raw_segment in timeline:
         segment = dict(raw_segment)
         scene_type, layout, reason = _classify_visual_scene(segment)
+        segment_points = segment.get('points') or []
+        speaking_points = [
+            point for point in segment_points
+            if float(point.get('audioActivity', 0.0)) >= 0.10
+        ]
+        verified_speaking_person = bool(
+            speaking_points
+            and len(speaking_points) >= max(1, len(segment_points) // 2)
+            and segment.get('primaryTrackId') is not None
+            and segment.get('subjectKind') == 'face'
+        )
 
         fixed_two_region = segment.get('sourceLayout') in FIXED_TWO_REGION_LAYOUTS
         fixed_active_speaker = (
@@ -87,6 +98,22 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
             scene_type = 'SINGLE_SPEAKER'
             layout = 'ACTIVE_SPEAKER_CROP'
             reason = 'Confident fixed-region speaker selection requires a panel-bounded single-speaker crop.'
+            segment['mode'] = 'single'
+            segment['wideKind'] = None
+            segment['editorialSceneType'] = scene_type
+            segment['editorialLayout'] = layout
+            segment['editorialReason'] = reason
+            planned.append(segment)
+            continue
+
+        # A transcript hint may request context or b-roll, but it must never
+        # replace a detector-tracked person while somebody is speaking. This
+        # is especially important for interview compilations that alternate
+        # split-screen, reaction, and close-up source shots.
+        if verified_speaking_person:
+            scene_type = 'SINGLE_SPEAKER'
+            layout = 'ACTIVE_SPEAKER_CROP'
+            reason = 'Speech with a verified visible person requires a single-person portrait crop.'
             segment['mode'] = 'single'
             segment['wideKind'] = None
             segment['editorialSceneType'] = scene_type
