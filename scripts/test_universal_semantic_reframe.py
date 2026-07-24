@@ -195,6 +195,29 @@ def test_gentle_head_sway_keeps_camera_planted():
     assert max(centers) - min(centers) < W * 0.02, centers
 
 
+def test_moderate_seated_movement_does_not_trigger_camera_corrections():
+    samples = []
+    positions = (700, 760, 812, 770, 716, 658, 704, 780, 820, 748, 680, 720)
+    for index, x in enumerate(positions):
+        samples.append(sample(index * 0.25, subject('body', box(x, 130, 360, 820), 'body:seated')))
+    result = timeline(samples)
+    centers = [point['cropCenterX'] for point in result[0]['points']]
+    assert max(centers) - min(centers) < W * 0.025, centers
+
+
+def test_detected_face_keeps_camera_fully_locked():
+    samples = []
+    positions = (620, 700, 770, 820, 740, 660, 590, 680, 760, 810)
+    for index, x in enumerate(positions):
+        samples.append(sample(index * 0.25, subject('face', box(x, 150, 300, 360), 'face:locked')))
+    result = timeline(samples)
+    points = result[0]['points']
+    assert len({point['cropCenterX'] for point in points}) == 1, points
+    assert len({point['cropCenterY'] for point in points}) == 1, points
+    assert len({point['cropW'] for point in points}) == 1, points
+    assert len({point['cropH'] for point in points}) == 1, points
+
+
 def test_short_detection_loss_holds_subject():
     prior = semantic_subject_choice(body_box=(240, 120, 420, 840))
     held = semantic_subject_choice(prior=prior, scene_cut=False)

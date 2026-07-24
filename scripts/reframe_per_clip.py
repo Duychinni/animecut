@@ -1839,6 +1839,26 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     for segment in clean_segments:
         if segment['mode'] != 'single' or len(segment['points']) < 2:
             continue
+        # Once a complete face has been framed, treat the shot like a locked
+        # virtual tripod. Detector-box changes, head movement, and posture
+        # shifts must not make the camera drift. A confirmed identity or scene
+        # change already creates a separate hard-cut segment above.
+        if segment.get('subjectKind') == 'face':
+            anchor = segment['points'][0]
+            anchor_x = float(anchor['cropX'])
+            anchor_y = float(anchor['cropY'])
+            anchor_w = float(anchor['cropW'])
+            anchor_h = float(anchor['cropH'])
+            anchor_zoom = float(anchor.get('zoom', 1.0))
+            for point in segment['points'][1:]:
+                point['cropX'] = round(anchor_x, 3)
+                point['cropY'] = round(anchor_y, 3)
+                point['cropW'] = round(anchor_w, 3)
+                point['cropH'] = round(anchor_h, 3)
+                point['cropCenterX'] = round(anchor_x + anchor_w / 2.0, 3)
+                point['cropCenterY'] = round(anchor_y + anchor_h / 2.0, 3)
+                point['zoom'] = round(anchor_zoom, 4)
+            continue
         smoothed_x = float(segment['points'][0]['cropX'])
         smoothed_y = float(segment['points'][0]['cropY'])
         target_x = smoothed_x
@@ -1859,10 +1879,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             raw_y = float(point['cropY'])
             # Keep the virtual tripod planted through ordinary head sway,
             # posture changes, and detector noise. A subject should be able to
-            # move within roughly the central tenth of the portrait before the
-            # camera considers following them.
-            dead_zone_x = crop_w * 0.10
-            dead_zone_y = crop_h * 0.07
+            # move comfortably inside the portrait before the camera follows.
+            # This intentionally favors a planted composition over continuous
+            # micro-corrections around a face.
+            dead_zone_x = crop_w * 0.14
+            dead_zone_y = crop_h * 0.10
 
             if abs(raw_x - target_x) <= dead_zone_x:
                 pending_x_samples = 0
@@ -1870,7 +1891,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 same_direction = (raw_x - target_x) * (pending_x - target_x) > 0
                 pending_x_samples = pending_x_samples + 1 if same_direction else 1
                 pending_x = raw_x
-                if pending_x_samples >= 5 or abs(raw_x - target_x) >= crop_w * 0.30:
+                if pending_x_samples >= 7 or abs(raw_x - target_x) >= crop_w * 0.40:
                     target_x = raw_x
                     pending_x_samples = 0
 
@@ -1880,7 +1901,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 same_direction = (raw_y - target_y) * (pending_y - target_y) > 0
                 pending_y_samples = pending_y_samples + 1 if same_direction else 1
                 pending_y = raw_y
-                if pending_y_samples >= 5 or abs(raw_y - target_y) >= crop_h * 0.24:
+                if pending_y_samples >= 7 or abs(raw_y - target_y) >= crop_h * 0.32:
                     target_y = raw_y
                     pending_y_samples = 0
 
@@ -1893,10 +1914,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 delta_y = 0.0
                 velocity_y *= 0.30
 
-            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.14, crop_w * 0.14)
-            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.08, crop_h * 0.08)
-            acceleration_x = crop_w * 0.28 * delta_t
-            acceleration_y = crop_h * 0.18 * delta_t
+            desired_velocity_x = clamp(delta_x / delta_t, -crop_w * 0.08, crop_w * 0.08)
+            desired_velocity_y = clamp(delta_y / delta_t, -crop_h * 0.045, crop_h * 0.045)
+            acceleration_x = crop_w * 0.14 * delta_t
+            acceleration_y = crop_h * 0.09 * delta_t
             velocity_x += clamp(desired_velocity_x - velocity_x, -acceleration_x, acceleration_x)
             velocity_y += clamp(desired_velocity_y - velocity_y, -acceleration_y, acceleration_y)
 
