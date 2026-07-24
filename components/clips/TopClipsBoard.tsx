@@ -189,6 +189,18 @@ function getPrimaryClipBadge(clip: ClipItem) {
   return '🔎 Review';
 }
 
+function getDisplayClipBadge(clip: ClipItem) {
+  const scoreLabel = clip.scoreLabel?.trim().toLowerCase();
+
+  if (scoreLabel === 'exceptional' || scoreLabel === 'excellent') return '🔥 Viral';
+  if (scoreLabel === 'strong') return '⚡ Strong Clip';
+  if (scoreLabel === 'good') return '👍 Good Clip';
+  if (scoreLabel === 'needs work') return '🛠️ Needs Work';
+  if (scoreLabel === 'weak') return '🔎 Review';
+
+  return getPrimaryClipBadge(clip);
+}
+
 function getPreviewCaptionWords(title: string) {
   const words = title
     .replace(/[|:]+/g, ' ')
@@ -1047,7 +1059,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
-              const primaryBadge = clip.scoreLabel || getPrimaryClipBadge(clip);
+              const primaryBadge = getDisplayClipBadge(clip);
               const editRendering = clip.editStatus === 'rendering' || optimisticEditIds.has(clip.exportId);
               const pendingCaptionPreset =
                 mediaUrl && clip.status !== 'done'
