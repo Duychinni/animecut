@@ -7,8 +7,6 @@ import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
 
-const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
-
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
   const minutes = Math.max(1, Math.ceil(totalSec / 60));
@@ -138,9 +136,9 @@ export default function DashboardPage() {
   const hasProcessingRef = useRef(true);
   const progressFloorRef = useRef<Map<string, number>>(new Map());
   const menuRootRef = useRef<HTMLDivElement | null>(null);
-  const repairRanRef = useRef(false);
   const loadInFlightRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRealtimeRefreshAtRef = useRef(0);
 
   function persistProgressFloor() {
     try {
@@ -178,11 +176,6 @@ export default function DashboardPage() {
     loadInFlightRef.current = true;
     if (initial) setLoadingProjects(true);
     try {
-      if (CLIENT_WORKER_KICKS_ENABLED && initial && !repairRanRef.current) {
-        repairRanRef.current = true;
-        void fetch('/api/projects/repair', { method: 'POST', credentials: 'include', cache: 'no-store' }).catch(() => null);
-      }
-
       const res = await fetch('/api/projects', { credentials: 'include', cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) {
@@ -316,12 +309,6 @@ export default function DashboardPage() {
       if (document.visibilityState !== 'visible') return;
       if (!hasProcessingRef.current) return;
       await loadProjects();
-      if (CLIENT_WORKER_KICKS_ENABLED) {
-        void Promise.allSettled([
-          fetch('/api/pipeline/process', { method: 'POST' }),
-          fetch('/api/jobs/process', { method: 'POST' }),
-        ]);
-      }
     };
 
     const onVisibility = () => {
@@ -334,7 +321,7 @@ export default function DashboardPage() {
 
     const timer = setInterval(() => {
       void tick();
-    }, 8000);
+    }, 60_000);
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
@@ -347,9 +334,12 @@ export default function DashboardPage() {
     const supabase = createClient();
     const scheduleRefresh = () => {
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      const elapsed = Date.now() - lastRealtimeRefreshAtRef.current;
+      const delay = Math.max(2_000, 15_000 - elapsed);
       realtimeRefreshTimerRef.current = setTimeout(() => {
+        lastRealtimeRefreshAtRef.current = Date.now();
         void loadProjects();
-      }, 200);
+      }, delay);
     };
 
     const channel = supabase

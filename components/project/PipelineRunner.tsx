@@ -7,8 +7,6 @@ import { formatLivePercent, useLiveProgress } from '@/components/project/LivePro
 import { createClient } from '@/lib/supabase/client';
 import { captureEvent } from '@/lib/analytics';
 
-const CLIENT_WORKER_KICKS_ENABLED = process.env.NEXT_PUBLIC_CLIENT_WORKER_KICKS === 'true';
-
 type ProgressPayload = {
   project?: {
     id: string;
@@ -81,8 +79,8 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const [progress, setProgress] = useState<ProgressPayload | null>(null);
   const progressRef = useRef<ProgressPayload | null>(null);
   const autoRanRef = useRef(false);
-  const processingKickInFlightRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRealtimeRefreshAtRef = useRef(0);
   const completionTrackedRef = useRef(false);
 
   const progressPct = useMemo(() => Math.max(0, Math.min(100, Number(progress?.progress?.percent ?? 0))), [progress]);
@@ -110,30 +108,19 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     return null;
   }, [projectId]);
 
-  const kickBackgroundProcessing = useCallback(async () => {
-    if (!CLIENT_WORKER_KICKS_ENABLED) return;
-    if (processingKickInFlightRef.current) return;
-    processingKickInFlightRef.current = true;
-    try {
-      await fetch('/api/pipeline/process', { method: 'POST' });
-      await fetch('/api/jobs/process', { method: 'POST' });
-    } catch {
-      // best effort only
-    } finally {
-      processingKickInFlightRef.current = false;
-    }
-  }, []);
-
   useEffect(() => {
     const supabase = createClient();
     const scheduleRefresh = () => {
       if (document.visibilityState !== 'visible') return;
       if (realtimeRefreshTimerRef.current) clearTimeout(realtimeRefreshTimerRef.current);
+      const elapsed = Date.now() - lastRealtimeRefreshAtRef.current;
+      const delay = Math.max(1_500, 10_000 - elapsed);
       realtimeRefreshTimerRef.current = setTimeout(() => {
+        lastRealtimeRefreshAtRef.current = Date.now();
         void refreshProgress().then((latest) => {
           if (latest?.project?.status === 'completed') router.refresh();
         });
-      }, 150);
+      }, delay);
     };
 
     const channel = supabase
@@ -178,20 +165,19 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
         return;
       }
 
-      if (pipelineStatus === 'queued' || pipelineStatus === 'processing' || activeExports > 0 || doneExports === 0) {
-        await kickBackgroundProcessing();
-      }
+      void activeExports;
+      void doneExports;
     };
 
     void tick();
     timer = setInterval(() => {
       void tick();
-    }, 30_000);
+    }, 60_000);
 
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [kickBackgroundProcessing, refreshProgress]);
+  }, [refreshProgress]);
 
   useEffect(() => {
     if (!autoStart || autoRanRef.current || loading) return;
@@ -199,12 +185,6 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
     void runPipeline();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
-
-  useEffect(() => {
-    if (CLIENT_WORKER_KICKS_ENABLED) {
-      void fetch('/api/projects/repair', { method: 'POST' }).catch(() => null);
-    }
-  }, []);
 
   useEffect(() => {
     if (autoRanRef.current || loading) return;
@@ -233,7 +213,6 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
       }
 
       setLog('Pipeline queued. Reattaching to progress...');
-      await kickBackgroundProcessing();
       await refreshProgress();
       router.refresh();
     } finally {

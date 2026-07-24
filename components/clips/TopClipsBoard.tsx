@@ -6,6 +6,7 @@ import { CAPTION_FONTS, CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID, getCaptionFo
 import type { ClipEditSettings } from '@/lib/clip-edit';
 import { readJsonSafe } from '@/lib/safe-json';
 import { captureEvent } from '@/lib/analytics';
+import { createClient } from '@/lib/supabase/client';
 
 type ClipItem = {
   exportId: string;
@@ -390,7 +391,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [hookConfirmation, setHookConfirmation] = useState<boolean | null>(null);
   const [retryingExportIds, setRetryingExportIds] = useState<Set<string>>(() => new Set());
   const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
-  const renderKickInFlightRef = useRef(false);
   const playRequestsRef = useRef<Record<string, number>>({});
   const intendedPlayingIdRef = useRef<string | null>(null);
   const primedVideoIdsRef = useRef(new Set<string>());
@@ -968,15 +968,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (!hasActiveClip) return;
 
     const tick = async () => {
-      if (renderKickInFlightRef.current) return;
-      renderKickInFlightRef.current = true;
-      try {
-        await fetch('/api/jobs/process', { method: 'POST', cache: 'no-store' });
-      } catch {
-        // Best effort: the next tick or manual refresh can retry.
-      } finally {
-        renderKickInFlightRef.current = false;
-      }
+      if (document.visibilityState !== 'visible') return;
 
       if (initialRenderActive) {
         router.refresh();
@@ -1007,12 +999,22 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     };
 
     void tick();
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`clip-board-${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exports', filter: `project_id=eq.${projectId}` }, () => {
+        if (document.visibilityState === 'visible') void tick();
+      })
+      .subscribe();
     const timer = setInterval(() => {
       void tick();
-    }, 5000);
+    }, 30_000);
 
-    return () => clearInterval(timer);
-  }, [optimisticEditIds, router, visible]);
+    return () => {
+      clearInterval(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [optimisticEditIds, projectId, router, visible]);
 
   return (
     <>

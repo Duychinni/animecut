@@ -97,7 +97,7 @@ export function ProcessingHero({
       timer = setTimeout(() => {
         timer = null;
         void tick();
-      }, 30_000);
+      }, 60_000);
     };
 
     const tick = async () => {

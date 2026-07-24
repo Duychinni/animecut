@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { CAPTION_FONTS, DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, type CaptionPreset } from '@/lib/caption-presets';
 import type { ClipEditSettings, TranscriptPhrase, TranscriptSegment } from '@/lib/clip-edit';
 
@@ -507,12 +508,15 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
 
   useEffect(() => {
     if (!rendering) return;
-    const timer = window.setInterval(async () => {
+    let alive = true;
+    let timer: number | null = null;
+
+    const checkStatus = async () => {
+      if (!alive || document.visibilityState !== 'visible') return;
       try {
-        await fetch(`/api/jobs/process?exportId=${encodeURIComponent(clipId)}`, { method: 'POST', cache: 'no-store' }).catch(() => null);
         const res = await fetch(`/api/clips/${clipId}/edit`, { cache: 'no-store' });
         const json = await res.json();
-        if (!res.ok) return;
+        if (!alive || !res.ok) return;
         setData(json);
         setSettings(json.settings);
         if (json.clip?.editStatus === 'rendered' || json.clip?.editStatus === 'idle') {
@@ -529,10 +533,37 @@ export function ClipEditor({ projectId, clipId }: { projectId: string; clipId: s
           setError(json.clip?.errorMessage || 'Clip update failed');
         }
       } catch {
-        // Keep polling. The worker may still be finishing.
+        // The realtime event or fallback timer will retry.
       }
-    }, 1500);
-    return () => window.clearInterval(timer);
+    };
+
+    const scheduleFallback = () => {
+      if (!alive || timer) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        void checkStatus();
+        scheduleFallback();
+      }, 30_000);
+    };
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`clip-edit-${clipId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'exports', filter: `id=eq.${clipId}` }, () => {
+        if (document.visibilityState === 'visible') void checkStatus();
+      })
+      .subscribe();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void checkStatus();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    void checkStatus();
+    scheduleFallback();
+    return () => {
+      alive = false;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      void supabase.removeChannel(channel);
+    };
   }, [clipId, projectId, rendering, router]);
 
   useEffect(() => {
