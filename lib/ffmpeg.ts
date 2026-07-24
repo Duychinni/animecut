@@ -1694,8 +1694,11 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 780;
-  const cardHeight = twoLine ? 180 : 132;
+  // Keep the opening hook deliberately large and readable on a phone. Face
+  // avoidance changes only the vertical position; it must never shrink the
+  // headline to make it fit around a subject.
+  const cardWidth = 880;
+  const cardHeight = twoLine ? 214 : 158;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const topCardY = twoLine ? 72 : 84;
   const cardY = placement === 'middle'
@@ -1704,7 +1707,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 68 : 76;
+  const hookFontSize = twoLine ? 82 : 92;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
