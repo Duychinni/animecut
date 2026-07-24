@@ -12,7 +12,7 @@ import { getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { resolveDefaultReelCaptionAccent, resolveDefaultReelHookPlacement } from '@/lib/reel-caption-style';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
-import { hasSettledSuccessfulExports } from '@/lib/project-completion';
+import { hasSettledPlayableExports } from '@/lib/project-completion';
 import { sendProjectStatusEmail } from '@/lib/project-notifications';
 import { sortProjectWorkByPlan } from '@/lib/plan-entitlements';
 import {
@@ -56,7 +56,7 @@ async function maybeFinalizeProject(projectId: string) {
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const availableCandidates = Number(candidateCount ?? 0);
   const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
-  const allCreatedExportsSucceeded = hasSettledSuccessfulExports({
+  const allCreatedExportsSettled = hasSettledPlayableExports({
     totalExports: totalCount,
     doneExports: doneCount,
     failedExports: failedCount,
@@ -64,7 +64,7 @@ async function maybeFinalizeProject(projectId: string) {
     activeJobs: Number(activeJobs ?? 0),
   });
 
-  if ((doneCount >= targetCount && activeCount === 0) || allCreatedExportsSucceeded) {
+  if ((doneCount >= targetCount && activeCount === 0) || allCreatedExportsSettled) {
     await supabase
       .from('projects')
       .update({

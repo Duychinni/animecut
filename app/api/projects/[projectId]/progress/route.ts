@@ -5,7 +5,7 @@ import { getTargetClipCount } from '@/lib/clip-policy';
 import { getPipelineErrorInfo, getPublicPipelineError } from '@/lib/pipeline-errors';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
-import { hasSettledSuccessfulExports } from '@/lib/project-completion';
+import { hasSettledPlayableExports } from '@/lib/project-completion';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -452,18 +452,18 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasTargetCoverage = doneExports >= targetCount;
     const frozenCompletedProject = projectMarkedCompleted && doneExports > 0;
-    const allCreatedExportsSucceeded = hasSettledSuccessfulExports({
+    const allCreatedExportsSettled = hasSettledPlayableExports({
       totalExports: rows.length,
       doneExports,
       failedExports,
       activeExports,
       activeJobs: Number(activeJobCount ?? 0),
     });
-    const hasSettledPlayableExports = (activeExports === 0 && hasTargetCoverage) || allCreatedExportsSucceeded;
+    const hasSettledPlayableOutput = (activeExports === 0 && hasTargetCoverage) || allCreatedExportsSettled;
     // Explicit completion is a durable latch for saved projects. The target
     // count still gates new projects that have not been finalized yet, but a
     // later policy change must never reopen an older completed project.
-    const isReallyCompleted = frozenCompletedProject || hasSettledPlayableExports;
+    const isReallyCompleted = frozenCompletedProject || hasSettledPlayableOutput;
 
     const projectNeedsExportCompletion = !isReallyCompleted && projectMarkedCompleted && doneExports < targetCount;
     let effectiveStatus = isReallyCompleted ? 'completed' : projectNeedsExportCompletion ? 'analyzed' : (project.status as string);

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getPipelineErrorInfo } from '@/lib/pipeline-errors';
-import { hasSettledSuccessfulExports } from '@/lib/project-completion';
+import { hasSettledPlayableExports } from '@/lib/project-completion';
 
 type ExportRepairRow = {
   id?: string | null;
@@ -88,7 +88,7 @@ export async function POST() {
         .eq('project_id', project.id)
         .in('type', ['pipeline', 'export'])
         .in('status', ['queued', 'processing']);
-      const allCreatedExportsSucceeded = hasSettledSuccessfulExports({
+      const allCreatedExportsSettled = hasSettledPlayableExports({
         totalExports: rows.length,
         doneExports: readyExports,
         failedExports,
@@ -104,7 +104,7 @@ export async function POST() {
         && (recoveryLabel.includes('reconnecting worker') || recoveryLabel.includes('retrying processing'));
       const frozenCompletedProject = hasSavedReels && (projectAlreadyCompleted || wasReopenedByRecovery);
 
-      if (allCreatedExportsSucceeded && !projectAlreadyCompleted) {
+      if (allCreatedExportsSettled && !projectAlreadyCompleted) {
         await admin
           .from('projects')
           .update({
