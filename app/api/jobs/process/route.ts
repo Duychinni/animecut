@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { extractBestVideoThumbnail, renderAdaptivePlaybackPreviews, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractBestVideoThumbnail, probeVideoQuality, renderAdaptivePlaybackPreviews, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
@@ -257,6 +257,8 @@ type ExportLookupRow = {
   clip_edit_settings?: unknown;
   hook_text_enabled?: unknown;
   hook_text?: unknown;
+  render_source_width?: unknown;
+  render_source_height?: unknown;
 };
 
 const TRANSIENT_RENDER_ATTEMPTS = 2;
@@ -366,7 +368,7 @@ function errorText(error: unknown) {
 
 function isMissingEditColumnError(error: unknown) {
   const text = errorText(error);
-  return /(clip_edit_settings|edit_status|caption_edit_preview)/i.test(text)
+  return /(clip_edit_settings|edit_status|caption_edit_preview|render_source_width|render_source_height)/i.test(text)
     && /(column|schema cache|could not find|PGRST204|42703)/i.test(text);
 }
 
@@ -759,7 +761,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const exportLookup = await supabase
     .from('exports')
-    .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings, hook_text_enabled, hook_text')
+    .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings, hook_text_enabled, hook_text, render_source_width, render_source_height')
     .eq('id', exportId)
     .single();
 
@@ -843,6 +845,23 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   };
 
   const inputPath = await resolveProjectVideoSource(bundle.project);
+  const renderSourceQuality = await probeVideoQuality(inputPath);
+  const previousSourceWidth = Number(ex.render_source_width ?? 0);
+  const previousSourceHeight = Number(ex.render_source_height ?? 0);
+  if (
+    options?.edit_rerender === true
+    && previousSourceWidth > 0
+    && previousSourceHeight > 0
+    && (
+      Number(renderSourceQuality.width ?? 0) < previousSourceWidth
+      || Number(renderSourceQuality.height ?? 0) < previousSourceHeight
+    )
+  ) {
+    throw new Error(
+      `rerender_source_quality_regression: refusing to replace the ${previousSourceWidth}x${previousSourceHeight} master `
+      + `with a ${renderSourceQuality.width ?? 0}x${renderSourceQuality.height ?? 0} source`,
+    );
+  }
   const { data: speakerTurns } = await supabase
     .from('speaker_turns')
     .select('speaker_key, start_sec, end_sec, confidence')
@@ -1033,7 +1052,10 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       end_sec: Number(turn.end_sec),
       confidence: turn.confidence == null ? null : Number(turn.confidence),
     })),
-    fastRender: options?.fast_edit_render === true,
+    // An edit replaces the downloadable master, so it must use the same
+    // full-quality encoder profile as the first render. Fast profiles are
+    // reserved for disposable browser previews below.
+    fastRender: false,
   } satisfies Parameters<typeof renderVerticalClip>[0];
 
   await renderVerticalClip(renderOptions);
@@ -1144,6 +1166,8 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       caption_edit_preview_provider: captionEditPreviewUpload.provider,
       caption_edit_preview_storage_path: captionEditPreviewUpload.path,
       hook_text: hookText,
+      render_source_width: renderSourceQuality.width,
+      render_source_height: renderSourceQuality.height,
       error_message: null,
       edit_status: useEditSettings ? 'rendered' : 'idle',
       updated_at: new Date().toISOString(),

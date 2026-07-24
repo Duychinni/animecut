@@ -54,7 +54,7 @@ export async function POST(req: Request, context: { params: Promise<{ clipId: st
         reframe_mode: 'smart',
         reframe_preset: 'auto',
         motion_tracking: false,
-        fast_edit_render: true,
+        fast_edit_render: false,
         hook_text_enabled: true,
       },
     });

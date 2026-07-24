@@ -215,6 +215,16 @@ async function probeInputVideoForRender(inputPath: string) {
   }
 }
 
+export async function probeVideoQuality(inputPath: string) {
+  const source = await probeInputVideoForRender(inputPath);
+  return {
+    width: source.width,
+    height: source.height,
+    frameRate: source.fps,
+    bitrate: source.videoBitrate ?? source.containerBitrate,
+  };
+}
+
 async function mediaFileFingerprint(inputPath: string) {
   const info = await stat(inputPath);
   return `${info.size}:${info.mtimeMs}`;

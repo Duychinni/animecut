@@ -71,7 +71,7 @@ async function updateProjectHookText(
       payload: {
         export_id: exportId,
         edit_rerender: true,
-        fast_edit_render: true,
+        fast_edit_render: false,
         hook_text_enabled: enabled,
       },
     })));
