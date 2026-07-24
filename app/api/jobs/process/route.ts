@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { extractBestVideoThumbnail, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractBestVideoThumbnail, renderAdaptivePlaybackPreviews, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
@@ -1040,8 +1040,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const captionFreeMasterPath = path.join(exportDir, `${bundle.id}.caption-free.mp4`);
   const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.360p.preview.mp4`);
   await Promise.all([
-    renderPlaybackPreview(outPath, preview360Path, '360p'),
-    renderPlaybackPreview(outPath, preview540Path, '540p'),
+    renderAdaptivePlaybackPreviews(outPath, preview360Path, preview540Path),
     (async () => {
       await renderVerticalClip({ ...renderOptions, outputPath: captionFreeMasterPath, captionsEnabled: false, fastRender: true });
       await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '360p');

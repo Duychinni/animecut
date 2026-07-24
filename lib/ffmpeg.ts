@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -198,6 +199,36 @@ export async function extractBestVideoThumbnail(inputPath: string, outputPath: s
 }
 
 async function probeInputVideoForRender(inputPath: string) {
+  const cached = sourceProbeCache.get(inputPath);
+  if (cached) return cached;
+
+  const probePromise = probeInputVideoForRenderUncached(inputPath);
+  sourceProbeCache.set(inputPath, probePromise);
+  try {
+    return await probePromise;
+  } catch (error) {
+    sourceProbeCache.delete(inputPath);
+    throw error;
+  }
+}
+
+type SourceProbeResult = {
+  width: number | null;
+  height: number | null;
+  codec: string | null;
+  fps: string | null;
+  videoBitrate: string | null;
+  containerBitrate: string | null;
+  duration: string | null;
+  size: string | null;
+  colorSpace: string | null;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
+};
+
+const sourceProbeCache = new Map<string, Promise<SourceProbeResult>>();
+
+async function probeInputVideoForRenderUncached(inputPath: string): Promise<SourceProbeResult> {
   const result = await runJsonCommand(resolveMediaBinary('ffprobe'), [
     '-v', 'error',
     '-show_entries', 'format=duration,size,bit_rate:stream=codec_type,codec_name,width,height,avg_frame_rate,bit_rate,color_space,color_transfer,color_primaries',
@@ -306,6 +337,60 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-ar', '48000',
     '-movflags', '+faststart',
     outputPath,
+  ]);
+}
+
+/**
+ * Produce both dashboard renditions from one source decode. Encoding settings
+ * remain identical to renderPlaybackPreview; only the duplicated input decode
+ * is removed.
+ */
+export async function renderAdaptivePlaybackPreviews(
+  inputPath: string,
+  output360Path: string,
+  output540Path: string,
+) {
+  await runFfmpeg([
+    '-y',
+    '-i', inputPath,
+    '-filter_complex',
+    [
+      '[0:v]split=2[v360src][v540src]',
+      '[v360src]scale=360:640:flags=lanczos+accurate_rnd+full_chroma_int,fps=24[v360]',
+      '[v540src]scale=540:960:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
+    ].join(';'),
+    '-map', '[v360]',
+    '-map', '0:a:0?',
+    '-c:v', 'libx264',
+    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
+    '-crf', '25',
+    '-maxrate', '950k',
+    '-bufsize', '1900k',
+    '-pix_fmt', 'yuv420p',
+    '-g', '48',
+    '-keyint_min', '24',
+    '-sc_threshold', '0',
+    '-c:a', 'aac',
+    '-b:a', '80k',
+    '-ar', '48000',
+    '-movflags', '+faststart',
+    output360Path,
+    '-map', '[v540]',
+    '-map', '0:a:0?',
+    '-c:v', 'libx264',
+    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
+    '-crf', '23',
+    '-maxrate', '2500k',
+    '-bufsize', '5000k',
+    '-pix_fmt', 'yuv420p',
+    '-g', '60',
+    '-keyint_min', '30',
+    '-sc_threshold', '0',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-ar', '48000',
+    '-movflags', '+faststart',
+    output540Path,
   ]);
 }
 
@@ -573,6 +658,36 @@ type SmartReframeResult = {
   sourceW?: number;
   sourceH?: number;
 };
+
+const smartReframeCache = new Map<string, Promise<SmartReframeResult>>();
+const MAX_SMART_REFRAME_CACHE_ENTRIES = 128;
+
+function smartReframeCacheKey(opts: RenderOpts) {
+  return createHash('sha256')
+    .update(JSON.stringify({
+      alignmentVersion: RENDER_ALIGNMENT_VERSION,
+      inputPath: opts.inputPath,
+      startSec: opts.startSec,
+      endSec: opts.endSec,
+      framingMode: opts.framingMode ?? 'auto',
+      autoReframe: opts.autoReframe !== false,
+      reframeMode: opts.reframeMode ?? 'smart',
+      reframePreset: opts.reframePreset ?? 'auto',
+      analysisFps: process.env.SMART_REFRAME_ANALYSIS_FPS || '4',
+      editorialPlan: opts.editorialPlan ?? null,
+      speakerTurns: opts.speakerTurns ?? [],
+    }))
+    .digest('hex');
+}
+
+function rememberSmartReframe(key: string, result: Promise<SmartReframeResult>) {
+  smartReframeCache.set(key, result);
+  while (smartReframeCache.size > MAX_SMART_REFRAME_CACHE_ENTRIES) {
+    const oldest = smartReframeCache.keys().next().value;
+    if (!oldest) break;
+    smartReframeCache.delete(oldest);
+  }
+}
 
 function clamp01(v: number) {
   return Math.max(0, Math.min(1, v));
@@ -923,7 +1038,7 @@ function largestSourceCropForOutput(sourceW: number, sourceH: number, outputW: n
   };
 }
 
-async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartReframeResult> {
+async function maybeBuildSmartCropExpressionUncached(opts: RenderOpts): Promise<SmartReframeResult> {
   if (opts.framingMode && opts.framingMode !== 'auto') {
     console.log('[smart-reframe]', {
       clipId: opts.debugClipId ?? null,
@@ -1337,6 +1452,41 @@ async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartRef
       fallbackReason: error instanceof Error ? error.message : 'unknown_error',
     });
     return {};
+  }
+}
+
+async function maybeBuildSmartCropExpression(opts: RenderOpts): Promise<SmartReframeResult> {
+  if (
+    (opts.framingMode && opts.framingMode !== 'auto')
+    || opts.reframeMode !== 'smart'
+    || opts.autoReframe === false
+  ) {
+    return maybeBuildSmartCropExpressionUncached(opts);
+  }
+
+  const key = smartReframeCacheKey(opts);
+  const cached = smartReframeCache.get(key);
+  if (cached) {
+    console.log('[smart-reframe-cache]', {
+      clipId: opts.debugClipId ?? null,
+      candidateId: opts.debugCandidateId ?? null,
+      hit: true,
+    });
+    return cached;
+  }
+
+  console.log('[smart-reframe-cache]', {
+    clipId: opts.debugClipId ?? null,
+    candidateId: opts.debugCandidateId ?? null,
+    hit: false,
+  });
+  const analysis = maybeBuildSmartCropExpressionUncached(opts);
+  rememberSmartReframe(key, analysis);
+  try {
+    return await analysis;
+  } catch (error) {
+    smartReframeCache.delete(key);
+    throw error;
   }
 }
 
@@ -2148,25 +2298,59 @@ export async function renderVerticalClip(opts: RenderOpts) {
     }
   }
 
-  if (effectiveOpts.motionTracking !== false) {
+  // Timeline and split-stack renders already apply subject motion directly in
+  // their crop graph, so a separate vidstab analysis pass cannot affect their
+  // output. Running it anyway decoded the full clip an extra time per render.
+  const needsVidstabPass = effectiveOpts.motionTracking !== false
+    && reframeTimeline.length === 0
+    && !splitStackLayout;
+  if (needsVidstabPass) {
     try {
-      const transformPath = `${opts.outputPath}.trf`;
+      // The captioned master and caption-free editor rendition use the same
+      // source interval and motion transform. Keep one transform beside the
+      // export files and reuse it for both encodes.
+      const transformIdentity = createHash('sha256')
+        .update(JSON.stringify({
+          inputPath: opts.inputPath,
+          startSec: opts.startSec,
+          endSec: opts.endSec,
+          outputWidth,
+          outputHeight,
+        }))
+        .digest('hex')
+        .slice(0, 16);
+      const transformPath = path.join(
+        path.dirname(opts.outputPath),
+        `${opts.debugClipId ?? transformIdentity}.${transformIdentity}.motion.trf`,
+      );
       escapedMotionTransformPath = escapeSubtitlesPathForFilter(transformPath);
 
-      await runFfmpeg([
-        '-y',
-        '-ss',
-        String(opts.startSec),
-        '-to',
-        String(opts.endSec),
-        '-i',
-        opts.inputPath,
-        '-vf',
-        `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},vidstabdetect=shakiness=7:accuracy=15:result='${escapedMotionTransformPath}'`,
-        '-f',
-        'null',
-        '-',
-      ]);
+      try {
+        await access(transformPath);
+        console.log('[motion-tracking-cache]', {
+          clipId: opts.debugClipId ?? null,
+          hit: true,
+        });
+      } catch {
+        console.log('[motion-tracking-cache]', {
+          clipId: opts.debugClipId ?? null,
+          hit: false,
+        });
+        await runFfmpeg([
+          '-y',
+          '-ss',
+          String(opts.startSec),
+          '-to',
+          String(opts.endSec),
+          '-i',
+          opts.inputPath,
+          '-vf',
+          `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},vidstabdetect=shakiness=7:accuracy=15:result='${escapedMotionTransformPath}'`,
+          '-f',
+          'null',
+          '-',
+        ]);
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       const motionFilterMissing = /No such filter: 'vidstabdetect'|Filter not found/i.test(msg);
