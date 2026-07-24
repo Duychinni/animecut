@@ -16,6 +16,7 @@ import {
 } from '@/lib/editorial-plan';
 import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
+import { addSpeechEndSafetyTail } from '@/lib/clip-boundary-safety';
 
 export const maxDuration = 60;
 
@@ -811,9 +812,15 @@ function adjustBoundaries(
   const adjustedEnd = segEnd(segments[endIdx]);
   const clamped = clampDurationWithSegments(adjustedStart, adjustedEnd, segments, minClipSec, maxClipSec);
   const snappedEnd = snapEndToCompleteStatement(clamped.start, clamped.end, segments, minClipSec, maxClipSec);
+  const safeEnd = addSpeechEndSafetyTail({
+    endSec: snappedEnd.end,
+    segments: segments.slice(Math.max(0, snappedEnd.idx + 1)),
+    sourceEndSec: segments.reduce((acc, segment) => Math.max(acc, segEnd(segment)), snappedEnd.end),
+    clipMaxEndSec: clamped.start + maxClipSec,
+  });
 
   const startMoved = Math.abs(clamped.start - base.start_sec) >= 0.3;
-  const endMoved = Math.abs(snappedEnd.end - base.end_sec) >= 0.3;
+  const endMoved = Math.abs(safeEnd - base.end_sec) >= 0.3;
   const finalEndIdx = snappedEnd.idx >= 0 ? snappedEnd.idx : segmentIndexAtClipEnd(segments, snappedEnd.end);
   const endText = finalEndIdx >= 0 ? textOf(segments[finalEndIdx]) : closingLineForWindow(clamped.start, snappedEnd.end, segments);
   const startText = textOf(segments[startIdx]);
@@ -829,13 +836,14 @@ function adjustBoundaries(
   if (startMoved) reasons.push('shifted start to nearest natural sentence/thought boundary');
   if (endMoved) reasons.push('extended/trimmed end to complete the speaker payoff');
   if (snappedEnd.snapped) reasons.push('snapped export end to a complete statement boundary');
+  if (safeEnd > snappedEnd.end + 0.01) reasons.push('kept a protected tail after the final spoken word');
   if (endsWithFiller(endText)) reasons.push('detected filler-style tail (lower self-contained confidence)');
   if (!snappedEnd.complete) reasons.push('could not confirm a complete statement ending');
   if (!reasons.length) reasons.push('raw timestamps already aligned with natural boundaries');
 
   return {
     start_sec: clamped.start,
-    end_sec: snappedEnd.end,
+    end_sec: safeEnd,
     reason: reasons.join('; '),
     confidence,
     end_complete: snappedEnd.complete,

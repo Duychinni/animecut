@@ -24,6 +24,7 @@
     "launch:check": "node scripts/launch-readiness.mjs",
     "plans:test": "npx tsx scripts/test_plan_entitlements.ts",
     "captions:test": "npx tsx scripts/test_caption_system.ts",
+    "boundaries:test": "npx tsx scripts/test_clip_boundary_safety.ts",
     "editorial:test": "npx tsx scripts/test_editorial_output_quality.ts"
   },
   "dependencies": {
