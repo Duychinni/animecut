@@ -534,9 +534,13 @@ function diversifySelectedPackaging(
   globalContext: string,
 ) {
   const diversified: RankedCandidate[] = [];
+  const usedTitles = new Set<string>();
   for (const candidate of candidates) {
     let next = candidate;
-    if (diversified.some((picked) => packagingTooSimilar(next, picked))) {
+    if (
+      diversified.some((picked) => packagingTooSimilar(next, picked))
+      || usedTitles.has(normalizeLooseText(next.title))
+    ) {
       const transcriptText = transcriptTextForWindow(next.start_sec, next.end_sec, segments);
       const regenerated = buildCandidateEditorialPlan({
         transcriptText,
@@ -555,6 +559,31 @@ function diversifySelectedPackaging(
         editorial_plan: regenerated,
       };
     }
+    // Never allow a repeated source-style lead to survive a second fallback.
+    // Build a transcript-window-only headline when regeneration still
+    // collides with an earlier reel.
+    if (
+      diversified.some((picked) => packagingTooSimilar(next, picked))
+      || usedTitles.has(normalizeLooseText(next.title))
+    ) {
+      const transcriptText = transcriptTextForWindow(next.start_sec, next.end_sec, segments);
+      const transcriptOnlyPlan = buildCandidateEditorialPlan({
+        transcriptText,
+        globalContext: transcriptText,
+        raw: {
+          title: '',
+          hook_text: next.hook_text,
+          hook_options: next.editorial_plan?.hook_options ?? [],
+        },
+      });
+      next = {
+        ...next,
+        title: transcriptOnlyPlan.title,
+        hook_text: transcriptOnlyPlan.selected_hook,
+        editorial_plan: transcriptOnlyPlan,
+      };
+    }
+    usedTitles.add(normalizeLooseText(next.title));
     diversified.push(next);
   }
   return diversified;

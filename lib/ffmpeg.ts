@@ -375,7 +375,11 @@ export async function renderAdaptivePlaybackPreviews(
     [
       '[0:v]split=2[v360src][v540src]',
       '[v360src]scale=360:640:flags=lanczos+accurate_rnd+full_chroma_int,fps=24[v360]',
-      '[v540src]scale=540:960:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
+      // The high-quality dashboard rendition is intentionally 720p. The
+      // database field keeps its legacy preview_540 name for compatibility,
+      // but a 540x960 encode visibly softens burned-in hook text and faces
+      // during playback.
+      '[v540src]scale=720:1280:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
     ].join(';'),
     '-map', '[v360]',
     '-map', '0:a:0?',
@@ -397,9 +401,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '18',
-    '-maxrate', '5000k',
-    '-bufsize', '10000k',
+    '-crf', '17',
+    '-maxrate', '6500k',
+    '-bufsize', '13000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',
@@ -1699,8 +1703,8 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const longestLine = Math.max(...lines.map((line) => line.length), 10);
   // Keep the headline close to the compact Opus-style reference: a centered
   // content-sized pill with generous breathing room, not a wide banner.
-  const cardWidth = Math.max(520, Math.min(790, Math.round(longestLine * 43 + 116)));
-  const cardHeight = twoLine ? 220 : 154;
+  const cardWidth = Math.max(470, Math.min(720, Math.round(longestLine * 40 + 96)));
+  const cardHeight = twoLine ? 196 : 142;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const topCardY = twoLine ? 82 : 96;
   const cardY = placement === 'middle'
@@ -1709,7 +1713,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
-  const hookFontSize = twoLine ? 78 : 90;
+  const hookFontSize = twoLine ? 74 : 86;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1721,7 +1725,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00181818,&H00000000,-1,0,0,0,100,100,0,0,1,0.6,0,5,28,28,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,24,24,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1743,10 +1747,10 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=104',
+    'fontsize=96',
     'box=1',
     'boxcolor=white',
-    'boxborderw=30',
+    'boxborderw=24',
     'borderw=0',
     'bordercolor=black@0',
     'shadowx=0',
@@ -1772,12 +1776,13 @@ function resolveFaceAwareHookPlacement(
   timeline: ReframeTimelineSegment[],
 ) {
   const openingPoints = timeline
+    .filter((segment) => segment.start < 4.5)
     .flatMap((segment) => segment.points)
     .filter((point) => point.t <= 4.5 && point.faceBox);
   if (!openingPoints.length) return requested ?? 'top';
 
-  const topHookStart = 60;
-  const topHookEnd = 390;
+  const topHookStart = 45;
+  const topHookEnd = 430;
   const overlappingSamples = openingPoints.filter((point) => {
     const face = point.faceBox!;
     const scaleY = VERTICAL_EXPORT_HEIGHT / Math.max(1, point.cropH);
@@ -1789,7 +1794,9 @@ function resolveFaceAwareHookPlacement(
   // A face occupying the opening hook band takes visual priority. Moving one
   // canonical hook to the middle is safer than drawing a second compensating
   // overlay or covering the person's eyes/forehead.
-  return overlappingSamples / openingPoints.length >= 0.2 ? 'middle' : (requested ?? 'top');
+  // One verified opening overlap is enough to move the single hook card.
+  // Waiting for 20% of samples allowed short but obvious face occlusions.
+  return overlappingSamples > 0 ? 'middle' : (requested ?? 'top');
 }
 
 function buildBaseVideoFilters(

@@ -78,4 +78,19 @@ assert.equal(isEditorialCopyGrounded(plan.selected_hook, transcript, 'MrBeast'),
 assert.notEqual(plan.title, "Why MrBeast Let's There's Matters");
 assert.notEqual(plan.selected_hook, 'He Bought a Private Island');
 
+const sourcePhrasePlan = buildCandidateEditorialPlan({
+  transcriptText: 'Jimmy asked when he first started posting videos. MrBeast said he began when he was eleven.',
+  globalContext: [
+    sourceTitleContext,
+    'Verified central subject: MrBeast.',
+    'Source channel: The Tonight Show Starring Jimmy Fallon',
+  ].join('\n'),
+  raw: {
+    title: 'Leaves Another Message: You First Started Posting Videos',
+    hook_text: 'He Started Posting at Eleven',
+  },
+});
+assert.equal(/^Leaves Another Message\b/i.test(sourcePhrasePlan.title), false);
+assert.equal(isEditorialCopyGrounded(sourcePhrasePlan.title, 'Jimmy asked when he first started posting videos. MrBeast said he began when he was eleven.', 'MrBeast Jimmy'), true);
+
 console.log('PASS editorial output quality');

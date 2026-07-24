@@ -234,7 +234,16 @@ function entitiesForWindow(text: string, globalContext: string) {
   const verifiedEntities = contextLines
     .map((line) => line.match(/^Verified central subject:\s*([^.;]+)/i)?.[1]?.trim() ?? '')
     .filter(Boolean);
-  const metadataEntities = [...verifiedEntities, ...titleEntities, ...channelEntities];
+  // A source title may verify a proper name, but its editorial wording must
+  // never become a per-reel subject or reusable prefix. Only admit title
+  // entities that are also spoken inside this candidate's transcript window.
+  // This prevents source phrases such as "Leaves Another Message" from being
+  // prepended to every generated reel title.
+  const spokenTitleEntities = titleEntities.filter((entity) => {
+    const entityTokens = normalized(entity).split(/\s+/).filter((token) => token.length >= 3);
+    return entityTokens.length > 0 && entityTokens.every((token) => haystack.includes(` ${token} `));
+  });
+  const metadataEntities = [...verifiedEntities, ...spokenTitleEntities, ...channelEntities];
   const windowEntities = canonicalEntities(globalContext)
     .filter((entity) => haystack.includes(` ${normalized(entity)} `) || entity.split(/\s+/).some((part) => part.length > 4 && haystack.includes(` ${part.toLowerCase()} `)))
   return [...metadataEntities, ...windowEntities]
