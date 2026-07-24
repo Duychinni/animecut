@@ -33,7 +33,10 @@ fi
 
 npm ci
 npm run build
-GIT_COMMIT_SHA="$REMOTE_SHA" pm2 restart animacut-web animacut-worker-1 animacut-worker-2 --update-env
+if ! pm2 describe animacut-worker-3 >/dev/null 2>&1; then
+  GIT_COMMIT_SHA="$REMOTE_SHA" pm2 start npm --name animacut-worker-3 -- run worker
+fi
+GIT_COMMIT_SHA="$REMOTE_SHA" pm2 restart animacut-web animacut-worker-1 animacut-worker-2 animacut-worker-3 --update-env
 pm2 save --force >/dev/null
 
 echo "Updated AnimaCut workers from $LOCAL_SHA to $REMOTE_SHA"
