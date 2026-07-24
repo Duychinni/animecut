@@ -1694,17 +1694,17 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 780;
-  const cardHeight = twoLine ? 180 : 132;
+  const cardWidth = 900;
+  const cardHeight = twoLine ? 230 : 164;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const topCardY = twoLine ? 72 : 84;
+  const topCardY = twoLine ? 68 : 82;
   const cardY = placement === 'middle'
     ? Math.round((VERTICAL_EXPORT_HEIGHT - cardHeight) / 2)
     : topCardY;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 30);
-  const hookFontSize = twoLine ? 68 : 76;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 34);
+  const hookFontSize = twoLine ? 82 : 94;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1738,16 +1738,16 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=108',
+    'fontsize=124',
     'box=1',
     'boxcolor=white',
-    'boxborderw=38',
+    'boxborderw=46',
     'borderw=2',
     'bordercolor=black@0.28',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=14',
+    'line_spacing=18',
     'fix_bounds=1',
     'x=(w-text_w)/2',
     placement === 'middle' ? 'y=(h-text_h)/2' : 'y=74',
