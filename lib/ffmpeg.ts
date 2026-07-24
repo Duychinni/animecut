@@ -343,9 +343,9 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-vf', `scale=${constrained ? '360:640' : '540:960'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', constrained ? '25' : '23',
-    '-maxrate', constrained ? '950k' : '2500k',
-    '-bufsize', constrained ? '1900k' : '5000k',
+    '-crf', constrained ? '22' : '18',
+    '-maxrate', constrained ? '1400k' : '5000k',
+    '-bufsize', constrained ? '2800k' : '10000k',
     '-pix_fmt', 'yuv420p',
     '-g', constrained ? '48' : '60',
     '-keyint_min', constrained ? '24' : '30',
@@ -381,9 +381,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '25',
-    '-maxrate', '950k',
-    '-bufsize', '1900k',
+    '-crf', '22',
+    '-maxrate', '1400k',
+    '-bufsize', '2800k',
     '-pix_fmt', 'yuv420p',
     '-g', '48',
     '-keyint_min', '24',
@@ -397,9 +397,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '23',
-    '-maxrate', '2500k',
-    '-bufsize', '5000k',
+    '-crf', '18',
+    '-maxrate', '5000k',
+    '-bufsize', '10000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',
@@ -1651,7 +1651,9 @@ function wrapHookTextForDrawtext(hookText: string) {
 
   for (const word of words) {
     const next = [...current, word].join(' ');
-    const shouldWrap = current.length > 0 && (next.length > 24 || current.length >= 5);
+    // Keep the headline compact like a deliberate social title card instead
+    // of stretching a short phrase across nearly the entire 9:16 canvas.
+    const shouldWrap = current.length > 0 && (next.length > 21 || current.length >= 4);
 
     if (shouldWrap) {
       lines.push(current.join(' '));
@@ -1694,8 +1696,11 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
-  const cardWidth = 1000;
-  const cardHeight = twoLine ? 310 : 210;
+  const longestLine = Math.max(...lines.map((line) => line.length), 10);
+  // Estimate the rendered headline width and add intentional side padding.
+  // The bounds keep long hooks legible without making every card full-width.
+  const cardWidth = Math.max(650, Math.min(920, Math.round(longestLine * 59 + 150)));
+  const cardHeight = twoLine ? 286 : 194;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const topCardY = twoLine ? 54 : 70;
   const cardY = placement === 'middle'
@@ -1704,7 +1709,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 40);
-  const hookFontSize = twoLine ? 110 : 126;
+  const hookFontSize = twoLine ? 116 : 132;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1716,7 +1721,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00303030,&H00000000,-1,0,0,0,100,100,0,0,1,1.8,0,5,36,36,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00181818,&H00000000,-1,0,0,0,100,100,0,0,1,0.8,0,5,36,36,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1738,12 +1743,12 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=156',
+    'fontsize=164',
     'box=1',
     'boxcolor=white',
-    'boxborderw=58',
-    'borderw=2',
-    'bordercolor=black@0.28',
+    'boxborderw=42',
+    'borderw=1',
+    'bordercolor=black@0.16',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
