@@ -158,7 +158,21 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
             if name != 'primary_head_shoulders_cut'
         )
         invalid_ratio = invalid_samples / max(1, checked)
-        if segment.get('mode') == 'single' and (checked == 0 or invalid_ratio > 0.20):
+        # A partially visible face or body fragment is noticeable even for a
+        # brief beat. Allow one noisy detector sample, but reject sustained
+        # unsafe crops instead of publishing them.
+        unsafe_face_samples = (
+            issues['primary_face_cut']
+            + issues['secondary_face_partially_visible']
+            + issues['crop_crosses_panel_boundary']
+        )
+        unsafe_face_ratio = unsafe_face_samples / max(1, checked)
+        if segment.get('mode') == 'single' and (
+            checked == 0
+            or invalid_ratio > 0.08
+            or unsafe_face_samples >= 2
+            or unsafe_face_ratio > 0.05
+        ):
             rejected_segments += 1
             if segment.get('sourceLayout') in FIXED_TWO_REGION_LAYOUTS:
                 regions = segment.get('panelRegions') or {}

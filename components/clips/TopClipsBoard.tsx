@@ -287,23 +287,6 @@ function formatMockHook(title: string) {
   return words.length ? words.join(' ') : 'Top Moment';
 }
 
-function getSavedHookText(clip: ClipItem) {
-  if (clip.hookTextEnabled === false || typeof clip.hookText !== 'string') return null;
-  const text = clip.hookText.replace(/\s+/g, ' ').trim();
-  return text.length ? text : null;
-}
-
-function PosterHookOverlay({ text }: { text: string }) {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-x-[8.3%] top-[2.8%] z-30 flex h-[12.5%] items-center justify-center overflow-hidden rounded-[8px] bg-white px-3 py-2 text-center text-[13px] font-black leading-[1.1] tracking-[-0.025em] text-black shadow-[0_3px_12px_rgba(0,0,0,.34)] ring-1 ring-black/10"
-    >
-      <span className="line-clamp-3">{text}</span>
-    </div>
-  );
-}
-
 function getMockCaption(title: string) {
   const words = title
     .replace(/[|:]+/g, ' ')
@@ -1065,12 +1048,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
               const primaryBadge = clip.scoreLabel || getPrimaryClipBadge(clip);
-              const savedHookText = getSavedHookText(clip);
-              // The production MP4 contains the same hook for its first 4.5 seconds.
-              // Keep one opaque, crisp browser layer over that exact region while it
-              // is visible. This prevents video scaling from softening the text and
-              // fully covers the burned-in card so two hooks can never appear.
-              const showPosterHook = Boolean(savedHookText) && current < 4.45;
               const editRendering = clip.editStatus === 'rendering' || optimisticEditIds.has(clip.exportId);
               const pendingCaptionPreset =
                 mediaUrl && clip.status !== 'done'
@@ -1096,17 +1073,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                       <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-[0.16em] text-white/45">
                         AI Clip Score
                       </span>
-                      {clip.scoreReasons?.length ? (
-                        <p className="mt-1 line-clamp-2 text-[10px] font-medium leading-4 text-white/58">
-                          {clip.scoreReasons.slice(0, 3).join(' • ')}
-                        </p>
-                      ) : null}
-                      {clip.scoreConfidence != null ? (
-                        <p className="mt-0.5 text-[9px] font-semibold text-white/38">
-                          Analysis confidence: {clip.scoreConfidence >= 0.85 ? 'High' : clip.scoreConfidence >= 0.65 ? 'Medium' : 'Low'}
-                        </p>
-                      ) : null}
-
                       <div className="mt-1.5 flex items-center justify-between gap-2">
                         <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">
                           {primaryBadge}
@@ -1316,7 +1282,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           Your browser does not support the video tag.
                         </video>
 
-                        {showPosterHook && savedHookText ? <PosterHookOverlay text={savedHookText} /> : null}
 
                         {editRendering ? <ReelEditProcessingOverlay clip={clip} /> : null}
 

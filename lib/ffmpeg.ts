@@ -646,6 +646,7 @@ type ReframeTimelinePoint = {
   cropY: number;
   cropW: number;
   cropH: number;
+  faceBox?: SubjectBox | null;
   cropCenterX?: number;
   cropCenterY?: number;
   zoom?: number;
@@ -881,6 +882,7 @@ function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): R
             cropY,
             cropW,
             cropH,
+            faceBox: normalizeBox(point.face_box as Partial<SubjectBox> | null | undefined),
             cropCenterX: Number(point.cropCenterX ?? (cropX + cropW / 2)),
             cropCenterY: Number(point.cropCenterY ?? (cropY + cropH / 2)),
             zoom: Number(point.zoom ?? 1),
@@ -1760,6 +1762,31 @@ function buildHookFilter(opts: RenderOpts) {
   return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath, opts.hookPlacement);
 }
 
+function resolveFaceAwareHookPlacement(
+  requested: 'top' | 'middle' | undefined,
+  timeline: ReframeTimelineSegment[],
+) {
+  const openingPoints = timeline
+    .flatMap((segment) => segment.points)
+    .filter((point) => point.t <= 4.5 && point.faceBox);
+  if (!openingPoints.length) return requested ?? 'top';
+
+  const topHookStart = 60;
+  const topHookEnd = 290;
+  const overlappingSamples = openingPoints.filter((point) => {
+    const face = point.faceBox!;
+    const scaleY = VERTICAL_EXPORT_HEIGHT / Math.max(1, point.cropH);
+    const faceTop = (face.y - point.cropY) * scaleY;
+    const faceBottom = (face.y + face.h - point.cropY) * scaleY;
+    return faceBottom > topHookStart && faceTop < topHookEnd;
+  }).length;
+
+  // A face occupying the opening hook band takes visual priority. Moving one
+  // canonical hook to the middle is safer than drawing a second compensating
+  // overlay or covering the person's eyes/forehead.
+  return overlappingSamples / openingPoints.length >= 0.2 ? 'middle' : (requested ?? 'top');
+}
+
 function buildBaseVideoFilters(
   opts: RenderOpts,
   outputWidth: number,
@@ -2295,6 +2322,10 @@ export async function renderVerticalClip(opts: RenderOpts) {
   const splitStackLayout = smartReframe.layout;
   const adaptiveWideIntervals = smartReframe.wideIntervals ?? [];
   const reframeTimeline = smartReframe.timeline ?? [];
+  effectiveOpts.hookPlacement = resolveFaceAwareHookPlacement(
+    effectiveOpts.hookPlacement,
+    reframeTimeline,
+  );
 
   if (
     effectiveMode === 'smart'

@@ -504,9 +504,60 @@ function isCoverageDuplicate(cur: RankedCandidate, picked: RankedCandidate) {
   const curCenter = (curStart + curEnd) / 2;
   const pickedCenter = (pickedStart + pickedEnd) / 2;
   const exactWindow = Math.abs(curStart - pickedStart) < 3 && Math.abs(curEnd - pickedEnd) < 3;
-  const nearSameMoment = Math.abs(curCenter - pickedCenter) < 10 && overlap / minDuration >= 0.62;
-  const nearlyContained = overlap / minDuration >= 0.82;
-  return exactWindow || nearSameMoment || nearlyContained;
+  const overlapRatio = overlap / minDuration;
+  const nearSameMoment = Math.abs(curCenter - pickedCenter) < 14 && overlapRatio >= 0.42;
+  const meaningfullyOverlapping = overlap >= 8 && overlapRatio >= 0.35;
+  const nearlyContained = overlapRatio >= 0.58;
+  return exactWindow || nearSameMoment || meaningfullyOverlapping || nearlyContained;
+}
+
+function titleLead(title: string) {
+  const normalizedTitle = normalizeLooseText(title);
+  const colonLead = title.includes(':') ? normalizeLooseText(title.split(':', 1)[0]) : '';
+  if (colonLead.split(/\s+/).length >= 2) return colonLead;
+  return normalizedTitle.split(/\s+/).filter(Boolean).slice(0, 4).join(' ');
+}
+
+function packagingTooSimilar(cur: RankedCandidate, picked: RankedCandidate) {
+  const curTitle = normalizeLooseText(cur.title);
+  const pickedTitle = normalizeLooseText(picked.title);
+  if (!curTitle || !pickedTitle) return false;
+  if (curTitle === pickedTitle) return true;
+  const curLead = titleLead(cur.title);
+  const pickedLead = titleLead(picked.title);
+  return curLead.length >= 8 && curLead === pickedLead;
+}
+
+function diversifySelectedPackaging(
+  candidates: RankedCandidate[],
+  segments: TranscriptSegment[],
+  globalContext: string,
+) {
+  const diversified: RankedCandidate[] = [];
+  for (const candidate of candidates) {
+    let next = candidate;
+    if (diversified.some((picked) => packagingTooSimilar(next, picked))) {
+      const transcriptText = transcriptTextForWindow(next.start_sec, next.end_sec, segments);
+      const regenerated = buildCandidateEditorialPlan({
+        transcriptText,
+        globalContext,
+        raw: {
+          ...next.editorial_plan,
+          title: '',
+          hook_text: '',
+          hook_options: [],
+        },
+      });
+      next = {
+        ...next,
+        title: regenerated.title,
+        hook_text: regenerated.selected_hook,
+        editorial_plan: regenerated,
+      };
+    }
+    diversified.push(next);
+  }
+  return diversified;
 }
 
 function coverageBucket(startSec: number, totalSeconds: number, desiredCount: number) {
@@ -1175,9 +1226,22 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       }
     }
 
-    const ranked = calibrateFinalScores(selected.slice(0, targetClipCount)).map((item, idx) => ({ ...item, rank: idx + 1 }));
+    // Backfill passes must never reintroduce overlapping footage. Prefer fewer
+    // genuinely distinct reels over multiple cards showing the same setup or
+    // payoff with slightly shifted boundaries.
+    const finalDistinct = distinctCandidates(selected)
+      .reduce<RankedCandidate[]>((acc, candidate) => {
+        if (!acc.some((picked) => isCoverageDuplicate(candidate, picked))) acc.push(candidate);
+        return acc;
+      }, []);
+    const diversified = diversifySelectedPackaging(
+      finalDistinct.slice(0, targetClipCount),
+      segments,
+      editorialGlobalContext,
+    );
+    const ranked = calibrateFinalScores(diversified).map((item, idx) => ({ ...item, rank: idx + 1 }));
 
-    if (policyDurationSeconds > 4 * 60 && ranked.length < minimumFinalCount) {
+    if (policyDurationSeconds > 4 * 60 && ranked.length < Math.min(3, minimumFinalCount)) {
       throw new Error(
         `Analysis under-produced clips (${ranked.length}/${minimumFinalCount}). `
         + 'The project was not finalized so the worker can retry instead of presenting an incomplete result.',
