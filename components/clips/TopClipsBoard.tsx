@@ -2,7 +2,7 @@
 
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID } from '@/lib/caption-presets';
+import { CAPTION_FONTS, CAPTION_PRESETS, DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, type CaptionFont } from '@/lib/caption-presets';
 import type { ClipEditSettings } from '@/lib/clip-edit';
 import { readJsonSafe } from '@/lib/safe-json';
 import { captureEvent } from '@/lib/analytics';
@@ -846,6 +846,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   async function applyPreset(options: {
     selectedPresetId: string;
+    captionFont: CaptionFont;
     captionHighlightColor: string;
     captionsEnabled: boolean;
     captionX: number;
@@ -860,11 +861,13 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       setApplyingPreset(true);
       const selectedPreset = CAPTION_PRESETS.find((preset) => preset.id === options.selectedPresetId)
         ?? CAPTION_PRESETS[0]!;
-      const nextSettings: ClipEditSettings = {
-        ...captionSettings,
+      // Caption changes do not need to resend the transcript, cut timeline, or
+      // framing data. Long transcripts made this request large enough for the
+      // production edge to reject it before the API route could return JSON.
+      const captionPatch: Partial<ClipEditSettings> = {
         captions_enabled: options.captionsEnabled,
         caption_preset_id: selectedPreset.id,
-        caption_font: selectedPreset.caption_font,
+        caption_font: options.captionFont,
         caption_font_size: options.captionFontSize,
         caption_text_color: selectedPreset.captionTextColor,
         caption_highlight_color: options.captionHighlightColor,
@@ -878,7 +881,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       const presetRes = await fetch(`/api/clips/${editingClip.exportId}/rerender`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ settings: nextSettings }),
+        body: JSON.stringify({ settings: captionPatch }),
       });
       const presetData = await readJsonSafe(presetRes);
       if (!presetRes.ok) throw new Error(String(presetData?.error || 'Could not apply preset'));
@@ -1753,6 +1756,7 @@ function CaptionTemplatesModal({
   onClose: () => void;
   onApply: (options: {
     selectedPresetId: string;
+    captionFont: CaptionFont;
     captionHighlightColor: string;
     captionsEnabled: boolean;
     captionX: number;
@@ -1770,6 +1774,11 @@ function CaptionTemplatesModal({
       ?? CAPTION_PRESETS[0]!.captionHighlightColor
   );
   const [captionsEnabled, setCaptionsEnabled] = useState(defaultCaptionsEnabled);
+  const [captionFont, setCaptionFont] = useState<CaptionFont>(
+    previewData?.settings.caption_font
+      ?? CAPTION_PRESETS.find((preset) => preset.id === defaultPresetId)?.caption_font
+      ?? CAPTION_PRESETS[0]!.caption_font
+  );
   const [previewTime, setPreviewTime] = useState(0);
   const [captionX, setCaptionX] = useState(previewData?.settings.caption_x ?? 0.5);
   const [captionY, setCaptionY] = useState(previewData?.settings.caption_y ?? 0.8);
@@ -1781,6 +1790,7 @@ function CaptionTemplatesModal({
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewFrameRef = useRef<HTMLDivElement | null>(null);
   const activePreset = CAPTION_PRESETS.find((preset) => preset.id === selectedPresetId) ?? CAPTION_PRESETS[0]!;
+  const activeFont = getCaptionFontById(captionFont);
   const previewSettings = previewData?.settings;
   const previewUrl = previewData?.sourceUrl ?? previewData?.fallbackUrl ?? null;
   const previewHasBurnedCaptions = previewData?.previewKind === 'burned-reel';
@@ -1842,6 +1852,11 @@ function CaptionTemplatesModal({
   useEffect(() => {
     setSelectedPresetId(defaultPresetId);
     setCaptionsEnabled(defaultCaptionsEnabled);
+    setCaptionFont(
+      previewData?.settings.caption_font
+        ?? CAPTION_PRESETS.find((preset) => preset.id === defaultPresetId)?.caption_font
+        ?? CAPTION_PRESETS[0]!.caption_font
+    );
     setCaptionHighlightColor(
       previewData?.settings.caption_highlight_color
         ?? CAPTION_PRESETS.find((preset) => preset.id === defaultPresetId)?.captionHighlightColor
@@ -1853,6 +1868,7 @@ function CaptionTemplatesModal({
     if (!previewSettings) return;
     setCaptionX(previewSettings.caption_x);
     setCaptionY(previewSettings.caption_y);
+    setCaptionFont(previewSettings.caption_font);
     setCaptionFontSize(previewSettings.caption_font_size);
     setCaptionBackground(previewSettings.caption_background);
     setCaptionMaxWords(previewSettings.caption_max_words);
@@ -1961,7 +1977,7 @@ function CaptionTemplatesModal({
                         {index > 0 ? ' ' : null}
                         <CaptionPreviewWord
                           color={index === activeCaption.highlightedIndex ? captionHighlightColor : activePreset.captionTextColor}
-                          style={{ ...getPresetCaptionStyle(activePreset, 'reel'), fontSize: `${Math.round(captionFontSize * 2.6)}px` }}
+                          style={{ ...getPresetCaptionStyle(activePreset, 'reel'), fontFamily: activeFont.family, fontSize: `${Math.round(captionFontSize * 2.6)}px` }}
                         >
                           {word.toUpperCase()}
                         </CaptionPreviewWord>
@@ -2011,7 +2027,7 @@ function CaptionTemplatesModal({
                       {CAPTION_TEMPLATE_OPTIONS.map((preset) => {
                         const active = preset.id === selectedPresetId;
                         return (
-                          <button key={preset.id} type="button" onClick={() => { setSelectedPresetId(preset.id); setCaptionHighlightColor(preset.captionHighlightColor); setCaptionFontSize(preset.captionFontSize); setCaptionBackground(preset.captionBackgroundBox); setCaptionMaxWords(preset.captionMaxWords); setCaptionWordHighlight(preset.captionWordHighlight); }} disabled={loading} className={`overflow-hidden rounded-lg border bg-black/35 p-2 text-left transition hover:bg-white/10 disabled:opacity-45 ${active ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/10'}`} aria-label={`Preview ${preset.name}`}>
+                          <button key={preset.id} type="button" onClick={() => { setSelectedPresetId(preset.id); setCaptionFont(preset.caption_font); setCaptionHighlightColor(preset.captionHighlightColor); setCaptionFontSize(preset.captionFontSize); setCaptionBackground(preset.captionBackgroundBox); setCaptionMaxWords(preset.captionMaxWords); setCaptionWordHighlight(preset.captionWordHighlight); }} disabled={loading} className={`overflow-hidden rounded-lg border bg-black/35 p-2 text-left transition hover:bg-white/10 disabled:opacity-45 ${active ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/10'}`} aria-label={`Preview ${preset.name}`}>
                             <span className="grid h-10 place-items-center rounded bg-[#171a20] text-base font-black" style={{ color: preset.captionHighlightColor, fontFamily: preset.captionFontFamily, WebkitTextStroke: '1px #000', textShadow: '0 2px 4px #000' }}>Aa</span>
                             <span className="mt-1.5 block truncate text-[10px] font-bold text-white/65">{preset.name}</span>
                           </button>
@@ -2021,7 +2037,12 @@ function CaptionTemplatesModal({
                   </section>
 
                       <section className="space-y-3 border-b border-white/10 pb-5">
-                        <div className="flex items-center justify-between"><p className="text-xs font-bold text-white/65">Font</p><span className="rounded bg-white/[0.07] px-3 py-2 text-xs text-white/80">{activePreset.captionFontFamily}</span></div>
+                        <label className="block space-y-2">
+                          <span className="text-xs font-bold text-white/65">Font</span>
+                          <select value={captionFont} onChange={(event) => setCaptionFont(event.target.value as CaptionFont)} className="w-full rounded-lg border border-white/10 bg-[#171a20] px-3 py-2 text-xs text-white outline-none focus:border-cyan-300">
+                            {CAPTION_FONTS.map((font) => <option key={font.id} value={font.id}>{font.name}</option>)}
+                          </select>
+                        </label>
                         <label className="block space-y-2"><span className="flex justify-between text-xs font-bold text-white/65">Font size <span className="rounded bg-black/30 px-2 py-1 font-mono text-white">{Math.round(captionFontSize * 1.33)}</span></span><input type="range" min={6} max={20} step={0.5} value={captionFontSize} onChange={(event) => setCaptionFontSize(Number(event.target.value))} className="w-full accent-cyan-300" /></label>
                         <div className="flex items-center justify-between"><span className="text-xs font-bold text-white/65">Highlight color</span><div className="flex gap-2">{CAPTION_TEMPLATE_OPTIONS.slice(0, 7).map((preset) => <button key={preset.id} type="button" onClick={() => setCaptionHighlightColor(preset.captionHighlightColor)} className={`h-7 w-7 rounded border ${captionHighlightColor.toLowerCase() === preset.captionHighlightColor.toLowerCase() ? 'border-cyan-300 ring-1 ring-cyan-300' : 'border-white/15'}`} style={{ backgroundColor: preset.captionHighlightColor }} aria-label={`Use ${preset.captionHighlightColor} highlight color`} />)}</div></div>
                         <label className="flex items-center justify-between text-xs font-bold text-white/65">Background <input type="checkbox" checked={captionBackground} onChange={(event) => setCaptionBackground(event.target.checked)} className="accent-cyan-300" /></label>
@@ -2058,7 +2079,7 @@ function CaptionTemplatesModal({
               <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-white/55">Apply saves these previewed changes and renders the reel.</div>
               <button
                 type="button"
-                onClick={() => void onApply({ selectedPresetId, captionHighlightColor, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
+                onClick={() => void onApply({ selectedPresetId, captionFont, captionHighlightColor, captionsEnabled, captionX, captionY, captionFontSize, captionBackground, captionMaxWords, captionWordHighlight })}
                 disabled={applying || loading || !canApply}
                 className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
