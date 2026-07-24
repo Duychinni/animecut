@@ -340,12 +340,12 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-i', inputPath,
     '-map', '0:v:0',
     '-map', '0:a:0?',
-    '-vf', `scale=${constrained ? '360:640' : '540:960'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
+    '-vf', `scale=${constrained ? '360:640' : '1080:1920'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', constrained ? '22' : '18',
-    '-maxrate', constrained ? '1400k' : '5000k',
-    '-bufsize', constrained ? '2800k' : '10000k',
+    '-crf', constrained ? '22' : '16',
+    '-maxrate', constrained ? '1400k' : '9000k',
+    '-bufsize', constrained ? '2800k' : '18000k',
     '-pix_fmt', 'yuv420p',
     '-g', constrained ? '48' : '60',
     '-keyint_min', constrained ? '24' : '30',
@@ -375,11 +375,12 @@ export async function renderAdaptivePlaybackPreviews(
     [
       '[0:v]split=2[v360src][v540src]',
       '[v360src]scale=360:640:flags=lanczos+accurate_rnd+full_chroma_int,fps=24[v360]',
-      // The high-quality dashboard rendition is intentionally 720p. The
+      // Keep the high-quality dashboard rendition at the native export size.
+      // The hook is burned into the 1080x1920 master; another downscale made
+      // its heavy letterforms visibly soft during playback.
       // database field keeps its legacy preview_540 name for compatibility,
-      // but a 540x960 encode visibly softens burned-in hook text and faces
-      // during playback.
-      '[v540src]scale=720:1280:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
+      // even though this rendition is now full-resolution.
+      '[v540src]scale=1080:1920:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
     ].join(';'),
     '-map', '[v360]',
     '-map', '0:a:0?',
@@ -401,9 +402,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '17',
-    '-maxrate', '6500k',
-    '-bufsize', '13000k',
+    '-crf', '16',
+    '-maxrate', '9000k',
+    '-bufsize', '18000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',
@@ -1657,7 +1658,7 @@ function wrapHookTextForDrawtext(hookText: string) {
     const next = [...current, word].join(' ');
     // Match the compact auto-headline treatment used by leading clip tools:
     // short centered lines inside a narrow white pill, never a full-width banner.
-    const shouldWrap = current.length > 0 && (next.length > 19 || current.length >= 4);
+    const shouldWrap = current.length > 0 && (next.length > 16 || current.length >= 3);
 
     if (shouldWrap) {
       lines.push(current.join(' '));
@@ -1703,8 +1704,8 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const longestLine = Math.max(...lines.map((line) => line.length), 10);
   // Keep the card tightly fitted around large headline text. The text should
   // carry the visual weight; the white shape is only a compact backing plate.
-  const cardWidth = Math.max(440, Math.min(740, Math.round(longestLine * 43 + 56)));
-  const cardHeight = twoLine ? 174 : 126;
+  const cardWidth = Math.max(460, Math.min(820, Math.round(longestLine * 48 + 40)));
+  const cardHeight = twoLine ? 190 : 138;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const topCardY = twoLine ? 82 : 96;
   const cardY = placement === 'middle'
@@ -1713,7 +1714,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
-  const hookFontSize = twoLine ? 84 : 98;
+  const hookFontSize = twoLine ? 96 : 112;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1747,16 +1748,16 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=108',
+    'fontsize=124',
     'box=1',
     'boxcolor=white',
-    'boxborderw=14',
+    'boxborderw=12',
     'borderw=0',
     'bordercolor=black@0',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=8',
+    'line_spacing=6',
     'fix_bounds=1',
     'x=(w-text_w)/2',
     placement === 'middle' ? 'y=(h-text_h)/2' : 'y=82',
@@ -1781,22 +1782,11 @@ function resolveFaceAwareHookPlacement(
     .filter((point) => point.t <= 4.5 && point.faceBox);
   if (!openingPoints.length) return requested ?? 'top';
 
-  const topHookStart = 45;
-  const topHookEnd = 430;
-  const overlappingSamples = openingPoints.filter((point) => {
-    const face = point.faceBox!;
-    const scaleY = VERTICAL_EXPORT_HEIGHT / Math.max(1, point.cropH);
-    const faceTop = (face.y - point.cropY) * scaleY;
-    const faceBottom = (face.y + face.h - point.cropY) * scaleY;
-    return faceBottom > topHookStart && faceTop < topHookEnd;
-  }).length;
-
-  // A face occupying the opening hook band takes visual priority. Moving one
-  // canonical hook to the middle is safer than drawing a second compensating
-  // overlay or covering the person's eyes/forehead.
-  // One verified opening overlap is enough to move the single hook card.
-  // Waiting for 20% of samples allowed short but obvious face occlusions.
-  return overlappingSamples > 0 ? 'middle' : (requested ?? 'top');
+  // A detected opening face always owns the upper half of the composition.
+  // Start the hook at the vertical midpoint instead of gambling on detector
+  // overlap thresholds that can miss a forehead or a face entering between
+  // samples. Non-face/B-roll openings retain the requested top placement.
+  return 'middle';
 }
 
 function buildBaseVideoFilters(
