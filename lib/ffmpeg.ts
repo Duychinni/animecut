@@ -1651,9 +1651,9 @@ function wrapHookTextForDrawtext(hookText: string) {
 
   for (const word of words) {
     const next = [...current, word].join(' ');
-    // Keep the headline compact like a deliberate social title card instead
-    // of stretching a short phrase across nearly the entire 9:16 canvas.
-    const shouldWrap = current.length > 0 && (next.length > 21 || current.length >= 4);
+    // Match the compact auto-headline treatment used by leading clip tools:
+    // short centered lines inside a narrow white pill, never a full-width banner.
+    const shouldWrap = current.length > 0 && (next.length > 19 || current.length >= 4);
 
     if (shouldWrap) {
       lines.push(current.join(' '));
@@ -1697,19 +1697,19 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
   const longestLine = Math.max(...lines.map((line) => line.length), 10);
-  // Estimate the rendered headline width and add intentional side padding.
-  // The bounds keep long hooks legible without making every card full-width.
-  const cardWidth = Math.max(650, Math.min(920, Math.round(longestLine * 59 + 150)));
-  const cardHeight = twoLine ? 286 : 194;
+  // Keep the headline close to the compact Opus-style reference: a centered
+  // content-sized pill with generous breathing room, not a wide banner.
+  const cardWidth = Math.max(520, Math.min(790, Math.round(longestLine * 43 + 116)));
+  const cardHeight = twoLine ? 220 : 154;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const topCardY = twoLine ? 54 : 70;
+  const topCardY = twoLine ? 82 : 96;
   const cardY = placement === 'middle'
     ? Math.round((VERTICAL_EXPORT_HEIGHT - cardHeight) / 2)
     : topCardY;
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
-  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 40);
-  const hookFontSize = twoLine ? 116 : 132;
+  const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
+  const hookFontSize = twoLine ? 78 : 90;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1721,7 +1721,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00181818,&H00000000,-1,0,0,0,100,100,0,0,1,0.8,0,5,36,36,0,1
+Style: HookText,Poppins ExtraBold,${hookFontSize},&H00000000,&H00000000,&H00181818,&H00000000,-1,0,0,0,100,100,0,0,1,0.6,0,5,28,28,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1743,19 +1743,19 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=164',
+    'fontsize=104',
     'box=1',
     'boxcolor=white',
-    'boxborderw=42',
-    'borderw=1',
-    'bordercolor=black@0.16',
+    'boxborderw=30',
+    'borderw=0',
+    'bordercolor=black@0',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=24',
+    'line_spacing=12',
     'fix_bounds=1',
     'x=(w-text_w)/2',
-    placement === 'middle' ? 'y=(h-text_h)/2' : 'y=58',
+    placement === 'middle' ? 'y=(h-text_h)/2' : 'y=82',
     drawtextBetween(0, 4.5),
   ].join(':');
 }
