@@ -17,6 +17,12 @@ import {
 import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 import { addSpeechEndSafetyTail } from '@/lib/clip-boundary-safety';
+import {
+  calculateAiClipScore,
+  transcriptTechnicalMetrics,
+  type ClipScorePenalty,
+  type ClipTechnicalMetrics,
+} from '@/lib/clip-score';
 
 export const maxDuration = 60;
 
@@ -55,6 +61,12 @@ type RankedCandidate = {
   educational_value: number;
   speaker_energy: number;
   overall_score: number;
+  component_scores: Record<string, number>;
+  technical_metrics: ClipTechnicalMetrics;
+  score_penalties: ClipScorePenalty[];
+  score_label: string;
+  score_confidence: number;
+  score_reasons: string[];
   reject_reason: string | null;
   rank: number;
   passes_quality: boolean;
@@ -71,29 +83,10 @@ function clamp100(value: number) {
 }
 
 function calibrateFinalScores<T extends { overall_score: number; passes_quality?: boolean }>(items: T[]) {
-  if (!items.length) return items;
-  if (items.length === 1) {
-    return items.map((item) => ({
-      ...item,
-      overall_score: item.passes_quality === false
-        ? Math.min(64, Math.round(item.overall_score))
-        : Math.max(55, Math.min(96, Math.round(item.overall_score))),
-    }));
-  }
-
-  const spread = 26;
-  return items.map((item, index) => {
-    const rankRatio = index / Math.max(1, items.length - 1);
-    const rankTarget = 94 - rankRatio * spread;
-    const raw = Number.isFinite(item.overall_score) ? item.overall_score : rankTarget;
-    const blended = raw * 0.58 + rankTarget * 0.42;
-    return {
-      ...item,
-      overall_score: item.passes_quality === false
-        ? Math.min(64, Math.round(blended - 18))
-        : Math.max(50, Math.min(96, Math.round(blended))),
-    };
-  });
+  return items.map((item) => ({
+    ...item,
+    overall_score: Math.max(0, Math.min(97, Math.round(item.overall_score))),
+  }));
 }
 
 function normalizeWindow(startRaw: number, endRaw: number, minClipSec: number, maxClipSec: number) {
@@ -586,7 +579,24 @@ function buildTranscriptCoverageCandidates(params: {
         fallbackHook: hookText,
       });
       const passesQuality = startsLikeNaturalBoundary(openingLine) && cleaned.end_complete;
-      const overallScore = passesQuality ? 76 : 71;
+      const technicalMetrics = transcriptTechnicalMetrics(params.segments, cleaned.start_sec, cleaned.end_sec);
+      const fallbackScore = calculateAiClipScore({
+        semantic: {
+          hook_strength: 62,
+          payoff_value: passesQuality ? 66 : 52,
+          standalone_clarity: passesQuality ? 68 : 52,
+          emotion_novelty: 55,
+          shareability: 54,
+          semantic_pacing: 64,
+          explanations: {},
+        },
+        technicalMetrics,
+        technicalQuality: 85,
+        startsMidSentence: !startsLikeNaturalBoundary(openingLine),
+        endsBeforePayoff: !cleaned.end_complete,
+        scoreConfidence: 0.5,
+      });
+      const overallScore = fallbackScore.final_score;
       candidates.push({
         project_id: params.projectId,
         raw_start: rawStart,
@@ -608,6 +618,12 @@ function buildTranscriptCoverageCandidates(params: {
         educational_value: 70,
         speaker_energy: 72,
         overall_score: overallScore,
+        component_scores: fallbackScore.component_scores,
+        technical_metrics: technicalMetrics,
+        score_penalties: fallbackScore.penalties,
+        score_label: fallbackScore.label,
+        score_confidence: fallbackScore.confidence,
+        score_reasons: fallbackScore.score_reasons,
         reject_reason: null,
         rank: index + 1,
         passes_quality: passesQuality,
@@ -987,29 +1003,34 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         const entertainmentOrEmotion = clamp100(num(c.entertainment_or_emotion ?? c.emotional_or_engagement_value ?? c.emotional_intensity) || 0);
         const educationalValue = clamp100(num(c.educational_value) || 0);
         const speakerEnergy = clamp100(num(c.speaker_energy) || 0);
-
-        const weightedOverall = clamp100(
-          hookStrength * 0.25 +
-          retentionPotential * 0.20 +
-          storyCompleteness * 0.20 +
-          entertainmentOrEmotion * 0.15 +
-          educationalValue * 0.10 +
-          speakerEnergy * 0.10
-        );
-
-        const qualityPenalty = passesQuality ? 0 : (editorialCopyPass ? (localAnalysisCandidate ? 6 : 22) : 30);
         const duration = cleaned.end_sec - cleaned.start_sec;
-        const durationPenalty =
-          duration < policy.minSec ? 24 :
-          duration < policy.expectedMinSec ? 10 :
-          duration > policy.expectedMaxSec && duration <= policy.maxSec ? 6 :
-          duration > policy.maxSec ? 12 :
-          0;
-        const confidenceBoost = cleaned.confidence >= 0.9 ? 2 : cleaned.confidence >= 0.8 ? 1 : 0;
-        const baseOverall = num(c.overall_score) || weightedOverall;
-        const calibratedOverall = localAnalysisCandidate
-          ? Math.max(70, Math.round(baseOverall - qualityPenalty - Math.round(durationPenalty * 0.35)))
-          : Math.round((baseOverall * 0.94) - 4 + confidenceBoost - qualityPenalty - durationPenalty);
+        const technicalMetrics = transcriptTechnicalMetrics(segments, cleaned.start_sec, cleaned.end_sec);
+        const scoreResult = calculateAiClipScore({
+          semantic: {
+            hook_strength: hookStrength,
+            payoff_value: clamp100(num(c.payoff_value ?? c.story_completeness ?? c.payoff_strength) || storyCompleteness),
+            standalone_clarity: clamp100(num(c.standalone_clarity ?? c.clarity_without_context) || Math.round(cleaned.confidence * 100)),
+            emotion_novelty: clamp100(num(c.emotion_novelty ?? c.entertainment_or_emotion ?? c.emotional_intensity) || entertainmentOrEmotion),
+            shareability: clamp100(num(c.shareability ?? c.retention_potential ?? c.rewatch_potential) || retentionPotential),
+            semantic_pacing: clamp100(num(c.semantic_pacing ?? c.speaker_energy) || speakerEnergy),
+            explanations: (
+              c.score_explanations && typeof c.score_explanations === 'object'
+                ? c.score_explanations
+                : {}
+            ) as Record<string, string>,
+          },
+          technicalMetrics,
+          // Full FFmpeg measurements are attached during rendering. Until then,
+          // use a neutral technical prior and expose lower scoring confidence.
+          technicalQuality: 85,
+          startsMidSentence: !startsLikeNaturalBoundary(openingLine),
+          endsBeforePayoff: !completeEnding,
+          transcriptConfidence: Math.max(0, Math.min(1, num(c.transcript_confidence) || cleaned.confidence)),
+          scoreConfidence: localAnalysisCandidate
+            ? Math.min(0.68, cleaned.confidence)
+            : Math.min(0.92, Math.max(0.55, num(c.scoring_confidence) || cleaned.confidence)),
+        });
+        const calibratedOverall = scoreResult.final_score;
 
         return {
           project_id,
@@ -1032,6 +1053,12 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           educational_value: educationalValue,
           speaker_energy: speakerEnergy,
           overall_score: clamp100(calibratedOverall),
+          component_scores: scoreResult.component_scores,
+          technical_metrics: technicalMetrics,
+          score_penalties: scoreResult.penalties,
+          score_label: scoreResult.label,
+          score_confidence: scoreResult.confidence,
+          score_reasons: scoreResult.score_reasons,
           reject_reason: packagingExclusion
               ? packagingExclusion
               : !editorialCopyPass
@@ -1205,6 +1232,12 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         title: candidate.title,
         hook: candidate.hook_text,
         score: Number(candidate.overall_score ?? 0),
+        score_label: candidate.score_label,
+        score_confidence: candidate.score_confidence,
+        score_reasons: candidate.score_reasons,
+        component_scores: candidate.component_scores,
+        technical_metrics: candidate.technical_metrics,
+        penalties: candidate.score_penalties,
         editorial_plan: candidate.editorial_plan,
       })),
       rejected_candidates: rejectedCandidateReport,
@@ -1273,6 +1306,12 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       overall_score: Number((item.overall_score ?? 0) / 10),
       rank: item.rank,
       editorial_plan: item.editorial_plan,
+      component_scores: item.component_scores,
+      technical_metrics: item.technical_metrics,
+      score_penalties: item.score_penalties,
+      score_label: item.score_label,
+      score_confidence: item.score_confidence,
+      score_reasons: item.score_reasons,
     }));
 
     await supabase.from('exports').delete().eq('project_id', project_id).in('status', ['queued', 'processing']);
@@ -1296,6 +1335,21 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     let rowsForInsert: Array<Record<string, unknown>> = dbRows;
     let { data: insertedRows, error: insErr } = await supabase.from('clip_candidates').insert(rowsForInsert).select('id, start_sec, end_sec, title');
+    if (insErr && /(component_scores|technical_metrics|score_penalties|score_label|score_confidence|score_reasons)/i.test(String(insErr.message ?? insErr))) {
+      console.warn('[analyze] AI Clip Score columns missing; retrying candidate insert without score detail columns');
+      rowsForInsert = rowsForInsert.map(({
+        component_scores: _componentScores,
+        technical_metrics: _technicalMetrics,
+        score_penalties: _scorePenalties,
+        score_label: _scoreLabel,
+        score_confidence: _scoreConfidence,
+        score_reasons: _scoreReasons,
+        ...row
+      }) => row);
+      const retry = await supabase.from('clip_candidates').insert(rowsForInsert).select('id, start_sec, end_sec, title');
+      insertedRows = retry.data;
+      insErr = retry.error;
+    }
     if (insErr && isMissingEditorialPlanColumnError(insErr)) {
       console.warn('[analyze] editorial_plan column missing; retrying clip candidate insert without editorial_plan');
       rowsForInsert = rowsForInsert.map(({ editorial_plan: _editorialPlan, ...row }) => row);

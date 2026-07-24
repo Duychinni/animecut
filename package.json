@@ -25,7 +25,8 @@
     "plans:test": "npx tsx scripts/test_plan_entitlements.ts",
     "captions:test": "npx tsx scripts/test_caption_system.ts",
     "boundaries:test": "npx tsx scripts/test_clip_boundary_safety.ts",
-    "editorial:test": "npx tsx scripts/test_editorial_output_quality.ts"
+    "editorial:test": "npx tsx scripts/test_editorial_output_quality.ts",
+    "clip-score:test": "npx tsx scripts/test_ai_clip_score.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

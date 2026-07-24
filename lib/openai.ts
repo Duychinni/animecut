@@ -240,16 +240,15 @@ VIDEO POLICY FOR THIS TRANSCRIPT WINDOW:
 - Maximum clip length: ${policy.maxSec} seconds.
 - Only allow shorter-than-minimum clips if they are extremely strong and complete.
 
-SCORING SYSTEM:
-Score every candidate from 0-100 using:
-- Hook Strength: 25 points
-- Retention Potential: 20 points
-- Story Completeness: 20 points
-- Entertainment / Emotion: 15 points
-- Educational Value: 10 points
-- Speaker Energy: 10 points
-
-Only strong clips should survive filtering.
+SEMANTIC SCORING:
+Return integer component scores from 0-100. Do not calculate or return a final weighted total.
+- hook_strength: Does the first 1-3 seconds create immediate curiosity, tension, surprise, emotion, or a strong promise?
+- payoff_value: Does the clip deliver an answer, reveal, lesson, conclusion, twist, joke, or memorable statement?
+- standalone_clarity: Does it make sense without earlier portions of the source?
+- emotion_novelty: Is it surprising, funny, tense, inspiring, relatable, original, or emotionally strong?
+- shareability: Would viewers plausibly share, save, quote, discuss, or respond?
+- semantic_pacing: Is the spoken content concise, well-paced, and free of unnecessary setup or repetition?
+Give a short explanation for every component. The backend performs all arithmetic and applies technical measurements and penalties.
 
 REQUIRED OUTPUT:
 Return ONLY valid JSON in this exact shape:
@@ -266,12 +265,24 @@ Return ONLY valid JSON in this exact shape:
       "reason_rejected": string | null,
       "boundary_adjustment_reason": string,
       "hook_strength": number,
+      "payoff_value": number,
+      "standalone_clarity": number,
+      "emotion_novelty": number,
+      "shareability": number,
+      "semantic_pacing": number,
+      "score_explanations": {
+        "hook_strength": string,
+        "payoff_value": string,
+        "standalone_clarity": string,
+        "emotion_novelty": string,
+        "shareability": string,
+        "semantic_pacing": string
+      },
       "retention_potential": number,
       "story_completeness": number,
       "entertainment_or_emotion": number,
       "educational_value": number,
       "speaker_energy": number,
-      "overall_score": number,
       "standalone_confidence": number,
       "hook_text": string,
       "hook_options": [{ "text": string, "score": number }],

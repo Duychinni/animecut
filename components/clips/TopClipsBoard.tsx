@@ -25,6 +25,9 @@ type ClipItem = {
   endSec: number | null;
   reason?: string | null;
   rank: number | null;
+  scoreLabel?: string | null;
+  scoreConfidence?: number | null;
+  scoreReasons?: string[];
   captionPresetId?: string | null;
   hookTextEnabled?: boolean;
   hookText?: string | null;
@@ -102,10 +105,9 @@ function formatClock(totalSeconds: number) {
 }
 
 function toDisplayScore(score: number) {
-  if (!Number.isFinite(score)) return 70;
-  if (score > 10) return Math.max(70, Math.min(100, Math.round(score)));
-  const normalized = Math.max(0, Math.min(10, score)) / 10;
-  return Math.round(70 + normalized * 30);
+  if (!Number.isFinite(score)) return 0;
+  if (score > 10) return Math.max(0, Math.min(97, Math.round(score)));
+  return Math.max(0, Math.min(97, Math.round(score * 10)));
 }
 
 function formatDisplayScore(score: number) {
@@ -114,11 +116,11 @@ function formatDisplayScore(score: number) {
 
 function getScoreColor(score: number) {
   const value = toDisplayScore(score);
-  if (value >= 98) return '#22c55e';
-  if (value >= 94) return '#4ade80';
-  if (value >= 88) return '#a3e635';
-  if (value >= 82) return '#facc15';
-  if (value >= 76) return '#fb923c';
+  if (value >= 95) return '#22c55e';
+  if (value >= 90) return '#4ade80';
+  if (value >= 80) return '#a3e635';
+  if (value >= 70) return '#facc15';
+  if (value >= 60) return '#fb923c';
   return '#f87171';
 }
 
@@ -127,7 +129,7 @@ function getClipTags(clip: ClipItem) {
   const tags: string[] = [];
   const score = toDisplayScore(clip.score);
 
-  if (score >= 85) tags.push('📈 Viral');
+  if (score >= 90) tags.push('✨ Excellent');
   if (/hook|opening|start|first/i.test(clip.title)) tags.push('🔥 Hook');
   if (/funny|laugh|comedy|joke/i.test(title)) tags.push('😂 Funny');
   if (/learn|how to|educat|explain|tips/i.test(title)) tags.push('🧠 Educational');
@@ -153,7 +155,7 @@ function getSmartClipTags(clip: ClipItem) {
     return ['⚡ Strong Hook'];
   }
   if (/\b(story|journey|moment|reveal|remember|memory|confession|truth|chapter|timeline|started|ended|realized)\b/i.test(title)) return ['📖 Story'];
-  if (score >= 96) return ['🔥 Viral'];
+  if (score >= 95) return ['✨ Exceptional'];
   if (/\b(crazy|wild|intense|shocking|reaction|reacts|wow|heated|explodes|energy)\b/i.test(title)) return ['⚡ High Energy'];
   if (/\b(fight|knockout|ufc|boxing|rematch|challenge|beating|beat|loss|win)\b/i.test(title)) return ['🥊 Fight Talk'];
   if (/\b(funny|laugh|comedy|joke|hilarious)\b/i.test(title)) return ['😂 Funny'];
@@ -171,7 +173,7 @@ function getPrimaryClipBadge(clip: ClipItem) {
   const score = toDisplayScore(clip.score);
 
   if (/\b(story|journey|moment|reveal|remember|memory|confession|truth|chapter|timeline|started|ended|realized|honest)\b/i.test(title)) return '📖 Story';
-  if (score >= 96) return '🔥 Viral';
+  if (score >= 95) return '✨ Exceptional';
   if (
     /\?|\b(why|how|what|when|where|who|can you|do you|did you)\b/i.test(clip.title) ||
     /\b(first|opening|start|intro|begins|hook|wait|listen|watch this)\b/i.test(title)
@@ -1062,7 +1064,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
               const volume = playbackState?.volume ?? 1;
               const progressPercent = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
               const displayScore = formatDisplayScore(clip.score);
-              const primaryBadge = getPrimaryClipBadge(clip);
+              const primaryBadge = clip.scoreLabel || getPrimaryClipBadge(clip);
               const savedHookText = getSavedHookText(clip);
               // The production MP4 contains the same hook for its first 4.5 seconds.
               // Keep one opaque, crisp browser layer over that exact region while it
@@ -1091,6 +1093,14 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                       <span className="block text-[28px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>
                         {displayScore}
                       </span>
+                      <span className="mt-0.5 block text-[9px] font-bold uppercase tracking-[0.16em] text-white/45">
+                        AI Clip Score
+                      </span>
+                      {clip.scoreReasons?.length ? (
+                        <p className="mt-1 line-clamp-2 text-[10px] font-medium leading-4 text-white/58">
+                          {clip.scoreReasons.slice(0, 3).join(' • ')}
+                        </p>
+                      ) : null}
 
                       <div className="mt-1.5 flex items-center justify-between gap-2">
                         <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">

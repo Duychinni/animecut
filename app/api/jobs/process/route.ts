@@ -15,6 +15,8 @@ import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai
 import { hasSettledPlayableExports } from '@/lib/project-completion';
 import { sendProjectStatusEmail } from '@/lib/project-notifications';
 import { sortProjectWorkByPlan } from '@/lib/plan-entitlements';
+import { analyzeRenderedClipTechnicalQuality } from '@/lib/ffmpeg-technical-analysis';
+import { calculateAiClipScore, type ClipTechnicalMetrics } from '@/lib/clip-score';
 import {
   buildDefaultClipEditSettings,
   hasClipEditSettings,
@@ -221,6 +223,9 @@ type ExportBundle = {
     end_sec: number;
     title?: string | null;
     editorial_plan?: Record<string, unknown> | null;
+    component_scores?: Record<string, number> | null;
+    technical_metrics?: ClipTechnicalMetrics | null;
+    score_confidence?: number | null;
   };
   transcript: {
     segments_json: Array<{ start?: number; end?: number; text?: string; words?: Array<{ start?: number; end?: number; word?: string }> }> | null;
@@ -822,6 +827,13 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       editorial_plan: typeof clip.editorial_plan === 'object' && clip.editorial_plan
         ? clip.editorial_plan as Record<string, unknown>
         : null,
+      component_scores: typeof clip.component_scores === 'object' && clip.component_scores
+        ? clip.component_scores as Record<string, number>
+        : null,
+      technical_metrics: typeof clip.technical_metrics === 'object' && clip.technical_metrics
+        ? clip.technical_metrics as ClipTechnicalMetrics
+        : null,
+      score_confidence: clip.score_confidence == null ? null : Number(clip.score_confidence),
     },
     transcript: transcript
       ? {
@@ -1027,6 +1039,46 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await renderVerticalClip(renderOptions);
 
   await validateRenderedVideo(outPath);
+
+  if (bundle.clip.component_scores && bundle.clip.technical_metrics) {
+    try {
+      const technical = await analyzeRenderedClipTechnicalQuality(outPath, bundle.clip.technical_metrics);
+      const components = bundle.clip.component_scores;
+      const rescored = calculateAiClipScore({
+        semantic: {
+          hook_strength: Number(components.hook_strength ?? 0),
+          payoff_value: Number(components.payoff_value ?? 0),
+          standalone_clarity: Number(components.standalone_clarity ?? 0),
+          emotion_novelty: Number(components.emotion_novelty ?? 0),
+          shareability: Number(components.shareability ?? 0),
+          semantic_pacing: Number(components.semantic_pacing ?? 0),
+          explanations: {},
+        },
+        technicalMetrics: technical.metrics,
+        technicalQuality: technical.technicalQuality,
+        scoreConfidence: Math.min(0.98, Math.max(0.55, bundle.clip.score_confidence ?? 0.75) + 0.05),
+      });
+      await supabase
+        .from('clip_candidates')
+        .update({
+          overall_score: rescored.final_score / 10,
+          component_scores: rescored.component_scores,
+          technical_metrics: technical.metrics,
+          score_penalties: rescored.penalties,
+          score_label: rescored.label,
+          score_confidence: rescored.confidence,
+          score_reasons: rescored.score_reasons,
+        })
+        .eq('id', bundle.clip_candidate_id);
+    } catch (technicalAnalysisError) {
+      // Technical evidence improves calibration but must not discard an
+      // otherwise valid render when a particular FFmpeg filter is unavailable.
+      console.warn('[jobs/process] technical clip analysis unavailable', {
+        export_id: bundle.id,
+        error: technicalAnalysisError instanceof Error ? technicalAnalysisError.message : String(technicalAnalysisError),
+      });
+    }
+  }
 
   const bytes = await readFile(outPath);
   const objectPath = makeExportObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);

@@ -43,6 +43,9 @@ type CandidateRow = {
   reason: string;
   hook_strength: number;
   rank: number | null;
+  score_label?: string | null;
+  score_confidence?: number | null;
+  score_reasons?: string[] | null;
 };
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
@@ -159,7 +162,7 @@ export default async function ProjectDetailPage({
     loadProjectExports(supabase, projectId),
     supabase
       .from('clip_candidates')
-      .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank')
+      .select('id, title, overall_score, start_sec, end_sec, reason, hook_strength, rank, score_label, score_confidence, score_reasons')
       .eq('project_id', projectId)
       .limit(50),
     supabase
@@ -222,7 +225,7 @@ export default async function ProjectDetailPage({
       const derivedDuration = startSec != null && endSec != null ? Math.max(0, endSec - startSec) : 0;
       const durationSeconds = Number(derivedDuration ?? 0);
       const rawScore = Number(candidate?.overall_score ?? 0);
-      const score = Math.max(70, Math.min(100, Math.round(rawScore <= 10 ? rawScore * 10 : rawScore)));
+      const score = Math.max(0, Math.min(97, Math.round(rawScore <= 10 ? rawScore * 10 : rawScore)));
 
       return {
         ...row,
@@ -241,6 +244,9 @@ export default async function ProjectDetailPage({
         reason: candidate?.reason ?? null,
         hookStrength: candidate ? Number(candidate.hook_strength) : null,
         rank: candidate?.rank ?? null,
+        scoreLabel: candidate?.score_label ?? null,
+        scoreConfidence: candidate?.score_confidence == null ? null : Number(candidate.score_confidence),
+        scoreReasons: Array.isArray(candidate?.score_reasons) ? candidate.score_reasons : [],
       };
   }));
 
@@ -381,6 +387,9 @@ export default async function ProjectDetailPage({
               endSec: row.endSec,
               reason: row.reason,
               rank: row.rank,
+              scoreLabel: row.scoreLabel,
+              scoreConfidence: row.scoreConfidence,
+              scoreReasons: row.scoreReasons,
               captionPresetId: row.caption_preset_id,
               hookTextEnabled: row.hook_text_enabled !== false,
               hookText: typeof row.hook_text === 'string' ? row.hook_text.trim() : null,
