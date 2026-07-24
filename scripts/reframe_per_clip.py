@@ -176,11 +176,11 @@ def visual_usability(points, timeline):
         longest_run = max(longest_run, current_run)
         previous_time = timestamp
     # A speaking reel must remain people-led throughout, not merely at its
-    # opening. Even a short safe-wide fallback is conspicuous in 9:16: the
-    # crop lands on the set/desk while the participants sit outside the
-    # portrait window. Reject after half a second so candidate replacement
-    # happens instead of publishing an empty-stage interlude.
-    max_unframed_speech_sec = min(0.50, UNSAFE_SPEECH_CONTEXT_SEC)
+    # opening. Tracking already predicts through a brief missed detection, so
+    # two consecutive unverified samples indicate a real framing loss. Reject
+    # at that point instead of publishing an empty stage, divider, or partial
+    # person.
+    max_unframed_speech_sec = min(0.25, UNSAFE_SPEECH_CONTEXT_SEC)
     if longest_run >= max(2, math.ceil(analysis_rate * max_unframed_speech_sec)):
         return False, 'sustained_unframed_speaking_subject'
 

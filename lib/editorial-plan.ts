@@ -117,7 +117,12 @@ export function reusesSourceTitleAsEditorialPrefix(value: unknown, globalContext
   if (prefixTokens.length < 2) return false;
 
   const overlap = prefixTokens.filter((word) => sourceTokens.has(word)).length;
-  return overlap >= 2 && overlap / prefixTokens.length >= 0.6;
+  const normalizedPrefix = normalized(prefix);
+  const normalizedSource = normalized(sourceTitle);
+  return (
+    (normalizedPrefix.length >= 8 && normalizedSource.includes(normalizedPrefix))
+    || (overlap >= 2 && overlap / prefixTokens.length >= 0.6)
+  );
 }
 
 const EDITORIAL_FILLER_WORDS = new Set([
@@ -160,6 +165,8 @@ export function isNaturalEditorialTitle(value: unknown) {
   if (/\b(?:don't|doesn't|isn't|aren't|wasn't|weren't)\s+(?:first|last|best|worst|matters?)\b/i.test(text)) return false;
   if (/\b(?:battle|fight|game|show|video)\s+(?:first|last)\s+\w+\s+matters\b/i.test(text)) return false;
   if (/^(top|viral|best|standout)\s+(clip|reel|short|moment)/i.test(text)) return false;
+  if (/^leaves?\s+another\s+message\s*:/i.test(text)) return false;
+  if (/:\s*(?:i|you|he|she|we|they)\b.+(?:\bthis\b|\bthat\b|\bthere\b|\bjust\b)/i.test(text)) return false;
   return /[a-z]{2}/i.test(text);
 }
 

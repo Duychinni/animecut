@@ -980,8 +980,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     || usableHookText(bundle.hook_text, bundle.clip.title)
     || normalizeHookCandidate(generatedHookText)
     || null;
-  const safeLayoutFallback = options?.safe_layout_fallback === true || compatibilityFallback;
-
   const renderOptions = {
     inputPath: renderInputPath,
     outputPath: outPath,
@@ -1000,12 +998,16 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     hookText,
     hookPlacement: resolveDefaultReelHookPlacement(bundle.clip_candidate_id),
     motionTracking: options?.motion_tracking === true,
-    autoReframe: safeLayoutFallback ? false : useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
-    reframeMode: safeLayoutFallback ? 'off' : options?.reframe_mode ?? getFallbackReframeMode(),
+    // Compatibility retries may simplify captions/overlays, but they must
+    // never bypass subject-aware framing. The previous retry path forced a
+    // centered 9:16 crop, which could publish a desk, divider, or partial
+    // person after the primary smart render correctly failed closed.
+    autoReframe: useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
+    reframeMode: options?.reframe_mode ?? getFallbackReframeMode(),
     reframePreset: options?.reframe_preset ?? 'auto',
     // Even a compatibility render must fill 9:16. The old fit mode produced
     // black letterbox bars around horizontal interview footage.
-    framingMode: safeLayoutFallback ? 'center' : useEditSettings ? editSettings.framing_mode : 'auto',
+    framingMode: useEditSettings ? editSettings.framing_mode : 'auto',
     cropX: useEditSettings ? editSettings.crop_x : undefined,
     cropY: useEditSettings ? editSettings.crop_y : undefined,
     zoom: useEditSettings ? editSettings.zoom : undefined,

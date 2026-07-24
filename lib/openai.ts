@@ -178,6 +178,9 @@ REEL TITLE RULES:
 - Do not copy the opening_line, hook_text, or any raw transcript phrase as the title.
 - Never prepend, append, or reuse the source video's title as a reel-title template. Each reel needs its own independently written headline based on that reel's transcript and payoff.
 - A construction like "Source Video Phrase: transcript quote" is invalid, even when both halves are factually grounded.
+- Do not use a colon to attach a raw transcript quote to a reused source phrase. Rewrite the actual payoff as a standalone headline.
+- Before returning a title, silently ask: "Would this make complete grammatical sense to someone who never saw the source video?" If not, rewrite it.
+- Prefer clean editorial headlines like "MrBeast Almost Abandoned His Famous Name" or "Counting to 100,000 Took 40 Hours" over transcript-shaped labels.
 - Make it specific, human-readable, and grounded in the clip.
 - Name the person, topic, decision, lesson, or event discussed when the transcript makes it clear.
 - If a person is explicitly named in the reel transcript and is central to that moment, make either the title or hook_text name that person. Do not replace a transcript-proven name with a vague pronoun or generic topic.

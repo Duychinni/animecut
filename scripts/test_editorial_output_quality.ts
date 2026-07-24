@@ -12,6 +12,9 @@ const brokenTitles = [
   'Why Battle First Pirates Matters',
   "Why Random Don't First Matters",
   "Inside MrBeast's MrBeast Games Show",
+  "Leaves Another Message: I Didn't Realize You Had This Many People",
+  'Leaves Another Message: 11, 12, 15, 14, 15, 17, 18',
+  'Leaves Another Message: You Recorded This Video In 2015',
 ];
 
 for (const title of brokenTitles) {
