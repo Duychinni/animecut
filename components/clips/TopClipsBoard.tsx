@@ -1081,6 +1081,11 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                 <article key={clip.exportId} className="group flex min-w-0 flex-col justify-between rounded-[10px] border border-transparent px-2.5 py-2.5 transition hover:border-white/12 hover:bg-white/[0.03]">
                   <div className="min-h-[112px] px-0.5 pb-1.5">
                     <p className="line-clamp-3 min-h-[52px] text-[15px] font-extrabold leading-[1.15rem] text-white">{clip.title}</p>
+                    {clip.editStatus === 'error' ? (
+                      <p className="mt-1 rounded-md border border-red-400/25 bg-red-500/10 px-2 py-1 text-[10px] font-bold leading-4 text-red-200">
+                        Caption update failed. Your choices are saved—open the editor to retry.
+                      </p>
+                    ) : null}
 
                     <div className="mx-auto mt-1 w-full max-w-[230px] px-1">
                       <span className="block text-[28px] font-black leading-none tracking-tight" style={{ color: getScoreColor(clip.score) }}>

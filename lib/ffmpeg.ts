@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { access, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { access, readFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getVerticalExportSize } from '@/lib/export-profile';
 import { buildRenderOutputArgs, resolveStorageSafeVideoRates, type SourceColorMetadata } from '@/lib/ffmpeg-output-args';
@@ -13,7 +13,7 @@ type ReframeMode = 'off' | 'basic' | 'smart';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v13-fixed-region-authority';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v14-source-fingerprint';
 // Preserve detail through crop/scale, caption compositing, and the additional
 // recompression applied by social platforms. The separate playback preview
 // keeps dashboard playback responsive.
@@ -37,6 +37,7 @@ function resolveMediaBinary(name: 'ffmpeg' | 'ffprobe') {
 
 type RenderOpts = {
   inputPath: string;
+  inputFingerprint?: string;
   outputPath: string;
   startSec: number;
   endSec: number;
@@ -199,17 +200,24 @@ export async function extractBestVideoThumbnail(inputPath: string, outputPath: s
 }
 
 async function probeInputVideoForRender(inputPath: string) {
-  const cached = sourceProbeCache.get(inputPath);
+  const fingerprint = await mediaFileFingerprint(inputPath);
+  const cacheKey = `${inputPath}:${fingerprint}`;
+  const cached = sourceProbeCache.get(cacheKey);
   if (cached) return cached;
 
   const probePromise = probeInputVideoForRenderUncached(inputPath);
-  sourceProbeCache.set(inputPath, probePromise);
+  sourceProbeCache.set(cacheKey, probePromise);
   try {
     return await probePromise;
   } catch (error) {
-    sourceProbeCache.delete(inputPath);
+    sourceProbeCache.delete(cacheKey);
     throw error;
   }
+}
+
+async function mediaFileFingerprint(inputPath: string) {
+  const info = await stat(inputPath);
+  return `${info.size}:${info.mtimeMs}`;
 }
 
 type SourceProbeResult = {
@@ -667,6 +675,7 @@ function smartReframeCacheKey(opts: RenderOpts) {
     .update(JSON.stringify({
       alignmentVersion: RENDER_ALIGNMENT_VERSION,
       inputPath: opts.inputPath,
+      inputFingerprint: opts.inputFingerprint ?? 'unknown',
       startSec: opts.startSec,
       endSec: opts.endSec,
       framingMode: opts.framingMode ?? 'auto',
@@ -2221,7 +2230,9 @@ export async function renderVerticalClip(opts: RenderOpts) {
     smartPython: resolveSmartReframePython(),
   });
   let sourceColorMetadata: SourceColorMetadata | null = null;
+  let inputFingerprint = 'unknown';
   try {
+    inputFingerprint = await mediaFileFingerprint(opts.inputPath);
     const sourceInfo = await probeInputVideoForRender(opts.inputPath);
     sourceColorMetadata = {
       colorSpace: sourceInfo.colorSpace,
@@ -2258,6 +2269,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   }
   const effectiveOpts: RenderOpts = {
     ...opts,
+    inputFingerprint,
     autoReframe: opts.autoReframe ?? process.env.AUTO_REFRAME_ENABLED !== 'false',
     reframeMode: effectiveMode,
     // Debug overlays must be explicitly requested by a debug-only caller. An
