@@ -1701,10 +1701,10 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
   const twoLine = lines.length > 1;
   const longestLine = Math.max(...lines.map((line) => line.length), 10);
-  // Keep the headline close to the compact Opus-style reference: a centered
-  // content-sized pill with generous breathing room, not a wide banner.
-  const cardWidth = Math.max(470, Math.min(720, Math.round(longestLine * 40 + 96)));
-  const cardHeight = twoLine ? 196 : 142;
+  // Keep the card tightly fitted around large headline text. The text should
+  // carry the visual weight; the white shape is only a compact backing plate.
+  const cardWidth = Math.max(440, Math.min(740, Math.round(longestLine * 43 + 56)));
+  const cardHeight = twoLine ? 174 : 126;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
   const topCardY = twoLine ? 82 : 96;
   const cardY = placement === 'middle'
@@ -1713,7 +1713,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
-  const hookFontSize = twoLine ? 74 : 86;
+  const hookFontSize = twoLine ? 84 : 98;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1747,16 +1747,16 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=96',
+    'fontsize=108',
     'box=1',
     'boxcolor=white',
-    'boxborderw=24',
+    'boxborderw=14',
     'borderw=0',
     'bordercolor=black@0',
     'shadowx=0',
     'shadowy=0',
     'ft_load_flags=force_autohint',
-    'line_spacing=12',
+    'line_spacing=8',
     'fix_bounds=1',
     'x=(w-text_w)/2',
     placement === 'middle' ? 'y=(h-text_h)/2' : 'y=82',

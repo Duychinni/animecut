@@ -1861,6 +1861,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             continue
         smoothed_x = float(segment['points'][0]['cropX'])
         smoothed_y = float(segment['points'][0]['cropY'])
+        # Keep one lens/zoom for the entire uninterrupted shot. Subject and
+        # motion boxes naturally breathe from sample to sample; using their
+        # raw dimensions made the portrait crop pulse even when its center was
+        # properly smoothed, which reads as camera shake.
+        locked_crop_w = float(segment['points'][0]['cropW'])
+        locked_crop_h = float(segment['points'][0]['cropH'])
+        locked_zoom = float(segment['points'][0].get('zoom', 1.0))
         target_x = smoothed_x
         target_y = smoothed_y
         pending_x = target_x
@@ -1873,10 +1880,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         for point in segment['points'][1:]:
             current_t = float(point['t'])
             delta_t = max(0.05, current_t - previous_t)
-            crop_w = float(point['cropW'])
-            crop_h = float(point['cropH'])
+            crop_w = locked_crop_w
+            crop_h = locked_crop_h
             raw_x = float(point['cropX'])
             raw_y = float(point['cropY'])
+            point['cropW'] = round(locked_crop_w, 3)
+            point['cropH'] = round(locked_crop_h, 3)
+            point['zoom'] = round(locked_zoom, 4)
             # Keep the virtual tripod planted through ordinary head sway,
             # posture changes, and detector noise. A subject should be able to
             # move comfortably inside the portrait before the camera follows.

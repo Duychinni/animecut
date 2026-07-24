@@ -205,6 +205,18 @@ def test_moderate_seated_movement_does_not_trigger_camera_corrections():
     assert max(centers) - min(centers) < W * 0.025, centers
 
 
+def test_motion_box_breathing_does_not_pulse_camera_zoom():
+    samples = []
+    sizes = ((360, 820), (390, 850), (340, 790), (405, 870), (350, 805), (380, 840))
+    for index, (width, height) in enumerate(sizes):
+        samples.append(sample(index * 0.25, subject('body', box(700, 130, width, height), 'body:still')))
+    result = timeline(samples)
+    points = result[0]['points']
+    assert len({point['cropW'] for point in points}) == 1, points
+    assert len({point['cropH'] for point in points}) == 1, points
+    assert len({point['zoom'] for point in points}) == 1, points
+
+
 def test_detected_face_keeps_camera_fully_locked():
     samples = []
     positions = (620, 700, 770, 820, 740, 660, 590, 680, 760, 810)
