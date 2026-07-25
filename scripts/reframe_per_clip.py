@@ -805,6 +805,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     conversation_last_track = None
     silence_started_at = None
     previous_silence_elapsed = 0.0
+    fixed_layout_suppressed = False
+    layout_exit_pending = False
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -823,6 +825,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         speaker_confidence = float(point.get('speaker_confidence', 0.0))
         audio_activity = float(point.get('audio_activity', 0.0))
         scene_cut = bool(frame.get('scene_cut'))
+        scene_change_strength = float(point.get('scene_change', 1.0 if scene_cut else 0.0))
         semantic_subject = frame.get('semantic_subject') or {}
         selected = semantic_subject.get('box') or frame.get('selected_box')
         subject_kind = str(
@@ -961,6 +964,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             if visual_pair is not None
             else None
         )
+        if visual_pair is not None:
+            fixed_layout_suppressed = False
+        elif fixed_layout_suppressed:
+            fixed_two_panel = None
         if scene_cut:
             visual_pair_streak = 1 if visual_pair_ids is not None else 0
             last_visual_pair_ids = visual_pair_ids
@@ -1045,6 +1052,47 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 wide_pair_hold_ids = None
                 wide_pair_hold_faces = None
                 wide_pair_miss_streak = 0
+
+        # A two-person classification describes a shot, not the whole clip.
+        # Talk-show edits commonly cut from a wide host/guest composition to a
+        # full-frame close-up. If that cut falls below the hard scene detector's
+        # threshold, retaining the previous panel boxes duplicates the close-up
+        # person into both panes. A newly dominant solo face or a moderate
+        # visual discontinuity with no confirmed pair invalidates the old
+        # two-panel geometry immediately.
+        solo_closeup = bool(
+            visual_pair is None
+            and len(layout_faces) == 1
+            and float(layout_faces[0].get('h', 0.0)) >= source_h * 0.20
+        )
+        soft_cut_without_pair = bool(
+            visual_pair is None
+            and scene_change_strength >= 0.38
+        )
+        # Never leave a valid two-person composition until the incoming shot
+        # has a verified person to receive the handoff. A cut can be detected
+        # one or two analysis samples before the face detector locks onto the
+        # close-up; switching to context during that gap exposes an empty set.
+        # Hold the existing panes briefly, then hard-cut straight to the newly
+        # confirmed MrBeast/Jimmy-style solo crop.
+        if fixed_two_panel and soft_cut_without_pair and not complete_faces:
+            layout_exit_pending = True
+        invalidated_fixed_layout = bool(
+            fixed_two_panel
+            and (
+                solo_closeup
+                or (soft_cut_without_pair and bool(complete_faces))
+                or (layout_exit_pending and bool(complete_faces))
+            )
+        )
+        if invalidated_fixed_layout:
+            fixed_layout_suppressed = True
+            layout_exit_pending = False
+            fixed_two_panel = None
+            wide_pair_hold_ids = None
+            wide_pair_hold_faces = None
+            wide_pair_miss_streak = 0
+            current_pair = None
 
         if pair_ids is not None and pair_ids == last_pair_ids:
             pair_streak += 1
@@ -1277,6 +1325,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         if portrait_source:
             desired_mode = 'source_vertical'
             fixed_render_branch = 'source_vertical'
+        elif layout_exit_pending and fixed_two_panel:
+            # The new shot is visible, but its person is not confirmed yet.
+            # Preserve the last valid split-screen for this detector gap so the
+            # next rendered frame can cut directly to a real person.
+            desired_mode = 'stacked'
+            fixed_render_branch = 'awaiting_confirmed_person_handoff'
         elif fixed_two_panel and (visual_pair is not None or wide_pair_hold_faces is not None):
             # Fixed left/right interview shots are the strongest signal for the
             # Opus-style composition: crop each participant independently and
@@ -1406,7 +1460,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             pending_mode = None
             pending_count = 0
             held_samples = 0
-        elif scene_cut:
+        elif scene_cut or invalidated_fixed_layout:
             current_mode = desired_mode
             current_grid_template = desired_grid_template if desired_mode == 'grid' else None
             current_pair = pair_ids if desired_mode == 'stacked' else None

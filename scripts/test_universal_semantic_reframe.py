@@ -28,7 +28,8 @@ def box(x, y, w, h, track_id=None, confidence=0.8):
 
 
 def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
-           speaker_margin=0.0, scene_cut=False, fixed_layout=None, audio_activity=None):
+           speaker_margin=0.0, scene_cut=False, fixed_layout=None, audio_activity=None,
+           scene_change=0.0):
     subject = subject or {
         'kind': 'context', 'box': None, 'confidence': 0.0,
         'reason': 'no_reliable_visual_subject', 'predicted': False,
@@ -55,6 +56,7 @@ def sample(t, subject=None, faces=None, active_id=None, speaker_conf=0.0,
         'subject_velocity_x': subject.get('velocity_x', 0.0),
         'face_box': subject.get('face_box'),
         'face_source_complete': bool(subject.get('kind') == 'face' and subject.get('face_box')),
+        'scene_change': float(scene_change),
     }
     return point, frame
 
@@ -565,6 +567,82 @@ def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():
     assert all(segment['mode'] == 'stacked' for segment in result), result
     assert all(segment['renderBranch'] == 'fixed_two_panel_stacked' for segment in result), result
     assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
+
+
+def test_fixed_two_region_exits_stack_immediately_for_solo_closeup():
+    left, right, fixed = fixed_two_region_fixture()
+    closeup = box(570, 75, 780, 900, 3, 0.95)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', left, 'face:1', 0.92),
+            [left, right], 1, 0.92, 0.55, fixed_layout=fixed,
+            audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25,
+            subject('face', closeup, 'face:3', 0.95),
+            [closeup], 3, 0.95, 0.62, fixed_layout=fixed,
+            audio_activity=0.75,
+            # Deliberately below the hard 0.72 scene-cut threshold.
+            scene_change=0.46 if index == 8 else 0.0,
+        )
+        for index in range(8, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    incoming = [segment for segment in result if segment['start'] >= 2.0 - 0.001]
+    assert incoming, result
+    assert all(segment['mode'] == 'single' for segment in incoming), result
+    assert all(segment.get('primaryTrackId') == 3 for segment in incoming), result
+    assert all(not segment.get('sourceLayout') for segment in incoming), result
+
+
+def test_fixed_two_region_soft_cut_holds_stack_until_direct_person_handoff():
+    left, right, fixed = fixed_two_region_fixture()
+    motion = box(1410, 330, 260, 260)
+    closeup = box(570, 75, 780, 900, 3, 0.95)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', right, 'face:2', 0.92),
+            [left, right], 2, 0.92, 0.55, fixed_layout=fixed,
+            audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25,
+            subject('action', motion, 'action:set-light', 0.48),
+            [], None, 0.0, 0.0, fixed_layout=fixed,
+            audio_activity=0.75,
+            scene_change=0.44 if index == 8 else 0.0,
+        )
+        for index in range(8, 12)
+    )
+    samples.extend(
+        sample(
+            index * 0.25,
+            subject('face', closeup, 'face:3', 0.95),
+            [closeup], 3, 0.95, 0.62, fixed_layout=fixed,
+            audio_activity=0.75,
+        )
+        for index in range(12, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    gap = [
+        segment for segment in result
+        if segment['start'] < 3.0 and segment['end'] > 2.0
+    ]
+    handoff = [segment for segment in result if segment['start'] >= 3.0 - 0.001]
+    assert gap and handoff, result
+    assert all(segment['mode'] == 'stacked' for segment in gap), result
+    assert all(segment['mode'] == 'single' for segment in handoff), result
+    assert all(segment.get('primaryTrackId') == 3 for segment in handoff), result
+    assert not any(segment['mode'] == 'wide_context' for segment in result), result
 
 
 def test_uncertain_fixed_two_person_speech_keeps_both_locked_panes():
