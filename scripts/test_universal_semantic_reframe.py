@@ -600,7 +600,7 @@ def test_fixed_two_region_exits_stack_immediately_for_solo_closeup():
     assert all(not segment.get('sourceLayout') for segment in incoming), result
 
 
-def test_fixed_two_region_soft_cut_holds_stack_until_direct_person_handoff():
+def test_fixed_two_region_soft_cut_uses_new_shot_context_until_person_handoff():
     left, right, fixed = fixed_two_region_fixture()
     motion = box(1410, 330, 260, 260)
     closeup = box(570, 75, 780, 900, 3, 0.95)
@@ -639,10 +639,27 @@ def test_fixed_two_region_soft_cut_holds_stack_until_direct_person_handoff():
     ]
     handoff = [segment for segment in result if segment['start'] >= 3.0 - 0.001]
     assert gap and handoff, result
-    assert all(segment['mode'] == 'stacked' for segment in gap), result
+    assert all(segment['mode'] == 'wide_context' for segment in gap), result
+    assert all(segment.get('renderBranch') == 'safe_full_frame' for segment in gap), result
+    assert all(not segment.get('topBox') and not segment.get('bottomBox') for segment in gap), result
     assert all(segment['mode'] == 'single' for segment in handoff), result
     assert all(segment.get('primaryTrackId') == 3 for segment in handoff), result
-    assert not any(segment['mode'] == 'wide_context' for segment in result), result
+
+
+def test_real_timeline_points_emit_detected_face_box():
+    face = box(570, 75, 780, 900, 3, 0.95)
+    result = timeline([
+        sample(
+            index * 0.25,
+            subject('face', face, 'face:3', 0.95),
+            [face], 3, 0.95, 0.62, audio_activity=0.75,
+        )
+        for index in range(8)
+    ])
+    points = [point for segment in result for point in segment.get('points', [])]
+    assert points, result
+    assert all(point.get('face_box') for point in points), result
+    assert all(point['face_box']['w'] == face['w'] for point in points), result
 
 
 def test_uncertain_fixed_two_person_speech_keeps_both_locked_panes():

@@ -807,6 +807,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     previous_silence_elapsed = 0.0
     fixed_layout_suppressed = False
     layout_exit_pending = False
+    awaiting_new_shot_face = False
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -1069,22 +1070,23 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             visual_pair is None
             and scene_change_strength >= 0.38
         )
-        # Never leave a valid two-person composition until the incoming shot
-        # has a verified person to receive the handoff. A cut can be detected
-        # one or two analysis samples before the face detector locks onto the
-        # close-up; switching to context during that gap exposes an empty set.
-        # Hold the existing panes briefly, then hard-cut straight to the newly
-        # confirmed MrBeast/Jimmy-style solo crop.
-        if fixed_two_panel and soft_cut_without_pair and not complete_faces:
-            layout_exit_pending = True
+        # Panel coordinates belong to one camera shot only. Carrying them over
+        # a cut can put the same close-up into both panes. Invalidate them on
+        # the first moderate discontinuity; if the new face detector has not
+        # locked yet, the new shot is shown as safe full-frame context.
+        if fixed_two_panel and soft_cut_without_pair:
+            awaiting_new_shot_face = not bool(complete_faces)
+        new_shot_face_handoff = bool(awaiting_new_shot_face and complete_faces)
+        if new_shot_face_handoff:
+            awaiting_new_shot_face = False
         invalidated_fixed_layout = bool(
             fixed_two_panel
             and (
                 solo_closeup
-                or (soft_cut_without_pair and bool(complete_faces))
+                or soft_cut_without_pair
                 or (layout_exit_pending and bool(complete_faces))
             )
-        )
+        ) or new_shot_face_handoff
         if invalidated_fixed_layout:
             fixed_layout_suppressed = True
             layout_exit_pending = False
@@ -1093,6 +1095,22 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             wide_pair_hold_faces = None
             wide_pair_miss_streak = 0
             current_pair = None
+            if not complete_faces:
+                active_id = None
+                selected = None
+                subject_kind = 'context'
+                subject_stable_id = 'context:new-shot'
+                subject_confidence = 0.0
+                selection_reason = 'new_shot_awaiting_face'
+                subject_predicted = False
+        if awaiting_new_shot_face and not complete_faces:
+            active_id = None
+            selected = None
+            subject_kind = 'context'
+            subject_stable_id = 'context:new-shot'
+            subject_confidence = 0.0
+            selection_reason = 'new_shot_awaiting_face'
+            subject_predicted = False
 
         if pair_ids is not None and pair_ids == last_pair_ids:
             pair_streak += 1
@@ -1325,12 +1343,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         if portrait_source:
             desired_mode = 'source_vertical'
             fixed_render_branch = 'source_vertical'
-        elif layout_exit_pending and fixed_two_panel:
-            # The new shot is visible, but its person is not confirmed yet.
-            # Preserve the last valid split-screen for this detector gap so the
-            # next rendered frame can cut directly to a real person.
-            desired_mode = 'stacked'
-            fixed_render_branch = 'awaiting_confirmed_person_handoff'
         elif fixed_two_panel and (visual_pair is not None or wide_pair_hold_faces is not None):
             # Fixed left/right interview shots are the strongest signal for the
             # Opus-style composition: crop each participant independently and
@@ -1819,6 +1831,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'selectionReason': decision['selection_reason'],
             'predicted': decision['subject_predicted'],
             'subjectStableId': decision['subject_stable_id'],
+            'face_box': decision['primary_face'],
         })
         if decision.get('top_face'):
             segment['_top_boxes'].append(decision['top_face'])

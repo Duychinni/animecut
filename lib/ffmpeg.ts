@@ -840,7 +840,7 @@ function normalizeBox(box: Partial<SubjectBox> | null | undefined): SubjectBox |
   return { x, y, w, h, cx: Number(box.cx ?? (x + w / 2)), cy: Number(box.cy ?? (y + h / 2)) };
 }
 
-function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): ReframeTimelineSegment[] {
+export function normalizeReframeTimeline(rawTimeline: unknown, clipDuration: number): ReframeTimelineSegment[] {
   if (!Array.isArray(rawTimeline)) return [];
   const validModes = new Set<TimelineLayoutMode>(['single', 'stacked', 'grid', 'wide_context', 'source_vertical']);
   const segments = rawTimeline.flatMap((raw): ReframeTimelineSegment[] => {
