@@ -1785,10 +1785,16 @@ function buildHookFilter(opts: RenderOpts) {
   return buildHookDrawtextFilter(opts.hookText?.trim() ?? '', opts.hookTextFilePath, opts.hookPlacement);
 }
 
-function resolveFaceAwareHookPlacement(
+export function resolveFaceAwareHookPlacement(
   requested: 'top' | 'middle' | undefined,
   timeline: ReframeTimelineSegment[],
+  hasSplitStackLayout = false,
 ) {
+  // A split-stack layout is only produced after two stable faces have been
+  // confirmed. Its top pane is therefore occupied by a speaker even though
+  // the legacy split-stack result does not carry timeline faceBox samples.
+  if (hasSplitStackLayout) return 'middle';
+
   const openingPoints = timeline
     .filter((segment) => segment.start < 4.5)
     .flatMap((segment) => segment.points)
@@ -2376,6 +2382,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   effectiveOpts.hookPlacement = resolveFaceAwareHookPlacement(
     effectiveOpts.hookPlacement,
     reframeTimeline,
+    Boolean(splitStackLayout),
   );
 
   if (
