@@ -600,6 +600,37 @@ def test_fixed_two_region_exits_stack_immediately_for_solo_closeup():
     assert all(not segment.get('sourceLayout') for segment in incoming), result
 
 
+def test_general_two_person_stack_exits_on_first_soft_cut_sample():
+    left = box(180, 170, 340, 430, 1, 0.9)
+    right = box(1390, 160, 350, 440, 2, 0.9)
+    closeup = box(570, 75, 780, 900, 3, 0.95)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', left, 'face:1', 0.92),
+            [left, right], 1, 0.92, 0.55,
+            audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25,
+            subject('face', closeup, 'face:3', 0.95),
+            [closeup], 3, 0.95, 0.62,
+            audio_activity=0.75,
+            scene_change=0.46 if index == 8 else 0.0,
+        )
+        for index in range(8, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    incoming = [segment for segment in result if segment['start'] >= 2.0 - 0.001]
+    assert incoming, result
+    assert incoming[0]['start'] == 2.0, result
+    assert all(segment['mode'] == 'single' for segment in incoming), result
+    assert all(segment.get('primaryTrackId') == 3 for segment in incoming), result
+
+
 def test_fixed_two_region_soft_cut_uses_new_shot_context_until_person_handoff():
     left, right, fixed = fixed_two_region_fixture()
     motion = box(1410, 330, 260, 260)

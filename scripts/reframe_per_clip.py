@@ -1472,7 +1472,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             pending_mode = None
             pending_count = 0
             held_samples = 0
-        elif scene_cut or invalidated_fixed_layout:
+        elif scene_cut or invalidated_fixed_layout or soft_cut_without_pair:
+            # A moderate shot change is enough to leave a stale stacked
+            # composition immediately. Waiting for generic layout hysteresis
+            # keeps the old two-person geometry on the first solo-shot samples.
             current_mode = desired_mode
             current_grid_template = desired_grid_template if desired_mode == 'grid' else None
             current_pair = pair_ids if desired_mode == 'stacked' else None

@@ -1788,24 +1788,27 @@ function buildHookFilter(opts: RenderOpts) {
 export function resolveFaceAwareHookPlacement(
   requested: 'top' | 'middle' | undefined,
   timeline: ReframeTimelineSegment[],
-  hasSplitStackLayout = false,
+  _hasSplitStackLayout = false,
 ) {
-  // A split-stack layout is only produced after two stable faces have been
-  // confirmed. Its top pane is therefore occupied by a speaker even though
-  // the legacy split-stack result does not carry timeline faceBox samples.
-  if (hasSplitStackLayout) return 'middle';
-
   const openingPoints = timeline
     .filter((segment) => segment.start < 4.5)
     .flatMap((segment) => segment.points)
     .filter((point) => point.t <= 4.5 && point.faceBox);
   if (!openingPoints.length) return requested ?? 'top';
 
-  // A detected opening face always owns the upper half of the composition.
-  // Start the hook at the vertical midpoint instead of gambling on detector
-  // overlap thresholds that can miss a forehead or a face entering between
-  // samples. Non-face/B-roll openings retain the requested top placement.
-  return 'middle';
+  // The hook card occupies roughly the upper 20% of a reel. Move it only when
+  // a detected face actually intersects that band in the rendered portrait
+  // crop. Merely having a face (or a split layout) is not a reason to center
+  // every hook.
+  const overlapsTopCard = openingPoints.some((point) => {
+    const face = point.faceBox!;
+    const cropTop = point.cropY;
+    const cropHeight = Math.max(1, point.cropH);
+    const faceTop = (face.y - cropTop) / cropHeight;
+    const faceBottom = (face.y + face.h - cropTop) / cropHeight;
+    return faceBottom >= 0.035 && faceTop <= 0.22;
+  });
+  return overlapsTopCard ? 'middle' : (requested ?? 'top');
 }
 
 function buildBaseVideoFilters(
@@ -2221,14 +2224,15 @@ function buildLargeSafeWideContext(
   normalizedOutput: string,
   index: number,
 ) {
-  // Low-confidence fallback: preserve context, but make the foreground occupy
-  // 85% of the vertical canvas. The old fit path occupied only ~32%.
+  // Preserve the entire incoming shot during a detector handoff. Cropping a
+  // horizontal source to the center can show only the empty set while the
+  // person is near an edge, which defeats the purpose of this safe fallback.
   const foregroundHeight = floorEven(VERTICAL_EXPORT_HEIGHT * 0.85);
   return [
     `${base},split=2[safewidebg${index}][safewidefg${index}]`,
     `[safewidebg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2[safewidebgready${index}]`,
-    `[safewidefg${index}]scale=-2:${foregroundHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${foregroundHeight}:(iw-${VERTICAL_EXPORT_WIDTH})/2:0[safewidefgready${index}]`,
-    `[safewidebgready${index}][safewidefgready${index}]overlay=0:(H-h)/2:format=auto,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`,
+    `[safewidefg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${foregroundHeight}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS}[safewidefgready${index}]`,
+    `[safewidebgready${index}][safewidefgready${index}]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`,
   ];
 }
 
