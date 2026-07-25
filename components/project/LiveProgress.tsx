@@ -90,9 +90,12 @@ export function LiveProgressPill({
   etaLabel?: string | null;
 }) {
   const livePercent = useLiveProgress(percent, active, stage);
+  const stageParts = stageLabel.match(/^(.+?)\s*(\([^()]+\))$/);
+  const stageSummary = stageParts?.[1] ?? stageLabel;
+  const stageDetail = stageParts?.[2] ?? null;
 
   return (
-    <div className="relative isolate flex min-w-[164px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-full border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
+    <div className="relative isolate flex min-w-[164px] max-w-[210px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-2xl border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
       <div
         className="absolute inset-y-0 left-0 -z-10 overflow-hidden bg-emerald-400/35 shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-[width] duration-500 ease-linear"
         style={{ width: `${Math.max(6, livePercent)}%` }}
@@ -104,7 +107,14 @@ export function LiveProgressPill({
         {formatLivePercent(livePercent)}%
         {etaLabel ? <span className="font-black text-emerald-50/85">({etaLabel})</span> : null}
       </span>
-      <span className="max-w-[142px] truncate text-[9px] font-black uppercase tracking-[0.08em] text-emerald-50/85">{stageLabel}</span>
+      <span className="max-w-full text-[9px] font-black uppercase leading-tight tracking-[0.08em] text-emerald-50/85">
+        {stageSummary}
+      </span>
+      {stageDetail ? (
+        <span className="max-w-full text-[9px] font-black uppercase leading-tight tracking-[0.08em] text-emerald-50/85">
+          {stageDetail}
+        </span>
+      ) : null}
     </div>
   );
 }
