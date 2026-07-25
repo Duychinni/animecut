@@ -935,7 +935,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             reverse=True,
         )[:4]
         dominant_faces = sorted(
-            (face for face in layout_faces if float(face.get('h', 0.0)) >= source_h * 0.15),
+            # Wide talk-show and interview shots often frame one participant
+            # slightly farther from camera. A 15% face-height floor discarded
+            # Fallon (roughly 12-14%) in the real MrBeast source even though
+            # both faces were stable and cleanly separated. The earlier 8.5%
+            # visibility gate plus the exact-two-person check below still
+            # excludes tiny audience/logo detections.
+            (face for face in layout_faces if float(face.get('h', 0.0)) >= source_h * 0.10),
             key=lambda face: float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
             reverse=True,
         )[:2]
@@ -1195,7 +1201,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         composition_stack_eligible = bool(
             STACK_LAYOUT_ENABLED
             and visual_pair is not None
-            and visual_pair_streak >= STACK_PAIR_CONFIRM_SAMPLES
+            # The visual_pair gate already requires exactly two meaningful,
+            # separated, non-predicted faces. Enter immediately so the opening
+            # poster and first playback frame use the same top/bottom layout;
+            # normal layout hysteresis still controls the exit if the shot cuts.
+            and visual_pair_streak >= 1
         )
         stack_eligible = editorial_stack_eligible or composition_stack_eligible
         subject_height_ratio = (
