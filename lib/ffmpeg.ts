@@ -13,7 +13,7 @@ type ReframeMode = 'off' | 'basic' | 'smart';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v15-crisp-hooks';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v16-semibold-hooks';
 // Preserve detail through crop/scale, caption compositing, and the additional
 // recompression applied by social platforms. The separate playback preview
 // keeps dashboard playback responsive.
@@ -343,9 +343,9 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-vf', `scale=${constrained ? '360:640' : '1080:1920'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || (constrained ? 'veryfast' : 'medium'),
-    '-crf', constrained ? '22' : '10',
-    '-maxrate', constrained ? '1400k' : '12000k',
-    '-bufsize', constrained ? '2800k' : '24000k',
+    '-crf', constrained ? '18' : '10',
+    '-maxrate', constrained ? '2400k' : '12000k',
+    '-bufsize', constrained ? '4800k' : '24000k',
     '-pix_fmt', 'yuv420p',
     '-g', constrained ? '48' : '60',
     '-keyint_min', constrained ? '24' : '30',
@@ -386,9 +386,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '22',
-    '-maxrate', '1400k',
-    '-bufsize', '2800k',
+    '-crf', '18',
+    '-maxrate', '2400k',
+    '-bufsize', '4800k',
     '-pix_fmt', 'yuv420p',
     '-g', '48',
     '-keyint_min', '24',
@@ -402,9 +402,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'medium',
-    '-crf', '14',
-    '-maxrate', '8000k',
-    '-bufsize', '16000k',
+    '-crf', '10',
+    '-maxrate', '12000k',
+    '-bufsize', '24000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',
@@ -1714,7 +1714,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
-  const hookFontSize = twoLine ? 104 : 120;
+  const hookFontSize = twoLine ? 110 : 126;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
@@ -1726,7 +1726,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Montserrat,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0.15,0,1,0.35,0,5,24,24,0,1
+Style: HookText,Montserrat SemiBold,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0.1,0,1,0.7,0,5,24,24,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1740,19 +1740,19 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
   const source = hookTextFilePath
     ? `textfile='${escapeDrawtextPathForFilter(hookTextFilePath)}':reload=0`
     : `text='${escapeDrawtextText(wrapped)}'`;
-  const bundledFontPath = path.join(/* turbopackIgnore: true */ process.cwd(), 'public', 'fonts', 'Montserrat-Variable.ttf');
+  const bundledFontPath = path.join(/* turbopackIgnore: true */ process.cwd(), 'public', 'fonts', 'Montserrat-SemiBold.ttf');
   const fontSource = existsSync(bundledFontPath)
     ? `fontfile='${escapeDrawtextPathForFilter(bundledFontPath)}'`
-    : "font='Montserrat'";
+    : "font='Montserrat SemiBold'";
   return [
     `drawtext=${source}`,
     fontSource,
     'fontcolor=black',
-    'fontsize=124',
+    'fontsize=130',
     'box=1',
     'boxcolor=white',
     'boxborderw=12',
-    'borderw=1.35',
+    'borderw=0.85',
     'bordercolor=black',
     'shadowx=0',
     'shadowy=0',

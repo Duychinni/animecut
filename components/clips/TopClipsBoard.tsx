@@ -1193,8 +1193,8 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             aria-pressed={clip.hookTextEnabled !== false}
                           >
                             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <rect x="3" y="5" width="18" height="14" rx="3" />
-                              <path d="M7 10h10M7 14h7" />
+                              <path d="M5 6h10M10 6v12M7 18h6" />
+                              <path d="m18 5 .55 1.45L20 7l-1.45.55L18 9l-.55-1.45L16 7l1.45-.55L18 5Z" />
                               {clip.hookTextEnabled === false ? <path d="m4 4 16 16" /> : null}
                             </svg>
                           </button>
