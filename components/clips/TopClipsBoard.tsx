@@ -389,6 +389,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [applyingPreset, setApplyingPreset] = useState(false);
   const [removingProjectHooks, setRemovingProjectHooks] = useState(false);
   const [hookConfirmation, setHookConfirmation] = useState<boolean | null>(null);
+  const [updatingHookIds, setUpdatingHookIds] = useState<Set<string>>(() => new Set());
   const [retryingExportIds, setRetryingExportIds] = useState<Set<string>>(() => new Set());
   const [optimisticEditIds, setOptimisticEditIds] = useState<Set<string>>(() => new Set());
   const playRequestsRef = useRef<Record<string, number>>({});
@@ -789,6 +790,33 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }
   }
 
+  async function updateClipHook(clip: ClipItem) {
+    if (updatingHookIds.has(clip.exportId)) return;
+    const enabled = clip.hookTextEnabled === false;
+    setUpdatingHookIds((current) => new Set(current).add(clip.exportId));
+    try {
+      const response = await fetch(`/api/exports/${encodeURIComponent(clip.exportId)}/hook-text`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      const payload = await readJsonSafe(response) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || `Could not ${enabled ? 'restore' : 'remove'} hook text`);
+
+      setOptimisticEditIds((current) => new Set(current).add(clip.exportId));
+      void fetch(`/api/jobs/process?exportId=${encodeURIComponent(clip.exportId)}`, { method: 'POST', cache: 'no-store' }).catch(() => null);
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : `Could not ${enabled ? 'restore' : 'remove'} hook text`);
+    } finally {
+      setUpdatingHookIds((current) => {
+        const next = new Set(current);
+        next.delete(clip.exportId);
+        return next;
+      });
+    }
+  }
+
   async function handleDownload(clip: ClipItem) {
     if (!clip.signedUrl) return;
 
@@ -1152,6 +1180,30 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           </button>
                           <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/captions:opacity-100">
                             Captions
+                          </span>
+                        </div>
+
+                        <div className="group/hook relative">
+                          <button
+                            type="button"
+                            onClick={() => void updateClipHook(clip)}
+                            disabled={editRendering || updatingHookIds.has(clip.exportId)}
+                            className={`inline-flex items-center justify-center transition disabled:cursor-not-allowed disabled:opacity-35 ${clip.hookTextEnabled === false ? 'text-white/45 hover:text-white' : 'text-white/90 hover:text-white'}`}
+                            aria-label={clip.hookTextEnabled === false ? 'Add hook text' : 'Remove hook text'}
+                            aria-pressed={clip.hookTextEnabled !== false}
+                          >
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="3" y="5" width="18" height="14" rx="3" />
+                              <path d="M7 10h10M7 14h7" />
+                              {clip.hookTextEnabled === false ? <path d="m4 4 16 16" /> : null}
+                            </svg>
+                          </button>
+                          <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-white px-2.5 py-1 text-xs font-bold text-black opacity-0 shadow transition-opacity duration-100 group-hover/hook:opacity-100">
+                            {updatingHookIds.has(clip.exportId)
+                              ? 'Updating hook…'
+                              : clip.hookTextEnabled === false
+                                ? 'Add hook text'
+                                : 'Remove hook text'}
                           </span>
                         </div>
 

@@ -15,7 +15,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
 
     const { data: existing, error: existingError } = await supabase
       .from('exports')
-      .select('id, project_id, clip_candidate_id, caption_preset_id')
+      .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings')
       .eq('id', exportId)
       .single();
 
@@ -23,6 +23,9 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       return NextResponse.json({ error: 'Export not found' }, { status: 404 });
     }
     const preset = getCaptionPresetById(typeof existing.caption_preset_id === 'string' ? existing.caption_preset_id : undefined);
+    const editSettings = existing.clip_edit_settings && typeof existing.clip_edit_settings === 'object'
+      ? existing.clip_edit_settings as { captions_enabled?: boolean }
+      : null;
 
     const [{ data: clip }, { data: transcript }] = await Promise.all([
       supabase
@@ -64,7 +67,7 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       type: 'export',
       payload: {
         export_id: exportId,
-        captions_enabled: true,
+        captions_enabled: editSettings?.captions_enabled !== false,
         caption_preset_id: preset.id,
         caption_template: preset.caption_template,
         caption_font: preset.caption_font,
