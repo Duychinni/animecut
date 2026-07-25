@@ -392,11 +392,21 @@ function isNearDuplicateWindow(aStart: number, aEnd: number, bStart: number, bEn
 const STORY_STOPWORDS = new Set([
   'about', 'after', 'again', 'also', 'and', 'are', 'because', 'been', 'before', 'being', 'but', 'could', 'does',
   'from', 'have', 'here', 'into', 'just', 'like', 'more', 'only', 'really', 'said', 'that', 'their', 'there',
-  'they', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'with', 'would', 'your',
+  'they', 'this', 'those', 'through', 'what', 'when', 'where', 'which', 'with', 'would', 'your', 'were', 'will',
+  'then', 'than', 'some', 'very', 'much', 'think', 'know', 'going', 'people', 'thing', 'things', 'right',
 ]);
 
-function storyTokens(candidate: RankedCandidate) {
-  return new Set(normalizeLooseText([
+function meaningfulTokens(text: string) {
+  return normalizeLooseText(text)
+    .split(/\s+/)
+    .filter((word) => word.length >= 3 && !STORY_STOPWORDS.has(word));
+}
+
+function storyTokens(candidate: RankedCandidate, segments: TranscriptSegment[] = []) {
+  const transcriptWindow = segments.length
+    ? transcriptTextForWindow(candidate.start_sec, candidate.end_sec, segments)
+    : '';
+  return new Set(meaningfulTokens([
     candidate.title,
     candidate.hook_text,
     candidate.editorial_plan?.topic,
@@ -404,18 +414,32 @@ function storyTokens(candidate: RankedCandidate) {
     candidate.editorial_plan?.conflict,
     candidate.opening_line,
     candidate.closing_line,
-  ].join(' '))
-    .split(/\s+/)
-    .filter((word) => word.length >= 3 && !STORY_STOPWORDS.has(word)));
+    transcriptWindow,
+  ].join(' ')));
 }
 
-function storySimilarity(a: RankedCandidate, b: RankedCandidate) {
-  const aTokens = storyTokens(a);
-  const bTokens = storyTokens(b);
+function setSimilarity(aTokens: Set<string>, bTokens: Set<string>) {
   if (!aTokens.size || !bTokens.size) return 0;
   let shared = 0;
   for (const token of aTokens) if (bTokens.has(token)) shared += 1;
   return shared / Math.max(1, new Set([...aTokens, ...bTokens]).size);
+}
+
+function storySimilarity(a: RankedCandidate, b: RankedCandidate, segments: TranscriptSegment[] = []) {
+  return setSimilarity(storyTokens(a, segments), storyTokens(b, segments));
+}
+
+function transcriptSubjectSimilarity(a: RankedCandidate, b: RankedCandidate, segments: TranscriptSegment[]) {
+  if (!segments.length) return 0;
+  const aTokens = new Set(meaningfulTokens(transcriptTextForWindow(a.start_sec, a.end_sec, segments)));
+  const bTokens = new Set(meaningfulTokens(transcriptTextForWindow(b.start_sec, b.end_sec, segments)));
+  if (aTokens.size < 5 || bTokens.size < 5) return 0;
+
+  let shared = 0;
+  for (const token of aTokens) if (bTokens.has(token)) shared += 1;
+  const containment = shared / Math.max(1, Math.min(aTokens.size, bTokens.size));
+  const jaccard = setSimilarity(aTokens, bTokens);
+  return Math.max(jaccard, containment * 0.85);
 }
 
 function candidateOverlapRatio(a: RankedCandidate, b: RankedCandidate) {
@@ -452,10 +476,11 @@ function fallbackWordFloor(totalSeconds: number) {
   return 42;
 }
 
-function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
+function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate, segments: TranscriptSegment[] = []) {
   const curTitle = normalizeTitle(String(cur.title ?? ''));
   const pickedTitle = normalizeTitle(String(picked.title ?? ''));
-  const similarity = storySimilarity(cur, picked);
+  const similarity = storySimilarity(cur, picked, segments);
+  const transcriptSimilarity = transcriptSubjectSimilarity(cur, picked, segments);
   const overlapRatio = candidateOverlapRatio(cur, picked);
   const sameTitle = curTitle.length > 10
     && pickedTitle.length > 10
@@ -480,14 +505,16 @@ function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
     Number(picked.end_sec ?? 0),
   );
 
-  return sameTitle || sameStory || sameWindow || repeatsSameNamedExample(cur, picked);
+  const sameTranscriptSubject = transcriptSimilarity >= 0.48;
+
+  return sameTitle || sameStory || sameTranscriptSubject || sameWindow || repeatsSameNamedExample(cur, picked);
 }
 
-function distinctCandidates(candidates: RankedCandidate[]) {
+function distinctCandidates(candidates: RankedCandidate[], segments: TranscriptSegment[] = []) {
   return [...candidates]
     .sort((a, b) => Number(b.overall_score ?? 0) - Number(a.overall_score ?? 0))
     .reduce<RankedCandidate[]>((acc, cur) => {
-      if (!acc.some((picked) => isDuplicateCandidate(cur, picked))) {
+      if (!acc.some((picked) => isDuplicateCandidate(cur, picked, segments))) {
         acc.push(cur);
       }
       return acc;
@@ -1177,14 +1204,14 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const filteredCandidates = scoredCandidates;
 
-    const deduped = distinctCandidates(filteredCandidates);
+    const deduped = distinctCandidates(filteredCandidates, segments);
     const selected = deduped.slice(0, targetClipCount);
     const minimumFinalCount = getRequiredClipCount(policyDurationSeconds);
 
     if (selected.length < minimumFinalCount) {
-      const fallbackPool = distinctCandidates(allScoredCandidates)
+      const fallbackPool = distinctCandidates(allScoredCandidates, segments)
         .filter((c) => c.reject_reason !== 'intro_or_cold_open' && c.reject_reason !== 'outro_or_end_card')
-        .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked)))
+        .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked, segments)))
         .filter((c) => c.duration_seconds >= analysisMinClipSec)
         .filter((c) => c.self_contained_confidence >= Math.max(0.42, SELF_CONTAINED_MIN_CONFIDENCE - 0.1))
         .filter((c) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= fallbackMinimumWordCount)
@@ -1193,7 +1220,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
       for (const candidate of fallbackPool) {
         if (selected.length >= minimumFinalCount) break;
-        if (!selected.some((picked) => isDuplicateCandidate(candidate, picked))) {
+        if (!selected.some((picked) => isDuplicateCandidate(candidate, picked, segments))) {
           selected.push({
             ...candidate,
             reason: `${candidate.reason} | Added by fallback pass to reach the expected clip range for this source length.`,
@@ -1222,7 +1249,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         if (selected.length >= minimumFinalCount) break;
         const bucket = coverageBucket(candidate.start_sec, transcriptMaxEnd, minimumFinalCount);
         if (occupiedBuckets.has(bucket)) continue;
-        if (selected.some((picked) => isCoverageDuplicate(candidate, picked))) continue;
+        if (selected.some((picked) => isCoverageDuplicate(candidate, picked) || isDuplicateCandidate(candidate, picked, segments))) continue;
         selected.push({
           ...candidate,
           reason: `${candidate.reason} | Added by transcript coverage pass to avoid under-producing reels for this source length.`,
@@ -1234,7 +1261,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       // remaining transcript regions instead of returning below the policy floor.
       for (const candidate of coveragePool) {
         if (selected.length >= minimumFinalCount) break;
-        if (selected.some((picked) => isCoverageDuplicate(candidate, picked))) continue;
+        if (selected.some((picked) => isCoverageDuplicate(candidate, picked) || isDuplicateCandidate(candidate, picked, segments))) continue;
         selected.push({
           ...candidate,
           reason: `${candidate.reason} | Added by final quality backfill to meet the expected reel count for this source length.`,
@@ -1257,7 +1284,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
       for (const candidate of independentCoveragePool) {
         if (selected.length >= minimumFinalCount) break;
-        if (selected.some((picked) => isCoverageDuplicate(candidate, picked))) continue;
+        if (selected.some((picked) => isCoverageDuplicate(candidate, picked) || isDuplicateCandidate(candidate, picked, segments))) continue;
         selected.push(candidate);
       }
     }
@@ -1265,7 +1292,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     // Backfill passes must never reintroduce overlapping footage. Prefer fewer
     // genuinely distinct reels over multiple cards showing the same setup or
     // payoff with slightly shifted boundaries.
-    const finalDistinct = distinctCandidates(selected)
+    const finalDistinct = distinctCandidates(selected, segments)
       .reduce<RankedCandidate[]>((acc, candidate) => {
         if (!acc.some((picked) => isCoverageDuplicate(candidate, picked))) acc.push(candidate);
         return acc;
@@ -1296,7 +1323,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         if (!rejectionReason && candidate.self_contained_confidence < SELF_CONTAINED_MIN_CONFIDENCE) rejectionReason = 'self_contained_confidence_below_minimum';
         if (!rejectionReason && candidate.duration_seconds < analysisMinClipSec) rejectionReason = 'duration_below_minimum';
         if (!rejectionReason && countTranscriptWordsInRange(segments, candidate.start_sec, candidate.end_sec) < minimumWordCount) rejectionReason = 'word_count_below_minimum';
-        if (!rejectionReason && ranked.some((selectedCandidate) => isDuplicateCandidate(candidate, selectedCandidate))) rejectionReason = 'semantic_or_timeline_duplicate';
+        if (!rejectionReason && ranked.some((selectedCandidate) => isDuplicateCandidate(candidate, selectedCandidate, segments))) rejectionReason = 'semantic_or_transcript_or_timeline_duplicate';
         if (!rejectionReason) rejectionReason = 'ranked_below_final_selection_cutoff';
         return {
           start: candidate.start_sec,
