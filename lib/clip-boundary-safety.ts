@@ -3,8 +3,24 @@ export type TimedTranscriptSegment = {
   end?: number;
 };
 
-const MIN_END_SAFETY_TAIL_SEC = 0.28;
-const TARGET_END_SAFETY_TAIL_SEC = 0.55;
+const MIN_END_SAFETY_TAIL_SEC = 0.55;
+const TARGET_END_SAFETY_TAIL_SEC = 0.85;
+
+export function isTranscriptEndingFragment(text: string) {
+  const normalized = String(text ?? '')
+    .trim()
+    .replace(/[.!?,"”’']+$/g, '')
+    .trim();
+  if (!normalized) return true;
+  if (/\b(and|but|because|so|if|when|while|where|that|which|who|to|for|with|about|from|into|of|or|as)$/i.test(normalized)) {
+    return true;
+  }
+  const words = normalized.split(/\s+/).filter(Boolean);
+  // ASR often punctuates a short continuation as its own sentence. Phrases
+  // such as "to watch." are not valid editorial endings even though they have
+  // a period; they belong to the preceding/following spoken thought.
+  return words.length <= 5 && /^(and|but|because|if|when|while|where|to|for|with|about|from|into|of|or|as)\b/i.test(normalized);
+}
 
 function finiteTime(value: unknown, fallback = 0) {
   const parsed = Number(value);
@@ -49,4 +65,3 @@ export function addSpeechEndSafetyTail(params: {
   );
   return Math.min(hardMax, pauseSafeEnd);
 }
-

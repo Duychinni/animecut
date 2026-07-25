@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { addSpeechEndSafetyTail } from '../lib/clip-boundary-safety';
+import { addSpeechEndSafetyTail, isTranscriptEndingFragment } from '../lib/clip-boundary-safety';
 
 assert.equal(
   addSpeechEndSafetyTail({
@@ -8,7 +8,7 @@ assert.equal(
     sourceEndSec: 120,
     clipMaxEndSec: 60,
   }),
-  38.55,
+  38.8,
   'a normal sentence ending should retain enough post-roll for its final syllable',
 );
 
@@ -19,7 +19,7 @@ assert.equal(
     sourceEndSec: 120,
     clipMaxEndSec: 60,
   }),
-  37.28,
+  37.55,
   'touching ASR segments should still retain a minimum codec/timestamp safety tail',
 );
 
@@ -46,3 +46,8 @@ assert.equal(
 );
 
 console.log('clip boundary safety tests passed');
+
+assert.equal(isTranscriptEndingFragment('to watch.'), true, 'ASR punctuation must not approve a short infinitive fragment');
+assert.equal(isTranscriptEndingFragment('because of what happened.'), true, 'dependent fragments must not end a reel');
+assert.equal(isTranscriptEndingFragment('This is going to be amazing to watch.'), false, 'a complete sentence should remain valid');
+assert.equal(isTranscriptEndingFragment('That is the whole story.'), false, 'a clean story ending should remain valid');

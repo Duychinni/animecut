@@ -16,7 +16,7 @@ import {
 } from '@/lib/editorial-plan';
 import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
-import { addSpeechEndSafetyTail } from '@/lib/clip-boundary-safety';
+import { addSpeechEndSafetyTail, isTranscriptEndingFragment } from '@/lib/clip-boundary-safety';
 import {
   calculateAiClipScore,
   clipScoreLabel,
@@ -179,7 +179,7 @@ function endsWithFiller(text: string): boolean {
 }
 
 function isIncompleteTrailingPhrase(text: string): boolean {
-  return /\b(and|but|because|so|if|when|while|where|that|which|who|to|for|with|about|from|into|of|or|as)\b[,\s]*$/i.test(text.trim());
+  return isTranscriptEndingFragment(text);
 }
 
 function isCompleteStatementBoundary(segments: TranscriptSegment[], idx: number): boolean {
