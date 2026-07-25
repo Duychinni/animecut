@@ -230,6 +230,17 @@ def test_detected_face_keeps_camera_fully_locked():
     assert len({point['cropH'] for point in points}) == 1, points
 
 
+def test_body_tracking_waits_for_sustained_meaningful_displacement():
+    positions = (640, 750, 820, 730, 610, 790, 830, 670, 620, 810, 700, 760)
+    samples = [
+        sample(index * 0.25, subject('body', box(x, 130, 360, 820), 'body:seated'))
+        for index, x in enumerate(positions)
+    ]
+    result = timeline(samples)
+    centers = [point['cropCenterX'] for point in result[0]['points']]
+    assert len(set(centers)) == 1, centers
+
+
 def test_short_detection_loss_holds_subject():
     prior = semantic_subject_choice(body_box=(240, 120, 420, 840))
     held = semantic_subject_choice(prior=prior, scene_cut=False)

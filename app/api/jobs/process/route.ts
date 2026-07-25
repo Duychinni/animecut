@@ -1028,11 +1028,13 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     hookTextEnabled,
     hookText,
     hookPlacement: resolveDefaultReelHookPlacement(bundle.clip_candidate_id),
-    // Temporary comparison release: keep every crop static so motion-detected
-    // face following can be evaluated against a completely still camera.
-    motionTracking: false,
-    autoReframe: false,
-    reframeMode: 'off' as const,
+    motionTracking: options?.motion_tracking === true,
+    // Compatibility retries may simplify captions/overlays, but they must
+    // never bypass subject-aware framing. Once a face is acquired, the
+    // reframe timeline locks that composition until a real shot/identity
+    // change rather than following ordinary head movement.
+    autoReframe: useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
+    reframeMode: options?.reframe_mode ?? getFallbackReframeMode(),
     reframePreset: options?.reframe_preset ?? 'auto',
     // Even a compatibility render must fill 9:16. The old fit mode produced
     // black letterbox bars around horizontal interview footage.
