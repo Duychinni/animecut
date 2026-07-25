@@ -668,7 +668,7 @@ def test_general_two_person_stack_exits_on_first_soft_cut_sample():
     assert all(segment.get('primaryTrackId') == 3 for segment in incoming), result
 
 
-def test_fixed_two_region_soft_cut_uses_new_shot_context_until_person_handoff():
+def test_fixed_two_region_soft_cut_uses_incoming_face_from_first_cut_sample():
     left, right, fixed = fixed_two_region_fixture()
     motion = box(1410, 330, 260, 260)
     closeup = box(570, 75, 780, 900, 3, 0.95)
@@ -701,17 +701,58 @@ def test_fixed_two_region_soft_cut_uses_new_shot_context_until_person_handoff():
         for index in range(12, 16)
     )
     result = timeline(samples, duration=4.0)
-    gap = [
+    incoming = [
         segment for segment in result
         if segment['start'] < 3.0 and segment['end'] > 2.0
     ]
-    handoff = [segment for segment in result if segment['start'] >= 3.0 - 0.001]
-    assert gap and handoff, result
-    assert all(segment['mode'] == 'wide_context' for segment in gap), result
-    assert all(segment.get('renderBranch') == 'safe_full_frame' for segment in gap), result
-    assert all(not segment.get('topBox') and not segment.get('bottomBox') for segment in gap), result
-    assert all(segment['mode'] == 'single' for segment in handoff), result
-    assert all(segment.get('primaryTrackId') == 3 for segment in handoff), result
+    assert incoming, result
+    assert all(segment['mode'] == 'single' for segment in incoming), result
+    assert all(segment.get('primaryTrackId') == 3 for segment in incoming), result
+    assert all(segment.get('renderBranch') != 'safe_full_frame' for segment in incoming), result
+    incoming_points = [
+        point for segment in incoming for point in segment.get('points', [])
+        if point['t'] >= 2.0
+    ]
+    assert incoming_points and incoming_points[0]['t'] == 2.0, result
+    assert all(point.get('primaryTrackId') == 3 for point in incoming_points), result
+
+
+def test_solo_to_split_cut_uses_confirmed_pair_from_first_cut_sample():
+    solo = box(570, 75, 780, 900, 1, 0.95)
+    left = box(180, 170, 340, 430, 2, 0.9)
+    right = box(1390, 160, 350, 440, 3, 0.9)
+    motion = box(900, 400, 180, 180)
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', solo, 'face:1', 0.94),
+            [solo], 1, 0.94, 0.62, audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25,
+            subject('action', motion, 'action:transition', 0.4),
+            [], None, 0.0, 0.0, audio_activity=0.75,
+            scene_change=0.45 if index == 8 else 0.0,
+        )
+        for index in range(8, 10)
+    )
+    samples.extend(
+        sample(
+            index * 0.25,
+            subject('face', left, 'face:2', 0.9),
+            [left, right], 2, 0.9, 0.55, audio_activity=0.75,
+        )
+        for index in range(10, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    incoming = [segment for segment in result if segment['start'] >= 2.0 - 0.001]
+    assert incoming, result
+    assert incoming[0]['start'] == 2.0, result
+    assert all(segment['mode'] == 'stacked' for segment in incoming), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in incoming), result
 
 
 def test_real_timeline_points_emit_detected_face_box():

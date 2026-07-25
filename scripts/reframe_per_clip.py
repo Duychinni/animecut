@@ -790,11 +790,149 @@ def strongest_face_pair(faces, source_w: float):
     return tuple(sorted(best, key=lambda item: float(item.get('cx', 0))))
 
 
+def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float, max_samples=6):
+    """Backfill an incoming shot's first unconfirmed samples from that shot.
+
+    Detection is intentionally sampled sparsely, so the first observation after
+    an edit can contain no face even though the next observation clearly does.
+    Rendering that gap as full-frame creates a visible layout flash between
+    stacked and solo compositions. Because this is an offline render, use the
+    first confirmed face(s) later in the same shot from the exact cut boundary.
+    Never borrow geometry from before the cut or across a second cut.
+    """
+    prepared_points = [dict(point) for point in points]
+    prepared_frames = [
+        {
+            **frame,
+            'faces': [dict(face) for face in frame.get('faces', [])],
+        }
+        for frame in frames
+    ]
+
+    for cut_index, (point, frame) in enumerate(zip(prepared_points, prepared_frames)):
+        scene_change = float(point.get('scene_change', 1.0 if frame.get('scene_cut') else 0.0))
+        if cut_index == 0 or not (frame.get('scene_cut') or scene_change >= 0.38):
+            continue
+
+        current_faces = [
+            face for face in frame.get('faces', [])
+            if face_is_complete_in_source(
+                (
+                    float(face.get('x', 0.0)), float(face.get('y', 0.0)),
+                    float(face.get('w', 0.0)), float(face.get('h', 0.0)),
+                ),
+                source_w,
+                source_h,
+            )
+        ]
+        if current_faces:
+            continue
+
+        confirmed_index = None
+        confirmed_faces = None
+        search_end = min(len(prepared_frames), cut_index + max_samples + 1)
+        for future_index in range(cut_index + 1, search_end):
+            future_point = prepared_points[future_index]
+            future_frame = prepared_frames[future_index]
+            future_change = float(
+                future_point.get('scene_change', 1.0 if future_frame.get('scene_cut') else 0.0)
+            )
+            if future_frame.get('scene_cut') or future_change >= 0.38:
+                break
+            complete = [
+                face for face in future_frame.get('faces', [])
+                if face_is_complete_in_source(
+                    (
+                        float(face.get('x', 0.0)), float(face.get('y', 0.0)),
+                        float(face.get('w', 0.0)), float(face.get('h', 0.0)),
+                    ),
+                    source_w,
+                    source_h,
+                )
+            ]
+            if complete:
+                confirmed_index = future_index
+                confirmed_faces = complete
+                break
+
+        if confirmed_index is None or not confirmed_faces:
+            continue
+
+        confirmed_frame = prepared_frames[confirmed_index]
+        confirmed_point = prepared_points[confirmed_index]
+        pair = strongest_face_pair(confirmed_faces, source_w)
+        lookahead_faces = list(pair) if pair is not None else [
+            max(
+                confirmed_faces,
+                key=lambda face: (
+                    float(face.get('active_speaker_confidence', 0.0)),
+                    float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+                ),
+            )
+        ]
+        future_active_id = confirmed_frame.get('active_track_id')
+        primary = next(
+            (
+                face for face in lookahead_faces
+                if future_active_id is not None
+                and face.get('track_id') is not None
+                and int(face.get('track_id')) == int(future_active_id)
+            ),
+            max(
+                lookahead_faces,
+                key=lambda face: float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+            ),
+        )
+        primary_id = primary.get('track_id')
+        confidence = max(
+            0.32,
+            float(
+                confirmed_point.get(
+                    'speaker_confidence',
+                    primary.get('active_speaker_confidence', 0.0),
+                )
+            ),
+        )
+
+        for entry_index in range(cut_index, confirmed_index):
+            entry_frame = prepared_frames[entry_index]
+            entry_point = prepared_points[entry_index]
+            entry_frame['faces'] = [dict(face) for face in lookahead_faces]
+            entry_frame['active_track_id'] = primary_id
+            entry_frame['selected_box'] = dict(primary)
+            entry_frame['semantic_subject'] = {
+                'kind': 'face',
+                'box': dict(primary),
+                'face_box': dict(primary),
+                'confidence': confidence,
+                'reason': 'incoming_shot_face_lookahead',
+                'predicted': False,
+                'stable_id': f'face:{primary_id}' if primary_id is not None else 'face:incoming-shot',
+                'velocity_x': 0.0,
+            }
+            # A fixed-panel classification from the outgoing camera angle is
+            # never authoritative for a solo incoming shot.
+            if pair is None:
+                entry_frame['fixed_two_panel'] = None
+            entry_point['subject_kind'] = 'face'
+            entry_point['subject_confidence'] = confidence
+            entry_point['selection_reason'] = 'incoming_shot_face_lookahead'
+            entry_point['subject_predicted'] = False
+            entry_point['subject_stable_id'] = (
+                f'face:{primary_id}' if primary_id is not None else 'face:incoming-shot'
+            )
+            entry_point['speaker_confidence'] = confidence
+            entry_point['fallback_used'] = False
+
+    return prepared_points, prepared_frames
+
+
 def build_reframe_timeline(points, frames, source_w: float, source_h: float, duration: float):
     """Convert 4 Hz observations into a hysteretic, timed layout state machine."""
     if not points or not frames:
         return []
 
+    points, frames = apply_shot_entry_lookahead(points, frames, source_w, source_h)
     portrait_source = source_h > source_w * 1.18
     decisions = []
     current_mode = 'source_vertical' if portrait_source else 'single'
@@ -1490,7 +1628,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             pending_mode = None
             pending_count = 0
             held_samples = 0
-        elif scene_cut or invalidated_fixed_layout or soft_cut_without_pair:
+        elif scene_cut or scene_change_strength >= 0.38 or invalidated_fixed_layout or soft_cut_without_pair:
             # A moderate shot change is enough to leave a stale stacked
             # composition immediately. Waiting for generic layout hysteresis
             # keeps the old two-person geometry on the first solo-shot samples.
