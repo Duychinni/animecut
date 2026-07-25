@@ -107,8 +107,8 @@ function formatClock(totalSeconds: number) {
 
 function toDisplayScore(score: number) {
   if (!Number.isFinite(score)) return 0;
-  if (score > 10) return Math.max(0, Math.min(100, Math.round(score)));
-  return Math.max(0, Math.min(100, Math.round(score * 10)));
+  const normalized = score > 10 ? Math.round(score) : Math.round(score * 10);
+  return normalized > 0 ? Math.max(70, Math.min(100, normalized)) : 0;
 }
 
 function formatDisplayScore(score: number) {
@@ -192,12 +192,12 @@ function getPrimaryClipBadge(clip: ClipItem) {
 
 function getDisplayClipBadge(clip: ClipItem) {
   const scoreLabel = clip.scoreLabel?.trim().toLowerCase();
+  const score = toDisplayScore(clip.score);
 
+  if (score < 70 || scoreLabel === 'needs work' || scoreLabel === 'weak') return null;
   if (scoreLabel === 'exceptional' || scoreLabel === 'excellent') return '🔥 Viral';
   if (scoreLabel === 'strong') return '⚡ Strong Clip';
   if (scoreLabel === 'good') return '👍 Good Clip';
-  if (scoreLabel === 'needs work') return '🛠️ Needs Work';
-  if (scoreLabel === 'weak') return '🔎 Review';
 
   return getPrimaryClipBadge(clip);
 }
@@ -1119,9 +1119,11 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         AI Clip Score
                       </span>
                       <div className="mt-1.5 flex items-center justify-between gap-2">
-                        <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">
-                          {primaryBadge}
-                        </span>
+                        {primaryBadge ? (
+                          <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-white/82">
+                            {primaryBadge}
+                          </span>
+                        ) : <span aria-hidden="true" />}
 
                         <div className="flex shrink-0 items-center gap-3 text-white">
                         <div className="group/edit relative">

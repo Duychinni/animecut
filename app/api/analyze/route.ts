@@ -19,6 +19,7 @@ import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 import { addSpeechEndSafetyTail } from '@/lib/clip-boundary-safety';
 import {
   calculateAiClipScore,
+  clipScoreLabel,
   transcriptTechnicalMetrics,
   type ClipScorePenalty,
   type ClipTechnicalMetrics,
@@ -82,22 +83,22 @@ function clamp100(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function calibrateFinalScores<T extends { overall_score: number; passes_quality?: boolean }>(items: T[]) {
+function calibrateFinalScores<T extends { overall_score: number; score_label?: string; passes_quality?: boolean }>(items: T[]) {
   return items.map((item) => {
     const rawScore = Math.max(0, Math.min(100, Math.round(item.overall_score)));
-    // The semantic rubric is intentionally conservative. A modest presentation
-    // calibration makes strong, publishable clips read that way to users while
-    // preserving ranking and keeping exceptional scores rare.
-    const presentationLift = item.passes_quality === false
-      ? 0
-      : rawScore >= 80
-        ? 4
-        : rawScore >= 70
-          ? 3
-          : 2;
+    // Only candidates that survived editorial selection reach this pass. Map
+    // the rubric's conservative raw range into a friendlier publishable range
+    // without flattening the ordering or making every reel look exceptional.
+    const calibratedScore = rawScore >= 85
+      ? rawScore + 6
+      : rawScore >= 70
+        ? rawScore + 7
+        : 70 + Math.max(0, rawScore - 55) * 0.4;
+    const presentationScore = Math.max(70, Math.min(96, Math.round(calibratedScore)));
     return {
       ...item,
-      overall_score: Math.min(96, rawScore + presentationLift),
+      overall_score: presentationScore,
+      score_label: clipScoreLabel(presentationScore),
     };
   });
 }
