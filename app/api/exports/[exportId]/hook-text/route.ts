@@ -54,9 +54,9 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       .update({
         hook_text_enabled: enabled,
         hook_text: generated,
-        status: 'queued',
+        edit_status: 'rendering',
         error_message: null,
-        output_storage_path: null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', exportId);
 
@@ -67,6 +67,8 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       type: 'export',
       payload: {
         export_id: exportId,
+        edit_rerender: true,
+        fast_edit_render: false,
         captions_enabled: editSettings?.captions_enabled !== false,
         caption_preset_id: preset.id,
         caption_template: preset.caption_template,
@@ -80,7 +82,18 @@ export async function POST(req: Request, context: { params: Promise<{ exportId: 
       status: 'queued',
     });
 
-    if (jobError) throw jobError;
+    if (jobError) {
+      await supabase
+        .from('exports')
+        .update({
+          hook_text_enabled: !enabled,
+          edit_status: 'error',
+          error_message: `Could not queue hook ${enabled ? 'restore' : 'removal'}.`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', exportId);
+      throw jobError;
+    }
 
     return NextResponse.json({ ok: true, enabled, hookText: generated });
   } catch (error: unknown) {

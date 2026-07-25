@@ -1726,7 +1726,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: HookCard,Arial,1,&H00FFFFFF,&H00FFFFFF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
-Style: HookText,Montserrat,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0.2,0,1,0.45,0,5,24,24,0,1
+Style: HookText,Montserrat,${hookFontSize},&H00000000,&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,0.15,0,1,0.35,0,5,24,24,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1752,7 +1752,7 @@ function buildHookDrawtextFilter(hookText: string, hookTextFilePath?: string, pl
     'box=1',
     'boxcolor=white',
     'boxborderw=12',
-    'borderw=1',
+    'borderw=1.35',
     'bordercolor=black',
     'shadowx=0',
     'shadowy=0',
