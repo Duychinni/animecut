@@ -121,9 +121,17 @@ def visual_usability(points, timeline):
         # candidate after a very short tolerance window and let the pipeline
         # choose another reel.
         verified_person = bool(
-            point.get('subject_kind') == 'face'
-            and point.get('face_source_complete') is True
-            and point.get('face_box')
+            (
+                point.get('subject_kind') == 'face'
+                and point.get('face_source_complete') is True
+                and point.get('face_box')
+            )
+            or (
+                segment
+                and segment.get('mode') == 'stacked'
+                and segment.get('topBox')
+                and segment.get('bottomBox')
+            )
         )
         unsafe_context = bool(
             not verified_person
@@ -1027,7 +1035,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             wide_pair_miss_streak = 0
         elif wide_pair_hold_ids is not None:
             wide_pair_miss_streak += 1
-            if wide_pair_miss_streak > 2:
+            if wide_pair_miss_streak > 2 and not fixed_two_panel:
                 wide_pair_hold_ids = None
                 wide_pair_hold_faces = None
                 wide_pair_miss_streak = 0
@@ -1259,6 +1267,14 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         if portrait_source:
             desired_mode = 'source_vertical'
             fixed_render_branch = 'source_vertical'
+        elif fixed_two_panel and (visual_pair is not None or wide_pair_hold_faces is not None):
+            # Fixed left/right interview shots are the strongest signal for the
+            # Opus-style composition: crop each participant independently and
+            # stack the locked panes. Do this during speech too; the previous
+            # active-speaker branch discarded the second participant and made
+            # this layout effectively invisible on talk-show footage.
+            desired_mode = 'stacked'
+            fixed_render_branch = 'fixed_two_panel_stacked'
         elif silence_state == 'hold' and fixed_two_panel and fixed_last_confident_track is not None and int(fixed_last_confident_track) in face_by_id:
             # A short pause is editorially continuous with the preceding turn.
             # Keep the last confirmed panel instead of chasing incidental motion.
@@ -1376,7 +1392,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             # not delay a confirmed speaker cut or mutate it into a midpoint.
             current_mode = desired_mode
             current_grid_template = None
-            current_pair = pair_ids if desired_mode == 'stacked' else None
+            current_pair = (pair_ids or wide_pair_hold_ids) if desired_mode == 'stacked' else None
             pending_mode = None
             pending_count = 0
             held_samples = 0
@@ -1445,12 +1461,19 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         top_face = bottom_face = None
         wide_pair_ids = None
         if current_mode == 'stacked':
+            held_faces_by_id = {
+                int(face.get('track_id')): face for face in (wide_pair_hold_faces or ())
+                if face.get('track_id') is not None
+            }
             active_pair = layout_pair_ids or (
-                current_pair if current_pair and all(track_id in face_by_id for track_id in current_pair) else pair_ids
+                current_pair if current_pair else pair_ids
             )
-            if active_pair and all(track_id in face_by_id for track_id in active_pair):
-                top_face = face_by_id[active_pair[0]]
-                bottom_face = face_by_id[active_pair[1]]
+            if active_pair and all(
+                track_id in face_by_id or track_id in held_faces_by_id
+                for track_id in active_pair
+            ):
+                top_face = face_by_id.get(active_pair[0]) or held_faces_by_id[active_pair[0]]
+                bottom_face = face_by_id.get(active_pair[1]) or held_faces_by_id[active_pair[1]]
                 current_pair = active_pair
             else:
                 # Hold the layout through a short detection gap; the segment

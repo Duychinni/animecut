@@ -83,10 +83,23 @@ function clamp100(value: number) {
 }
 
 function calibrateFinalScores<T extends { overall_score: number; passes_quality?: boolean }>(items: T[]) {
-  return items.map((item) => ({
-    ...item,
-    overall_score: Math.max(0, Math.min(100, Math.round(item.overall_score))),
-  }));
+  return items.map((item) => {
+    const rawScore = Math.max(0, Math.min(100, Math.round(item.overall_score)));
+    // The semantic rubric is intentionally conservative. A modest presentation
+    // calibration makes strong, publishable clips read that way to users while
+    // preserving ranking and keeping exceptional scores rare.
+    const presentationLift = item.passes_quality === false
+      ? 0
+      : rawScore >= 80
+        ? 4
+        : rawScore >= 70
+          ? 3
+          : 2;
+    return {
+      ...item,
+      overall_score: Math.min(96, rawScore + presentationLift),
+    };
+  });
 }
 
 function normalizeWindow(startRaw: number, endRaw: number, minClipSec: number, maxClipSec: number) {
@@ -1302,7 +1315,13 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       segments,
       editorialGlobalContext,
     );
-    const ranked = calibrateFinalScores(diversified).map((item, idx) => ({ ...item, rank: idx + 1 }));
+    const ranked = calibrateFinalScores(diversified).map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+      // Auto-headlines are a premium treatment for the strongest ten results,
+      // not visual clutter on every backfill reel.
+      hook_text: idx < 10 ? item.hook_text : '',
+    }));
 
     if (policyDurationSeconds > 4 * 60 && ranked.length < Math.min(3, minimumFinalCount)) {
       throw new Error(

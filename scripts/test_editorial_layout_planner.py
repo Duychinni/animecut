@@ -47,6 +47,8 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
             'start': 0.0, 'end': 5.0, 'mode': 'stacked', 'visibleCount': 2,
             'topBox': {'x': 80.0, 'y': 100.0, 'w': 420.0, 'h': 700.0},
             'bottomBox': {'x': 1040.0, 'y': 100.0, 'w': 420.0, 'h': 700.0},
+            'primaryTrackId': 1, 'subjectKind': 'face',
+            'points': [{**crop_point(), 'audioActivity': 0.8}],
         }])
         self.assertEqual(planned[0]['mode'], 'stacked')
         self.assertEqual(planned[0]['editorialLayout'], 'TWO_PERSON_CONVERSATION')

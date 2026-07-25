@@ -514,13 +514,8 @@ def test_fixed_two_region_right_speaker_never_uses_midpoint():
         for index in range(12)
     ]
     result = timeline(samples)
-    active = [segment for segment in result if segment.get('renderBranch') == 'active_speaker_right']
-    assert active, result
-    for segment in active:
-        assert segment['mode'] == 'single' and segment['primaryPanel'] == 'right', segment
-        for point in segment['points']:
-            assert point['cropX'] >= fixed['right_region'][0], point
-            assert point['cropX'] > fixed['divider_x'], point
+    assert all(segment['mode'] == 'stacked' for segment in result), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
 
 
 def test_fixed_two_region_holds_person_through_detector_gap():
@@ -551,8 +546,8 @@ def test_fixed_two_region_holds_person_through_detector_gap():
     result = build_reframe_timeline(list(points), list(frames), W, H, 5.0)
     usable, reason = visual_usability(list(points), result)
     assert usable, reason
-    assert all(segment['mode'] == 'single' for segment in result), result
-    assert all(segment.get('primaryTrackId') == 2 for segment in result), result
+    assert result[0]['mode'] == 'stacked', result
+    assert result[0].get('topBox') and result[0].get('bottomBox'), result
 
 
 def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():
@@ -567,16 +562,12 @@ def test_fixed_two_region_confirmed_switch_is_a_hard_panel_cut():
             [left, right], active_id, 0.94, 0.62, fixed_layout=fixed,
         ))
     result = timeline(samples)
-    panel_segments = [segment for segment in result if segment.get('primaryPanel') in ('left', 'right')]
-    assert [segment['primaryPanel'] for segment in panel_segments] == ['left', 'right'], result
-    assert panel_segments[1]['hardCutStart'], panel_segments[1]
-    assert panel_segments[0]['renderBranch'] == 'active_speaker_left'
-    assert panel_segments[1]['renderBranch'] == 'active_speaker_right'
-    assert panel_segments[0]['points'][-1]['cropX'] + panel_segments[0]['points'][-1]['cropW'] <= fixed['left_region'][1] + 1
-    assert panel_segments[1]['points'][0]['cropX'] >= fixed['right_region'][0] - 1
+    assert all(segment['mode'] == 'stacked' for segment in result), result
+    assert all(segment['renderBranch'] == 'fixed_two_panel_stacked' for segment in result), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
 
 
-def test_uncertain_two_person_speech_holds_one_person_not_midpoint():
+def test_uncertain_fixed_two_person_speech_keeps_both_locked_panes():
     left, right, fixed = fixed_two_region_fixture()
     samples = [
         sample(
@@ -587,17 +578,11 @@ def test_uncertain_two_person_speech_holds_one_person_not_midpoint():
         for index in range(10)
     ]
     result = timeline(samples)
-    uncertain = [segment for segment in result if segment.get('renderBranch') == 'single_subject_uncertain']
-    assert uncertain, result
-    assert all(segment['mode'] == 'single' for segment in uncertain), result
-    assert all(segment.get('primaryPanel') == 'left' for segment in uncertain), result
-    for segment in uncertain:
-        for point in segment['points']:
-            assert point['cropX'] + point['cropW'] <= fixed['left_region'][1] + 1, point
-            assert point['cropCenterX'] < fixed['divider_x'], point
+    assert all(segment['mode'] == 'stacked' for segment in result), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
 
 
-def test_fixed_two_region_long_silence_holds_then_stacks_and_locks():
+def test_fixed_two_region_long_silence_keeps_locked_stack():
     left, right, fixed = fixed_two_region_fixture()
     samples = []
     for index in range(5):
@@ -611,12 +596,9 @@ def test_fixed_two_region_long_silence_holds_then_stacks_and_locks():
             [left, right], 1, 0.20, 0.01, fixed_layout=fixed, audio_activity=0.0,
         ))
     result = timeline(samples)
-    hold = [segment for segment in result if segment.get('renderBranch') == 'active_speaker_left']
-    widened = [segment for segment in result if segment.get('renderBranch') == 'silence_widen_stacked']
-    locked = [segment for segment in result if segment.get('renderBranch') == 'silence_lock_stacked']
-    assert hold and widened and locked, result
-    assert all(segment['mode'] == 'stacked' for segment in widened + locked), result
-    assert all(segment.get('silenceState') in ('widen', 'lock') for segment in widened + locked), result
+    assert all(segment['mode'] == 'stacked' for segment in result), result
+    assert all(segment.get('renderBranch') == 'fixed_two_panel_stacked' for segment in result), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
 
 
 def test_two_person_uncertain_context_uses_both_locked_panes():
@@ -640,7 +622,7 @@ def test_two_person_uncertain_context_uses_both_locked_panes():
     assert all(segment.get('topBox') and segment.get('bottomBox') for segment in stacked), result
 
 
-def test_long_silence_resume_hard_cuts_to_confirmed_panel():
+def test_long_silence_resume_keeps_stack_and_marks_speaker_change():
     left, right, fixed = fixed_two_region_fixture()
     samples = []
     for index in range(5):
@@ -649,9 +631,13 @@ def test_long_silence_resume_hard_cuts_to_confirmed_panel():
         samples.append(sample(index * 0.25, subject('face', left, 'face:1', 0.18), [left, right], 1, 0.18, 0.01, fixed_layout=fixed, audio_activity=0.0))
     samples.append(sample(4.0, subject('face', right, 'face:2', 0.95), [left, right], 2, 0.95, 0.65, fixed_layout=fixed, audio_activity=0.8))
     result = timeline(samples, duration=4.25)
-    resumed = [segment for segment in result if segment.get('renderBranch') == 'active_speaker_right']
+    resumed = [
+        segment for segment in result
+        if segment.get('renderBranch') == 'fixed_two_panel_stacked'
+        and segment.get('primaryTrackId') == 2
+    ]
     assert resumed and resumed[-1]['hardCutStart'], result
-    assert resumed[-1]['primaryPanel'] == 'right', resumed[-1]
+    assert resumed[-1]['mode'] == 'stacked', resumed[-1]
 
 
 def test_general_stacked_conversation_resumes_without_layout_jump():

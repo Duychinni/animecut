@@ -110,7 +110,14 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
         # replace a detector-tracked person while somebody is speaking. This
         # is especially important for interview compilations that alternate
         # split-screen, reaction, and close-up source shots.
-        if verified_speaking_person:
+        if (
+            verified_speaking_person
+            and not (
+                segment.get('mode') == 'stacked'
+                and segment.get('topBox')
+                and segment.get('bottomBox')
+            )
+        ):
             scene_type = 'SINGLE_SPEAKER'
             layout = 'ACTIVE_SPEAKER_CROP'
             reason = 'Speech with a verified visible person requires a single-person portrait crop.'
