@@ -775,11 +775,29 @@ def strongest_face_pair(faces, source_w: float):
         for second_index in range(first_index + 1, len(faces)):
             first = faces[first_index]
             second = faces[second_index]
+            first_track = first.get('track_id')
+            second_track = second.get('track_id')
+            if (
+                first_track is not None
+                and second_track is not None
+                and int(first_track) == int(second_track)
+            ):
+                continue
             first_area = max(1.0, float(first.get('w', 0)) * float(first.get('h', 0)))
             second_area = max(1.0, float(second.get('w', 0)) * float(second.get('h', 0)))
             separation = abs(float(first.get('cx', 0)) - float(second.get('cx', 0))) / max(source_w, 1.0)
             size_ratio = min(first_area, second_area) / max(first_area, second_area)
-            if separation < 0.14 or size_ratio < 0.22:
+            first_tuple = (
+                float(first.get('x', 0)), float(first.get('y', 0)),
+                float(first.get('w', 0)), float(first.get('h', 0)),
+            )
+            second_tuple = (
+                float(second.get('x', 0)), float(second.get('y', 0)),
+                float(second.get('w', 0)), float(second.get('h', 0)),
+            )
+            # Face detectors can emit two offset boxes for one large close-up.
+            # Track ids alone do not prove that two different people exist.
+            if separation < 0.14 or size_ratio < 0.22 or box_iou(first_tuple, second_tuple) > 0.18:
                 continue
             score = (first_area + second_area) * (0.7 + min(0.3, separation)) * (0.72 + size_ratio * 0.28)
             if score > best_score:
@@ -788,6 +806,37 @@ def strongest_face_pair(faces, source_w: float):
     if best is None:
         return None
     return tuple(sorted(best, key=lambda item: float(item.get('cx', 0))))
+
+
+def distinct_face_detections(faces):
+    """Collapse offset duplicate boxes emitted for one large close-up face."""
+    distinct = []
+    ranked = sorted(
+        faces,
+        key=lambda face: (
+            float(face.get('active_speaker_confidence', 0.0)),
+            float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+        ),
+        reverse=True,
+    )
+    for face in ranked:
+        candidate = (
+            float(face.get('x', 0)), float(face.get('y', 0)),
+            float(face.get('w', 0)), float(face.get('h', 0)),
+        )
+        if any(
+            box_iou(
+                candidate,
+                (
+                    float(existing.get('x', 0)), float(existing.get('y', 0)),
+                    float(existing.get('w', 0)), float(existing.get('h', 0)),
+                ),
+            ) > 0.18
+            for existing in distinct
+        ):
+            continue
+        distinct.append(face)
+    return distinct
 
 
 def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float, max_samples=6):
@@ -809,12 +858,8 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
         for frame in frames
     ]
 
-    for cut_index, (point, frame) in enumerate(zip(prepared_points, prepared_frames)):
-        scene_change = float(point.get('scene_change', 1.0 if frame.get('scene_cut') else 0.0))
-        if cut_index == 0 or not (frame.get('scene_cut') or scene_change >= 0.38):
-            continue
-
-        current_faces = [
+    def complete_faces(frame):
+        return [
             face for face in frame.get('faces', [])
             if face_is_complete_in_source(
                 (
@@ -825,6 +870,14 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
                 source_h,
             )
         ]
+
+    for cut_index, (point, frame) in enumerate(zip(prepared_points, prepared_frames)):
+        scene_change = float(point.get('scene_change', 1.0 if frame.get('scene_cut') else 0.0))
+        if cut_index == 0:
+            continue
+        explicit_cut = bool(frame.get('scene_cut') or scene_change >= 0.38)
+
+        current_faces = complete_faces(frame)
         if current_faces:
             continue
 
@@ -839,17 +892,7 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             )
             if future_frame.get('scene_cut') or future_change >= 0.38:
                 break
-            complete = [
-                face for face in future_frame.get('faces', [])
-                if face_is_complete_in_source(
-                    (
-                        float(face.get('x', 0.0)), float(face.get('y', 0.0)),
-                        float(face.get('w', 0.0)), float(face.get('h', 0.0)),
-                    ),
-                    source_w,
-                    source_h,
-                )
-            ]
+            complete = complete_faces(future_frame)
             if complete:
                 confirmed_index = future_index
                 confirmed_faces = complete
@@ -861,6 +904,18 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
         confirmed_frame = prepared_frames[confirmed_index]
         confirmed_point = prepared_points[confirmed_index]
         pair = strongest_face_pair(confirmed_faces, source_w)
+        previous_faces = complete_faces(prepared_frames[cut_index - 1])
+        previous_pair = strongest_face_pair(previous_faces, source_w)
+        inferred_layout_change = bool(
+            previous_faces
+            and bool(previous_pair is not None) != bool(pair is not None)
+        )
+        # A detector gap alone is not a shot boundary. It becomes an atomic
+        # layout transition only when the confirmed geometry changes between
+        # one person and two people. This catches visually subtle talk-show
+        # cuts that the histogram scene detector can miss.
+        if not explicit_cut and not inferred_layout_change:
+            continue
         lookahead_faces = list(pair) if pair is not None else [
             max(
                 confirmed_faces,
@@ -923,6 +978,14 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             )
             entry_point['speaker_confidence'] = confidence
             entry_point['fallback_used'] = False
+            if inferred_layout_change and not explicit_cut:
+                # Create a hard timeline boundary at the first uncertain
+                # sample without pretending the source detector found a hard
+                # cut. The incoming confirmed composition is rendered from
+                # this exact point, never through a safe-wide/searching frame.
+                entry_point['scene_change'] = max(
+                    0.38, float(entry_point.get('scene_change', 0.0))
+                )
 
     return prepared_points, prepared_frames
 
@@ -964,6 +1027,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     fixed_layout_suppressed = False
     layout_exit_pending = False
     awaiting_new_shot_face = False
+    last_single_face = None
+    last_single_face_track = None
+    single_face_gap_samples = 0
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -983,6 +1049,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         audio_activity = float(point.get('audio_activity', 0.0))
         scene_cut = bool(frame.get('scene_cut'))
         scene_change_strength = float(point.get('scene_change', 1.0 if scene_cut else 0.0))
+        # The layout state machine already treats a moderate discontinuity as a
+        # shot change. Carry the same fact into segment boundaries; otherwise
+        # one stacked segment can span two camera angles and render its median
+        # pane boxes over the wrong shot.
+        shot_change = bool(scene_cut or scene_change_strength >= 0.38)
+        moderate_shot_change = bool(not scene_cut and scene_change_strength >= 0.38)
         semantic_subject = frame.get('semantic_subject') or {}
         selected = semantic_subject.get('box') or frame.get('selected_box')
         subject_kind = str(
@@ -1078,10 +1150,10 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         # then keep the two dominant faces only when they occupy distinct
         # horizontal regions of the source frame. This handles pre-composed
         # podcast panels without letting logos/audience faces force the mode.
-        visible_faces = [
+        visible_faces = distinct_face_detections([
             face for face in complete_faces
             if not bool(face.get('predicted')) and face.get('track_id') is not None
-        ]
+        ])
         layout_faces = sorted(
             (
                 face for face in visible_faces
@@ -1125,7 +1197,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             fixed_layout_suppressed = False
         elif fixed_layout_suppressed:
             fixed_two_panel = None
-        if scene_cut:
+        if shot_change:
             visual_pair_streak = 1 if visual_pair_ids is not None else 0
             last_visual_pair_ids = visual_pair_ids
         elif visual_pair_ids is not None and visual_pair_ids == last_visual_pair_ids:
@@ -1195,7 +1267,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 subject_predicted = False
                 subject_stable_id = f'face:{conversation_last_track}'
 
-        if scene_cut:
+        if shot_change:
             wide_pair_hold_ids = None
             wide_pair_hold_faces = None
             wide_pair_miss_streak = 0
@@ -1222,6 +1294,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and len(layout_faces) == 1
             and float(layout_faces[0].get('h', 0.0)) >= source_h * 0.20
         )
+        stack_to_solo_handoff = bool(current_mode == 'stacked' and solo_closeup)
         soft_cut_without_pair = bool(
             visual_pair is None
             and scene_change_strength >= 0.38
@@ -1448,7 +1521,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and speaker_confidence >= 0.42
         )
 
-        if scene_cut or index == 0:
+        if shot_change or index == 0:
             contextual_shot_latched = bool(wide_context_trigger and not portrait_source)
             talking_head_release_streak = 0
         elif contextual_shot_latched:
@@ -1628,7 +1701,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             pending_mode = None
             pending_count = 0
             held_samples = 0
-        elif scene_cut or scene_change_strength >= 0.38 or invalidated_fixed_layout or soft_cut_without_pair:
+        elif shot_change or invalidated_fixed_layout or soft_cut_without_pair or stack_to_solo_handoff:
             # A moderate shot change is enough to leave a stale stacked
             # composition immediately. Waiting for generic layout hysteresis
             # keeps the old two-person geometry on the first solo-shot samples.
@@ -1676,6 +1749,35 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             if subject_kind == 'face' and active_id is not None
             else None
         )
+        if shot_change:
+            last_single_face = None
+            last_single_face_track = None
+            single_face_gap_samples = 0
+        if current_mode == 'single' and primary_face is not None:
+            last_single_face = primary_face
+            last_single_face_track = active_id
+            single_face_gap_samples = 0
+        elif (
+            current_mode == 'single'
+            and primary_face is None
+            and last_single_face is not None
+            and single_face_gap_samples < 4
+            and not shot_change
+        ):
+            # A face detector can miss several samples when the speaker turns
+            # or gestures. Keep the last verified face crop for at most one
+            # second; never let a hand/body/motion target take over mid-shot.
+            single_face_gap_samples += 1
+            primary_face = last_single_face
+            active_id = last_single_face_track
+            selected = last_single_face
+            subject_kind = 'face'
+            subject_stable_id = (
+                f'face:{active_id}' if active_id is not None else 'face:shot-hold'
+            )
+            subject_confidence = max(0.24, subject_confidence)
+            selection_reason = 'timeline_face_detection_gap_hold'
+            subject_predicted = True
         if fixed_hold:
             active_id = int(fixed_last_confident_track)
             primary_face = face_by_id.get(active_id) or fixed_last_confident_face
@@ -1826,7 +1928,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'speaker_confidence': round(speaker_confidence, 4),
             'speaker_score_margin': round(speaker_score_margin, 4),
             'audio_activity': round(audio_activity, 4),
-            'scene_cut': scene_cut,
+            'scene_cut': shot_change,
+            'moderate_shot_change': moderate_shot_change,
             'single_score': round(single_score, 4),
             'stacked_score': round(stacked_score, 4),
             'stack_eligible': stack_eligible,
@@ -1960,6 +2063,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'hardCutStart': bool(decision.get('hard_cut') or identity_switch),
                 'silenceState': decision.get('silence_state'),
                 'sceneCutStart': bool(decision.get('scene_cut')),
+                'moderateCutStart': bool(decision.get('moderate_shot_change')),
                 'points': [],
                 '_top_boxes': [],
                 '_bottom_boxes': [],
@@ -2109,7 +2213,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     for segment_index in range(1, len(clean_segments)):
         segment = clean_segments[segment_index]
         previous = clean_segments[segment_index - 1]
-        if not segment.get('sceneCutStart') or segment.get('hardCutStart') or not segment.get('points'):
+        if (
+            not segment.get('sceneCutStart')
+            or segment.get('moderateCutStart')
+            or segment.get('hardCutStart')
+            or not segment.get('points')
+        ):
             continue
         original_start = float(segment['start'])
         boundary = max(float(previous['start']), original_start - SCENE_CUT_LOOKAHEAD_SEC)

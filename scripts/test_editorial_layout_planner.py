@@ -137,6 +137,50 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
         self.assertEqual(validated[0]['mode'], 'wide_context')
         self.assertEqual(validated[0]['subjects'], [])
 
+    def test_qa_fallback_keeps_one_locked_crop_for_the_whole_shot(self):
+        frames = [
+            {
+                'timestamp': index * 0.25,
+                'faces': [{
+                    'track_id': 1,
+                    'x': 500.0 + index * 35.0,
+                    'y': 120.0,
+                    'w': 360.0,
+                    'h': 500.0,
+                    'cx': 680.0 + index * 35.0,
+                    'cy': 370.0,
+                    'predicted': False,
+                }],
+            }
+            for index in range(4)
+        ]
+        points = [
+            {
+                't': index * 0.25,
+                'cropX': 0.0,
+                'cropY': 0.0,
+                'cropW': 607.5,
+                'cropH': 1080.0,
+                'cropCenterX': 303.75,
+                'cropCenterY': 540.0,
+                'audioActivity': 0.8,
+                'subjectKind': 'face',
+            }
+            for index in range(4)
+        ]
+        validated, _ = validate_layout_timeline([{
+            'start': 0.0,
+            'end': 1.0,
+            'mode': 'single',
+            'primaryTrackId': 1,
+            'subjectKind': 'face',
+            'points': points,
+        }], frames, 1920.0, 1080.0)
+        corrected = validated[0]['points']
+        self.assertEqual(validated[0].get('qaFallbackApplied'), 'single_person_reframe')
+        self.assertEqual(len({point['cropX'] for point in corrected}), 1)
+        self.assertEqual(len({point['cropW'] for point in corrected}), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

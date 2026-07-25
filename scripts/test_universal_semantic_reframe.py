@@ -4,10 +4,12 @@
 from reframe_per_clip import (
     build_reframe_timeline,
     detect_fixed_two_panel_layout,
+    distinct_face_detections,
     face_is_complete_in_source,
     portrait_crop_for_face_in_panel,
     portrait_crop_for_subject,
     semantic_subject_choice,
+    strongest_face_pair,
     visual_usability,
 )
 
@@ -83,6 +85,129 @@ def speaker_centering_error(result, expected_centers):
     assert observed and expected_centers
     count = min(len(observed), len(expected_centers))
     return sum(abs(observed[i] - expected_centers[i]) / W for i in range(count)) / count
+
+
+def test_overlapping_duplicate_face_detections_do_not_form_a_pair():
+    primary = box(610, 90, 720, 900, 10, 0.95)
+    duplicate = box(735, 105, 700, 875, 11, 0.82)
+    assert strongest_face_pair([primary, duplicate], W) is None
+    assert len(distinct_face_detections([primary, duplicate])) == 1
+
+
+def test_stacked_to_solo_closeup_exits_immediately_and_holds_face_through_gap():
+    left = box(160, 160, 360, 560, 1, 0.9)
+    right = box(1390, 150, 370, 570, 2, 0.9)
+    solo = box(980, 80, 760, 920, 3, 0.95)
+    duplicate = box(1110, 95, 700, 890, 4, 0.72)
+    hand = box(180, 400, 240, 280)
+    samples = [
+        sample(
+            index * 0.25, subject('face', left, 'face:1', 0.9),
+            [left, right], 1, 0.9, 0.5, audio_activity=0.8,
+        )
+        for index in range(4)
+    ]
+    samples.append(sample(
+        1.0, subject('face', solo, 'face:3', 0.95),
+        [solo, duplicate], 3, 0.95, 0.6, audio_activity=0.8,
+    ))
+    samples.extend([
+        sample(
+            1.25, subject('action', hand, 'action:hand', 0.48),
+            [], None, 0.0, 0.0, audio_activity=0.8,
+        ),
+        sample(
+            1.5, subject('face', solo, 'face:3', 0.95),
+            [solo], 3, 0.95, 0.6, audio_activity=0.8,
+        ),
+    ])
+    result = timeline(samples, duration=1.75)
+    transition = [
+        segment for segment in result
+        if segment['end'] > 1.0 and segment['start'] < 1.75
+    ]
+    assert transition, result
+    assert all(segment['mode'] == 'single' for segment in transition), result
+    transition_points = [
+        point for segment in transition for point in segment['points']
+        if point['t'] >= 1.0
+    ]
+    assert transition_points, result
+    assert all(point.get('primaryTrackId') == 3 for point in transition_points), result
+    assert len({point['cropX'] for point in transition_points}) == 1, result
+
+
+def test_solo_to_split_detector_gap_never_renders_searching_frame():
+    solo = box(570, 75, 780, 900, 1, 0.95)
+    left = box(180, 170, 340, 430, 2, 0.9)
+    right = box(1390, 160, 350, 440, 3, 0.9)
+    motion = box(900, 400, 180, 180)
+    samples = [
+        sample(
+            index * 0.25, subject('face', solo, 'face:1', 0.94),
+            [solo], 1, 0.94, 0.62, audio_activity=0.75,
+        )
+        for index in range(4)
+    ]
+    samples.extend([
+        sample(
+            1.0, subject('action', motion, 'action:searching', 0.4),
+            [], None, 0.0, 0.0, audio_activity=0.75,
+        ),
+        sample(
+            1.25, subject('action', motion, 'action:searching', 0.4),
+            [], None, 0.0, 0.0, audio_activity=0.75,
+        ),
+    ])
+    samples.extend(
+        sample(
+            index * 0.25, subject('face', left, 'face:2', 0.9),
+            [left, right], 2, 0.9, 0.55, audio_activity=0.75,
+        )
+        for index in range(6, 9)
+    )
+    result = timeline(samples, duration=2.25)
+    after_transition = [
+        segment for segment in result
+        if segment['end'] > 1.0 and segment['start'] < 2.25
+    ]
+    assert after_transition, result
+    assert all(segment['mode'] == 'stacked' for segment in after_transition), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in after_transition), result
+    assert all(
+        point.get('selectionReason') != 'test_action'
+        for segment in after_transition for point in segment['points']
+        if point['t'] >= 1.0
+    ), result
+
+
+def test_moderate_cut_forces_new_segment_even_when_detector_reuses_track_ids():
+    left = box(150, 140, 420, 760, 1, 0.9)
+    right = box(1350, 140, 420, 760, 2, 0.9)
+    samples = [
+        sample(
+            index * 0.25, subject('face', left, 'face:1', 0.9),
+            [left, right], 1, 0.9, 0.5, audio_activity=0.7,
+        )
+        for index in range(4)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25, subject('face', left, 'face:1', 0.9),
+            [left, right], 1, 0.9, 0.5, audio_activity=0.7,
+            scene_change=0.44 if index == 4 else 0.0,
+        )
+        for index in range(4, 8)
+    )
+    result = timeline(samples, duration=2.0)
+    incoming = [segment for segment in result if segment.get('sceneCutStart')]
+    assert incoming, result
+    assert incoming[0]['start'] >= 0.75, result
+    assert all(
+        segment['end'] <= incoming[0]['start']
+        for segment in result
+        if segment is not incoming[0] and segment['start'] < incoming[0]['start']
+    ), result
 
 
 def test_silent_far_left():

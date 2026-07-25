@@ -64,6 +64,28 @@ def _panel_crop_for_face(face, source_w, source_h, panel_left, panel_right):
     }
 
 
+def _median_crop(crops):
+    if not crops:
+        return None
+    ordered = sorted(
+        crops,
+        key=lambda crop: (
+            float(crop['cropCenterX']),
+            float(crop['cropCenterY']),
+            float(crop['cropW']),
+            float(crop['cropH']),
+        ),
+    )
+    return dict(ordered[len(ordered) // 2])
+
+
+def _apply_locked_crop(points, crop):
+    if not crop:
+        return
+    for point in points:
+        point.update(crop)
+
+
 def validate_layout_timeline(timeline, frames, source_w, source_h):
     """Reject crops that cut a primary head/shoulders or partially show a face."""
     validated = []
@@ -179,7 +201,7 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                 primary_panel = segment.get('primaryPanel')
                 region = regions.get(primary_panel) if primary_panel in ('left', 'right') else None
                 primary_id = segment.get('primaryTrackId')
-                corrected = 0
+                corrected_crops = []
                 if region and len(region) == 2:
                     for point in segment.get('points') or []:
                         frame = _nearest_frame(segment_frames, float(point.get('t', 0.0)))
@@ -189,9 +211,15 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                         )
                         if primary is None:
                             continue
-                        point.update(_panel_crop_for_face(primary, source_w, source_h, float(region[0]), float(region[1])))
-                        corrected += 1
-                if corrected:
+                        corrected_crops.append(
+                            _panel_crop_for_face(
+                                primary, source_w, source_h,
+                                float(region[0]), float(region[1]),
+                            )
+                        )
+                locked_crop = _median_crop(corrected_crops)
+                if locked_crop:
+                    _apply_locked_crop(segment.get('points') or [], locked_crop)
                     segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
                     segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA constrained the crop to the active source panel."
                     segment['qaFallbackApplied'] = 'panel_bounded_crop'
@@ -217,7 +245,7 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                 # verified primary face, bounded halfway to neighboring
                 # faces, so only one complete person remains on screen.
                 primary_id = segment.get('primaryTrackId')
-                corrected = 0
+                corrected_crops = []
                 for point in segment.get('points') or []:
                     frame = _nearest_frame(segment_frames, float(point.get('t', 0.0)))
                     faces = [
@@ -242,9 +270,16 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
                             left = max(left, boundary)
                         elif other_cx > primary_cx:
                             right = min(right, boundary)
-                    point.update(_panel_crop_for_face(primary, source_w, source_h, left, right))
-                    corrected += 1
-                if corrected:
+                    corrected_crops.append(
+                        _panel_crop_for_face(primary, source_w, source_h, left, right)
+                    )
+                locked_crop = _median_crop(corrected_crops)
+                if locked_crop:
+                    # QA is the last stage before FFmpeg. Applying each raw
+                    # detector box here used to undo timeline stabilization and
+                    # visibly pan/zoom every 250 ms. One verified crop per shot
+                    # keeps the virtual camera planted on the face.
+                    _apply_locked_crop(segment.get('points') or [], locked_crop)
                     segment['mode'] = 'single'
                     segment['wideKind'] = None
                     segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
