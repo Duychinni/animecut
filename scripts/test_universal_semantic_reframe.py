@@ -272,8 +272,8 @@ def test_alternating_speakers_cut_identity():
             [left, right], active, 0.9,
         ))
     result = timeline(samples)
-    singles = [segment for segment in result if segment['mode'] == 'single']
-    assert {segment['subjectStableId'] for segment in singles} >= {'face:1', 'face:2'}, result
+    assert {segment['subjectStableId'] for segment in result} >= {'face:1', 'face:2'}, result
+    assert any(segment['mode'] == 'stacked' for segment in result), result
     expected = [left['cx']] * 8 + [right['cx']] * 8
     assert speaker_centering_error(result, expected) < 0.12, result
 
@@ -303,7 +303,7 @@ def test_reaction_face_does_not_steal_active_speaker():
     assert speaker_centering_error(result, [speaker['cx']] * 16) < 0.12, result
 
 
-def test_sustained_two_person_exchange_keeps_one_person_framed():
+def test_sustained_two_person_exchange_uses_locked_top_bottom_layout():
     left = box(120, 130, 380, 780, 1, 0.92)
     right = box(1420, 130, 380, 780, 2, 0.92)
     samples = []
@@ -317,11 +317,13 @@ def test_sustained_two_person_exchange_keeps_one_person_framed():
         ))
     result = timeline(samples)
     assert result, result
-    assert all(segment['mode'] == 'single' for segment in result), result
-    assert all(segment.get('subjectStableId') in ('face:1', 'face:2') for segment in result), result
+    stacked = [segment for segment in result if segment['mode'] == 'stacked']
+    assert stacked, result
+    assert all(segment.get('renderBranch') == 'two_person_stacked' for segment in stacked), stacked
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in stacked), stacked
 
 
-def test_visible_listener_does_not_force_vertical_stack():
+def test_stable_wide_speaker_and_listener_use_top_bottom_layout():
     speaker = box(120, 130, 380, 780, 1, 0.94)
     listener = box(1420, 130, 380, 780, 2, 0.18)
     samples = [
@@ -333,7 +335,11 @@ def test_visible_listener_does_not_force_vertical_stack():
         for index in range(32)
     ]
     result = timeline(samples)
-    assert all(segment['mode'] != 'stacked' for segment in result), result
+    stacked = [segment for segment in result if segment['mode'] == 'stacked']
+    assert stacked, result
+    assert all(segment.get('topTrackId') == 1 for segment in stacked), stacked
+    assert all(segment.get('bottomTrackId') == 2 for segment in stacked), stacked
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in stacked), stacked
 
 
 def test_unframed_speech_holds_one_complete_visible_person():
@@ -444,7 +450,7 @@ def test_speaking_reel_rejects_mid_clip_empty_stage_fallback():
     assert reason == 'sustained_unframed_speaking_subject'
 
 
-def test_one_confirmed_exchange_always_keeps_one_person_framed():
+def test_one_confirmed_exchange_keeps_both_people_in_locked_panes():
     left = box(130, 140, 360, 740, 1, 0.92)
     right = box(1430, 140, 360, 740, 2, 0.92)
     samples = []
@@ -457,7 +463,8 @@ def test_one_confirmed_exchange_always_keeps_one_person_framed():
             subject('face', active_box, f'face:{active_id}', 0.92),
             [left, right], active_id, 0.92, 0.55, audio_activity=0.75,
         ))
-    # A sustained monologue should age the exchange out and return to one face.
+    # A sustained monologue must not discard the other person while the source
+    # remains a stable wide two-person composition.
     for index in range(8, 28):
         samples.append(sample(
             index * 0.25,
@@ -465,9 +472,9 @@ def test_one_confirmed_exchange_always_keeps_one_person_framed():
             [left, right], 2, 0.92, 0.55, audio_activity=0.75,
         ))
     result = timeline(samples, duration=7.0)
-    assert all(segment['mode'] == 'single' for segment in result), result
-    assert all(segment.get('subjectStableId') in ('face:1', 'face:2') for segment in result), result
-    assert result[-1].get('subjectStableId') == 'face:2', result
+    assert all(segment['mode'] == 'stacked' for segment in result), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
+    assert result[-1]['points'][-1]['primaryTrackId'] == 2, result
 
 
 def test_deliberate_silent_wide_context_remains_allowed():
@@ -612,7 +619,7 @@ def test_fixed_two_region_long_silence_holds_then_stacks_and_locks():
     assert all(segment.get('silenceState') in ('widen', 'lock') for segment in widened + locked), result
 
 
-def test_two_person_uncertain_context_chooses_one_face_not_midpoint():
+def test_two_person_uncertain_context_uses_both_locked_panes():
     left = box(110, 150, 360, 720, 1, 0.22)
     right = box(1450, 150, 360, 720, 2, 0.18)
     samples = [
@@ -628,12 +635,9 @@ def test_two_person_uncertain_context_chooses_one_face_not_midpoint():
         for index in range(12)
     ]
     result = timeline(samples)
-    singles = [segment for segment in result if segment['mode'] == 'single']
-    assert singles, result
-    assert all(segment.get('subjectStableId') == 'face:1' for segment in singles), result
-    for segment in singles:
-        for point in segment['points']:
-            assert point['cropCenterX'] < W * 0.40, point
+    stacked = [segment for segment in result if segment['mode'] == 'stacked']
+    assert stacked, result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in stacked), result
 
 
 def test_long_silence_resume_hard_cuts_to_confirmed_panel():
@@ -650,7 +654,7 @@ def test_long_silence_resume_hard_cuts_to_confirmed_panel():
     assert resumed[-1]['primaryPanel'] == 'right', resumed[-1]
 
 
-def test_general_conversation_long_silence_resumes_with_editorial_cut():
+def test_general_stacked_conversation_resumes_without_layout_jump():
     left = box(150, 140, 360, 760, 1, 0.94)
     right = box(1380, 140, 360, 760, 2, 0.94)
     samples = [
@@ -663,8 +667,10 @@ def test_general_conversation_long_silence_resumes_with_editorial_cut():
     )
     samples.append(sample(4.0, subject('face', right, 'face:2', 0.95), [left, right], 2, 0.95, 0.65, audio_activity=0.8))
     result = timeline(samples, duration=4.25)
-    resumed = [segment for segment in result if segment.get('subjectStableId') == 'face:2']
-    assert resumed and resumed[-1]['hardCutStart'], result
+    final_segment = result[-1]
+    assert final_segment['mode'] == 'stacked', result
+    assert final_segment['points'][-1]['primaryTrackId'] == 2, final_segment
+    assert final_segment.get('topBox') and final_segment.get('bottomBox'), final_segment
 
 
 def test_three_and_four_person_speech_stays_on_one_speaker():

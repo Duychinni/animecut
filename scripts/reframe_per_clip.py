@@ -26,8 +26,8 @@ SPEAKER_SWITCH_CONFIRM_SAMPLES = 2
 FRAMING_SWITCH_CONFIRM_SAMPLES = 2
 LAYOUT_MIN_HOLD_SAMPLES = 4
 LAYOUT_CONFIRM_SAMPLES = 2
-STACK_PAIR_CONFIRM_SAMPLES = 4
-STACK_ENTER_CONFIRM_SAMPLES = 4
+STACK_PAIR_CONFIRM_SAMPLES = 3
+STACK_ENTER_CONFIRM_SAMPLES = 2
 STACK_PARTICIPATION_WINDOW_SEC = 6.0
 STACK_TURN_WINDOW_SEC = 4.5
 STACK_REACTION_WINDOW_SEC = 3.0
@@ -780,6 +780,8 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     held_samples = LAYOUT_MIN_HOLD_SAMPLES
     pair_streak = 0
     last_pair_ids = None
+    visual_pair_streak = 0
+    last_visual_pair_ids = None
     recent_active_ids = []
     participation_history = []
     reaction_history = []
@@ -940,6 +942,22 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             )
             if horizontal_separation >= source_w * 0.24:
                 visual_pair = tuple(dominant_faces)
+        visual_pair_ids = (
+            tuple(int(face.get('track_id')) for face in visual_pair)
+            if visual_pair is not None
+            else None
+        )
+        if scene_cut:
+            visual_pair_streak = 1 if visual_pair_ids is not None else 0
+            last_visual_pair_ids = visual_pair_ids
+        elif visual_pair_ids is not None and visual_pair_ids == last_visual_pair_ids:
+            visual_pair_streak += 1
+        elif visual_pair_ids is not None:
+            visual_pair_streak = 1
+            last_visual_pair_ids = visual_pair_ids
+        else:
+            visual_pair_streak = 0
+            last_visual_pair_ids = None
 
         # Podcast/interview footage must never fall back to a portrait crop
         # centered between two people. When speaker evidence is uncertain,
@@ -1152,7 +1170,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             + reaction_score * 0.35
             + stability_score * 0.15
         )
-        stack_eligible = STACK_LAYOUT_ENABLED and (
+        editorial_stack_eligible = STACK_LAYOUT_ENABLED and (
             two_stable_speakers
             and both_actively_participating
             and both_meaningful
@@ -1160,6 +1178,18 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and loses_context_in_single
             and stacked_score >= single_score + STACK_SCORE_MARGIN
         )
+        # A wide shot containing exactly two stable, meaningfully sized faces
+        # cannot preserve both people in one 9:16 portrait crop. Treat that as
+        # a composition requirement independently of diarization or rapid turn
+        # taking. Each source region is cropped once into a locked half-height
+        # pane, matching the top/bottom interview layout used by leading clip
+        # tools without continuously chasing either face.
+        composition_stack_eligible = bool(
+            STACK_LAYOUT_ENABLED
+            and visual_pair is not None
+            and visual_pair_streak >= STACK_PAIR_CONFIRM_SAMPLES
+        )
+        stack_eligible = editorial_stack_eligible or composition_stack_eligible
         subject_height_ratio = (
             float(selected.get('h', 0)) / max(source_h, 1.0)
             if selected is not None
@@ -1275,6 +1305,9 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif fixed_two_panel:
             desired_mode = 'wide_context'
             fixed_render_branch = 'safe_full_frame'
+        elif composition_stack_eligible:
+            desired_mode = 'stacked'
+            fixed_render_branch = 'two_person_stacked'
         elif participant_count >= 2 and active_speaker_mapped:
             desired_mode = 'single'
             fixed_render_branch = 'single_subject'
