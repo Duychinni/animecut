@@ -880,6 +880,72 @@ def test_solo_to_split_cut_uses_confirmed_pair_from_first_cut_sample():
     assert all(segment.get('topBox') and segment.get('bottomBox') for segment in incoming), result
 
 
+def test_cut_sample_false_face_is_replaced_by_stable_incoming_face():
+    left = box(180, 170, 340, 430, 1, 0.9)
+    right = box(1390, 160, 350, 440, 2, 0.9)
+    false_hand = box(1540, 360, 210, 260, 90, 0.35)
+    solo = box(570, 75, 780, 900, 3, 0.95)
+    samples = [
+        sample(
+            index * 0.25, subject('face', left, 'face:1', 0.9),
+            [left, right], 1, 0.9, 0.5, audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.append(sample(
+        2.0, subject('face', false_hand, 'face:90', 0.35),
+        [false_hand], 90, 0.35, 0.05, audio_activity=0.75,
+        scene_change=0.48,
+    ))
+    samples.append(sample(
+        2.25, subject('face', false_hand, 'face:90', 0.30),
+        [false_hand], 90, 0.30, 0.03, audio_activity=0.75,
+    ))
+    samples.extend(
+        sample(
+            index * 0.25, subject('face', solo, 'face:3', 0.95),
+            [solo], 3, 0.95, 0.62, audio_activity=0.75,
+        )
+        for index in range(10, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    incoming = [segment for segment in result if segment['end'] > 2.0]
+    points = [
+        point for segment in incoming for point in segment.get('points', [])
+        if point['t'] >= 2.0
+    ]
+    assert points and points[0]['t'] == 2.0, result
+    assert all(point.get('primaryTrackId') == 3 for point in points), result
+    assert all(point.get('cropCenterX') < 1400 for point in points), result
+
+
+def test_same_face_track_fragment_does_not_create_camera_jump():
+    first = box(570, 75, 780, 900, 7, 0.95)
+    fragmented = box(610, 85, 760, 890, 17, 0.92)
+    samples = [
+        sample(
+            index * 0.25, subject('face', first, 'face:7', 0.95),
+            [first], 7, 0.95, 0.62, audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25, subject('face', fragmented, 'face:17', 0.92),
+            [fragmented], 17, 0.92, 0.55, audio_activity=0.75,
+        )
+        for index in range(8, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    single_segments = [segment for segment in result if segment['mode'] == 'single']
+    assert len(single_segments) == 1, result
+    crops = {
+        (point['cropX'], point['cropY'], point['cropW'], point['cropH'])
+        for point in single_segments[0]['points']
+    }
+    assert len(crops) == 1, result
+
+
 def test_real_timeline_points_emit_detected_face_box():
     face = box(570, 75, 780, 900, 3, 0.95)
     result = timeline([

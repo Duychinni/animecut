@@ -839,7 +839,7 @@ def distinct_face_detections(faces):
     return distinct
 
 
-def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float, max_samples=6):
+def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float, max_samples=10):
     """Backfill an incoming shot's first unconfirmed samples from that shot.
 
     Detection is intentionally sampled sparsely, so the first observation after
@@ -877,26 +877,84 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             continue
         explicit_cut = bool(frame.get('scene_cut') or scene_change >= 0.38)
 
-        current_faces = complete_faces(frame)
-        if current_faces:
-            continue
-
         confirmed_index = None
         confirmed_faces = None
+        confirmed_score = -1.0
         search_end = min(len(prepared_frames), cut_index + max_samples + 1)
-        for future_index in range(cut_index + 1, search_end):
+        for future_index in range(cut_index, search_end):
             future_point = prepared_points[future_index]
             future_frame = prepared_frames[future_index]
             future_change = float(
                 future_point.get('scene_change', 1.0 if future_frame.get('scene_cut') else 0.0)
             )
-            if future_frame.get('scene_cut') or future_change >= 0.38:
+            if future_index > cut_index and (future_frame.get('scene_cut') or future_change >= 0.38):
                 break
             complete = complete_faces(future_frame)
-            if complete:
-                confirmed_index = future_index
-                confirmed_faces = complete
-                break
+            if not complete:
+                continue
+            # Do not let a one-sample hand/edge false positive declare the
+            # incoming shot ready. Require the same solo face or face pair in
+            # the following sample before using it as the shot-wide anchor.
+            next_index = future_index + 1
+            if next_index >= search_end:
+                continue
+            next_frame = prepared_frames[next_index]
+            next_point = prepared_points[next_index]
+            next_change = float(
+                next_point.get('scene_change', 1.0 if next_frame.get('scene_cut') else 0.0)
+            )
+            if next_frame.get('scene_cut') or next_change >= 0.38:
+                continue
+            next_complete = complete_faces(next_frame)
+            current_pair = strongest_face_pair(complete, source_w)
+            next_pair = strongest_face_pair(next_complete, source_w)
+            if bool(current_pair) != bool(next_pair):
+                continue
+            current_candidates = list(current_pair) if current_pair is not None else complete
+            next_candidates = list(next_pair) if next_pair is not None else next_complete
+            stable_matches = sum(
+                1 for candidate in current_candidates
+                if any(
+                    box_match_score(
+                        (
+                            float(candidate.get('x', 0.0)), float(candidate.get('y', 0.0)),
+                            float(candidate.get('w', 0.0)), float(candidate.get('h', 0.0)),
+                        ),
+                        (
+                            float(other.get('x', 0.0)), float(other.get('y', 0.0)),
+                            float(other.get('w', 0.0)), float(other.get('h', 0.0)),
+                        ),
+                        source_w,
+                        source_h,
+                    ) >= 0.48
+                    for other in next_candidates
+                )
+            )
+            required_matches = 2 if current_pair is not None else 1
+            if stable_matches >= required_matches:
+                stable_faces = list(current_pair) if current_pair is not None else complete
+                geometry_score = sum(
+                    float(candidate.get('w', 0.0)) * float(candidate.get('h', 0.0))
+                    for candidate in stable_faces
+                ) / max(1.0, source_w * source_h)
+                confidence_score = max(
+                    float(candidate.get('active_speaker_confidence', 0.0))
+                    for candidate in stable_faces
+                )
+                # Prefer the strongest stable composition anywhere in the
+                # short incoming-shot window, rather than the first stable
+                # blob. A hand can be detected twice; it should still lose to
+                # the large, high-confidence face acquired 500 ms later.
+                candidate_score = geometry_score * 2.4 + confidence_score
+                if candidate_score > confirmed_score:
+                    confirmed_index = future_index
+                    confirmed_faces = complete
+                    confirmed_score = candidate_score
+                if candidate_score >= 0.72:
+                    # The first clearly face-sized, confident composition is
+                    # the editorial target. Do not scan farther and preframe a
+                    # different participant who happens to appear later.
+                    break
 
         if confirmed_index is None or not confirmed_faces:
             continue
@@ -949,7 +1007,11 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             ),
         )
 
-        for entry_index in range(cut_index, confirmed_index):
+        # Also replace an unstable detection on the cut sample itself. The old
+        # implementation skipped lookahead whenever *any* complete box was
+        # present, which is how a hand/edge false positive became a visible
+        # one-second portrait crop before the real face was acquired.
+        for entry_index in range(cut_index, confirmed_index + 1):
             entry_frame = prepared_frames[entry_index]
             entry_point = prepared_points[entry_index]
             entry_frame['faces'] = [dict(face) for face in lookahead_faces]
@@ -1899,7 +1961,26 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and int(decisions[-1]['primary_track_id']) != int(active_id)
             and speaker_confidence >= 0.18
         ):
-            fixed_hard_cut = True
+            previous_face = decisions[-1].get('primary_face')
+            same_visual_face = bool(
+                previous_face is not None
+                and primary_face is not None
+                and box_match_score(
+                    (
+                        float(previous_face.get('x', 0.0)), float(previous_face.get('y', 0.0)),
+                        float(previous_face.get('w', 0.0)), float(previous_face.get('h', 0.0)),
+                    ),
+                    (
+                        float(primary_face.get('x', 0.0)), float(primary_face.get('y', 0.0)),
+                        float(primary_face.get('w', 0.0)), float(primary_face.get('h', 0.0)),
+                    ),
+                    source_w,
+                    source_h,
+                ) >= 0.42
+            )
+            # Track IDs commonly fragment while the same person gestures or
+            # turns their head. That is detector noise, not an editorial cut.
+            fixed_hard_cut = not same_visual_face
 
         subject_faces = []
         if current_mode == 'grid':
@@ -2017,7 +2098,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             decision.get('render_branch'),
             decision.get('primary_panel'),
             decision.get('primary_track_id') if decision.get('source_layout') else None,
-            decision['subject_stable_id'] if decision['mode'] == 'single' else None,
+            # A detector may assign a new track id to the same face mid-shot.
+            # Meaningful face changes are handled by the spatially-validated
+            # hard-cut logic above; keying segments by raw detector identity
+            # made every track fragment create a new crop anchor and visible
+            # camera jump.
+            None,
             decision['wide_kind'] if decision['mode'] == 'wide_context' else None,
             decision['top_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
             decision['bottom_track_id'] if decision['mode'] in ('stacked', 'wide_context') else None,
@@ -2032,6 +2118,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and segments[-1].get('primaryTrackId') is not None
             and int(decision['primary_track_id']) != int(segments[-1]['primaryTrackId'])
             and float(decision.get('speaker_confidence', 0.0)) >= 0.18
+            and bool(decision.get('hard_cut'))
         )
         force_boundary = bool(decision.get('scene_cut') or decision.get('hard_cut') or identity_switch)
         if not segments or identity_key != segments[-1]['_key'] or force_boundary:
