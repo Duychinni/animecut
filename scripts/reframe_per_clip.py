@@ -1007,11 +1007,33 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             ),
         )
 
+        entry_start_index = cut_index
+        if inferred_layout_change and not explicit_cut:
+            # The face/layout change can be confirmed one or two samples after
+            # the actual edit. Look backward for the first visual discontinuity
+            # in that short detector-latency window and replace from there.
+            # Otherwise a close-up can be rendered briefly with the outgoing
+            # stacked boxes, showing two pieces of the same person.
+            backward_start = max(1, cut_index - 3)
+            discontinuities = [
+                (
+                    previous_index,
+                    float(prepared_points[previous_index].get('scene_change', 0.0)),
+                )
+                for previous_index in range(backward_start, cut_index + 1)
+                if float(prepared_points[previous_index].get('scene_change', 0.0)) >= 0.12
+            ]
+            if discontinuities:
+                entry_start_index = max(
+                    discontinuities,
+                    key=lambda item: (item[1], -item[0]),
+                )[0]
+
         # Also replace an unstable detection on the cut sample itself. The old
         # implementation skipped lookahead whenever *any* complete box was
         # present, which is how a hand/edge false positive became a visible
         # one-second portrait crop before the real face was acquired.
-        for entry_index in range(cut_index, confirmed_index + 1):
+        for entry_index in range(entry_start_index, confirmed_index + 1):
             entry_frame = prepared_frames[entry_index]
             entry_point = prepared_points[entry_index]
             entry_frame['faces'] = [dict(face) for face in lookahead_faces]

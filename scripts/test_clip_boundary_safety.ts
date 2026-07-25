@@ -8,8 +8,8 @@ assert.equal(
     sourceEndSec: 120,
     clipMaxEndSec: 60,
   }),
-  38.8,
-  'a normal sentence ending should retain enough post-roll for its final syllable',
+  38.14,
+  'a normal sentence ending should use only a short final-word release',
 );
 
 assert.equal(
@@ -19,8 +19,8 @@ assert.equal(
     sourceEndSec: 120,
     clipMaxEndSec: 60,
   }),
-  37.55,
-  'touching ASR segments should still retain a minimum codec/timestamp safety tail',
+  37.01,
+  'touching ASR segments must not audibly begin the next sentence',
 );
 
 assert.equal(

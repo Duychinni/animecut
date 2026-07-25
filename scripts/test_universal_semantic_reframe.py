@@ -919,6 +919,56 @@ def test_cut_sample_false_face_is_replaced_by_stable_incoming_face():
     assert all(point.get('cropCenterX') < 1400 for point in points), result
 
 
+def test_duplicate_pair_flash_is_backfilled_to_actual_soft_cut():
+    left = box(180, 170, 340, 430, 1, 0.9)
+    right = box(1390, 160, 350, 440, 2, 0.9)
+    # A close-up is briefly misread as two separate face fragments. This is
+    # the exact bad frame: outgoing stacked geometry applied after the source
+    # has already cut to one person.
+    fragment_left = box(120, 90, 330, 760, 40, 0.42)
+    fragment_right = box(1130, 80, 350, 780, 41, 0.41)
+    solo = box(560, 70, 790, 910, 3, 0.95)
+    samples = [
+        sample(
+            index * 0.25, subject('face', left, 'face:1', 0.9),
+            [left, right], 1, 0.9, 0.5, audio_activity=0.75,
+        )
+        for index in range(8)
+    ]
+    samples.extend([
+        sample(
+            2.0, subject('face', fragment_right, 'face:41', 0.42),
+            [fragment_left, fragment_right], 41, 0.42, 0.04,
+            audio_activity=0.75, scene_change=0.22,
+        ),
+        sample(
+            2.25, subject('face', fragment_right, 'face:41', 0.41),
+            [fragment_left, fragment_right], 41, 0.41, 0.03,
+            audio_activity=0.75,
+        ),
+    ])
+    samples.extend(
+        sample(
+            index * 0.25, subject('face', solo, 'face:3', 0.95),
+            [solo], 3, 0.95, 0.62, audio_activity=0.75,
+        )
+        for index in range(10, 16)
+    )
+    result = timeline(samples, duration=4.0)
+    incoming = [
+        segment for segment in result
+        if segment['start'] < 2.5 and segment['end'] > 2.0
+    ]
+    assert incoming, result
+    assert all(segment['mode'] == 'single' for segment in incoming), result
+    incoming_points = [
+        point for segment in incoming for point in segment.get('points', [])
+        if point['t'] >= 2.0
+    ]
+    assert incoming_points and incoming_points[0]['t'] == 2.0, result
+    assert all(point.get('primaryTrackId') == 3 for point in incoming_points), result
+
+
 def test_same_face_track_fragment_does_not_create_camera_jump():
     first = box(570, 75, 780, 900, 7, 0.95)
     fragmented = box(610, 85, 760, 890, 17, 0.92)

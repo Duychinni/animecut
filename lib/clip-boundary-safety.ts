@@ -3,8 +3,8 @@ export type TimedTranscriptSegment = {
   end?: number;
 };
 
-const MIN_END_SAFETY_TAIL_SEC = 0.55;
-const TARGET_END_SAFETY_TAIL_SEC = 0.85;
+const FINAL_WORD_RELEASE_SEC = 0.14;
+const TARGET_END_SAFETY_TAIL_SEC = 0.32;
 
 export function isTranscriptEndingFragment(text: string) {
   const normalized = String(text ?? '')
@@ -29,10 +29,9 @@ function finiteTime(value: unknown, fallback = 0) {
 
 /**
  * Transcript end timestamps describe recognized speech, not a safe edit point.
- * Keep a short amount of audio/video after the final recognized word so the
- * last syllable and sentence cadence cannot be clipped by timestamp or codec
- * rounding. When another transcript segment follows, avoid consuming more than
- * a tiny lead-in from that next thought.
+ * Keep only a short codec/final-syllable release after the recognized ending.
+ * Never use a minimum tail that can consume the opening words of the next
+ * sentence when transcript segments touch.
  */
 export function addSpeechEndSafetyTail(params: {
   endSec: number;
@@ -56,12 +55,13 @@ export function addSpeechEndSafetyTail(params: {
   const targetEnd = Math.min(hardMax, endSec + TARGET_END_SAFETY_TAIL_SEC);
   if (!Number.isFinite(nextSegment)) return targetEnd;
 
-  // Prefer ending in the available pause. If transcript timestamps touch or
-  // overlap, retain a small protected tail because ASR boundaries commonly
-  // underestimate the audible end of the last phoneme.
-  const pauseSafeEnd = Math.max(
-    endSec + MIN_END_SAFETY_TAIL_SEC,
-    Math.min(targetEnd, nextSegment),
+  // End inside the pause when one exists. If the next sentence starts
+  // immediately, allow only final-word release/codec rounding—not enough
+  // post-roll to audibly begin the next thought.
+  const sentenceSafeEnd = Math.min(
+    targetEnd,
+    Math.max(endSec, nextSegment - 0.04),
+    endSec + FINAL_WORD_RELEASE_SEC,
   );
-  return Math.min(hardMax, pauseSafeEnd);
+  return Math.min(hardMax, sentenceSafeEnd);
 }
