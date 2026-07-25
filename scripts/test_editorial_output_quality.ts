@@ -102,4 +102,24 @@ const sourcePhrasePlan = buildCandidateEditorialPlan({
 assert.equal(/^Leaves Another Message\b/i.test(sourcePhrasePlan.title), false);
 assert.equal(isEditorialCopyGrounded(sourcePhrasePlan.title, 'Jimmy asked when he first started posting videos. MrBeast said he began when he was eleven.', 'MrBeast Jimmy'), true);
 
+const comedyPlan = buildCandidateEditorialPlan({
+  transcriptText: 'Theo set up the story about the zoo. Bobby misunderstood him, escalated the premise, and delivered the punchline.',
+  raw: {
+    content_genre: 'COMEDY',
+    narrative_arc: 'Theo establishes the zoo premise, Bobby misreads it, and the misunderstanding becomes the punchline.',
+    required_context: 'Keep Theo’s zoo premise before Bobby’s punchline.',
+    context_dependency_resolved: true,
+  },
+});
+assert.equal(comedyPlan.content_genre, 'COMEDY');
+assert.match(comedyPlan.narrative_arc, /premise/i);
+assert.match(comedyPlan.required_context, /Theo/i);
+assert.equal(comedyPlan.context_dependency_resolved, true);
+
+const unknownGenrePlan = buildCandidateEditorialPlan({
+  transcriptText: transcript,
+  raw: { content_genre: 'UNSUPPORTED_GENRE' },
+});
+assert.equal(unknownGenrePlan.content_genre, 'UNKNOWN');
+
 console.log('PASS editorial output quality');

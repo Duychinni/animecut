@@ -1119,6 +1119,8 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         const payoffStrong = hasStrongPayoff(closingLine);
         const cleanEnding = !endsWithFiller(closingLine) && !isIncompleteTrailingPhrase(closingLine);
         const completeEnding = cleanEnding && (cleaned.end_complete || !punctuationReliable || localAnalysisCandidate);
+        const unresolvedContextDependency = c.context_dependency_resolved === false
+          || String(c.reason_rejected ?? '').trim() === 'unresolved_context_dependency';
         const strictQualityPass = startsLikeNaturalBoundary(openingLine) && completeEnding && (payoffStrong || !punctuationReliable);
         const boundaryQualityPass = localAnalysisCandidate
           ? Boolean(startsLikeNaturalBoundary(openingLine) && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
@@ -1187,7 +1189,9 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           score_label: scoreResult.label,
           score_confidence: scoreResult.confidence,
           score_reasons: scoreResult.score_reasons,
-          reject_reason: packagingExclusion
+          reject_reason: unresolvedContextDependency
+              ? 'unresolved_context_dependency'
+              : packagingExclusion
               ? packagingExclusion
               : !editorialCopyPass
                 ? 'invalid_or_ungrounded_editorial_copy'
@@ -1209,6 +1213,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       });
 
     const scoredCandidates = allScoredCandidates
+      .filter((c: RankedCandidate) => c.reject_reason !== 'unresolved_context_dependency')
       .filter((c: RankedCandidate) => c.reject_reason !== 'intro_or_cold_open' && c.reject_reason !== 'outro_or_end_card')
       .filter((c: RankedCandidate) => c.self_contained_confidence >= SELF_CONTAINED_MIN_CONFIDENCE)
       .filter((c: RankedCandidate) => c.duration_seconds >= analysisMinClipSec)
@@ -1224,6 +1229,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     if (selected.length < minimumFinalCount) {
       const fallbackPool = distinctCandidates(allScoredCandidates, segments)
+        .filter((c) => c.reject_reason !== 'unresolved_context_dependency')
         .filter((c) => c.reject_reason !== 'intro_or_cold_open' && c.reject_reason !== 'outro_or_end_card')
         .filter((c) => !selected.some((picked) => isDuplicateCandidate(c, picked, segments)))
         .filter((c) => c.duration_seconds >= analysisMinClipSec)
@@ -1249,6 +1255,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       // narrower duplicate definition and fills uncovered time buckets first.
       const occupiedBuckets = new Set(selected.map((candidate) => coverageBucket(candidate.start_sec, transcriptMaxEnd, minimumFinalCount)));
       const coveragePool = [...allScoredCandidates]
+        .filter((c) => c.reject_reason !== 'unresolved_context_dependency')
         .filter((c) => !selected.some((picked) => isCoverageDuplicate(c, picked)))
         .filter((c) => c.duration_seconds >= Math.max(15, analysisMinClipSec - 5))
         .filter((c) => countTranscriptWordsInRange(segments, c.start_sec, c.end_sec) >= Math.max(24, fallbackMinimumWordCount - 8))

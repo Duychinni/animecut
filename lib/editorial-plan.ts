@@ -22,6 +22,23 @@ export const EditorialLayoutSchema = z.enum([
   'SAFE_ORIGINAL',
 ]);
 
+export const EditorialGenreSchema = z.enum([
+  'COMEDY',
+  'MOTIVATION',
+  'EDUCATION',
+  'DEBATE',
+  'STORYTELLING',
+  'INTERVIEW',
+  'NEWS_COMMENTARY',
+  'ADVICE',
+  'SPORTS',
+  'BUSINESS',
+  'HEALTH_WELLNESS',
+  'TRUE_CRIME_MYSTERY',
+  'MIXED',
+  'UNKNOWN',
+]);
+
 export const EditorialHookOptionSchema = z.object({
   text: z.string().min(3).max(80),
   score: z.number().min(0).max(100),
@@ -46,6 +63,10 @@ export const CandidateEditorialPlanSchema = z.object({
   title: z.string().min(3).max(100),
   hook_options: z.array(EditorialHookOptionSchema).min(5),
   selected_hook: z.string().min(3).max(80),
+  content_genre: EditorialGenreSchema,
+  narrative_arc: z.string().min(3).max(280),
+  required_context: z.string().max(280),
+  context_dependency_resolved: z.boolean(),
   topic: z.string().min(2).max(120),
   moment_type: z.string().min(2).max(80),
   virality_reason: z.string().min(3).max(280),
@@ -455,6 +476,7 @@ export function buildCandidateEditorialPlan(params: {
   }));
   const requestedSceneType = EditorialSceneTypeSchema.safeParse(raw.scene_type);
   const requestedLayout = EditorialLayoutSchema.safeParse(raw.recommended_layout);
+  const requestedGenre = EditorialGenreSchema.safeParse(raw.content_genre);
   const entities = entitiesForWindow(params.transcriptText, params.globalContext ?? params.transcriptText);
 
   return CandidateEditorialPlanSchema.parse({
@@ -476,6 +498,10 @@ export function buildCandidateEditorialPlan(params: {
     title,
     hook_options: hookOptions,
     selected_hook: hookOptions[0].text,
+    content_genre: requestedGenre.success ? requestedGenre.data : 'UNKNOWN',
+    narrative_arc: clean(raw.narrative_arc) || `${generated.story} ${generated.conflict}`.slice(0, 280),
+    required_context: clean(raw.required_context),
+    context_dependency_resolved: raw.context_dependency_resolved !== false,
     topic: clean(raw.topic) || generated.topic,
     moment_type: clean(raw.moment_type) || generated.momentType,
     virality_reason: clean(raw.virality_reason) || `${generated.conflict} The segment has a clear subject, disagreement, and reason to keep watching.`,

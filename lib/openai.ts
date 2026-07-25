@@ -152,9 +152,34 @@ DISCOVER THESE MOMENT TYPES:
 - advice
 - actionable tips
 
+GENRE-AWARE EDITORIAL CONSTRUCTION:
+First classify each moment as COMEDY, MOTIVATION, EDUCATION, DEBATE, STORYTELLING, INTERVIEW, NEWS_COMMENTARY, ADVICE, SPORTS, BUSINESS, HEALTH_WELLNESS, TRUE_CRIME_MYSTERY, MIXED, or UNKNOWN. Then preserve the arc that makes that genre work:
+- COMEDY: premise/setup -> necessary context -> escalation or misdirection -> punchline -> reaction/final tag when it strengthens the laugh. A punchline without the premise is not a valid clip.
+- MOTIVATION: struggle/problem -> emotional stakes -> realization/reframe -> strongest insight -> actionable or emotionally complete conclusion.
+- EDUCATION: question/problem -> essential explanation -> example/evidence -> clear takeaway. Do not begin with an unexplained answer.
+- DEBATE: claim -> challenge/counterpoint -> response -> decisive conclusion or honest unresolved tension. Do not isolate a rebuttal without the claim it answers.
+- STORYTELLING: orientation (who/where/what) -> inciting event -> escalation -> reveal/outcome -> reflection when useful.
+- INTERVIEW: question or conversational premise -> answer -> revealing detail -> follow-up/reaction when it changes the meaning. Never open on an answer whose question is required.
+- NEWS_COMMENTARY: event/claim -> verified context contained in the transcript -> analysis -> implication/conclusion. Do not turn speculation into fact.
+- ADVICE: recognizable problem -> recommendation -> reason/mechanism -> concrete example or action.
+- SPORTS: matchup/situation -> stakes -> analysis/evidence -> prediction/result/conclusion.
+- BUSINESS: problem/opportunity -> decision/strategy -> evidence/result -> transferable lesson.
+- HEALTH_WELLNESS: symptom/problem -> transcript-supported explanation -> recommendation/caveat -> practical takeaway. Preserve uncertainty and never strengthen medical claims.
+- TRUE_CRIME_MYSTERY: known setup -> key evidence -> contradiction/reveal -> implication, while preserving uncertainty and avoiding unsupported accusation.
+- MIXED/UNKNOWN: use the dominant local arc and require a clear premise, development, payoff, and natural ending.
+
+CONTEXT DEPENDENCY CHECK:
+- Read 20-30 seconds before and 5-10 seconds after a promising moment whenever those transcript segments are available.
+- If a pronoun, callback, answer, reaction, punchline, statistic, or conclusion depends on earlier dialogue, expand backward to the nearest concise premise or speaker turn that resolves it.
+- Include only the minimum setup needed for comprehension; essential setup is not filler.
+- Extend forward for the payoff, reaction, final tag, takeaway, or completed answer when it materially strengthens the moment.
+- Set context_dependency_resolved=false and reject the candidate when the required setup/payoff is outside the available window or cannot fit the maximum duration.
+- Prefer fewer complete, strong clips over more contextless fragments.
+
 CANDIDATE GENERATION RULES:
 - Use segment windows, not sentence-level snippets.
 - For each potential hook, start 3-8 seconds before the hook when helpful for context.
+- For comedy, motivation, stories, debates, and interview answers, start up to 20 seconds earlier when that earlier turn is necessary to understand the payoff.
 - End 5-15 seconds after payoff when needed for a clean conclusion.
 - Prefer complete thought boundaries.
 - End on a completed sentence, punchline, answer, or clear speaker statement. Never end mid-sentence or mid-thought.
@@ -291,6 +316,10 @@ Return ONLY valid JSON in this exact shape:
       "hook_options": [{ "text": string, "score": number }],
       "hook_supporting_quote": string,
       "hook_selection_reason": string,
+      "content_genre": "COMEDY" | "MOTIVATION" | "EDUCATION" | "DEBATE" | "STORYTELLING" | "INTERVIEW" | "NEWS_COMMENTARY" | "ADVICE" | "SPORTS" | "BUSINESS" | "HEALTH_WELLNESS" | "TRUE_CRIME_MYSTERY" | "MIXED" | "UNKNOWN",
+      "narrative_arc": string,
+      "required_context": string,
+      "context_dependency_resolved": boolean,
       "topic": string,
       "moment_type": string,
       "virality_reason": string,
@@ -326,6 +355,71 @@ function buildTimeline(segments: Array<{ start?: number; end?: number; text?: st
       return `[${start.toFixed(1)}-${end.toFixed(1)}] ${(s.text ?? '').trim()}`;
     })
     .join('\n');
+}
+
+function buildBoundaryReviewPrompt(totalSeconds: number) {
+  const policy = getClipPolicy(totalSeconds);
+  return `You are the final editorial boundary reviewer for short-form clips.
+
+Review every proposed candidate against the timestamped transcript. This is a boundary and context pass, not a request to invent new moments.
+
+For each candidate:
+1. Classify content_genre and identify its complete narrative_arc.
+2. Inspect the preceding 20-30 seconds and following 5-10 seconds available in the transcript.
+3. Expand adjusted_start backward to include the minimum required premise, question, claim, struggle, orientation, or problem.
+4. Expand adjusted_end forward to include the punchline, reaction/tag, insight, takeaway, response, reveal, result, or natural ending.
+5. Remove expendable filler, but never label essential setup as filler.
+6. Set required_context to a concise description of what had to be preserved.
+7. Set context_dependency_resolved=true only when a new viewer can understand the opening, references, and payoff without the source video.
+8. Reject unresolved candidates by setting reason_rejected to "unresolved_context_dependency".
+
+Genre arcs:
+- COMEDY: premise/setup -> context -> escalation/misdirection -> punchline -> useful reaction/tag.
+- MOTIVATION: struggle/problem -> stakes -> realization/reframe -> insight -> conclusion/action.
+- EDUCATION: question/problem -> explanation -> example/evidence -> takeaway.
+- DEBATE: claim -> challenge -> response -> conclusion or meaningful unresolved tension.
+- STORYTELLING: orientation -> inciting event -> escalation -> outcome/reveal -> optional reflection.
+- INTERVIEW: question/premise -> answer -> revealing detail -> meaningful follow-up/reaction.
+- NEWS_COMMENTARY: event/claim -> transcript-supported context -> analysis -> implication.
+- ADVICE: problem -> recommendation -> reason -> concrete action/example.
+- SPORTS: situation/matchup -> stakes -> analysis/evidence -> prediction/result.
+- BUSINESS: problem/opportunity -> decision/strategy -> evidence/result -> lesson.
+- HEALTH_WELLNESS: problem -> transcript-supported explanation -> caveat/recommendation -> practical takeaway.
+- TRUE_CRIME_MYSTERY: known setup -> evidence -> contradiction/reveal -> carefully qualified implication.
+- MIXED/UNKNOWN: premise -> development -> payoff -> natural ending.
+
+Hard rules:
+- Never return a punchline without its premise, an answer without its needed question, a rebuttal without its claim, a motivational lesson without its struggle/reframe, or a callback/pronoun with no understandable referent.
+- Do not cross into sponsor reads, show packaging, unrelated topics, or another story merely to increase duration.
+- Keep clips between ${policy.minSec} and ${policy.maxSec} seconds unless a shorter clip is exceptionally complete.
+- Preserve every existing output key and return the same JSON shape: {"candidates":[...]}.
+- Return JSON only.`;
+}
+
+async function reviewCandidateBoundaries(params: {
+  candidates: unknown[];
+  timeline: string;
+  totalSeconds: number;
+}) {
+  if (!params.candidates.length) return params.candidates;
+  try {
+    const response = await createAnalysisResponse({
+      model: 'gpt-4.1-mini',
+      input: [
+        { role: 'system', content: buildBoundaryReviewPrompt(params.totalSeconds) },
+        {
+          role: 'user',
+          content: `TIMESTAMPED TRANSCRIPT:\n${params.timeline}\n\nPROPOSED CANDIDATES:\n${JSON.stringify({ candidates: params.candidates })}`,
+        },
+      ],
+    });
+    const parsed = await parseJsonWithRepair(response.output_text);
+    return Array.isArray(parsed?.candidates) ? parsed.candidates : params.candidates;
+  } catch (error) {
+    // A transient second-pass failure should not discard a healthy first pass.
+    console.warn('[analysis] editorial boundary review unavailable; preserving initial candidates.', error);
+    return params.candidates;
+  }
 }
 
 function chunkSegments(
@@ -395,7 +489,12 @@ export async function analyzeClipCandidates(
           });
 
           const parsed = await parseJsonWithRepair(res.output_text);
-          return Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+          const initialCandidates = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+          return reviewCandidateBoundaries({
+            candidates: initialCandidates,
+            timeline,
+            totalSeconds,
+          });
         }));
         allCandidates.push(...chunkCandidates.flat());
       } else {
