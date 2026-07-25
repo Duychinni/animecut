@@ -880,6 +880,55 @@ def test_solo_to_split_cut_uses_confirmed_pair_from_first_cut_sample():
     assert all(segment.get('topBox') and segment.get('bottomBox') for segment in incoming), result
 
 
+def test_atomic_transition_never_emits_partial_pair_or_search_frame():
+    solo = box(570, 75, 780, 900, 1, 0.95)
+    left = box(180, 170, 340, 430, 2, 0.9)
+    right = box(1390, 160, 350, 440, 3, 0.9)
+    partial = box(1510, 240, 260, 460, 90, 0.34)
+    samples = [
+        sample(
+            index * 0.125,
+            subject('face', solo, 'face:1', 0.95),
+            [solo], 1, 0.95, 0.62, audio_activity=0.75,
+        )
+        for index in range(16)
+    ]
+    samples.extend([
+        sample(
+            2.0, subject('face', partial, 'face:90', 0.34),
+            [partial], 90, 0.34, 0.04, audio_activity=0.75,
+            scene_change=0.48,
+        ),
+        sample(
+            2.125, subject('face', left, 'face:2', 0.9),
+            [left], 2, 0.9, 0.40, audio_activity=0.75,
+        ),
+    ])
+    samples.extend(
+        sample(
+            index * 0.125,
+            subject('face', left, 'face:2', 0.9),
+            [left, right], 2, 0.9, 0.55, audio_activity=0.75,
+        )
+        for index in range(18, 32)
+    )
+    result = timeline(samples, duration=4.0)
+    incoming = [segment for segment in result if segment['end'] > 2.0]
+    assert incoming, result
+    assert all(segment['mode'] == 'stacked' for segment in incoming), result
+    assert all(segment.get('topBox') and segment.get('bottomBox') for segment in incoming), result
+    assert all(
+        segment.get('renderBranch') not in ('safe_full_frame', 'single_subject_uncertain')
+        for segment in incoming
+    ), result
+    incoming_points = [
+        point for segment in incoming for point in segment.get('points', [])
+        if point['t'] >= 2.0
+    ]
+    assert incoming_points and incoming_points[0]['t'] == 2.0, result
+    assert all(point.get('primaryTrackId') in (2, 3) for point in incoming_points), result
+
+
 def test_cut_sample_false_face_is_replaced_by_stable_incoming_face():
     left = box(180, 170, 340, 430, 1, 0.9)
     right = box(1390, 160, 350, 440, 2, 0.9)

@@ -34,7 +34,7 @@ STACK_REACTION_WINDOW_SEC = 3.0
 STACK_MIN_RAPID_SWITCHES = 2
 STACK_SCORE_MARGIN = 0.15
 STACK_LAYOUT_ENABLED = True
-SCENE_CUT_LOOKAHEAD_SEC = 0.25
+SCENE_CUT_LOOKAHEAD_SEC = 0.125
 WIDE_FACE_HEIGHT_RATIO = 0.22
 WIDE_FACE_WIDTH_RATIO = 0.105
 FIXED_LAYOUT_MODE = 'FIXED_TWO_REGION_CONVERSATION'
@@ -2684,14 +2684,15 @@ def main():
     analysis_end_sec = min(source_duration, requested_analysis_end) if source_duration > 0.0 else requested_analysis_end
     analysis_end_sec = max(end_sec, analysis_end_sec)
     analysis_duration = max(0.01, analysis_end_sec - analysis_start_sec)
-    # Four observations per second is frequent enough to associate speech with
-    # mouth motion and still bounded for long clips.
+    # Eight observations per second keeps solo/stacked hard cuts within one
+    # 125 ms sample. Offline lookahead then replaces every partial transition
+    # observation with the next complete verified composition.
     try:
         requested_analysis_fps = float(sys.argv[4]) if len(sys.argv) > 4 else float(
-            os.environ.get('SMART_REFRAME_ANALYSIS_FPS', '4')
+            os.environ.get('SMART_REFRAME_ANALYSIS_FPS', '8')
         )
     except (TypeError, ValueError):
-        requested_analysis_fps = 4.0
+        requested_analysis_fps = 8.0
     analysis_fps = clamp(requested_analysis_fps, 1.0, 8.0)
     sample_interval = 1.0 / analysis_fps
     sample_count = max(2, int(math.ceil(analysis_duration * analysis_fps)) + 1)
