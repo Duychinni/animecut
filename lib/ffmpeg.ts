@@ -1209,6 +1209,38 @@ async function maybeBuildSmartCropExpressionUncached(opts: RenderOpts): Promise<
     let jsonSaved = false;
 
     if (raw.meta?.visual_clip_usable === false) {
+      const sourceW = Number(raw.source_w ?? 0);
+      const sourceH = Number(raw.source_h ?? 0);
+      const clipDuration = Math.max(0.01, opts.endSec - opts.startSec);
+      if (sourceW > 0 && sourceH > 0) {
+        // A subject detector can legitimately find no safe portrait crop in
+        // screen recordings, product demos, slide decks, or edited B-roll.
+        // Failing the entire reel here caused healthy long-form projects to
+        // collapse to whichever single candidate happened to contain a face.
+        // Preserve the complete source frame over a blurred vertical fill
+        // instead. This is always composition-safe and retains all on-screen
+        // context without inventing a center crop or chasing incidental motion.
+        console.warn('[smart-reframe-safe-original]', {
+          clipId: opts.debugClipId ?? null,
+          candidateId: opts.debugCandidateId ?? null,
+          reason: raw.meta.visual_reject_reason || 'unsafe_vertical_composition',
+          sourceW,
+          sourceH,
+        });
+        return {
+          sourceW,
+          sourceH,
+          timeline: [{
+            start: 0,
+            end: clipDuration,
+            mode: 'wide_context',
+            wideKind: 'safe_wide',
+            editorialLayout: 'SAFE_ORIGINAL',
+            editorialReason: `Detector-safe full-frame fallback: ${raw.meta.visual_reject_reason || 'unsafe_vertical_composition'}`,
+            points: [],
+          }],
+        };
+      }
       throw new Error(
         `VISUAL_CLIP_UNUSABLE:${raw.meta.visual_reject_reason || 'unsafe_vertical_composition'}`,
       );

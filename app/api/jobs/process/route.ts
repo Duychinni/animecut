@@ -8,7 +8,7 @@ import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
 import { generateHookText } from '@/lib/hook-text';
-import { getTargetClipCount } from '@/lib/clip-policy';
+import { getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { resolveDefaultReelCaptionAccent, resolveDefaultReelHookPlacement } from '@/lib/reel-caption-style';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
@@ -57,6 +57,10 @@ async function maybeFinalizeProject(projectId: string) {
   const totalSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
   const targetCount = Math.max(1, getTargetClipCount(totalSeconds));
   const availableCandidates = Number(candidateCount ?? 0);
+  const requiredPlayableCount = Math.max(1, Math.min(
+    availableCandidates || getRequiredClipCount(totalSeconds),
+    getRequiredClipCount(totalSeconds),
+  ));
   const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
   const allCreatedExportsSettled = hasSettledPlayableExports({
     totalExports: totalCount,
@@ -64,6 +68,7 @@ async function maybeFinalizeProject(projectId: string) {
     failedExports: failedCount,
     activeExports: activeCount,
     activeJobs: Number(activeJobs ?? 0),
+    requiredPlayableExports: requiredPlayableCount,
   });
 
   if ((doneCount >= targetCount && activeCount === 0) || allCreatedExportsSettled) {

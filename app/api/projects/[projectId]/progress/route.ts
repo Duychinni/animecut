@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getTargetClipCount } from '@/lib/clip-policy';
+import { getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
 import { getPipelineErrorInfo, getPublicPipelineError } from '@/lib/pipeline-errors';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -422,6 +422,10 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
     const desiredTarget = getTargetClipCount(totalSeconds);
     const targetCount = Math.max(1, desiredTarget);
+    const requiredPlayableCount = Math.max(1, Math.min(
+      analyzedCandidates || getRequiredClipCount(totalSeconds),
+      getRequiredClipCount(totalSeconds),
+    ));
 
     const now = Date.now();
     const createdAtMs = project.created_at ? new Date(project.created_at).getTime() : now;
@@ -451,13 +455,16 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
     const hasTargetCoverage = doneExports >= targetCount;
-    const frozenCompletedProject = projectMarkedCompleted && doneExports > 0;
+    // Preserve genuinely completed projects, but reopen a false completion
+    // where nearly every expected export failed and only one reel survived.
+    const frozenCompletedProject = projectMarkedCompleted && doneExports >= requiredPlayableCount;
     const allCreatedExportsSettled = hasSettledPlayableExports({
       totalExports: rows.length,
       doneExports,
       failedExports,
       activeExports,
       activeJobs: Number(activeJobCount ?? 0),
+      requiredPlayableExports: requiredPlayableCount,
     });
     const hasSettledPlayableOutput = (activeExports === 0 && hasTargetCoverage) || allCreatedExportsSettled;
     // Explicit completion is a durable latch for saved projects. The target

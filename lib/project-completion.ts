@@ -4,16 +4,21 @@ type SettledExportCompletionInput = {
   failedExports: number;
   activeExports: number;
   activeJobs: number;
+  requiredPlayableExports?: number;
 };
 
 export function hasSettledPlayableExports(input: SettledExportCompletionInput) {
   const { totalExports, doneExports, failedExports, activeExports, activeJobs } = input;
+  const requiredPlayableExports = Math.max(1, Math.min(
+    totalExports,
+    Math.floor(input.requiredPlayableExports ?? 1),
+  ));
 
-  // Unsafe candidates intentionally fail closed. Once every attempt is
-  // terminal, those rejected exports must not leave a project looking active
-  // forever when at least one safe reel is already playable.
+  // Terminal failures may coexist with a healthy result, but one lucky render
+  // must never make a long-form project appear successfully completed after
+  // the rest of its expected reels failed.
   return totalExports > 0
-    && doneExports > 0
+    && doneExports >= requiredPlayableExports
     && activeExports === 0
     && activeJobs === 0
     && doneExports + failedExports >= totalExports;

@@ -7,7 +7,17 @@ assert.equal(hasSettledPlayableExports({
   failedExports: 3,
   activeExports: 0,
   activeJobs: 0,
+  requiredPlayableExports: 7,
 }), true, 'safe completed reels plus terminal rejected reels should finish the project');
+
+assert.equal(hasSettledPlayableExports({
+  totalExports: 12,
+  doneExports: 1,
+  failedExports: 11,
+  activeExports: 0,
+  activeJobs: 0,
+  requiredPlayableExports: 12,
+}), false, 'one successful reel must not complete a long project after the rest fail');
 
 assert.equal(hasSettledPlayableExports({
   totalExports: 10,
