@@ -340,12 +340,12 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-i', inputPath,
     '-map', '0:v:0',
     '-map', '0:a:0?',
-    '-vf', `scale=${constrained ? '360:640' : '1080:1920'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
+    '-vf', `scale=${constrained ? '360:640' : '540:960'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || (constrained ? 'veryfast' : 'medium'),
-    '-crf', constrained ? '18' : '10',
-    '-maxrate', constrained ? '2400k' : '12000k',
-    '-bufsize', constrained ? '4800k' : '24000k',
+    '-crf', constrained ? '20' : '16',
+    '-maxrate', constrained ? '1600k' : '4000k',
+    '-bufsize', constrained ? '3200k' : '8000k',
     '-pix_fmt', 'yuv420p',
     '-g', constrained ? '48' : '60',
     '-keyint_min', constrained ? '24' : '30',
@@ -375,20 +375,18 @@ export async function renderAdaptivePlaybackPreviews(
     [
       '[0:v]split=2[v360src][v540src]',
       '[v360src]scale=360:640:flags=lanczos+accurate_rnd+full_chroma_int,fps=24[v360]',
-      // Keep the high-quality dashboard rendition at the native export size.
-      // The hook is burned into the 1080x1920 master; another downscale made
-      // its heavy letterforms visibly soft during playback.
-      // database field keeps its legacy preview_540 name for compatibility,
-      // even though this rendition is now full-resolution.
-      '[v540src]scale=1080:1920:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
+      // Dashboard cards are only about 230 CSS pixels wide. A sharp 540x960
+      // rendition is visually clean there and starts far faster than making
+      // every card stream the full 1080x1920 export.
+      '[v540src]scale=540:960:flags=lanczos+accurate_rnd+full_chroma_int,fps=30[v540]',
     ].join(';'),
     '-map', '[v360]',
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
-    '-crf', '18',
-    '-maxrate', '2400k',
-    '-bufsize', '4800k',
+    '-crf', '20',
+    '-maxrate', '1600k',
+    '-bufsize', '3200k',
     '-pix_fmt', 'yuv420p',
     '-g', '48',
     '-keyint_min', '24',
@@ -402,9 +400,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'medium',
-    '-crf', '10',
-    '-maxrate', '12000k',
-    '-bufsize', '24000k',
+    '-crf', '16',
+    '-maxrate', '4000k',
+    '-bufsize', '8000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',

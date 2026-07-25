@@ -1028,13 +1028,11 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     hookTextEnabled,
     hookText,
     hookPlacement: resolveDefaultReelHookPlacement(bundle.clip_candidate_id),
-    motionTracking: options?.motion_tracking === true,
-    // Compatibility retries may simplify captions/overlays, but they must
-    // never bypass subject-aware framing. The previous retry path forced a
-    // centered 9:16 crop, which could publish a desk, divider, or partial
-    // person after the primary smart render correctly failed closed.
-    autoReframe: useEditSettings ? editSettings.framing_mode === 'auto' : options?.auto_reframe !== false,
-    reframeMode: options?.reframe_mode ?? getFallbackReframeMode(),
+    // Temporary comparison release: keep every crop static so motion-detected
+    // face following can be evaluated against a completely still camera.
+    motionTracking: false,
+    autoReframe: false,
+    reframeMode: 'off' as const,
     reframePreset: options?.reframe_preset ?? 'auto',
     // Even a compatibility render must fill 9:16. The old fit mode produced
     // black letterbox bars around horizontal interview footage.

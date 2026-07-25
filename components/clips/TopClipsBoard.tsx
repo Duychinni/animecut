@@ -558,7 +558,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function drainPreviewWarmQueue() {
     if (shareClip) return;
-    const maxConcurrentPreviewLoads = 5;
+    // Do not let a grid of visible cards compete with the reel the user
+    // actually presses. Two small preview range requests keep nearby cards
+    // warm without saturating the connection.
+    const maxConcurrentPreviewLoads = 2;
     while (
       previewWarmActiveRef.current.size < maxConcurrentPreviewLoads &&
       previewWarmQueueRef.current.length > 0
