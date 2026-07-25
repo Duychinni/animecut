@@ -1790,25 +1790,14 @@ export function resolveFaceAwareHookPlacement(
   timeline: ReframeTimelineSegment[],
   _hasSplitStackLayout = false,
 ) {
-  const openingPoints = timeline
-    .filter((segment) => segment.start < 4.5)
-    .flatMap((segment) => segment.points)
-    .filter((point) => point.t <= 4.5 && point.faceBox);
-  if (!openingPoints.length) return requested ?? 'top';
+  const openingSegments = timeline.filter((segment) => segment.start < 4.5 && segment.end > 0);
 
-  // The hook card occupies roughly the upper 20% of a reel. Move it only when
-  // a detected face actually intersects that band in the rendered portrait
-  // crop. Merely having a face (or a split layout) is not a reason to center
-  // every hook.
-  const overlapsTopCard = openingPoints.some((point) => {
-    const face = point.faceBox!;
-    const cropTop = point.cropY;
-    const cropHeight = Math.max(1, point.cropH);
-    const faceTop = (face.y - cropTop) / cropHeight;
-    const faceBottom = (face.y + face.h - cropTop) / cropHeight;
-    return faceBottom >= 0.035 && faceTop <= 0.22;
-  });
-  return overlapsTopCard ? 'middle' : (requested ?? 'top');
+  // A verified stacked opening has a person in both halves. Its safe text
+  // region is the divider, so place the hook there. Solo shots keep the hook
+  // at the top; moving it to the middle puts the card directly over the
+  // speaker's face, as happened in the MrBeast render.
+  if (openingSegments.some((segment) => segment.mode === 'stacked')) return 'middle';
+  return requested === 'middle' ? 'top' : (requested ?? 'top');
 }
 
 function buildBaseVideoFilters(

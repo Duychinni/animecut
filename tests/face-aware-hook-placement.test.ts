@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeReframeTimeline, resolveFaceAwareHookPlacement } from '../lib/ffmpeg';
 
-test('does not center hooks merely because a split-stack layout exists', () => {
+test('does not center hooks from a split hint without a verified stacked timeline', () => {
   assert.equal(resolveFaceAwareHookPlacement('top', [], true), 'top');
 });
 
@@ -10,7 +10,7 @@ test('keeps top placement for openings without a detected face', () => {
   assert.equal(resolveFaceAwareHookPlacement('top', [], false), 'top');
 });
 
-test('moves hooks to the middle when an opening timeline face is detected', () => {
+test('keeps solo hooks at the top even when the opening face is high in frame', () => {
   const timeline = [{
     start: 0,
     end: 5,
@@ -25,7 +25,7 @@ test('moves hooks to the middle when an opening timeline face is detected', () =
     }],
   }];
 
-  assert.equal(resolveFaceAwareHookPlacement('top', timeline, false), 'middle');
+  assert.equal(resolveFaceAwareHookPlacement('top', timeline, false), 'top');
 });
 
 test('keeps hooks at the top when an opening face is below the hook card', () => {
@@ -46,7 +46,7 @@ test('keeps hooks at the top when an opening face is below the hook card', () =>
   assert.equal(resolveFaceAwareHookPlacement('top', timeline, true), 'top');
 });
 
-test('moves hooks using face metadata from the serialized Python timeline', () => {
+test('keeps serialized solo-face timelines at the top', () => {
   const timeline = normalizeReframeTimeline([{
     start: 0,
     end: 5,
@@ -62,5 +62,22 @@ test('moves hooks using face metadata from the serialized Python timeline', () =
   }], 5);
 
   assert.equal(timeline[0]?.points[0]?.faceBox?.w, 300);
-  assert.equal(resolveFaceAwareHookPlacement('top', timeline, false), 'middle');
+  assert.equal(resolveFaceAwareHookPlacement('top', timeline, false), 'top');
+});
+
+test('places hooks on the divider for a verified stacked opening', () => {
+  const timeline = [{
+    start: 0,
+    end: 5,
+    mode: 'stacked' as const,
+    points: [{
+      t: 0,
+      cropX: 0,
+      cropY: 0,
+      cropW: 1080,
+      cropH: 1920,
+    }],
+  }];
+
+  assert.equal(resolveFaceAwareHookPlacement('top', timeline, true), 'middle');
 });

@@ -390,7 +390,9 @@ Genre arcs:
 
 Hard rules:
 - Never return a punchline without its premise, an answer without its needed question, a rebuttal without its claim, a motivational lesson without its struggle/reframe, or a callback/pronoun with no understandable referent.
+- Prefer the shortest complete version, but allow a clip to run as long as 90 seconds when that time is genuinely required for the full setup, development, and payoff. For comedy, preserving the premise and escalation is more important than forcing a short duration.
 - Do not cross into sponsor reads, show packaging, unrelated topics, or another story merely to increase duration.
+- Do not approve multiple candidates built from the same joke, story, example, or narrative arc, even when their timestamp windows or titles differ.
 - Keep clips between ${policy.minSec} and ${policy.maxSec} seconds unless a shorter clip is exceptionally complete.
 - Preserve every existing output key and return the same JSON shape: {"candidates":[...]}.
 - Return JSON only.`;

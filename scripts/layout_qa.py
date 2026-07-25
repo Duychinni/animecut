@@ -86,6 +86,48 @@ def _apply_locked_crop(points, crop):
         point.update(crop)
 
 
+def _distinct_face_pair_for_boxes(faces, top_box, bottom_box):
+    top_matches = [face for face in faces if _intersection_ratio(top_box, face) >= 0.35]
+    bottom_matches = [face for face in faces if _intersection_ratio(bottom_box, face) >= 0.35]
+    for top_face in top_matches:
+        for bottom_face in bottom_matches:
+            top_id = top_face.get('track_id')
+            bottom_id = bottom_face.get('track_id')
+            if top_id is not None and bottom_id is not None and top_id == bottom_id:
+                continue
+            if _intersection_ratio(top_face, bottom_face) > 0.25:
+                continue
+            return top_face, bottom_face
+    return None
+
+
+def _best_verified_face(frames):
+    by_track = {}
+    for frame in frames:
+        for face in frame.get('faces', []):
+            if face.get('predicted') or face.get('track_id') is None:
+                continue
+            track_id = face.get('track_id')
+            by_track.setdefault(track_id, []).append(face)
+    if not by_track:
+        return None, None
+    track_id, faces = max(
+        by_track.items(),
+        key=lambda item: (
+            len(item[1]),
+            sum(float(face.get('w', 0.0)) * float(face.get('h', 0.0)) for face in item[1]),
+        ),
+    )
+    ordered = sorted(
+        faces,
+        key=lambda face: (
+            float(face.get('cx', float(face['x']) + float(face['w']) / 2.0)),
+            float(face.get('cy', float(face['y']) + float(face['h']) / 2.0)),
+        ),
+    )
+    return track_id, dict(ordered[len(ordered) // 2])
+
+
 def validate_layout_timeline(timeline, frames, source_w, source_h):
     """Reject crops that cut a primary head/shoulders or partially show a face."""
     validated = []
@@ -117,6 +159,44 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
             frame for frame in frames
             if float(segment.get('start', 0.0)) - 0.001 <= float(frame.get('timestamp', 0.0)) <= float(segment.get('end', 0.0)) + 0.001
         ]
+
+        if segment.get('mode') == 'stacked' and segment.get('topBox') and segment.get('bottomBox'):
+            verified_pair_samples = 0
+            face_samples = 0
+            for frame in segment_frames:
+                faces = [face for face in frame.get('faces', []) if not face.get('predicted')]
+                if not faces:
+                    continue
+                face_samples += 1
+                if _distinct_face_pair_for_boxes(faces, segment['topBox'], segment['bottomBox']):
+                    verified_pair_samples += 1
+            required_pair_samples = max(2, (face_samples + 1) // 2)
+            if face_samples and verified_pair_samples < required_pair_samples:
+                # A stale second box can survive a camera cut and turn the
+                # empty set, a microphone, or a duplicate crop into the lower
+                # panel. A stacked export is allowed only when two distinct
+                # faces remain visually verified through the shot.
+                issues['stacked_distinct_faces_unverified'] += 1
+                primary_id, primary_face = _best_verified_face(segment_frames)
+                if primary_face:
+                    crop = _panel_crop_for_face(primary_face, source_w, source_h, 0.0, source_w)
+                    _apply_locked_crop(segment_points, crop)
+                    segment['mode'] = 'single'
+                    segment['primaryTrackId'] = primary_id
+                    segment['subjectKind'] = 'face'
+                    segment['topBox'] = None
+                    segment['bottomBox'] = None
+                    segment['wideKind'] = None
+                    segment['editorialLayout'] = 'ACTIVE_SPEAKER_CROP'
+                    segment['editorialReason'] = f"{segment.get('editorialReason', '')} Layout QA removed an unverified empty or duplicate panel."
+                    segment['qaFallbackApplied'] = 'invalid_stacked_to_verified_single'
+                else:
+                    segment['mode'] = 'wide_context'
+                    segment['wideKind'] = 'safe_wide'
+                    segment['topBox'] = None
+                    segment['bottomBox'] = None
+                    segment['editorialLayout'] = 'SAFE_ORIGINAL'
+                    segment['qaFallbackApplied'] = 'invalid_stacked_to_safe_original'
 
         if segment.get('mode') == 'stacked' and not (segment.get('topBox') and segment.get('bottomBox')):
             issues['stacked_subject_box_missing'] += 1

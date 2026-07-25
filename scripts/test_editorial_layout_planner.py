@@ -129,6 +129,39 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
         self.assertEqual(validated[0]['wideKind'], 'safe_wide')
         self.assertEqual(report['remaining_unsafe_segments'], 0)
 
+    def test_qa_replaces_stale_empty_second_panel_with_verified_solo_face(self):
+        face = {
+            'track_id': 7, 'x': 620.0, 'y': 100.0, 'w': 420.0, 'h': 620.0,
+            'cx': 830.0, 'cy': 410.0, 'predicted': False,
+        }
+        frames = [
+            {'timestamp': index * 0.25, 'faces': [dict(face)]}
+            for index in range(4)
+        ]
+        points = [
+            {**crop_point(index * 0.25), 'audioActivity': 0.8, 'subjectKind': 'face'}
+            for index in range(4)
+        ]
+        validated, report = validate_layout_timeline([{
+            'start': 0.0, 'end': 1.0, 'mode': 'stacked',
+            'topBox': dict(face),
+            # Stale geometry aimed at the empty set/microphone.
+            'bottomBox': {'x': 1250.0, 'y': 300.0, 'w': 360.0, 'h': 600.0},
+            'topTrackId': 7, 'bottomTrackId': 9,
+            'points': points,
+        }], frames, 1920.0, 1080.0)
+        self.assertEqual(validated[0]['mode'], 'single')
+        self.assertEqual(validated[0]['primaryTrackId'], 7)
+        self.assertIn(
+            validated[0]['qaFallbackApplied'],
+            ('invalid_stacked_to_verified_single', 'single_person_reframe'),
+        )
+        self.assertIsNone(validated[0]['bottomBox'])
+        self.assertGreater(
+            report['issue_counts_before_fallback'].get('stacked_distinct_faces_unverified', 0),
+            0,
+        )
+
     def test_qa_rejects_incomplete_grid(self):
         validated, _ = validate_layout_timeline([{
             'start': 0.0, 'end': 2.0, 'mode': 'grid', 'gridTemplate': 'grid_4',
