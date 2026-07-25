@@ -178,7 +178,7 @@ export function isNaturalEditorialHook(value: unknown) {
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top moment|watch this|this is crazy|keep watching|what do you mean|how old are you)$/i.test(text)) return false;
   if (/\b(detail most people miss|matters more than you think|explains what actually matters|what this changes about)\b/i.test(text)) return false;
-  if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|is|are|was|were)\??$/i.test(text)) return false;
+  if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|a|an|is|are|was|were|not|your|my|his|her|their|our)\??$/i.test(text)) return false;
   const words = text.split(/\s+/);
   return words.length >= 3 && words.length <= 10;
 }

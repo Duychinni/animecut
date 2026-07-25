@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   buildCandidateEditorialPlan,
   isEditorialCopyGrounded,
+  isNaturalEditorialHook,
   isNaturalEditorialTitle,
   reusesSourceTitleAsEditorialPrefix,
 } from '../lib/editorial-plan';
@@ -21,6 +22,14 @@ const brokenTitles = [
 
 for (const title of brokenTitles) {
   assert.equal(isNaturalEditorialTitle(title), false, `expected broken title to fail: ${title}`);
+}
+
+for (const hook of [
+  'They Live In A City, Not',
+  'Why He Almost Switched From',
+  'What Would You Say To Your',
+]) {
+  assert.equal(isNaturalEditorialHook(hook), false, `expected incomplete hook to fail: ${hook}`);
 }
 
 const sourceTitleContext = [

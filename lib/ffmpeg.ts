@@ -1647,28 +1647,43 @@ function resolveOutputWidth(_outputHeight: number) {
   return VERTICAL_EXPORT_WIDTH;
 }
 
-function wrapHookTextForDrawtext(hookText: string) {
+export function wrapHookTextForDrawtext(hookText: string) {
   const words = hookText.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 'Top Moment';
+
+  const totalCharacters = words.reduce((total, word) => total + word.length, 0) + words.length - 1;
+  const lineCount = totalCharacters > 34 || words.length > 7 ? 3 : totalCharacters > 17 ? 2 : 1;
+  if (lineCount === 1) return words.join(' ');
+
+  // Balance the complete hook across two or three compact lines. The old
+  // renderer stopped after two lines and silently discarded remaining words,
+  // producing fragments such as "How do you count for 40" and "They live in
+  // a city, not". Hook copy must never change meaning just to fit the card.
   const lines: string[] = [];
-  let current: string[] = [];
-
-  for (const word of words) {
-    const next = [...current, word].join(' ');
-    // Match the compact auto-headline treatment used by leading clip tools:
-    // short centered lines inside a narrow white pill, never a full-width banner.
-    const shouldWrap = current.length > 0 && (next.length > 16 || current.length >= 3);
-
-    if (shouldWrap) {
-      lines.push(current.join(' '));
-      current = [];
+  let cursor = 0;
+  for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
+    const linesRemaining = lineCount - lineIndex;
+    if (linesRemaining === 1) {
+      lines.push(words.slice(cursor).join(' '));
+      break;
     }
 
-    if (lines.length >= 2) break;
-    current.push(word);
+    const wordsRemaining = words.length - cursor;
+    const targetLength = Math.ceil(
+      (words.slice(cursor).reduce((total, word) => total + word.length, 0) + wordsRemaining - 1)
+      / linesRemaining,
+    );
+    const current: string[] = [];
+    while (cursor < words.length - (linesRemaining - 1)) {
+      const next = [...current, words[cursor]].join(' ');
+      if (current.length && next.length > targetLength + 2) break;
+      current.push(words[cursor]);
+      cursor += 1;
+    }
+    lines.push(current.join(' '));
   }
 
-  if (current.length && lines.length < 2) lines.push(current.join(' '));
-  return lines.join('\n') || 'Top Moment';
+  return lines.filter(Boolean).join('\n');
 }
 
 function escapeHookAssText(text: string) {
@@ -1698,21 +1713,21 @@ function buildRoundedHookShape(x: number, y: number, width: number, height: numb
 
 function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const lines = hookText.split('\n').filter(Boolean);
-  const twoLine = lines.length > 1;
+  const lineCount = Math.max(1, lines.length);
   const longestLine = Math.max(...lines.map((line) => line.length), 10);
   // Keep the card tightly fitted around large headline text. The text should
   // carry the visual weight; the white shape is only a compact backing plate.
   const cardWidth = Math.max(460, Math.min(820, Math.round(longestLine * 48 + 40)));
-  const cardHeight = twoLine ? 190 : 138;
+  const cardHeight = lineCount >= 3 ? 264 : lineCount === 2 ? 190 : 138;
   const cardX = Math.round((VERTICAL_EXPORT_WIDTH - cardWidth) / 2);
-  const topCardY = twoLine ? 82 : 96;
+  const topCardY = lineCount >= 3 ? 72 : lineCount === 2 ? 82 : 96;
   const cardY = placement === 'middle'
     ? Math.round((VERTICAL_EXPORT_HEIGHT - cardHeight) / 2)
     : topCardY;
-  const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
+  const textY = cardY + Math.round(cardHeight / 2) + (lineCount > 1 ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
-  const hookFontSize = twoLine ? 110 : 126;
+  const hookFontSize = lineCount >= 3 ? 94 : lineCount === 2 ? 110 : 126;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]
