@@ -480,7 +480,7 @@ function isDuplicateCandidate(cur: RankedCandidate, picked: RankedCandidate) {
     Number(picked.end_sec ?? 0),
   );
 
-  return sameTitle || sameStory || sameWindow;
+  return sameTitle || sameStory || sameWindow || repeatsSameNamedExample(cur, picked);
 }
 
 function distinctCandidates(candidates: RankedCandidate[]) {
@@ -526,6 +526,13 @@ function packagingTooSimilar(cur: RankedCandidate, picked: RankedCandidate) {
   const curLead = titleLead(cur.title);
   const pickedLead = titleLead(picked.title);
   return curLead.length >= 8 && curLead === pickedLead;
+}
+
+function repeatsSameNamedExample(cur: RankedCandidate, picked: RankedCandidate) {
+  const curLead = titleLead(cur.title);
+  const pickedLead = titleLead(picked.title);
+  if (curLead.length < 8 || curLead !== pickedLead) return false;
+  return curLead.split(/\s+/).filter((word) => word.length >= 4).length >= 2;
 }
 
 function diversifySelectedPackaging(

@@ -557,7 +557,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function drainPreviewWarmQueue() {
     if (shareClip) return;
-    const maxConcurrentPreviewLoads = 3;
+    const maxConcurrentPreviewLoads = 5;
     while (
       previewWarmActiveRef.current.size < maxConcurrentPreviewLoads &&
       previewWarmQueueRef.current.length > 0
@@ -1197,7 +1197,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             if (el) previewObserverRef.current?.observe(el);
                           }}
                           data-clip-video-id={clip.exportId}
-                          preload="none"
+                          preload="metadata"
                           playsInline
                           controls={false}
                           disablePictureInPicture

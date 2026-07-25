@@ -402,9 +402,9 @@ export async function renderAdaptivePlaybackPreviews(
     '-map', '0:a:0?',
     '-c:v', 'libx264',
     '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'medium',
-    '-crf', '10',
-    '-maxrate', '12000k',
-    '-bufsize', '24000k',
+    '-crf', '14',
+    '-maxrate', '8000k',
+    '-bufsize', '16000k',
     '-pix_fmt', 'yuv420p',
     '-g', '60',
     '-keyint_min', '30',
@@ -1714,7 +1714,7 @@ function buildHookAss(hookText: string, placement: 'top' | 'middle' = 'top') {
   const textY = cardY + Math.round(cardHeight / 2) + (twoLine ? 2 : 0);
   const textX = Math.round(VERTICAL_EXPORT_WIDTH / 2);
   const cardShape = buildRoundedHookShape(cardX, cardY, cardWidth, cardHeight, 28);
-  const hookFontSize = twoLine ? 96 : 112;
+  const hookFontSize = twoLine ? 104 : 120;
   const text = escapeHookAssText(hookText);
 
   return `[Script Info]

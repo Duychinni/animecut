@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { extractBestVideoThumbnail, probeVideoQuality, renderAdaptivePlaybackPreviews, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractVideoThumbnail, probeVideoQuality, renderAdaptivePlaybackPreviews, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
@@ -1137,11 +1137,11 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
-    const clipDuration = Math.max(0.25, effectiveRenderEnd - effectiveRenderStart);
-    const thumbnailSelection = await extractBestVideoThumbnail(outPath, posterPath, clipDuration, bundle.clip.editorial_plan);
+    await extractVideoThumbnail(outPath, posterPath, 0.35);
     console.log('[jobs/process] export-thumbnail-selected', {
       export_id: bundle.id,
-      ...thumbnailSelection,
+      method: 'opening-hook-frame',
+      second: 0.35,
     });
     const posterBytes = await readFile(posterPath);
     const posterObjectPath = makeExportThumbnailObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);

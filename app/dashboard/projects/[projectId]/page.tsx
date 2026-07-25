@@ -3,7 +3,7 @@ import { PipelineRunner } from '@/components/project/PipelineRunner';
 import { ProcessingHero } from '@/components/project/ProcessingHero';
 import { ProjectFailureActions } from '@/components/project/ProjectFailureActions';
 import { TopClipsBoard } from '@/components/clips/TopClipsBoard';
-import { createExportPreviewUrl, createExportSignedUrls } from '@/lib/storage';
+import { createExportPreviewUrl, createExportSignedUrls, makeExportThumbnailObjectPath } from '@/lib/storage';
 import { getTargetClipCount } from '@/lib/clip-policy';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -179,6 +179,7 @@ export default async function ProjectDetailPage({
     const outputPath = row.output_storage_path;
     if (!outputPath || outputPath.startsWith('/') || outputPath.startsWith('mock://')) return;
     requiredOutputPaths.push(outputPath);
+    if (projectRow?.user_id) requiredOutputPaths.push(makeExportThumbnailObjectPath(projectRow.user_id, projectId, row.id));
   });
   // The old detail page performed remote existence checks for every guessed
   // poster and legacy preview before it could render. Modern exports already
@@ -215,7 +216,9 @@ export default async function ProjectDetailPage({
         preview540Url,
         preview360SizeBytes: row.preview_360_size_bytes ?? null,
         preview540SizeBytes: row.preview_540_size_bytes ?? null,
-        posterUrl: null,
+        posterUrl: projectRow?.user_id
+          ? signedUrls.get(makeExportThumbnailObjectPath(projectRow.user_id, projectId, row.id)) ?? null
+          : null,
         title: candidate?.title ?? 'Untitled clip',
         score,
         startSec,
