@@ -589,6 +589,24 @@ def semantic_subject_choice(face_box=None, body_box=None, motion_box=None, salie
         confidence = max(0.62, float(speaker_confidence))
         reason = 'confident_active_speaker' if speaker_confidence >= 0.42 else 'main_visible_face'
         return {'kind': 'face', 'box': face_box, 'face_box': face_box, 'confidence': confidence, 'reason': reason, 'predicted': False}
+    # A face is the authoritative camera target for dialogue footage. Face
+    # detectors commonly miss a few samples when someone turns, laughs, covers
+    # their mouth, or gestures. During that brief gap, keep the established
+    # face composition instead of allowing a hand, body edge, or background
+    # motion region to pull the virtual camera away. A real shot cut clears
+    # this hold immediately.
+    if (
+        prior is not None
+        and prior.get('kind') == 'face'
+        and prior.get('box') is not None
+        and not scene_cut
+    ):
+        return {
+            **prior,
+            'confidence': max(0.24, float(prior.get('confidence', 0.0)) * 0.90),
+            'reason': 'face_lock_detection_gap',
+            'predicted': True,
+        }
     if body_box is not None:
         return {'kind': 'body', 'box': body_box, 'confidence': 0.58, 'reason': 'main_visible_person', 'predicted': False}
     if motion_box is not None:
@@ -2575,7 +2593,11 @@ def main():
         saliency_box, saliency_confidence = saliency_region(cv2, np, gray, source_w, source_h)
         screen_score = screen_context_score(cv2, np, gray)
         scene_cut = scene_change >= 0.72
-        max_semantic_hold_samples = max(2, int(round(analysis_fps * 0.75)))
+        # Hold a confirmed face long enough to bridge ordinary occlusion from
+        # laughter, hands, microphones, and head turns. Scene cuts bypass this
+        # immediately, so the longer grace period cannot carry a face crop into
+        # a different camera shot.
+        max_semantic_hold_samples = max(4, int(round(analysis_fps * 1.5)))
         prior_semantic_subject = (
             last_semantic_subject
             if semantic_hold_samples < max_semantic_hold_samples

@@ -232,6 +232,43 @@ def test_detected_face_keeps_camera_fully_locked():
     assert len({point['cropH'] for point in points}) == 1, points
 
 
+def test_face_lock_ignores_hand_motion_during_detection_gap():
+    face = box(690, 150, 300, 360)
+    waving_hand = box(120, 260, 420, 520)
+    established = semantic_subject_choice(
+        face_box=face,
+        motion_box=waving_hand,
+        speaker_confidence=0.72,
+    )
+    held = semantic_subject_choice(
+        body_box=box(520, 90, 720, 900),
+        motion_box=waving_hand,
+        saliency_box=waving_hand,
+        saliency_confidence=0.70,
+        prior=established,
+        scene_cut=False,
+    )
+    assert held['kind'] == 'face', held
+    assert held['box'] == face, held
+    assert held['reason'] == 'face_lock_detection_gap', held
+    assert held['predicted'] is True, held
+
+
+def test_scene_cut_releases_face_lock_before_motion_fallback():
+    face = box(690, 150, 300, 360)
+    incoming_body = box(180, 90, 720, 900)
+    established = semantic_subject_choice(face_box=face, speaker_confidence=0.72)
+    selected = semantic_subject_choice(
+        body_box=incoming_body,
+        motion_box=box(120, 260, 420, 520),
+        prior=established,
+        scene_cut=True,
+    )
+    assert selected['kind'] == 'body', selected
+    assert selected['box'] == incoming_body, selected
+    assert selected['predicted'] is False, selected
+
+
 def test_body_tracking_waits_for_sustained_meaningful_displacement():
     positions = (640, 750, 820, 730, 610, 790, 830, 670, 620, 810, 700, 760)
     samples = [
