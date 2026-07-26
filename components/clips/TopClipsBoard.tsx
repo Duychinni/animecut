@@ -483,6 +483,43 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     updatePlayback(id, { volume: value });
   }
 
+  async function handleFullscreen(clip: ClipItem) {
+    const video = videoRefs.current[clip.exportId] as (HTMLVideoElement & {
+      webkitEnterFullscreen?: () => void;
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    }) | undefined;
+    if (!video) return;
+
+    try {
+      if (video.requestFullscreen) {
+        await video.requestFullscreen();
+      } else if (video.webkitEnterFullscreen) {
+        video.webkitEnterFullscreen();
+      } else if (video.webkitRequestFullscreen) {
+        await video.webkitRequestFullscreen();
+      }
+
+      // Inline playback uses a lightweight rendition for fast startup. Once
+      // fullscreen is open, switch to the full-resolution export so enlarging
+      // the reel does not make it look softer than the downloaded file.
+      if (clip.signedUrl && video.currentSrc !== clip.signedUrl && video.src !== clip.signedUrl) {
+        const currentTime = video.currentTime;
+        const wasPaused = video.paused;
+        const volume = video.volume;
+        stableMediaUrlsRef.current.set(clip.exportId, clip.signedUrl);
+        video.addEventListener('loadedmetadata', () => {
+          video.currentTime = Math.min(currentTime, video.duration || currentTime);
+          video.volume = volume;
+          if (!wasPaused) void video.play().catch(() => undefined);
+        }, { once: true });
+        video.src = clip.signedUrl;
+        video.load();
+      }
+    } catch (error) {
+      console.warn('[clips] fullscreen request failed', error);
+    }
+  }
+
   function pauseOtherVideos(activeId: string) {
     for (const [id, video] of Object.entries(videoRefs.current)) {
       if (!video || id === activeId || video.paused) continue;
@@ -1508,9 +1545,29 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                                 aria-label="Clip volume"
                               />
                             </div>
-                            <span className="ml-auto shrink-0 rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
-                              {currentLabel} / {totalLabel}
-                            </span>
+                            <div className="ml-auto flex shrink-0 items-center gap-1">
+                              <span className="rounded-full border border-white/15 bg-black/35 px-2.5 py-1 text-[11px] text-white/85 tabular-nums backdrop-blur-sm">
+                                {currentLabel} / {totalLabel}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void handleFullscreen(clip)}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white/85 backdrop-blur-sm transition hover:bg-white/15 hover:text-white"
+                                aria-label="View clip fullscreen"
+                                title="Fullscreen"
+                              >
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M8 3H3v5" />
+                                  <path d="m3 3 6 6" />
+                                  <path d="M16 3h5v5" />
+                                  <path d="m21 3-6 6" />
+                                  <path d="M8 21H3v-5" />
+                                  <path d="m3 21 6-6" />
+                                  <path d="M16 21h5v-5" />
+                                  <path d="m21 21-6-6" />
+                                </svg>
+                              </button>
+                            </div>
                           </div>
 
                         </div>
