@@ -95,6 +95,22 @@ function clean(text: unknown) {
     .trim();
 }
 
+function cleanWithin(text: unknown, maxLength: number) {
+  const value = clean(text);
+  if (value.length <= maxLength) return value;
+
+  const clipped = value.slice(0, maxLength + 1);
+  const lastBoundary = Math.max(
+    clipped.lastIndexOf('.'),
+    clipped.lastIndexOf('?'),
+    clipped.lastIndexOf('!'),
+    clipped.lastIndexOf(' '),
+  );
+  return clipped
+    .slice(0, lastBoundary >= Math.floor(maxLength * 0.6) ? lastBoundary : maxLength)
+    .trim();
+}
+
 function repairKnownEntityFragments(value: string, globalContext: string) {
   const context = canonicalizeKnownNames(globalContext);
   let text = clean(value);
@@ -476,8 +492,11 @@ export function buildCandidateEditorialPlan(params: {
   const hookOptions = hookCandidates.slice(0, 5).map((text, index) => ({
     text,
     score: Math.max(70, 96 - index * 4),
-    supporting_quote: clean(raw.hook_supporting_quote) || generated.quote.slice(0, 280),
-    reason: index === 0 ? 'Strongest specific, grounded editorial hook.' : 'Grounded alternate editorial angle.',
+    supporting_quote: cleanWithin(raw.hook_supporting_quote, 280) || cleanWithin(generated.quote, 280),
+    reason: cleanWithin(
+      index === 0 ? 'Strongest specific, grounded editorial hook.' : 'Grounded alternate editorial angle.',
+      240,
+    ),
   }));
   const requestedSceneType = EditorialSceneTypeSchema.safeParse(raw.scene_type);
   const requestedLayout = EditorialLayoutSchema.safeParse(raw.recommended_layout);
@@ -486,8 +505,8 @@ export function buildCandidateEditorialPlan(params: {
 
   return CandidateEditorialPlanSchema.parse({
     version: 1,
-    story: clean(raw.story) || generated.story,
-    conflict: clean(raw.conflict) || generated.conflict,
+    story: cleanWithin(raw.story, 280) || cleanWithin(generated.story, 280),
+    conflict: cleanWithin(raw.conflict, 280) || cleanWithin(generated.conflict, 280),
     primary_speaker: clean(raw.primary_speaker) || null,
     supporting_speakers: Array.isArray(raw.supporting_speakers)
       ? raw.supporting_speakers.map(clean).filter(Boolean)
@@ -504,11 +523,12 @@ export function buildCandidateEditorialPlan(params: {
     hook_options: hookOptions,
     selected_hook: hookOptions[0].text,
     content_genre: requestedGenre.success ? requestedGenre.data : 'UNKNOWN',
-    narrative_arc: clean(raw.narrative_arc) || `${generated.story} ${generated.conflict}`.slice(0, 280),
-    required_context: clean(raw.required_context),
+    narrative_arc: cleanWithin(raw.narrative_arc, 280) || cleanWithin(`${generated.story} ${generated.conflict}`, 280),
+    required_context: cleanWithin(raw.required_context, 280),
     context_dependency_resolved: raw.context_dependency_resolved !== false,
-    topic: clean(raw.topic) || generated.topic,
-    moment_type: clean(raw.moment_type) || generated.momentType,
-    virality_reason: clean(raw.virality_reason) || `${generated.conflict} The segment has a clear subject, disagreement, and reason to keep watching.`,
+    topic: cleanWithin(raw.topic, 120) || cleanWithin(generated.topic, 120),
+    moment_type: cleanWithin(raw.moment_type, 80) || cleanWithin(generated.momentType, 80),
+    virality_reason: cleanWithin(raw.virality_reason, 280)
+      || cleanWithin(`${generated.conflict} The segment has a clear subject, disagreement, and reason to keep watching.`, 280),
   });
 }

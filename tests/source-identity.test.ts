@@ -117,3 +117,33 @@ test('rejects transcript shards that do not work as standalone hooks', () => {
     assert.equal(isNaturalEditorialHook(hook), false, `expected incomplete hook to fail: ${hook}`);
   }
 });
+
+test('clamps verbose AI editorial fields before strict schema validation', () => {
+  const transcript = 'Justin Gaethje explains how disciplined training helped him stay composed during a difficult fight.';
+  const oversized = `${transcript} ${'extra context '.repeat(40)}`;
+  const plan = buildCandidateEditorialPlan({
+    transcriptText: transcript,
+    globalContext: transcript,
+    raw: {
+      title: 'Gaethje Stayed Composed Under Pressure',
+      hook_text: 'How Gaethje Stayed Calm Under Fire',
+      hook_supporting_quote: oversized,
+      story: oversized,
+      conflict: oversized,
+      narrative_arc: oversized,
+      required_context: oversized,
+      virality_reason: oversized,
+      topic: oversized,
+      moment_type: oversized,
+    },
+  });
+
+  assert.ok(plan.hook_options.every((option) => option.supporting_quote.length <= 280));
+  assert.ok(plan.story.length <= 280);
+  assert.ok(plan.conflict.length <= 280);
+  assert.ok(plan.narrative_arc.length <= 280);
+  assert.ok(plan.required_context.length <= 280);
+  assert.ok(plan.virality_reason.length <= 280);
+  assert.ok(plan.topic.length <= 120);
+  assert.ok(plan.moment_type.length <= 80);
+});
