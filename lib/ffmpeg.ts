@@ -446,6 +446,26 @@ async function writeDebugCommandFile(clipId: string, commandText: string, output
   await writeFile(path.join(debugDir, `${clipId}.bundle.json`), JSON.stringify(bundle, null, 2), 'utf8');
 }
 
+let activeVideoEncodes = 0;
+const pendingVideoEncodeSlots: Array<() => void> = [];
+
+function maxConcurrentVideoEncodes() {
+  const configured = Number(process.env.FFMPEG_MAX_CONCURRENT_VIDEO_ENCODES ?? 2);
+  return Number.isFinite(configured) ? Math.max(1, Math.min(8, Math.floor(configured))) : 2;
+}
+
+async function acquireVideoEncodeSlot() {
+  const limit = maxConcurrentVideoEncodes();
+  if (activeVideoEncodes >= limit) {
+    await new Promise<void>((resolve) => pendingVideoEncodeSlots.push(resolve));
+  }
+  activeVideoEncodes += 1;
+  return () => {
+    activeVideoEncodes = Math.max(0, activeVideoEncodes - 1);
+    pendingVideoEncodeSlots.shift()?.();
+  };
+}
+
 async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outputPath?: string | null }) {
   const ffmpegCommand = resolveMediaBinary('ffmpeg');
   const commandText = formatCommand(ffmpegCommand, args);
@@ -462,37 +482,44 @@ async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outpu
   if (debug?.clipId && debug?.outputPath) {
     await writeDebugCommandFile(debug.clipId, commandText, debug.outputPath, args);
   }
-  await new Promise<void>((resolve, reject) => {
-    const p = spawn(ffmpegCommand, args);
-    let stderr = '';
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      p.kill('SIGKILL');
-    }, timeoutSeconds * 1000);
+  const releaseVideoEncodeSlot = args.includes('-c:v')
+    ? await acquireVideoEncodeSlot()
+    : null;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const p = spawn(ffmpegCommand, args);
+      let stderr = '';
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        p.kill('SIGKILL');
+      }, timeoutSeconds * 1000);
 
-    p.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr = `${stderr}${chunk.toString()}`.slice(-128_000);
-    });
+      p.stderr?.on('data', (chunk: Buffer | string) => {
+        stderr = `${stderr}${chunk.toString()}`.slice(-128_000);
+      });
 
-    p.on('close', (code) => {
-      clearTimeout(timeout);
-      const tail = stderr.trim().split('\n').slice(-12).join('\n');
-      if (timedOut) {
-        reject(new Error(`ffmpeg timed out after ${timeoutSeconds}s${tail ? `\n${tail}` : ''}`));
-        return;
-      }
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`ffmpeg failed: ${code}${tail ? `\n${tail}` : ''}`));
+      p.on('close', (code) => {
+        clearTimeout(timeout);
+        const tail = stderr.trim().split('\n').slice(-12).join('\n');
+        if (timedOut) {
+          reject(new Error(`ffmpeg timed out after ${timeoutSeconds}s${tail ? `\n${tail}` : ''}`));
+          return;
+        }
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        reject(new Error(`ffmpeg failed: ${code}${tail ? `\n${tail}` : ''}`));
+      });
+      p.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
     });
-    p.on('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-  });
+  } finally {
+    releaseVideoEncodeSlot?.();
+  }
 }
 
 async function runJsonCommand(cmd: string, args: string[]) {
