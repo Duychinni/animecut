@@ -59,6 +59,18 @@ for (let maxWords = 1; maxWords <= 6; maxWords += 1) {
     ['0:00:00.00', '0:00:00.22', '0:00:00.61', '0:00:00.94', '0:00:01.39'],
     `${maxWords} words per caption must preserve the same spoken-word boundaries`,
   );
+  const dialogueRanges = grouped
+    .split('\n')
+    .filter((line) => line.startsWith('Dialogue:'))
+    .map((line) => {
+      const columns = line.split(',');
+      return { start: columns[1], end: columns[2] };
+    });
+  assert.deepEqual(
+    dialogueRanges.slice(0, -1).map((range) => range.end),
+    dialogueRanges.slice(1).map((range) => range.start),
+    `${maxWords} words per caption must not flash blank between spoken words`,
+  );
 }
 
 console.log(`caption system: ${CAPTION_PRESETS.length} templates, ${CAPTION_FONTS.length} font choices`);

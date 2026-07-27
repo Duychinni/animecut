@@ -327,7 +327,15 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
         // Use model-provided word boundaries directly (no hardcoded lead).
         // This avoids globally "fast" or "slow" behavior and follows the audio timing.
         const s = Math.max(localStart, rawS);
-        let e = Math.max(s + 0.04, Math.min(localEnd, rawE));
+        // Keep the current phrase/highlight visible until the next spoken word
+        // begins. This preserves the model's exact word-start boundaries while
+        // eliminating blank flashes between a word's acoustic end and the next
+        // word's start. It also behaves identically for 1–6 word groupings.
+        const nextWordStart = intervals[i + 1]?.start;
+        let e = Math.max(
+          s + 0.04,
+          Math.min(localEnd, Number.isFinite(nextWordStart) ? Number(nextWordStart) : Math.max(rawE, localEnd)),
+        );
 
         // Keep within segment bounds and avoid ultra-short flashes.
         if (e > localEnd) e = localEnd;

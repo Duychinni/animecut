@@ -135,7 +135,10 @@ export async function GET() {
       const queuedExports = rows.filter((r) => r.status === 'queued' && !hasPlayableOutput(r)).length;
       const processingExports = rows.filter((r) => r.status === 'processing' && !hasPlayableOutput(r)).length;
       const activeExports = queuedExports + processingExports;
-      const targetExports = Math.max(1, rows.length || getTargetClipCount(Math.max(60, Number(project.source_duration_seconds) || 600)));
+      // Do not present the duration-based analysis goal as the number of reels
+      // that will render. The render total is only final once export rows have
+      // been created from the approved candidates.
+      const targetExports = rows.length;
       const markedCompleted = project.status === 'completed' || project.pipeline_status === 'completed';
       const completionLatched = markedCompleted || Boolean(project.pipeline_completed_at);
       // Completion must be an explicit durable backend decision. Inferring it

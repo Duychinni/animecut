@@ -260,8 +260,16 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
           </div>
         ) : null}
         {msg ? (
-          <p className={`mt-2 text-xs ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/60'}`}>
-            {msg}
+          <p
+            role={msg.includes(YOUTUBE_LINK_ERROR) ? 'alert' : undefined}
+            className={msg.includes(YOUTUBE_LINK_ERROR)
+              ? 'mt-3 flex w-full max-w-[520px] items-start gap-2 rounded-xl border border-red-400/55 bg-red-500/15 px-3 py-2.5 text-left text-xs font-semibold leading-4 text-red-100 shadow-[0_0_20px_rgba(239,68,68,0.14)]'
+              : `mt-2 text-xs ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/60'}`}
+          >
+            {msg.includes(YOUTUBE_LINK_ERROR) ? (
+              <span aria-hidden="true" className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-red-400 text-[10px] font-black text-[#250606]">!</span>
+            ) : null}
+            <span>{msg}</span>
           </p>
         ) : null}
       </div>
@@ -320,8 +328,16 @@ export function ProjectQuickStart({ compact = false, onProjectCreated }: Props) 
       ) : null}
 
       {msg ? (
-        <p className={`mt-3 text-sm ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/70'}`}>
-          {msg}
+        <p
+          role={msg.includes(YOUTUBE_LINK_ERROR) ? 'alert' : undefined}
+          className={msg.includes(YOUTUBE_LINK_ERROR)
+            ? 'mt-3 flex items-start gap-2.5 rounded-xl border border-red-400/55 bg-red-500/15 px-4 py-3 text-sm font-semibold leading-5 text-red-100 shadow-[0_0_24px_rgba(239,68,68,0.14)]'
+            : `mt-3 text-sm ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/70'}`}
+        >
+          {msg.includes(YOUTUBE_LINK_ERROR) ? (
+            <span aria-hidden="true" className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-red-400 text-xs font-black text-[#250606]">!</span>
+          ) : null}
+          <span>{msg}</span>
         </p>
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
+import { getRequiredClipCount } from '@/lib/clip-policy';
 import { getPipelineErrorInfo, getPublicPipelineError } from '@/lib/pipeline-errors';
 import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
@@ -420,8 +420,10 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     const transcriptSeconds = transcriptSegments.reduce((acc, s) => Math.max(acc, Number(s?.end ?? 0)), 0);
     const sourceDurationSeconds = Number((project as { source_duration_seconds?: number | null }).source_duration_seconds ?? 0);
     const totalSeconds = transcriptSeconds > 0 ? transcriptSeconds : sourceDurationSeconds;
-    const desiredTarget = getTargetClipCount(totalSeconds);
-    const targetCount = Math.max(1, desiredTarget);
+    // The duration-based target guides analysis, but it is not a promise to the
+    // user. Export rows are created only after candidate selection is finalized,
+    // so their count is the first exact render total we can safely display.
+    const targetCount = rows.length;
     const requiredPlayableCount = Math.max(1, Math.min(
       analyzedCandidates || getRequiredClipCount(totalSeconds),
       getRequiredClipCount(totalSeconds),

@@ -43,4 +43,48 @@ assert.deepEqual(
 );
 assert.deepEqual(merged.segments[2].words?.[0], { start: 12, end: 13, word: 'second' });
 
+const boundaryMerged = mergeChunkTranscripts([
+  {
+    coreStart: 0,
+    coreEnd: 10,
+    extractionStart: 0,
+    transcript: {
+      language: 'en',
+      fullText: 'before boundary',
+      segments: [{
+        start: 9,
+        end: 11,
+        text: 'before boundary',
+        words: [
+          { start: 9.2, end: 9.8, word: 'before' },
+          { start: 10.1, end: 10.7, word: 'boundary' },
+        ],
+      }],
+    },
+  },
+  {
+    coreStart: 10,
+    coreEnd: 20,
+    extractionStart: 8,
+    transcript: {
+      language: 'en',
+      fullText: 'before boundary',
+      segments: [{
+        start: 1.2,
+        end: 2.7,
+        text: 'before boundary',
+        words: [
+          { start: 1.2, end: 1.8, word: 'before' },
+          { start: 2.1, end: 2.7, word: 'boundary' },
+        ],
+      }],
+    },
+  },
+]);
+assert.deepEqual(
+  boundaryMerged.segments.flatMap((segment) => segment.words?.map((word) => word.word) ?? []),
+  ['before', 'boundary'],
+  'overlapping transcription chunks must assign every boundary word exactly once',
+);
+
 console.log('Chunked transcription timestamp merging and boundary deduplication passed.');

@@ -31,7 +31,7 @@ type TranscriptionOptions = {
 const OPENAI_SAFE_FILE_BYTES = 24 * 1024 * 1024;
 const CHUNK_CORE_SECONDS = 12 * 60;
 const CHUNK_OVERLAP_SECONDS = 2;
-const CHUNK_CACHE_VERSION = 1;
+const CHUNK_CACHE_VERSION = 2;
 
 function getTranscriptionProvider() {
   return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
@@ -162,11 +162,37 @@ export function mergeChunkTranscripts(chunks: Array<{
   const sorted = [...chunks].sort((a, b) => a.coreStart - b.coreStart);
   const segments = sorted.flatMap((chunk, index) => chunk.transcript.segments
     .map((segment) => offsetSegment(segment, chunk.extractionStart))
-    .filter((segment) => {
+    .flatMap((segment) => {
+      const ownsTime = (start: number, end: number) => {
+        const midpoint = (start + end) / 2;
+        return midpoint >= chunk.coreStart
+          && (index === sorted.length - 1 ? midpoint <= chunk.coreEnd : midpoint < chunk.coreEnd);
+      };
+      const words = Array.isArray(segment.words)
+        ? segment.words.filter((word) => {
+            const start = Number(word.start);
+            const end = Number(word.end);
+            return Number.isFinite(start) && Number.isFinite(end) && end > start && ownsTime(start, end);
+          })
+        : [];
+
+      // Assign overlap ownership per word, not per segment. Whisper can create
+      // a segment that straddles a chunk boundary; selecting the whole segment
+      // by midpoint can otherwise duplicate or drop several spoken words.
+      if (Array.isArray(segment.words) && segment.words.length) {
+        if (!words.length) return [];
+        return [{
+          ...segment,
+          start: Number(words[0].start),
+          end: Number(words[words.length - 1].end),
+          text: words.map((word) => String(word.word ?? '').trim()).filter(Boolean).join(' '),
+          words,
+        }];
+      }
+
       const start = Number(segment.start ?? chunk.coreStart);
       const end = Number(segment.end ?? start);
-      const midpoint = (start + end) / 2;
-      return midpoint >= chunk.coreStart && (index === sorted.length - 1 ? midpoint <= chunk.coreEnd : midpoint < chunk.coreEnd);
+      return ownsTime(start, end) ? [segment] : [];
     }));
 
   const segmentText = segments

@@ -781,8 +781,16 @@ export default function Home() {
               </div>
             ) : null}
             {msg ? (
-              <p className={`mt-3 text-sm ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/70'}`}>
-                {msg}
+              <p
+                role={msg.includes(YOUTUBE_LINK_ERROR) ? 'alert' : undefined}
+                className={msg.includes(YOUTUBE_LINK_ERROR)
+                  ? 'mx-auto mt-3 flex w-full max-w-3xl items-start gap-2.5 rounded-xl border border-red-400/55 bg-red-500/15 px-4 py-3 text-left text-sm font-semibold leading-5 text-red-100 shadow-[0_0_24px_rgba(239,68,68,0.14)]'
+                  : `mt-3 text-sm ${isUploadLimitError(msg) ? 'font-semibold text-red-400' : 'text-white/70'}`}
+              >
+                {msg.includes(YOUTUBE_LINK_ERROR) ? (
+                  <span aria-hidden="true" className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-red-400 text-xs font-black text-[#250606]">!</span>
+                ) : null}
+                <span>{msg}</span>
               </p>
             ) : null}
           </div>
@@ -843,7 +851,6 @@ export default function Home() {
                         ) : (
                           <video
                             src={clip.mediaUrl}
-                            autoPlay={mediaActive}
                             muted
                             loop
                             playsInline

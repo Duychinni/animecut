@@ -244,9 +244,7 @@ export default function DashboardPage() {
             );
             const targetExports = Math.max(
               doneExports,
-              Number(previous?.target_exports ?? 0),
-              Number(project.target_exports ?? 0),
-              Number(update.target_exports ?? 0),
+              Number(update.target_exports ?? project.target_exports ?? 0),
             );
             return {
               ...project,
@@ -267,7 +265,6 @@ export default function DashboardPage() {
             target_exports: Math.max(
               Number(previous?.done_exports ?? 0),
               Number(project.done_exports ?? 0),
-              Number(previous?.target_exports ?? 0),
               Number(project.target_exports ?? 0),
             ),
             optimistic: false,

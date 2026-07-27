@@ -1269,7 +1269,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         <button
                           type="button"
                           onClick={() => setExpandedClipId(null)}
-                          className="fixed inset-0 z-[100] cursor-zoom-out bg-black/80 backdrop-blur-sm"
+                          className="fixed inset-0 z-[100] cursor-zoom-out bg-black/85"
                           aria-label="Close expanded reel"
                         />
                       ) : null}
@@ -1279,7 +1279,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         onPointerDown={() => primeVideo(clip.exportId, 'auto')}
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
                         className={expandedClipId === clip.exportId
-                          ? 'fixed left-1/2 top-1/2 z-[101] aspect-[9/16] h-[92vh] max-h-[calc(92vw*16/9)] w-auto -translate-x-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-[12px] bg-[#15171c] shadow-2xl ring-1 ring-white/20'
+                          ? 'fixed left-1/2 top-1/2 z-[101] aspect-[9/16] h-[76vh] max-h-[760px] max-w-[min(88vw,428px)] w-auto -translate-x-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-[12px] bg-[#15171c] shadow-xl ring-1 ring-white/20'
                           : 'relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22'}
                       >
                         {/* Avoid opening ten metadata range requests at once. The
