@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { getRequiredClipCount, getTargetClipCount } from '../lib/clip-policy';
 import { buildPlanFeatures, PLAN_LOOKUP } from '../lib/plans';
+import { prioritizeMainRenderJobs } from '../lib/render-job-order';
 
 assert.deepEqual(
   [PLAN_LOOKUP.starter.processingMinutes, PLAN_LOOKUP.creator.processingMinutes, PLAN_LOOKUP.pro.processingMinutes],
@@ -50,5 +51,16 @@ const workerRoute = readFileSync(new URL('../app/api/jobs/process/route.ts', imp
 assert.match(projectRoute, /configuredPlan\.maxUploadLengthMinutes/);
 assert.match(exportRoute, /entitlements\.maxGeneratedClips/);
 assert.match(workerRoute, /sortProjectWorkByPlan/);
+
+const orderedRenderJobs = prioritizeMainRenderJobs([
+  { projectId: 'pro-a', payload: { export_id: 'short', render_duration_seconds: 30 } },
+  { projectId: 'pro-a', payload: { export_id: 'preview', preview_only: true, render_duration_seconds: 120 } },
+  { projectId: 'pro-a', payload: { export_id: 'long', render_duration_seconds: 90 } },
+  { projectId: 'pro-b', payload: { export_id: 'other-project', render_duration_seconds: 180 } },
+]);
+assert.deepEqual(
+  orderedRenderJobs.map((job) => job.payload.export_id),
+  ['long', 'short', 'other-project', 'preview'],
+);
 
 console.log('Plan entitlements are configured and enforced.');

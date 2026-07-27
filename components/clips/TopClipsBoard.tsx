@@ -396,11 +396,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const playRequestsRef = useRef<Record<string, number>>({});
   const intendedPlayingIdRef = useRef<string | null>(null);
   const primedVideoIdsRef = useRef(new Set<string>());
-  const previewWarmQueueRef = useRef<string[]>([]);
-  const previewWarmActiveRef = useRef(new Set<string>());
-  const previewWarmCompleteRef = useRef(new Set<string>());
   const previewTrackedRef = useRef(new Set<string>());
-  const previewObserverRef = useRef<IntersectionObserver | null>(null);
   const playRecoveryTimersRef = useRef<Record<string, number>>({});
   const playRecoveryAttemptsRef = useRef<Record<string, number>>({});
   const stallRecoveryTimersRef = useRef<Record<string, number>>({});
@@ -563,19 +559,19 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }, 6000);
   }
 
-  function primeVideo(id: string, preload: 'metadata' | 'auto' = 'metadata') {
+  function primeVideo(id: string) {
     const video = videoRefs.current[id];
     if (!video) return;
-    const upgradingToPlaybackData = preload === 'auto' && video.preload !== 'auto';
-    if (video.preload !== preload) {
-      video.preload = preload;
+    const upgradingToPlaybackData = video.preload !== 'auto';
+    if (upgradingToPlaybackData) {
+      video.preload = 'auto';
     }
     // Pointer-down deliberately primes a reel before the click handler runs.
     // Calling load() again while that first request is still opening aborts the
     // subsequent play() promise and leaves only some cards stuck on pause.
-    // Metadata-only videos are commonly left in NETWORK_IDLE. Merely changing
-    // the preload property does not reliably make Safari/Chrome request media
-    // bytes, so explicitly resume loading once when promoting a warm preview.
+    // The cards intentionally start at preload="none". Merely changing the
+    // preload property does not reliably make Safari/Chrome request media
+    // bytes, so explicitly begin loading once after direct interaction.
     if (
       !primedVideoIdsRef.current.has(id)
       && (
@@ -595,68 +591,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     }
   }
 
-  function drainPreviewWarmQueue() {
-    if (shareClip) return;
-    // Warm the visible desktop row in parallel so any reel starts immediately.
-    // Mobile/data-saving connections stay conservative and use the smaller
-    // 360p rendition selected above.
-    const connection = (navigator as Navigator & {
-      connection?: { saveData?: boolean; effectiveType?: string; downlink?: number };
-    }).connection;
-    const constrained = Boolean(connection?.saveData)
-      || /(^|-)2g|3g/i.test(connection?.effectiveType ?? '')
-      || (typeof connection?.downlink === 'number' && connection.downlink < 2)
-      || window.matchMedia('(max-width: 520px)').matches;
-    const maxConcurrentPreviewLoads = constrained ? 2 : 5;
-    while (
-      previewWarmActiveRef.current.size < maxConcurrentPreviewLoads &&
-      previewWarmQueueRef.current.length > 0
-    ) {
-      const id = previewWarmQueueRef.current.shift();
-      if (!id || previewWarmCompleteRef.current.has(id) || previewWarmActiveRef.current.has(id)) continue;
-      if (!videoRefs.current[id]) continue;
-      previewWarmActiveRef.current.add(id);
-      primeVideo(id, 'auto');
-    }
-  }
-
-  function queuePreviewWarm(id: string) {
-    if (
-      previewWarmCompleteRef.current.has(id) ||
-      previewWarmActiveRef.current.has(id) ||
-      previewWarmQueueRef.current.includes(id)
-    ) return;
-    previewWarmQueueRef.current.push(id);
-    drainPreviewWarmQueue();
-  }
-
-  function finishPreviewWarm(id: string) {
-    previewWarmCompleteRef.current.add(id);
-    previewWarmActiveRef.current.delete(id);
-    drainPreviewWarmQueue();
-  }
-
-  // The queue helpers intentionally operate only on refs; rebuilding the
-  // observer when the server-provided clip list changes is sufficient.
-  /* eslint-disable react-hooks/exhaustive-deps */
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const id = (entry.target as HTMLElement).dataset.clipVideoId;
-        if (id) queuePreviewWarm(id);
-        observer.unobserve(entry.target);
-      }
-    }, { rootMargin: '700px 0px' });
-    previewObserverRef.current = observer;
-    document.querySelectorAll<HTMLElement>('[data-clip-video-id]').forEach((element) => observer.observe(element));
-    return () => {
-      observer.disconnect();
-      previewObserverRef.current = null;
-    };
-  }, [clips]);
-  /* eslint-enable react-hooks/exhaustive-deps */
-
   function isInterruptedPlayError(error: unknown) {
     const name = error instanceof Error ? error.name : '';
     const message = error instanceof Error ? error.message : String(error ?? '');
@@ -672,7 +606,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     intendedPlayingIdRef.current = id;
     const requestId = (playRequestsRef.current[id] ?? 0) + 1;
     playRequestsRef.current[id] = requestId;
-    primeVideo(id, 'auto');
+    primeVideo(id);
     pauseOtherVideos(id);
     updatePlayback(id, { buffering: video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA });
 
@@ -884,7 +818,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function openShareModal(clip: ClipItem) {
     for (const video of Object.values(videoRefs.current)) video?.pause();
-    previewWarmQueueRef.current = [];
     setShareDownloadError(null);
     setShareClip(clip);
   }
@@ -995,26 +928,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       Object.values(stallRecoveryTimersRef.current).forEach((timer) => window.clearTimeout(timer));
     };
   }, []);
-
-  useEffect(() => {
-    // Warm only the highest-ranked reel during idle time. Starting multiple
-    // video range requests in parallel can starve the reel the user presses,
-    // especially on mobile connections.
-    const warm = () => {
-      const firstClip = visible[0];
-      if (firstClip) primeVideo(firstClip.exportId, 'auto');
-    };
-    const windowWithIdle = window as Window & {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-    if (windowWithIdle.requestIdleCallback) {
-      const idleId = windowWithIdle.requestIdleCallback(warm, { timeout: 1200 });
-      return () => windowWithIdle.cancelIdleCallback?.(idleId);
-    }
-    const timer = window.setTimeout(warm, 250);
-    return () => window.clearTimeout(timer);
-  }, [visible]);
 
   function stableMediaUrl(clip: ClipItem) {
     const adaptiveUrl = previewQuality === '360p'
@@ -1295,9 +1208,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                       ) : null}
                       <div
                         data-clip-frame="true"
-                        onPointerEnter={() => primeVideo(clip.exportId, 'auto')}
-                        onPointerDown={() => primeVideo(clip.exportId, 'auto')}
-                        onFocus={() => primeVideo(clip.exportId, 'auto')}
+                        onPointerDown={() => primeVideo(clip.exportId)}
                         className={expandedClipId === clip.exportId
                           ? 'fixed left-1/2 top-1/2 z-[101] aspect-[9/16] h-[76vh] max-h-[760px] max-w-[min(88vw,428px)] w-auto -translate-x-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-[12px] bg-[#15171c] shadow-xl ring-1 ring-white/20'
                           : 'relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22'}
@@ -1307,10 +1218,9 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                         <video
                           ref={(el) => {
                             videoRefs.current[clip.exportId] = el;
-                            if (el) previewObserverRef.current?.observe(el);
                           }}
                           data-clip-video-id={clip.exportId}
-                          preload="metadata"
+                          preload="none"
                           playsInline
                           controls={false}
                           disablePictureInPicture
@@ -1327,7 +1237,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                             });
                           }}
                           onCanPlay={() => {
-                            finishPreviewWarm(clip.exportId);
                             updatePlayback(clip.exportId, { buffering: false });
                             if (intendedPlayingIdRef.current === clip.exportId && videoRefs.current[clip.exportId]?.paused) {
                               void playVideo(clip.exportId);
@@ -1382,7 +1291,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                           }}
                           onError={() => {
                             playbackTelemetry(clip, 'failed');
-                            finishPreviewWarm(clip.exportId);
                             cancelStallRecovery(clip.exportId);
                             const video = videoRefs.current[clip.exportId];
                             const currentUrl = stableMediaUrlsRef.current.get(clip.exportId);

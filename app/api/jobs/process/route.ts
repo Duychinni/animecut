@@ -14,6 +14,7 @@ import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai
 import { hasSettledPlayableExports } from '@/lib/project-completion';
 import { sendProjectStatusNotifications } from '@/lib/project-notifications';
 import { sortProjectWorkByPlan } from '@/lib/plan-entitlements';
+import { prioritizeMainRenderJobs } from '@/lib/render-job-order';
 import { analyzeRenderedClipTechnicalQuality } from '@/lib/ffmpeg-technical-analysis';
 import { calculateAiClipScore, type ClipTechnicalMetrics } from '@/lib/clip-score';
 import {
@@ -1340,8 +1341,7 @@ export async function POST(req: Request) {
       payload: (job.payload as Record<string, unknown>) ?? {},
     })).filter((item) => item.projectId);
 
-  workItems = (await sortProjectWorkByPlan(workItems))
-    .sort((left, right) => Number(isPreviewOnlyPayload(left.payload)) - Number(isPreviewOnlyPayload(right.payload)))
+  workItems = prioritizeMainRenderJobs(await sortProjectWorkByPlan(workItems))
     .slice(0, batchLimit);
 
   const queuedExportSlots = Math.max(0, batchLimit - workItems.length);

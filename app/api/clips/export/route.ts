@@ -106,7 +106,7 @@ async function selectTopCandidates(supabase: SupabaseAdminClient, projectId: str
 async function selectSelectedCandidateHooks(supabase: SupabaseAdminClient, projectId: string, selectedIds: string[]) {
   const withHookText = await supabase
     .from('clip_candidates')
-    .select('id, title, hook_text')
+    .select('id, title, hook_text, start_sec, end_sec')
     .eq('project_id', projectId)
     .in('id', selectedIds);
 
@@ -115,7 +115,7 @@ async function selectSelectedCandidateHooks(supabase: SupabaseAdminClient, proje
   console.warn('[clips/export] hook_text column missing; selecting selected candidates without hook_text');
   return supabase
     .from('clip_candidates')
-    .select('id, title')
+    .select('id, title, start_sec, end_sec')
     .eq('project_id', projectId)
     .in('id', selectedIds);
 }
@@ -161,6 +161,7 @@ export async function POST(req: Request) {
       : [];
     let blockedCount = 0;
     let candidateHookText = new Map<string, string>();
+    let candidateDuration = new Map<string, number>();
 
     const { data: projectRow } = await supabase
       .from('projects')
@@ -280,6 +281,16 @@ export async function POST(req: Request) {
           normalizeHookText(readOptionalField(row, 'hook_text')) ?? normalizeHookText(row.title) ?? 'Top Moment',
         ]),
       );
+      candidateDuration = new Map(
+        (existingCandidates ?? []).map((row) => [
+          String(row.id),
+          Math.max(
+            0,
+            Number(readOptionalField(row, 'end_sec') ?? 0)
+              - Number(readOptionalField(row, 'start_sec') ?? 0),
+          ),
+        ]),
+      );
       selectedIds = selectedIds.filter((id) => validIds.has(id));
     }
 
@@ -331,6 +342,7 @@ export async function POST(req: Request) {
         motion_tracking: motionTracking,
         auto_reframe: autoReframe,
         reframe_mode: reframeMode,
+        render_duration_seconds: candidateDuration.get(String(row.clip_candidate_id)) ?? 0,
       },
       status: 'queued',
     }));
