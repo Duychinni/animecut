@@ -9,7 +9,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   [PLAN_LOOKUP.starter.maxUploadLengthMinutes, PLAN_LOOKUP.creator.maxUploadLengthMinutes, PLAN_LOOKUP.pro.maxUploadLengthMinutes],
-  [60, 120, 180],
+  [60, 120, 300],
 );
 assert.deepEqual(
   [PLAN_LOOKUP.starter.maxGeneratedClips, PLAN_LOOKUP.creator.maxGeneratedClips, PLAN_LOOKUP.pro.maxGeneratedClips],

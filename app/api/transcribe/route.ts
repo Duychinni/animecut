@@ -94,7 +94,18 @@ export async function POST(req: Request) {
 
     if (!transcriptionPath) throw new Error('Unable to resolve media source');
 
-    const transcript = await transcribeAudioFile(transcriptionPath);
+    const transcript = await transcribeAudioFile(transcriptionPath, {
+      onProgress: async ({ completedChunks, totalChunks, resumedChunks }) => {
+        const progress = 25 + Math.floor((completedChunks / Math.max(1, totalChunks)) * 6);
+        const resumedLabel = resumedChunks > 0 ? `, ${resumedChunks} resumed` : '';
+        await supabase.from('projects').update({
+          pipeline_stage: 'transcribing',
+          pipeline_stage_label: `Transcribing audio (${completedChunks}/${totalChunks}${resumedLabel})`,
+          pipeline_progress_percent: progress,
+          worker_last_seen_at: new Date().toISOString(),
+        }).eq('id', project_id);
+      },
+    });
 
     await supabase.from('transcripts').delete().eq('project_id', project_id);
 

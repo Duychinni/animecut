@@ -57,7 +57,7 @@ export const PLAN_CONFIG: PlanConfig[] = [
     subtitle: 'For professionals and high-volume workflows',
     monthlyPrice: '$39.99',
     processingMinutes: 1500,
-    maxUploadLengthMinutes: 180,
+    maxUploadLengthMinutes: 300,
     maxGeneratedClips: 30,
     featureLabels: ['Everything in Creator', 'Priority processing', 'Highest monthly allowance', 'Priority support'],
     cta: 'Choose Pro',

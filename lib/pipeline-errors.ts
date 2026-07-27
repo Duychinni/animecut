@@ -1,5 +1,5 @@
 export type PipelineErrorInfo = {
-  code: 'youtube_source_blocked' | 'not_enough_content' | 'worker_stale' | 'pipeline_paused';
+  code: 'youtube_source_blocked' | 'not_enough_content' | 'transcription_failed' | 'worker_stale' | 'pipeline_paused';
   title: string;
   message: string;
   stageLabel: string;
@@ -50,6 +50,16 @@ export function getPipelineErrorInfo(error: unknown): PipelineErrorInfo {
       title: 'Upload the video file to continue',
       message: 'YouTube blocked this link before AnimaCut could read the source. Upload the video file instead, or try another public link.',
       stageLabel: 'Source blocked by YouTube',
+      tone: 'amber',
+    };
+  }
+
+  if (/transcri|whisper|audio chunk|audio duration/i.test(text)) {
+    return {
+      code: 'transcription_failed',
+      title: 'Audio transcription was interrupted',
+      message: 'AnimaCut could not finish transcribing this source. Completed sections were saved, so retrying can continue from the interrupted section.',
+      stageLabel: 'Transcription interrupted',
       tone: 'amber',
     };
   }

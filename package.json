@@ -23,6 +23,7 @@
     "previews:backfill": "node --env-file-if-exists=.env.local scripts/backfill-export-previews.mjs",
     "launch:check": "node scripts/launch-readiness.mjs",
     "plans:test": "npx tsx scripts/test_plan_entitlements.ts",
+    "transcription:test": "npx tsx scripts/test_chunked_transcription.ts",
     "captions:test": "npx tsx scripts/test_caption_system.ts",
     "boundaries:test": "npx tsx scripts/test_clip_boundary_safety.ts",
     "editorial:test": "npx tsx scripts/test_editorial_output_quality.ts",

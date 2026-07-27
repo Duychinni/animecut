@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createProjectSchema } from '@/lib/validators';
+import { createProjectSchema, MAX_SOURCE_DURATION_SECONDS } from '@/lib/validators';
 import { createClient } from '@/lib/supabase/server';
 import { fetchYouTubeSourceMetadata, stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -241,12 +241,18 @@ export async function POST(req: Request) {
 
     const planId = effectivePlanId(profile) as PlanId;
     const configuredPlan = planId === 'starter' || planId === 'creator' || planId === 'pro' ? PLAN_LOOKUP[planId] : null;
-    if (planId === 'free' && parsed.source_type === 'youtube' && !sourceMeta.sourceDurationSeconds && parsed.source_url) {
+    if (parsed.source_type === 'youtube' && !sourceMeta.sourceDurationSeconds && parsed.source_url) {
       sourceMeta.sourceDurationSeconds = await fetchYouTubeDurationSeconds(parsed.source_url);
     }
     const uploadMinutes = minutesRequiredFromSeconds(sourceMeta.sourceDurationSeconds);
 
     if (!BILLING_DEV_BYPASS) {
+      if (Number(sourceMeta.sourceDurationSeconds ?? 0) > MAX_SOURCE_DURATION_SECONDS) {
+        return NextResponse.json(
+          { error: 'Source videos must be 5 hours or under.' },
+          { status: 400 },
+        );
+      }
       if (planId === 'free' && uploadMinutes <= 0) {
         return NextResponse.json(
           {
