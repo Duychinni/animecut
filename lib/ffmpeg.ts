@@ -696,7 +696,7 @@ function smartReframeCacheKey(opts: RenderOpts) {
       autoReframe: opts.autoReframe !== false,
       reframeMode: opts.reframeMode ?? 'smart',
       reframePreset: opts.reframePreset ?? 'auto',
-      analysisFps: process.env.SMART_REFRAME_ANALYSIS_FPS || '8',
+      analysisFps: process.env.SMART_REFRAME_ANALYSIS_FPS || '12',
       editorialPlan: opts.editorialPlan ?? null,
       speakerTurns: opts.speakerTurns ?? [],
     }))
@@ -1105,7 +1105,7 @@ async function maybeBuildSmartCropExpressionUncached(opts: RenderOpts): Promise<
       opts.inputPath,
       String(opts.startSec),
       String(opts.endSec),
-      process.env.SMART_REFRAME_ANALYSIS_FPS || '8',
+      process.env.SMART_REFRAME_ANALYSIS_FPS || '12',
       ...(editorialPlanPath || speakerTurnsPath ? [editorialPlanPath ?? ''] : []),
       ...(speakerTurnsPath ? [speakerTurnsPath] : []),
     ]);
@@ -1176,7 +1176,7 @@ async function maybeBuildSmartCropExpressionUncached(opts: RenderOpts): Promise<
           opts.inputPath,
           String(opts.startSec),
           String(opts.endSec),
-          process.env.SMART_REFRAME_ANALYSIS_FPS || '8',
+          process.env.SMART_REFRAME_ANALYSIS_FPS || '12',
         ]);
         const cvRaw = cvProbe.json as typeof raw;
         if (cvProbe.code === 0 && cvRaw?.ok) {

@@ -2709,16 +2709,16 @@ def main():
     analysis_end_sec = min(source_duration, requested_analysis_end) if source_duration > 0.0 else requested_analysis_end
     analysis_end_sec = max(end_sec, analysis_end_sec)
     analysis_duration = max(0.01, analysis_end_sec - analysis_start_sec)
-    # Eight observations per second keeps solo/stacked hard cuts within one
-    # 125 ms sample. Offline lookahead then replaces every partial transition
+    # Twelve observations per second keeps solo/stacked hard cuts within one
+    # 83 ms sample. Offline lookahead then replaces every partial transition
     # observation with the next complete verified composition.
     try:
         requested_analysis_fps = float(sys.argv[4]) if len(sys.argv) > 4 else float(
-            os.environ.get('SMART_REFRAME_ANALYSIS_FPS', '8')
+            os.environ.get('SMART_REFRAME_ANALYSIS_FPS', '12')
         )
     except (TypeError, ValueError):
-        requested_analysis_fps = 8.0
-    analysis_fps = clamp(requested_analysis_fps, 1.0, 8.0)
+        requested_analysis_fps = 12.0
+    analysis_fps = clamp(requested_analysis_fps, 1.0, 12.0)
     sample_interval = 1.0 / analysis_fps
     sample_count = max(2, int(math.ceil(analysis_duration * analysis_fps)) + 1)
     sample_times = [
