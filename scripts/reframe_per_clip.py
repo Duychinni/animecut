@@ -861,6 +861,9 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
     def complete_faces(frame):
         return [
             face for face in frame.get('faces', [])
+            # A predicted box belongs to the preceding observation and is
+            # specifically unsafe as proof of who appears after a cut.
+            if not bool(face.get('predicted'))
             if face_is_complete_in_source(
                 (
                     float(face.get('x', 0.0)), float(face.get('y', 0.0)),
@@ -876,6 +879,12 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
         if cut_index == 0:
             continue
         explicit_cut = bool(frame.get('scene_cut') or scene_change >= 0.38)
+        # Lookahead is a shot-entry repair, not a general face-tracking pass.
+        # Running it on every ordinary sample lets normal detector-box drift
+        # compare the current face with a later pose and invent a new shot.
+        # Require at least a real visual discontinuity before geometry may
+        # infer a subtle solo/solo or solo/pair edit.
+        plausible_cut = bool(explicit_cut or scene_change >= 0.12)
 
         confirmed_index = None
         confirmed_faces = None
@@ -950,10 +959,12 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
                     confirmed_index = future_index
                     confirmed_faces = complete
                     confirmed_score = candidate_score
-                if candidate_score >= 0.72:
+                if candidate_score >= 0.72 and current_pair is None:
                     # The first clearly face-sized, confident composition is
                     # the editorial target. Do not scan farther and preframe a
-                    # different participant who happens to appear later.
+                    # different participant who happens to appear later. A
+                    # pair keeps scanning through the short window because one
+                    # close-up face can briefly be emitted as two fragments.
                     break
 
         if confirmed_index is None or not confirmed_faces:
@@ -989,11 +1000,36 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             ),
             default=0.0,
         )
+        confirmed_primary_cx = float(
+            confirmed_primary.get(
+                'cx',
+                float(confirmed_primary.get('x', 0.0)) + float(confirmed_primary.get('w', 0.0)) / 2.0,
+            )
+        )
+        previous_primary_center_distance = min(
+            (
+                abs(
+                    confirmed_primary_cx
+                    - float(
+                        previous.get(
+                            'cx',
+                            float(previous.get('x', 0.0)) + float(previous.get('w', 0.0)) / 2.0,
+                        )
+                    )
+                ) / max(source_w, 1.0)
+                for previous in previous_faces
+            ),
+            default=1.0,
+        )
         inferred_layout_change = bool(
+            (plausible_cut or not complete_faces(frame))
+            and
             previous_faces
             and bool(previous_pair is not None) != bool(pair is not None)
         )
         inferred_solo_subject_change = bool(
+            plausible_cut
+            and
             previous_faces
             and previous_pair is None
             and pair is None
@@ -1010,6 +1046,7 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             and not inferred_layout_change
             and not inferred_solo_subject_change
             and previous_primary_match >= 0.48
+            and previous_primary_center_distance <= 0.10
         ):
             explicit_cut = False
             prepared_points[cut_index]['scene_change'] = 0.0
@@ -1018,7 +1055,11 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
         # layout transition only when the confirmed geometry changes between
         # one person and two people. This catches visually subtle talk-show
         # cuts that the histogram scene detector can miss.
-        if not explicit_cut and not inferred_layout_change and not inferred_solo_subject_change:
+        if (
+            not explicit_cut
+            and not inferred_layout_change
+            and not inferred_solo_subject_change
+        ):
             continue
         lookahead_faces = list(pair) if pair is not None else [
             max(
@@ -1116,6 +1157,7 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
                 entry_point['scene_change'] = max(
                     0.72, float(entry_point.get('scene_change', 0.0))
                 )
+                entry_point['inferred_shot_boundary'] = True
 
     return prepared_points, prepared_frames
 
@@ -2104,6 +2146,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'audio_activity': round(audio_activity, 4),
             'scene_cut': shot_change,
             'moderate_shot_change': moderate_shot_change,
+            'inferred_shot_boundary': bool(point.get('inferred_shot_boundary')),
             'single_score': round(single_score, 4),
             'stacked_score': round(stacked_score, 4),
             'stack_eligible': stack_eligible,
@@ -2244,6 +2287,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'silenceState': decision.get('silence_state'),
                 'sceneCutStart': bool(decision.get('scene_cut')),
                 'moderateCutStart': bool(decision.get('moderate_shot_change')),
+                'inferredCutStart': bool(decision.get('inferred_shot_boundary')),
                 'points': [],
                 '_top_boxes': [],
                 '_bottom_boxes': [],
@@ -2341,7 +2385,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         # incoming turn begins near the end of a short clip. Never merge that
         # boundary back into the outgoing speaker and accidentally animate a
         # slow pan across both faces.
-        if segment_duration >= 0.9 or is_confirmed_fixed_turn or segment.get('hardCutStart'):
+        if (
+            segment_duration >= 0.9
+            or is_confirmed_fixed_turn
+            or segment.get('hardCutStart')
+            or (
+                segment.get('sceneCutStart')
+                and not segment.get('inferredCutStart')
+            )
+        ):
             index += 1
             continue
         previous = clean_segments[index - 1] if index > 0 else None
@@ -2425,13 +2477,21 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         # shifts must not make the camera drift. A confirmed identity or scene
         # change already creates a separate hard-cut segment above.
         if segment.get('subjectKind') == 'face':
-            anchor = segment['points'][0]
-            anchor_x = float(anchor['cropX'])
-            anchor_y = float(anchor['cropY'])
-            anchor_w = float(anchor['cropW'])
-            anchor_h = float(anchor['cropH'])
-            anchor_zoom = float(anchor.get('zoom', 1.0))
-            for point in segment['points'][1:]:
+            # Lock to the robust center of the verified shot, not its first
+            # detector sample. The first sample after an edit is frequently
+            # predicted, motion-blurred, or mid head-turn; anchoring to it can
+            # leave the real speaker pinned to an edge for the whole shot.
+            verified_points = [
+                point for point in segment['points']
+                if not bool(point.get('predicted'))
+                and point.get('subjectKind') == 'face'
+            ] or list(segment['points'])
+            anchor_x = float(statistics.median(float(point['cropX']) for point in verified_points))
+            anchor_y = float(statistics.median(float(point['cropY']) for point in verified_points))
+            anchor_w = float(statistics.median(float(point['cropW']) for point in verified_points))
+            anchor_h = float(statistics.median(float(point['cropH']) for point in verified_points))
+            anchor_zoom = float(statistics.median(float(point.get('zoom', 1.0)) for point in verified_points))
+            for point in segment['points']:
                 point['cropX'] = round(anchor_x, 3)
                 point['cropY'] = round(anchor_y, 3)
                 point['cropW'] = round(anchor_w, 3)
