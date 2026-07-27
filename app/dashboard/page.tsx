@@ -616,19 +616,31 @@ export default function DashboardPage() {
                 : p.pipeline_stage === 'uploading_outputs' ? 'Finalizing reels'
                 : 'Processing')
               : 'Processing');
-          const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage) ? 'Finalizing reels' : rawProcessingStage;
+          const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage)
+            ? 'Finalizing reels'
+            : p.pipeline_stage === 'finding_hooks'
+              ? 'Finding hooks'
+              : p.pipeline_stage === 'creating_clips'
+                ? 'Creating top clip candidates'
+                : rawProcessingStage;
           const diagnostics = p.diagnostics;
           const pipelineJob = diagnostics?.latest_pipeline_job ?? null;
           const showDebug = false;
           const etaLabel = showProcessing && typeof p.eta_seconds === 'number' && Number.isFinite(p.eta_seconds) && p.eta_seconds > 0
-            ? `Approx. ETA ${fmtDuration(p.eta_seconds)}`
+            ? `About ${fmtDuration(p.eta_seconds)} left`
             : null;
           const debugLine = diagnostics
             ? `${diagnostics.message || 'Waiting for backend update'} Last worker ${fmtDebugDuration(diagnostics.seconds_since_worker_heartbeat)} ago. Job ${pipelineJob?.status || 'none'}${pipelineJob?.attempts ? ` a${pipelineJob.attempts}` : ''}.`
             : null;
           const doneExports = Math.max(0, Number(p.done_exports ?? diagnostics?.done_exports ?? 0));
           const targetExports = Math.max(doneExports, Number(p.target_exports ?? diagnostics?.target_exports ?? 0));
-          const reelProgressLabel = showProcessing && targetExports > 0
+          const hasFinalizedRenderQueue = p.pipeline_stage === 'rendering'
+            || p.pipeline_stage === 'face_tracking_crop'
+            || p.pipeline_stage === 'uploading_outputs'
+            || /^rendering reels$/i.test(processingStage)
+            || /^waiting for render worker$/i.test(processingStage)
+            || /^finalizing reels$/i.test(processingStage);
+          const reelProgressLabel = showProcessing && hasFinalizedRenderQueue && targetExports > 0
             ? `(${doneExports}/${targetExports} READY)`
             : null;
 

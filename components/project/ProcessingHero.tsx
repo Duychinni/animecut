@@ -168,7 +168,7 @@ export function ProcessingHero({
   const pipelineError = data?.project?.pipeline_error ?? null;
   const activeEdits = Number(data?.progress?.active_edits ?? (watchActiveEdits ? 1 : 0));
   const etaSeconds = data?.progress?.eta_seconds ?? null;
-  const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `ETA ${fmtDuration(etaSeconds)}` : null;
+  const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `About ${fmtDuration(etaSeconds)} left` : null;
   const isNotEnoughContent = pipelineError === 'not_enough_content';
   const publicError = pipelineError && !isNotEnoughContent ? getPipelineErrorInfo(pipelineError) : null;
   const editUpdateFinished = watchActiveEdits && data !== null && activeEdits === 0;

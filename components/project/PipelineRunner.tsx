@@ -223,7 +223,7 @@ export function PipelineRunner({ projectId, autoStart = false }: { projectId: st
   const thumbnailUrl = progress?.project?.thumbnail_url;
   const processingLabel = progress?.project?.pipeline_stage_label || getProcessingLabel(progress?.project?.pipeline_stage);
   const etaSeconds = progress?.progress?.eta_seconds ?? null;
-  const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `ETA ${fmtDuration(etaSeconds)}` : null;
+  const etaLabel = typeof etaSeconds === 'number' && Number.isFinite(etaSeconds) && etaSeconds > 0 ? `About ${fmtDuration(etaSeconds)} left` : null;
 
   if (isCompleted) {
     return null;

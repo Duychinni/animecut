@@ -8,8 +8,8 @@ import { effectivePlanId, getOrCreateProfile, minutesRequiredFromSeconds } from 
 import { isMockAiEnabled } from '@/lib/dev-ai';
 import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
-import { getTargetClipCount } from '@/lib/clip-policy';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
+import { estimateObservedRenderEtaSeconds } from '@/lib/project-eta';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -48,72 +48,6 @@ function parseYouTubeId(url: string | null | undefined): string | null {
   }
 }
 
-function estimateDashboardEtaSeconds(params: {
-  status: string | null;
-  pipelineStatus: string | null;
-  pipelineStage: string | null;
-  progressPercent: number;
-  sourceDurationSeconds: number | null;
-  readyExports: number;
-  activeExports: number;
-  exportCount: number;
-}) {
-  const {
-    status,
-    pipelineStatus,
-    pipelineStage,
-    progressPercent,
-    sourceDurationSeconds,
-    readyExports,
-    activeExports,
-    exportCount,
-  } = params;
-
-  if (status === 'completed' || pipelineStatus === 'completed') return 0;
-  if (status === 'failed' || status === 'error' || pipelineStatus === 'error') return null;
-  if (pipelineStatus !== 'queued' && pipelineStatus !== 'processing') return null;
-
-  const sourceSeconds = Math.max(60, Number(sourceDurationSeconds) || 600);
-  const targetCount = Math.max(1, exportCount || getTargetClipCount(sourceSeconds));
-  const remainingExports = Math.max(0, targetCount - readyExports);
-  const renderParallelism = Math.max(1, Math.min(3, activeExports || 2));
-  const renderBudget = Math.max(35, Math.round((Math.max(1, remainingExports) * 50) / renderParallelism));
-  const stageBudgets: Record<string, number> = {
-    queued: 20,
-    downloading: Math.max(25, Math.min(90, Math.round(sourceSeconds * 0.06))),
-    extracting_audio: Math.max(20, Math.min(80, Math.round(sourceSeconds * 0.08))),
-    transcribing: Math.max(45, Math.min(240, Math.round(sourceSeconds * 0.22))),
-    diarizing: Math.max(25, Math.min(150, Math.round(sourceSeconds * 0.12))),
-    finding_hooks: Math.max(30, Math.min(120, Math.round(sourceSeconds * 0.1))),
-    creating_clips: 18,
-    face_tracking_crop: Math.max(15, Math.min(80, remainingExports * 8)),
-    rendering: renderBudget,
-    uploading_outputs: 12,
-  };
-  const stageStarts: Record<string, number> = {
-    queued: 0,
-    downloading: 5,
-    extracting_audio: 10,
-    transcribing: 25,
-    diarizing: 32,
-    finding_hooks: 40,
-    creating_clips: 55,
-    face_tracking_crop: 70,
-    rendering: 85,
-    uploading_outputs: 95,
-  };
-  const stageOrder = ['queued', 'downloading', 'extracting_audio', 'transcribing', 'diarizing', 'finding_hooks', 'creating_clips', 'face_tracking_crop', 'rendering', 'uploading_outputs'];
-  const effectiveStage = pipelineStage && stageBudgets[pipelineStage] ? pipelineStage : pipelineStatus === 'queued' ? 'queued' : 'transcribing';
-  const currentIndex = Math.max(0, stageOrder.indexOf(effectiveStage));
-  const stageStart = stageStarts[effectiveStage] ?? 0;
-  const nextStageStart = currentIndex + 1 < stageOrder.length ? (stageStarts[stageOrder[currentIndex + 1]] ?? 100) : 100;
-  const stageFraction = Math.max(0, Math.min(0.95, (progressPercent - stageStart) / Math.max(1, nextStageStart - stageStart)));
-  const currentRemaining = Math.max(5, Math.round((stageBudgets[effectiveStage] ?? 30) * (1 - stageFraction)));
-  const futureSeconds = stageOrder.slice(currentIndex + 1).reduce((total, stage) => total + (stageBudgets[stage] ?? 0), 0);
-
-  return Math.max(8, currentRemaining + futureSeconds);
-}
-
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -123,14 +57,19 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from('projects')
-      .select('id, user_id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, pipeline_error, worker_last_seen_at, pipeline_completed_at, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path)')
+      .select('id, user_id, title, status, pipeline_status, pipeline_stage, pipeline_stage_label, pipeline_progress_percent, pipeline_error, worker_last_seen_at, pipeline_completed_at, source_type, source_url, source_storage_path, created_at, source_title, source_thumbnail_url, source_channel_name, source_duration_seconds, exports(status, output_storage_path, created_at, updated_at)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
     const projects = await Promise.all((data ?? []).map(async (project) => {
-      const rows = Array.isArray(project.exports) ? project.exports as Array<{ status?: string | null; output_storage_path?: string | null }> : [];
+      const rows = Array.isArray(project.exports) ? project.exports as Array<{
+        status?: string | null;
+        output_storage_path?: string | null;
+        created_at?: string | null;
+        updated_at?: string | null;
+      }> : [];
       const readyExports = rows.filter(hasPlayableOutput).length;
       const queuedExports = rows.filter((r) => r.status === 'queued' && !hasPlayableOutput(r)).length;
       const processingExports = rows.filter((r) => r.status === 'processing' && !hasPlayableOutput(r)).length;
@@ -164,15 +103,12 @@ export async function GET() {
           : queuedExports > 0
             ? 'Waiting for render worker'
             : project.pipeline_stage_label;
-      const etaSeconds = estimateDashboardEtaSeconds({
-        status: normalizedStatus,
+      const etaSeconds = isCompleted ? 0 : estimateObservedRenderEtaSeconds({
         pipelineStatus: normalizedPipelineStatus,
         pipelineStage: normalizedPipelineStage,
-        progressPercent,
-        sourceDurationSeconds: project.source_duration_seconds,
         readyExports,
-        activeExports,
         exportCount: targetExports,
+        exportRows: rows,
       });
       const hasActivePipeline = normalizedPipelineStatus === 'queued' || normalizedPipelineStatus === 'processing';
 
