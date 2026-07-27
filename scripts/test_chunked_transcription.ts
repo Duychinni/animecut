@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mergeChunkTranscripts } from '../lib/transcription';
+import { attachWordsToSegments, mergeChunkTranscripts } from '../lib/transcription';
 
 const merged = mergeChunkTranscripts([
   {
@@ -86,5 +86,22 @@ assert.deepEqual(
   ['before', 'boundary'],
   'overlapping transcription chunks must assign every boundary word exactly once',
 );
+
+const attached = attachWordsToSegments(
+  [
+    { start: 0, end: 1, text: 'one two' },
+    { start: 1, end: 2, text: 'three four' },
+  ],
+  [
+    { start: 0.05, end: 0.3, word: 'one' },
+    { start: 0.45, end: 0.8, word: 'two' },
+    { start: 1.05, end: 1.3, word: 'three' },
+    { start: 1.5, end: 1.9, word: 'four' },
+  ],
+);
+assert.deepEqual(attached.map((segment) => segment.words?.map((word) => word.word)), [
+  ['one', 'two'],
+  ['three', 'four'],
+]);
 
 console.log('Chunked transcription timestamp merging and boundary deduplication passed.');

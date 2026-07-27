@@ -12,6 +12,12 @@ type TranscriptSegment = Record<string, unknown> & {
   words?: Array<Record<string, unknown> & { start?: number; end?: number }>;
 };
 
+type TranscriptWord = Record<string, unknown> & {
+  start?: number;
+  end?: number;
+  word?: string;
+};
+
 export type TranscriptResult = {
   language: string;
   fullText: string;
@@ -31,7 +37,7 @@ type TranscriptionOptions = {
 const OPENAI_SAFE_FILE_BYTES = 24 * 1024 * 1024;
 const CHUNK_CORE_SECONDS = 12 * 60;
 const CHUNK_OVERLAP_SECONDS = 2;
-const CHUNK_CACHE_VERSION = 2;
+const CHUNK_CACHE_VERSION = 3;
 
 function getTranscriptionProvider() {
   return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
@@ -100,11 +106,61 @@ async function transcribeWithOpenAI(filePath: string): Promise<TranscriptResult>
     timestamp_granularities: ['segment', 'word'],
   });
 
-  return {
-    language: (transcript as unknown as { language?: string }).language ?? 'en',
-    fullText: transcript.text ?? '',
-    segments: ((transcript as unknown as { segments?: TranscriptSegment[] }).segments ?? []),
+  const verbose = transcript as unknown as {
+    language?: string;
+    segments?: TranscriptSegment[];
+    words?: TranscriptWord[];
   };
+
+  return {
+    language: verbose.language ?? 'en',
+    fullText: transcript.text ?? '',
+    segments: attachWordsToSegments(verbose.segments ?? [], verbose.words ?? []),
+  };
+}
+
+export function attachWordsToSegments(segments: TranscriptSegment[], words: TranscriptWord[]) {
+  const normalizedWords = words
+    .map((word) => ({
+      ...word,
+      start: Number(word.start),
+      end: Number(word.end),
+      word: String(word.word ?? '').trim(),
+    }))
+    .filter((word) => word.word && Number.isFinite(word.start) && Number.isFinite(word.end) && word.end > word.start);
+  if (!normalizedWords.length) return segments;
+
+  const assigned = segments.map(() => [] as TranscriptWord[]);
+  for (const word of normalizedWords) {
+    const midpoint = (Number(word.start) + Number(word.end)) / 2;
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const start = Number(segments[index].start);
+      const end = Number(segments[index].end);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+
+      const distance = midpoint < start
+        ? start - midpoint
+        : midpoint > end
+          ? midpoint - end
+          : 0;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+      if (distance === 0) break;
+    }
+
+    // Permit only tiny timestamp-rounding gaps. A malformed response must not
+    // attach a word to a distant sentence and create incorrect captions.
+    if (bestIndex >= 0 && bestDistance <= 0.25) assigned[bestIndex].push(word);
+  }
+
+  return segments.map((segment, index) => assigned[index].length
+    ? { ...segment, words: assigned[index] }
+    : segment);
 }
 
 async function transcribeOneFile(filePath: string, provider: string) {
@@ -297,14 +353,31 @@ async function transcribeChunked(filePath: string, provider: string, options: Tr
   return mergeChunkTranscripts(results);
 }
 
+function requireWordTimingCoverage(transcript: TranscriptResult) {
+  const spokenWordCount = transcript.segments.reduce(
+    (total, segment) => total + String(segment.text ?? '').trim().split(/\s+/).filter(Boolean).length,
+    0,
+  );
+  const timedWordCount = transcript.segments.reduce(
+    (total, segment) => total + (Array.isArray(segment.words) ? segment.words.length : 0),
+    0,
+  );
+  if (spokenWordCount > 0 && timedWordCount / spokenWordCount < 0.75) {
+    throw new Error(
+      `Transcription word timing coverage was too low (${timedWordCount}/${spokenWordCount}); refusing to render guessed caption timing`,
+    );
+  }
+  return transcript;
+}
+
 export async function transcribeAudioFile(filePath: string, options: TranscriptionOptions = {}) {
   if (isMockTranscriptionEnabled()) return buildMockTranscript();
 
   const provider = getTranscriptionProvider();
   const fileSize = (await stat(filePath)).size;
   if (provider !== 'openai' || fileSize < OPENAI_SAFE_FILE_BYTES) {
-    return await transcribeOneFile(filePath, provider);
+    return requireWordTimingCoverage(await transcribeOneFile(filePath, provider));
   }
 
-  return await transcribeChunked(filePath, provider, options);
+  return requireWordTimingCoverage(await transcribeChunked(filePath, provider, options));
 }
