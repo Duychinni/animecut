@@ -1146,6 +1146,33 @@ def test_fixed_two_region_long_silence_keeps_locked_stack():
     assert all(segment.get('topBox') and segment.get('bottomBox') for segment in result), result
 
 
+def test_single_closeup_long_silence_never_flashes_safe_wide():
+    first = box(420, 90, 560, 900, 1, 0.95)
+    second = box(1180, 90, 560, 900, 2, 0.95)
+    samples = []
+    for index in range(9):
+        samples.append(sample(
+            index * 0.25,
+            subject('face', first, 'face:1', 0.62),
+            [first], 1, 0.62, 0.40,
+            audio_activity=0.0,
+        ))
+    for index in range(9, 15):
+        samples.append(sample(
+            index * 0.25,
+            subject('face', second, 'face:2', 0.62),
+            [second], 2, 0.62, 0.40,
+            scene_cut=index == 9,
+            audio_activity=0.0 if index < 12 else 0.8,
+        ))
+    result = timeline(samples, duration=3.75)
+    assert all(segment['mode'] == 'single' for segment in result), result
+    assert not any(
+        segment.get('renderBranch', '').endswith('safe_full_frame')
+        for segment in result
+    ), result
+
+
 def test_two_person_uncertain_context_uses_both_locked_panes():
     left = box(110, 150, 360, 720, 1, 0.22)
     right = box(1450, 150, 360, 720, 2, 0.18)

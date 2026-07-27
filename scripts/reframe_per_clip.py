@@ -1770,6 +1770,20 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         elif silence_state in ('widen', 'lock') and visual_pair is not None:
             desired_mode = 'stacked'
             fixed_render_branch = f'silence_{silence_state}_stacked'
+        elif (
+            silence_state in ('widen', 'lock')
+            and subject_kind == 'face'
+            and selected is not None
+        ):
+            # Silence is not a visual reason to abandon a clean close-up.
+            # The old branch widened every single-person shot after a long
+            # pause, even when the detector continuously tracked a complete
+            # face. When speech resumed, layout confirmation then produced a
+            # brief safe-wide flash between two valid portrait crops. Keep the
+            # verified person planted; only widen when there is genuinely no
+            # trustworthy subject to frame.
+            desired_mode = 'single'
+            fixed_render_branch = f'silence_{silence_state}_single_subject'
         elif silence_state in ('widen', 'lock'):
             desired_mode = 'wide_context'
             fixed_render_branch = f'silence_{silence_state}_safe_full_frame'
