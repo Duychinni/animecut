@@ -1,6 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import webpush from 'web-push';
 
-export async function sendProjectStatusEmail(projectId: string, notificationType: 'completed' | 'failed') {
+type NotificationType = 'completed' | 'failed';
+
+export async function sendProjectStatusEmail(projectId: string, notificationType: NotificationType) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { sent: false, reason: 'RESEND_API_KEY is not configured' };
   const admin = createAdminClient();
@@ -24,4 +27,99 @@ export async function sendProjectStatusEmail(projectId: string, notificationType
     throw new Error(`Resend notification failed (${response.status})`);
   }
   return { sent: true };
+}
+
+export async function sendProjectStatusPush(projectId: string, notificationType: NotificationType) {
+  const publicKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY;
+  const privateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) return { sent: 0, reason: 'VAPID keys are not configured' };
+
+  const admin = createAdminClient();
+  const { data: project } = await admin
+    .from('projects')
+    .select('id,user_id,title,source_title')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (!project?.user_id) return { sent: 0, reason: 'project owner not found' };
+
+  const { data: subscriptions, error } = await admin
+    .from('push_subscriptions')
+    .select('id,endpoint,p256dh,auth')
+    .eq('user_id', project.user_id);
+  if (error) {
+    if (/does not exist|schema cache/i.test(error.message)) return { sent: 0, reason: 'migration 0026 is not applied' };
+    throw error;
+  }
+  if (!subscriptions?.length) return { sent: 0, reason: 'no subscribed devices' };
+
+  webpush.setVapidDetails(
+    process.env.WEB_PUSH_CONTACT || 'mailto:support@animacut.com',
+    publicKey,
+    privateKey,
+  );
+
+  const projectTitle = String(project.source_title || project.title || 'Your video');
+  const completed = notificationType === 'completed';
+  const payload = JSON.stringify({
+    title: completed ? 'Your AnimaCut video is ready' : 'Your AnimaCut video needs attention',
+    body: completed
+      ? `${projectTitle} has finished processing. Your reels are ready to preview.`
+      : `${projectTitle} could not finish processing. Open it to review or retry.`,
+    url: `/dashboard/projects/${projectId}`,
+    tag: `animacut-${projectId}-${notificationType}`,
+  });
+
+  let sent = 0;
+  await Promise.all(subscriptions.map(async (subscription) => {
+    const { error: reserveError } = await admin.from('project_push_notifications').insert({
+      project_id: projectId,
+      subscription_id: subscription.id,
+      notification_type: notificationType,
+    });
+    if (reserveError) {
+      if (/duplicate|unique/i.test(reserveError.message)) return;
+      throw reserveError;
+    }
+
+    try {
+      await webpush.sendNotification({
+        endpoint: subscription.endpoint,
+        keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+      }, payload, { TTL: 60 * 60 * 24 });
+      sent += 1;
+    } catch (pushError) {
+      const statusCode = typeof pushError === 'object' && pushError && 'statusCode' in pushError
+        ? Number(pushError.statusCode)
+        : 0;
+      if (statusCode === 404 || statusCode === 410) {
+        await admin.from('push_subscriptions').delete().eq('id', subscription.id);
+        return;
+      }
+      await admin
+        .from('project_push_notifications')
+        .delete()
+        .eq('project_id', projectId)
+        .eq('subscription_id', subscription.id)
+        .eq('notification_type', notificationType);
+      throw pushError;
+    }
+  }));
+
+  return { sent };
+}
+
+export async function sendProjectStatusNotifications(projectId: string, notificationType: NotificationType) {
+  const results = await Promise.allSettled([
+    sendProjectStatusEmail(projectId, notificationType),
+    sendProjectStatusPush(projectId, notificationType),
+  ]);
+
+  results.forEach((result, index) => {
+    if (result.status === 'rejected') {
+      console.warn(`[notification] ${index === 0 ? 'email' : 'push'} delivery failed`, {
+        projectId,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  });
 }

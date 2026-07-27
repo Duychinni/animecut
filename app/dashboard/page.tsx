@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
+import { BrowserNotifications } from '@/components/project/BrowserNotifications';
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
@@ -586,6 +587,8 @@ export default function DashboardPage() {
       </div>
 
       {msg ? <p className="mb-4 text-sm text-white/75">{msg}</p> : null}
+
+      <BrowserNotifications hasProcessingProjects={recentProjects.some(isActiveProject)} />
 
       {loadingProjects && <p className="text-sm text-white/60">Loading projects...</p>}
       {!loadingProjects && !recentProjects.length && <p className="text-sm text-white/60">No projects yet.</p>}

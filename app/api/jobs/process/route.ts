@@ -13,7 +13,7 @@ import { DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, getCaptionPresetById, ty
 import { resolveDefaultReelCaptionAccent, resolveDefaultReelHookPlacement } from '@/lib/reel-caption-style';
 import { isLikelyMockTranscript, isMockTranscriptionEnabled } from '@/lib/dev-ai';
 import { hasSettledPlayableExports } from '@/lib/project-completion';
-import { sendProjectStatusEmail } from '@/lib/project-notifications';
+import { sendProjectStatusNotifications } from '@/lib/project-notifications';
 import { sortProjectWorkByPlan } from '@/lib/plan-entitlements';
 import { analyzeRenderedClipTechnicalQuality } from '@/lib/ffmpeg-technical-analysis';
 import { calculateAiClipScore, type ClipTechnicalMetrics } from '@/lib/clip-score';
@@ -85,7 +85,7 @@ async function maybeFinalizeProject(projectId: string) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
-    void sendProjectStatusEmail(projectId, 'completed').catch((error) => console.warn('[notification] completion email failed', { projectId, error: error instanceof Error ? error.message : String(error) }));
+    await sendProjectStatusNotifications(projectId, 'completed');
     return true;
   }
 
@@ -108,7 +108,7 @@ async function maybeFinalizeProject(projectId: string) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', projectId);
-      void sendProjectStatusEmail(projectId, 'completed').catch((error) => console.warn('[notification] completion email failed', { projectId, error: error instanceof Error ? error.message : String(error) }));
+      await sendProjectStatusNotifications(projectId, 'completed');
       return true;
     }
 
@@ -127,7 +127,7 @@ async function maybeFinalizeProject(projectId: string) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', projectId);
-    void sendProjectStatusEmail(projectId, 'failed').catch((error) => console.warn('[notification] failure email failed', { projectId, error: error instanceof Error ? error.message : String(error) }));
+    await sendProjectStatusNotifications(projectId, 'failed');
     return true;
   }
 
