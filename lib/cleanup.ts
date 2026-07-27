@@ -63,13 +63,34 @@ export async function cleanupProjectTempFiles(projectId: string) {
 export async function cleanupExportTempFiles(projectId: string, exportId: string) {
   const log = createLog();
   const exportDir = path.join(process.cwd(), 'tmp', 'exports', projectId);
-  const paths = [
+  const paths = new Set([
     path.join(exportDir, `${exportId}.mp4`),
     path.join(exportDir, `${exportId}.ass`),
     path.join(exportDir, `${exportId}.srt`),
     path.join(exportDir, `${exportId}.mp4.trf`),
     path.join(exportDir, `${exportId}.mp4.hook.txt`),
-  ];
+    path.join(exportDir, `${exportId}.mp4.hook.ass`),
+    path.join(exportDir, `${exportId}.360p.preview.mp4`),
+    path.join(exportDir, `${exportId}.540p.preview.mp4`),
+    path.join(exportDir, `${exportId}.caption-free.mp4`),
+    path.join(exportDir, `${exportId}.caption-free.360p.preview.mp4`),
+    path.join(exportDir, `${exportId}.cut.mp4`),
+    path.join(exportDir, `${exportId}.jpg`),
+  ]);
+
+  // Smart-reframe and motion-analysis caches include a content hash between
+  // the export id and suffix. Remove every artifact owned by this export so
+  // low-priority preview jobs do not leave temp files after project cleanup.
+  try {
+    const entries = await readdir(exportDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith(`${exportId}.`)) {
+        paths.add(path.join(exportDir, entry.name));
+      }
+    }
+  } catch {
+    // The directory may already have been removed by project-level cleanup.
+  }
 
   for (const targetPath of paths) {
     await deletePathIfExists(targetPath, log);

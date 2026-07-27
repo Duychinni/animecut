@@ -1323,23 +1323,27 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
       segments,
       editorialGlobalContext,
     );
-    const finalHookTargets = diversified.slice(0, 10).map((item, index) => ({
+    const finalHookTargets = diversified.map((item, index) => ({
       id: String(index),
       title: item.title,
       genre: item.editorial_plan?.content_genre ?? 'UNKNOWN',
       transcript: transcriptTextForWindow(item.start_sec, item.end_sec, segments),
+      sourceContext,
     }));
     const finalHooks = await writeFinalViralHooks(finalHookTargets);
     const hookPolished = diversified.map((item, index) => {
       const writtenHook = finalHooks.get(String(index));
-      if (!writtenHook || index >= 10) return item;
       const selectedHook = normalizeOptionalHookText(writtenHook);
       if (
         !selectedHook
         || !isNaturalEditorialHook(selectedHook)
         || isGenericHookText(selectedHook)
         || isTitleLikeHook(selectedHook, item.title)
-      ) return item;
+      ) {
+        // A missing AI response must never reactivate the legacy transcript
+        // fragment as an opening card. A clean reel is better than nonsense.
+        return { ...item, hook_text: '' };
+      }
       return {
         ...item,
         hook_text: selectedHook,
@@ -1365,9 +1369,6 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const ranked = calibrateFinalScores(hookPolished).map((item, idx) => ({
       ...item,
       rank: idx + 1,
-      // Auto-headlines are a premium treatment for the strongest ten results,
-      // not visual clutter on every backfill reel.
-      hook_text: idx < 10 ? item.hook_text : '',
     }));
 
     if (policyDurationSeconds > 4 * 60 && ranked.length < Math.min(3, minimumFinalCount)) {

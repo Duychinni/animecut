@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { buildRenderOutputArgs, buildSourceAwareColorArgs, resolveStorageSafeVideoRates } from '../lib/ffmpeg-output-args';
 
 const baseOptions = {
-  preset: 'medium',
+  preset: 'fast',
   crf: '18',
   x264Maxrate: '12M',
   x264Bufsize: '24M',

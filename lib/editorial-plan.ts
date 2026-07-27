@@ -193,12 +193,17 @@ export function isNaturalEditorialTitle(value: unknown) {
 
 export function isNaturalEditorialHook(value: unknown) {
   const text = clean(value);
-  if (text.length < 5 || text.length > 48) return false;
+  if (text.length < 5 || text.length > 60) return false;
   if (hasRepetitiveEditorialWords(text) || isFillerLedCopy(text)) return false;
   if (/\bmoment\s*$/i.test(text)) return false;
   if (/\b(can't\s+it's|been\s+don't|they\s+these|it's\s+you're|are\s+is|is\s+are)\b/i.test(text)) return false;
   if (/^(top moment|watch this|this is crazy|keep watching|what do you mean|how old are you)$/i.test(text)) return false;
-  if (/\b(detail most people miss|matters more than you think|explains what actually matters|what this changes about)\b/i.test(text)) return false;
+  if (/^(because|although|unless|while|whereas|and|but|so)\b/i.test(text)) return false;
+  if (/^(when|if)\s+(you|he|she|they|we|i)\s+(?:can|could|would|should|will|might|may|do|did|are|is|was|were|have|had)\b/i.test(text)) return false;
+  if (/^(how|what)\s+(he|she|they|it|this)\s+(is|are|was|were|and)\b/i.test(text)) return false;
+  if (/^(is|are|was|were)\s+(again|actually|also|just|the|a|an)\b/i.test(text)) return false;
+  if (/^(could|would|should|might|may)\s+(go|be|have|do)\s*,?\s*(but|and)\b/i.test(text)) return false;
+  if (/\b(detail most people miss|matters more than you think|explains what actually matters|what this changes about|changes how you see)\b/i.test(text)) return false;
   if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|a|an|is|are|was|were|not|your|my|his|her|their|our)\??$/i.test(text)) return false;
   const words = text.split(/\s+/);
   return words.length >= 3 && words.length <= 10;

@@ -104,3 +104,16 @@ test('rejects repetitive filler and malformed generated titles', () => {
   assert.equal(isNaturalEditorialHook('Yeah Yeah This Is Wild'), false);
   assert.equal(isNaturalEditorialHook('MrBeast MrBeast Changed Everything'), false);
 });
+
+test('rejects transcript shards that do not work as standalone hooks', () => {
+  for (const hook of [
+    'When You Can Truly',
+    'Is Again The Experience That You Found In',
+    'How He Is And Dude Instantly Before I',
+    'Because Of My Faith Has Never Outweighed',
+    'Could Go, But Those Type Of Moments',
+    'PowerfulJRE Changes How You See Full Power',
+  ]) {
+    assert.equal(isNaturalEditorialHook(hook), false, `expected incomplete hook to fail: ${hook}`);
+  }
+});

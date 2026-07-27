@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { getClipPolicy } from '@/lib/clip-policy';
 import { buildMockCandidates, isMockClipAnalysisEnabled } from '@/lib/dev-ai';
 import { analyzeTranscriptLocally } from '@/lib/local-analysis';
+import { isNaturalEditorialHook } from '@/lib/editorial-plan';
 
 export const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'local-analysis-disabled-key' });
 
@@ -20,6 +21,7 @@ export type FinalHookCandidate = {
   title: string;
   transcript: string;
   genre?: string | null;
+  sourceContext?: string | null;
 };
 
 function stripCodeFences(text: string) {
@@ -126,15 +128,26 @@ export async function writeFinalViralHooks(candidates: FinalHookCandidate[]) {
     return new Map<string, string>();
   }
 
-  const compactCandidates = candidates.map((candidate) => ({
-    id: candidate.id,
-    title: candidate.title,
-    genre: candidate.genre || 'UNKNOWN',
-    transcript: candidate.transcript.slice(0, 12_000),
-  }));
+  const batches: FinalHookCandidate[][] = [];
+  for (let index = 0; index < candidates.length; index += 8) {
+    batches.push(candidates.slice(index, index + 8));
+  }
+  const hooks = new Map<string, string>();
 
-  try {
-    const response = await createAnalysisResponse({
+  for (const batch of batches) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const compactCandidates = batch
+          .filter((candidate) => !hooks.has(candidate.id))
+          .map((candidate) => ({
+            id: candidate.id,
+            source_context: candidate.sourceContext || '',
+            working_title: candidate.title,
+            genre: candidate.genre || 'UNKNOWN',
+            transcript: candidate.transcript.slice(0, 12_000),
+          }));
+        const response = await createAnalysisResponse({
       model: process.env.OPENAI_HOOK_MODEL?.trim() || 'gpt-4.1-mini',
       input: [
         {
@@ -152,11 +165,15 @@ Rules:
 - Prefer a specific person, action, conflict, number, or consequence from this reel over generic words such as "champions", "success", "mindset", "everything", or "always".
 - Never copy or closely paraphrase the supplied title.
 - Make it immediately understandable to someone who has not seen the source video.
-- Aim for 4-9 words and no more than 48 characters.
+- The hook must be a complete standalone thought. Reading only the hook must make logical grammatical sense.
+- Do not begin in the middle of an idea. Reject openings such as "When you can truly", "Because of my", "How he is and", "Could go, but", or "Is again the".
+- Do not use a vague pronoun such as "he", "she", "they", "it", or "this" when the source context or transcript gives you a useful person, fighter, action, or subject.
+- Aim for 4-10 words and no more than 60 characters. Clarity beats forcing the shortest possible wording.
 - For COMEDY, prefer a concise setup or curiosity gap that preserves the punchline. Use an exact spoken line only when that line is already an exceptionally strong, self-contained hook.
 - For debates/interviews/sports, surface the actual conflict or stakes.
 - For stories/education/advice, surface the reveal, surprising premise, or practical payoff without inventing it.
 - Silently reject and rewrite anything that ends with a connector such as "and", "but", "because", "with", "of", "to", or "when".
+- Before returning, imagine the hook printed alone above a silent video. Rewrite it if a new viewer would ask "what does this sentence mean?" rather than "what happens next?"
 
 Return strict JSON only:
 {"hooks":[{"id":"candidate id","hook":"final hook"}]}`,
@@ -167,23 +184,36 @@ Return strict JSON only:
         },
       ],
     });
-    const parsed = await parseJsonWithRepair(response.output_text) as {
-      hooks?: Array<{ id?: unknown; hook?: unknown }>;
-    };
-    const requestedIds = new Set(candidates.map((candidate) => candidate.id));
-    const hooks = new Map<string, string>();
-    for (const item of parsed.hooks ?? []) {
-      const id = typeof item.id === 'string' ? item.id : '';
-      const hook = typeof item.hook === 'string' ? item.hook.replace(/\s+/g, ' ').trim() : '';
-      if (requestedIds.has(id) && hook) hooks.set(id, hook);
+        const parsed = await parseJsonWithRepair(response.output_text) as {
+          hooks?: Array<{ id?: unknown; hook?: unknown }>;
+        };
+        const requestedIds = new Set(batch.map((candidate) => candidate.id));
+        for (const item of parsed.hooks ?? []) {
+          const id = typeof item.id === 'string' || typeof item.id === 'number'
+            ? String(item.id)
+            : '';
+          const hook = typeof item.hook === 'string' ? item.hook.replace(/\s+/g, ' ').trim() : '';
+          if (requestedIds.has(id) && isNaturalEditorialHook(hook)) hooks.set(id, hook);
+        }
+        if (batch.every((candidate) => hooks.has(candidate.id))) break;
+        lastError = new Error('Final hook response omitted one or more reels');
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 1_500 * (2 ** attempt)));
+      }
     }
-    return hooks;
-  } catch (error) {
-    console.warn('[analysis] final hook writing unavailable; preserving candidate hooks.', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return new Map<string, string>();
+    const missing = batch.filter((candidate) => !hooks.has(candidate.id)).map((candidate) => candidate.id);
+    if (missing.length) {
+      console.warn('[analysis] final hook writing incomplete after retries.', {
+        missing,
+        error: lastError instanceof Error ? lastError.message : String(lastError),
+      });
+    }
   }
+
+  return hooks;
 }
 
 function isOpenAiTransientError(error: unknown) {

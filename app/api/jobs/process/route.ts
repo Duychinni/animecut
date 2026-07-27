@@ -7,7 +7,6 @@ import { extractVideoThumbnail, probeVideoQuality, renderAdaptivePlaybackPreview
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
-import { generateHookText } from '@/lib/hook-text';
 import { getRequiredClipCount, getTargetClipCount } from '@/lib/clip-policy';
 import { DEFAULT_CAPTION_PRESET_ID, getCaptionFontById, getCaptionPresetById, type CaptionFont, type CaptionTemplate } from '@/lib/caption-presets';
 import { resolveDefaultReelCaptionAccent, resolveDefaultReelHookPlacement } from '@/lib/reel-caption-style';
@@ -38,7 +37,7 @@ async function maybeFinalizeProject(projectId: string) {
     { count: active },
     { data: transcriptRow },
     { count: candidateCount },
-    { count: activeJobs },
+    { data: activeJobRows },
   ] = await Promise.all([
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).not('output_storage_path', 'is', null).neq('status', 'error'),
@@ -46,7 +45,7 @@ async function maybeFinalizeProject(projectId: string) {
     supabase.from('exports').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('status', ['queued', 'processing']).is('output_storage_path', null),
     supabase.from('transcripts').select('segments_json').eq('project_id', projectId).order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('clip_candidates').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
-    supabase.from('jobs').select('*', { count: 'exact', head: true }).eq('project_id', projectId).in('type', ['pipeline', 'export']).in('status', ['queued', 'processing']),
+    supabase.from('jobs').select('type, payload').eq('project_id', projectId).in('type', ['pipeline', 'export']).in('status', ['queued', 'processing']),
   ]);
 
   const totalCount = Number(total ?? 0);
@@ -62,12 +61,16 @@ async function maybeFinalizeProject(projectId: string) {
     getRequiredClipCount(totalSeconds),
   ));
   const allAttemptsSettled = totalCount > 0 && activeCount === 0 && doneCount + failedCount >= totalCount;
+  const activeMainJobs = (activeJobRows ?? []).filter((job) => (
+    job.type !== 'export'
+    || !isPreviewOnlyPayload(job.payload as Record<string, unknown> | null)
+  )).length;
   const allCreatedExportsSettled = hasSettledPlayableExports({
     totalExports: totalCount,
     doneExports: doneCount,
     failedExports: failedCount,
     activeExports: activeCount,
-    activeJobs: Number(activeJobs ?? 0),
+    activeJobs: activeMainJobs,
     requiredPlayableExports: requiredPlayableCount,
   });
 
@@ -252,6 +255,7 @@ type ExportRenderOptions = {
   fast_edit_render?: boolean;
   safe_layout_fallback?: boolean;
   compatibility_fallback?: boolean;
+  preview_only?: boolean;
 };
 
 type ExportLookupRow = {
@@ -264,6 +268,7 @@ type ExportLookupRow = {
   hook_text?: unknown;
   render_source_width?: unknown;
   render_source_height?: unknown;
+  output_storage_path?: unknown;
 };
 
 const TRANSIENT_RENDER_ATTEMPTS = 2;
@@ -274,9 +279,13 @@ const HOOK_TEXT_OVERLAY_ENABLED = process.env.ENABLE_HOOK_TEXT_OVERLAY !== 'fals
 
 function getWorkerBatchLimit() {
   // One claim per worker keeps every claimed render actively heartbeating.
-  // Run two worker processes for two-way concurrency instead of letting one
+  // Run three worker processes for three-way concurrency instead of letting one
   // request claim a second export that sits idle behind its first FFmpeg job.
   return 1;
+}
+
+function isPreviewOnlyPayload(payload: Record<string, unknown> | null | undefined) {
+  return payload?.preview_only === true;
 }
 
 function startExportHeartbeat(params: {
@@ -284,32 +293,35 @@ function startExportHeartbeat(params: {
   projectId: string;
   exportId: string;
   jobId: string | null;
+  previewOnly?: boolean;
 }) {
-  const { supabase, projectId, exportId, jobId } = params;
+  const { supabase, projectId, exportId, jobId, previewOnly = false } = params;
   let stopped = false;
   let heartbeatInFlight: Promise<void> = Promise.resolve();
 
   const touch = async () => {
     if (stopped) return;
     const now = new Date().toISOString();
-    const updates = [
-      supabase
-        .from('projects')
-        .update({
-          pipeline_status: 'processing',
-          pipeline_stage: 'rendering',
-          pipeline_stage_label: 'Rendering reels',
-          pipeline_error: null,
-          worker_last_seen_at: now,
-          worker_last_log_message: `Rendering export ${exportId}`,
-        })
-        .eq('id', projectId),
-      supabase
-        .from('exports')
-        .update({ updated_at: now })
-        .eq('id', exportId)
-        .eq('status', 'processing'),
-    ];
+    const updates = previewOnly
+      ? []
+      : [
+          supabase
+            .from('projects')
+            .update({
+              pipeline_status: 'processing',
+              pipeline_stage: 'rendering',
+              pipeline_stage_label: 'Rendering reels',
+              pipeline_error: null,
+              worker_last_seen_at: now,
+              worker_last_log_message: `Rendering export ${exportId}`,
+            })
+            .eq('id', projectId),
+          supabase
+            .from('exports')
+            .update({ updated_at: now })
+            .eq('id', exportId)
+            .eq('status', 'processing'),
+        ];
 
     if (jobId) {
       updates.push(
@@ -572,6 +584,59 @@ async function ensureQueuedExportJobs(limit = REPAIR_SCAN_LIMIT) {
   return created;
 }
 
+async function enqueuePreviewJob(projectId: string, exportId: string) {
+  const supabase = createAdminClient();
+  const { data: existing, error: lookupError } = await supabase
+    .from('jobs')
+    .select('id')
+    .eq('type', 'export')
+    .in('status', ['queued', 'processing'])
+    .contains('payload', { export_id: exportId, preview_only: true })
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (existing?.id) return;
+
+  const { error } = await supabase.from('jobs').insert({
+    project_id: projectId,
+    type: 'export',
+    payload: {
+      export_id: exportId,
+      project_id: projectId,
+      preview_only: true,
+      priority: 'background',
+    },
+    status: 'queued',
+  });
+  if (error) throw error;
+}
+
+async function cleanupCompletedProjectWhenPreviewsSettle(projectId: string) {
+  const supabase = createAdminClient();
+  const [{ data: project }, { count: activePreviewJobs }] = await Promise.all([
+    supabase
+      .from('projects')
+      .select('pipeline_status')
+      .eq('id', projectId)
+      .maybeSingle(),
+    supabase
+      .from('jobs')
+      .select('*', { count: 'exact', head: true })
+      .eq('project_id', projectId)
+      .eq('type', 'export')
+      .in('status', ['queued', 'processing'])
+      .contains('payload', { preview_only: true }),
+  ]);
+  if (project?.pipeline_status !== 'completed' || Number(activePreviewJobs ?? 0) > 0) return false;
+
+  const cleanupLog = await cleanupProjectTempFiles(projectId);
+  console.log('[cleanup] project-temp-files', {
+    project_id: projectId,
+    status: 'completed-and-previews-settled',
+    ...summarizeCleanup(cleanupLog),
+  });
+  return true;
+}
+
 async function recoverTerminalRenderErrors(limit = REPAIR_SCAN_LIMIT) {
   const supabase = createAdminClient();
   const { data: failedJobs, error } = await supabase
@@ -766,7 +831,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const exportLookup = await supabase
     .from('exports')
-    .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings, hook_text_enabled, hook_text, render_source_width, render_source_height')
+    .select('id, project_id, clip_candidate_id, caption_preset_id, clip_edit_settings, hook_text_enabled, hook_text, render_source_width, render_source_height, output_storage_path')
     .eq('id', exportId)
     .single();
 
@@ -777,7 +842,7 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     console.warn('[jobs/process] edit columns missing; rendering export with legacy exports schema', { export_id: exportId });
     const fallbackLookup = await supabase
       .from('exports')
-      .select('id, project_id, clip_candidate_id, caption_preset_id, hook_text_enabled, hook_text')
+      .select('id, project_id, clip_candidate_id, caption_preset_id, hook_text_enabled, hook_text, output_storage_path')
       .eq('id', exportId)
       .single();
     ex = fallbackLookup.data ? { ...(fallbackLookup.data as ExportLookupRow), clip_edit_settings: null } : null;
@@ -1001,12 +1066,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const fallbackCaption = '[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial Black,146,&H00FFFFFF,&H005AF421,&H00000000,&H00000000,-1,0,0,0,106,110,0,0,1,12,2,2,40,40,380,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:00.50,Default,,0,0,0,,\n';
   await writeFile(srtPath, captionText || fallbackCaption);
 
-  const generatedHookText = generateHookText({
-    clipTitle: bundle.clip.title ?? null,
-    transcriptSegments: renderTranscriptSegments,
-    startSec: effectiveRenderStart,
-    endSec: effectiveRenderEnd,
-  });
   const compatibilityFallback = options?.compatibility_fallback === true;
   const hookTextEnabled = !compatibilityFallback
     && HOOK_TEXT_OVERLAY_ENABLED
@@ -1014,7 +1073,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     && options?.hook_text_enabled !== false;
   const hookText = usableHookText(options?.hook_text, bundle.clip.title)
     || usableHookText(bundle.hook_text, bundle.clip.title)
-    || normalizeHookCandidate(generatedHookText)
     || null;
   const renderOptions = {
     inputPath: renderInputPath,
@@ -1062,6 +1120,67 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     // reserved for disposable browser previews below.
     fastRender: false,
   } satisfies Parameters<typeof renderVerticalClip>[0];
+
+  if (options?.preview_only === true) {
+    const masterObjectPath = typeof ex.output_storage_path === 'string' ? ex.output_storage_path : '';
+    if (!masterObjectPath) throw new Error('Preview job cannot find the completed master');
+
+    const masterUrl = await createExportSignedUrl(masterObjectPath, 60 * 60);
+    const masterResponse = await fetch(masterUrl);
+    if (!masterResponse.ok) {
+      throw new Error(`Preview job could not download master (${masterResponse.status})`);
+    }
+    await writeFile(outPath, Buffer.from(await masterResponse.arrayBuffer()));
+
+    const preview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
+    const preview540Path = path.join(exportDir, `${bundle.id}.540p.preview.mp4`);
+    const captionFreeMasterPath = path.join(exportDir, `${bundle.id}.caption-free.mp4`);
+    const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.360p.preview.mp4`);
+
+    // These encodes are deliberately handled by low-priority queue jobs. Main
+    // 1080p reels are always claimed first across all render workers.
+    await renderAdaptivePlaybackPreviews(outPath, preview360Path, preview540Path);
+    await renderVerticalClip({
+      ...renderOptions,
+      outputPath: captionFreeMasterPath,
+      captionsEnabled: false,
+      hookTextEnabled: false,
+      videoEncoder: process.env.FFMPEG_PREVIEW_VIDEO_ENCODER || 'h264_videotoolbox',
+      fastRender: true,
+    });
+    await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '360p');
+
+    const [preview360Bytes, preview540Bytes, captionEditPreviewBytes] = await Promise.all([
+      readFile(preview360Path),
+      readFile(preview540Path),
+      readFile(captionEditPreviewPath),
+    ]);
+    const previewVersion = `r${Date.now()}`;
+    const preview360ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '360p', previewVersion);
+    const preview540ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '540p', previewVersion);
+    const captionEditPreviewObjectPath = makeCaptionEditPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, previewVersion);
+    const [preview360Upload, preview540Upload, captionEditPreviewUpload] = await Promise.all([
+      uploadExportPreviewObject(preview360ObjectPath, preview360Bytes),
+      uploadExportPreviewObject(preview540ObjectPath, preview540Bytes),
+      uploadExportPreviewObject(captionEditPreviewObjectPath, captionEditPreviewBytes),
+    ]);
+
+    const { error: previewUpdateError } = await supabase
+      .from('exports')
+      .update({
+        preview_storage_provider: preview540Upload.provider,
+        preview_360_storage_path: preview360Upload.path,
+        preview_540_storage_path: preview540Upload.path,
+        preview_360_size_bytes: preview360Bytes.byteLength,
+        preview_540_size_bytes: preview540Bytes.byteLength,
+        caption_edit_preview_provider: captionEditPreviewUpload.provider,
+        caption_edit_preview_storage_path: captionEditPreviewUpload.path,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', bundle.id);
+    if (previewUpdateError) throw previewUpdateError;
+    return;
+  }
 
   await renderVerticalClip(renderOptions);
 
@@ -1111,45 +1230,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   const objectPath = makeExportObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
   await uploadExportObject(objectPath, bytes);
 
-  // A completed export must include a browser-optimized preview as well as the
-  // full-quality master. Otherwise the project can look ready while its cards
-  // still have to stream multiple large 1080x1920 files from object storage.
-  const preview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
-  const preview540Path = path.join(exportDir, `${bundle.id}.540p.preview.mp4`);
-  const captionFreeMasterPath = path.join(exportDir, `${bundle.id}.caption-free.mp4`);
-  const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.360p.preview.mp4`);
-  await Promise.all([
-    renderAdaptivePlaybackPreviews(outPath, preview360Path, preview540Path),
-    (async () => {
-      // This master is disposable input for a 360p editor preview, so use the
-      // Mac's hardware encoder. It preserves the exact reframe while avoiding
-      // a second CPU-heavy 1080p x264 pass for every customer reel.
-      await renderVerticalClip({
-        ...renderOptions,
-        outputPath: captionFreeMasterPath,
-        captionsEnabled: false,
-        hookTextEnabled: false,
-        videoEncoder: process.env.FFMPEG_PREVIEW_VIDEO_ENCODER || 'h264_videotoolbox',
-        fastRender: true,
-      });
-      await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '360p');
-    })(),
-  ]);
-  const [preview360Bytes, preview540Bytes, captionEditPreviewBytes] = await Promise.all([
-    readFile(preview360Path),
-    readFile(preview540Path),
-    readFile(captionEditPreviewPath),
-  ]);
-  const previewVersion = `r${Date.now()}`;
-  const preview360ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '360p', previewVersion);
-  const preview540ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '540p', previewVersion);
-  const captionEditPreviewObjectPath = makeCaptionEditPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, previewVersion);
-  const [preview360Upload, preview540Upload, captionEditPreviewUpload] = await Promise.all([
-    uploadExportPreviewObject(preview360ObjectPath, preview360Bytes),
-    uploadExportPreviewObject(preview540ObjectPath, preview540Bytes),
-    uploadExportPreviewObject(captionEditPreviewObjectPath, captionEditPreviewBytes),
-  ]);
-
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
     await extractVideoThumbnail(outPath, posterPath, 0.35);
@@ -1173,13 +1253,6 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     .update({
       status: 'done',
       output_storage_path: objectPath,
-      preview_storage_provider: preview540Upload.provider,
-      preview_360_storage_path: preview360Upload.path,
-      preview_540_storage_path: preview540Upload.path,
-      preview_360_size_bytes: preview360Bytes.byteLength,
-      preview_540_size_bytes: preview540Bytes.byteLength,
-      caption_edit_preview_provider: captionEditPreviewUpload.provider,
-      caption_edit_preview_storage_path: captionEditPreviewUpload.path,
       hook_text: hookText,
       render_source_width: renderSourceQuality.width,
       render_source_height: renderSourceQuality.height,
@@ -1206,6 +1279,17 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   }
 
   if (e1) throw e1;
+  try {
+    await enqueuePreviewJob(bundle.project_id, bundle.id);
+  } catch (previewQueueError) {
+    // Preview generation is optional and must never roll a valid master back
+    // into an error state. A repair/backfill can recreate it later.
+    console.warn('[jobs/process] optional-preview-queue-failed', {
+      project_id: bundle.project_id,
+      export_id: bundle.id,
+      error: previewQueueError instanceof Error ? previewQueueError.message : String(previewQueueError),
+    });
+  }
 }
 
 export async function POST(req: Request) {
@@ -1241,7 +1325,9 @@ export async function POST(req: Request) {
     .eq('status', 'queued')
     .eq('type', 'export')
     .order('created_at', { ascending: true })
-    .limit(Math.max(batchLimit * 10, 50));
+    // Fetch far enough into a preview-heavy queue to find newly queued master
+    // renders, then sort optional preview jobs behind them in memory.
+    .limit(Math.max(batchLimit * 10, 200));
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
@@ -1254,7 +1340,9 @@ export async function POST(req: Request) {
       payload: (job.payload as Record<string, unknown>) ?? {},
     })).filter((item) => item.projectId);
 
-  workItems = (await sortProjectWorkByPlan(workItems)).slice(0, batchLimit);
+  workItems = (await sortProjectWorkByPlan(workItems))
+    .sort((left, right) => Number(isPreviewOnlyPayload(left.payload)) - Number(isPreviewOnlyPayload(right.payload)))
+    .slice(0, batchLimit);
 
   const queuedExportSlots = Math.max(0, batchLimit - workItems.length);
   if (queuedExportSlots > 0) {
@@ -1365,6 +1453,7 @@ export async function POST(req: Request) {
       const exportId = item.exportId;
       if (!exportId) throw new Error('Missing export_id in payload');
       const isEditRerender = item.payload?.edit_rerender === true;
+      const isPreviewOnly = isPreviewOnlyPayload(item.payload);
 
       const { data: currentExport } = await supabase
         .from('exports')
@@ -1372,7 +1461,7 @@ export async function POST(req: Request) {
         .eq('id', exportId)
         .maybeSingle();
 
-      if (!isEditRerender && currentExport && hasPlayableOutput(currentExport)) {
+      if (!isEditRerender && !isPreviewOnly && currentExport && hasPlayableOutput(currentExport)) {
         await supabase
           .from('exports')
           .update({ status: 'done', error_message: null, updated_at: new Date().toISOString() })
@@ -1404,7 +1493,9 @@ export async function POST(req: Request) {
         continue;
       }
 
-      const completedGate = isEditRerender ? { skip: false, projectId: '' } : await shouldSkipExportForCompletedProject(exportId);
+      const completedGate = isEditRerender || isPreviewOnly
+        ? { skip: false, projectId: '' }
+        : await shouldSkipExportForCompletedProject(exportId);
       if (completedGate.skip) {
         await supabase
           .from('exports')
@@ -1429,7 +1520,9 @@ export async function POST(req: Request) {
         continue;
       }
 
-      const { data: claimedExport } = isEditRerender
+      const { data: claimedExport } = isPreviewOnly
+        ? { data: { id: exportId } }
+        : isEditRerender
         ? await supabase
             .from('exports')
             .update({ edit_status: 'rendering', error_message: null, updated_at: new Date().toISOString() })
@@ -1460,6 +1553,7 @@ export async function POST(req: Request) {
         projectId: renderProjectId,
         exportId,
         jobId: item.jobId,
+        previewOnly: isPreviewOnly,
       });
       try {
         await processExportJob(exportId, {
@@ -1493,6 +1587,7 @@ export async function POST(req: Request) {
           edit_rerender: isEditRerender,
           safe_layout_fallback: item.payload?.safe_layout_fallback === true,
           compatibility_fallback: item.payload?.compatibility_fallback === true,
+          preview_only: isPreviewOnly,
         });
       } finally {
         await stopHeartbeat();
@@ -1512,20 +1607,9 @@ export async function POST(req: Request) {
           error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
         });
       }
-      if (!isEditRerender) {
+      if (!isEditRerender && !isPreviewOnly) {
         try {
-          const terminal = await maybeFinalizeProject(projectId);
-          if (terminal) {
-            try {
-              const cleanupLog = await cleanupProjectTempFiles(projectId);
-              console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
-            } catch (cleanupError) {
-              console.warn('[cleanup] project-temp-files failed after terminal render', {
-                project_id: projectId,
-                error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-              });
-            }
-          }
+          await maybeFinalizeProject(projectId);
         } catch (finalizeError) {
           console.warn('[jobs/process] finalize failed after successful render', {
             project_id: projectId,
@@ -1533,6 +1617,14 @@ export async function POST(req: Request) {
             error: finalizeError instanceof Error ? finalizeError.message : String(finalizeError),
           });
         }
+      }
+      try {
+        await cleanupCompletedProjectWhenPreviewsSettle(projectId);
+      } catch (cleanupError) {
+        console.warn('[cleanup] deferred project cleanup failed', {
+          project_id: projectId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
       }
       processed += 1;
     } catch (e: unknown) {
@@ -1548,6 +1640,7 @@ export async function POST(req: Request) {
       });
       const exportId = item.exportId;
       const isEditRerender = item.payload?.edit_rerender === true;
+      const isPreviewOnly = isPreviewOnlyPayload(item.payload);
       const message = isEditRerender ? rawMessage : normalizeRenderErrorMessage(rawMessage);
 
       let currentAttempts = 1;
@@ -1558,6 +1651,38 @@ export async function POST(req: Request) {
           .eq('id', item.jobId)
           .maybeSingle();
         currentAttempts = Number(jobRow?.attempts ?? 1);
+      }
+
+      if (isPreviewOnly) {
+        if (item.jobId) {
+          await supabase
+            .from('jobs')
+            .update({
+              status: currentAttempts < TRANSIENT_RENDER_ATTEMPTS ? 'queued' : 'error',
+              updated_at: new Date().toISOString(),
+              payload: {
+                ...item.payload,
+                preview_error: message,
+                preview_retry_count: currentAttempts,
+              },
+            })
+            .eq('id', item.jobId);
+        }
+        console.warn('[jobs/process] optional-preview-failed', {
+          export_id: exportId,
+          attempt: currentAttempts,
+          will_retry: currentAttempts < TRANSIENT_RENDER_ATTEMPTS,
+        });
+        if (currentAttempts >= TRANSIENT_RENDER_ATTEMPTS && exportId) {
+          const projectId = await getProjectIdForExport(exportId);
+          await cleanupCompletedProjectWhenPreviewsSettle(projectId).catch((cleanupError) => {
+            console.warn('[cleanup] deferred project cleanup failed after preview error', {
+              project_id: projectId,
+              error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            });
+          });
+        }
+        continue;
       }
 
       const transientFailure = [
@@ -1742,11 +1867,8 @@ export async function POST(req: Request) {
             console.warn('[jobs/process] refill-failed', { project_id: projectId, export_id: exportId, refillError });
           }
 
-          const terminal = await maybeFinalizeProject(projectId);
-          if (terminal) {
-            const cleanupLog = await cleanupProjectTempFiles(projectId);
-            console.log('[cleanup] project-temp-files', { project_id: projectId, status: 'terminal', ...summarizeCleanup(cleanupLog) });
-          }
+          await maybeFinalizeProject(projectId);
+          await cleanupCompletedProjectWhenPreviewsSettle(projectId);
         }
       }
     }
