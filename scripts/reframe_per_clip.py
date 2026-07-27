@@ -1760,6 +1760,25 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         if (speech_resumed_after_long_pause or conversation_speaker_changed) and active_speaker_mapped:
             fixed_hard_cut = True
 
+        # A complete, verified one-person/two-person composition is safe to
+        # hard-cut immediately. Generic hysteresis used to add up to several
+        # 125 ms samples after the detector had already established the new
+        # layout, making otherwise atomic edits feel late.
+        verified_atomic_layout_handoff = bool(
+            (
+                current_mode == 'single'
+                and desired_mode == 'stacked'
+                and visual_pair is not None
+            )
+            or (
+                current_mode == 'stacked'
+                and desired_mode == 'single'
+                and visual_pair is None
+                and len(layout_faces) == 1
+                and not bool(layout_faces[0].get('predicted'))
+            )
+        )
+
         two_person_context = wide_pair_hold_ids is not None
         grid_like_context = (
             len(visible_faces) >= 2
@@ -1785,7 +1804,13 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             pending_mode = None
             pending_count = 0
             held_samples = 0
-        elif shot_change or invalidated_fixed_layout or soft_cut_without_pair or stack_to_solo_handoff:
+        elif (
+            shot_change
+            or invalidated_fixed_layout
+            or soft_cut_without_pair
+            or stack_to_solo_handoff
+            or verified_atomic_layout_handoff
+        ):
             # A moderate shot change is enough to leave a stale stacked
             # composition immediately. Waiting for generic layout hysteresis
             # keeps the old two-person geometry on the first solo-shot samples.

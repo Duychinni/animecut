@@ -378,6 +378,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [shareDownloadError, setShareDownloadError] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
   const [previewQuality, setPreviewQuality] = useState<'360p' | '540p'>('540p');
+  const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
   const [captionPreviewData, setCaptionPreviewData] = useState<CaptionPreviewData | null>(null);
@@ -483,42 +484,46 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     updatePlayback(id, { volume: value });
   }
 
-  async function handleFullscreen(clip: ClipItem) {
-    const video = videoRefs.current[clip.exportId] as (HTMLVideoElement & {
-      webkitEnterFullscreen?: () => void;
-      webkitRequestFullscreen?: () => Promise<void> | void;
-    }) | undefined;
+  function handleExpandedPlayer(clip: ClipItem) {
+    if (expandedClipId === clip.exportId) {
+      setExpandedClipId(null);
+      return;
+    }
+
+    const video = videoRefs.current[clip.exportId];
     if (!video) return;
+    setExpandedClipId(clip.exportId);
 
-    try {
-      if (video.requestFullscreen) {
-        await video.requestFullscreen();
-      } else if (video.webkitEnterFullscreen) {
-        video.webkitEnterFullscreen();
-      } else if (video.webkitRequestFullscreen) {
-        await video.webkitRequestFullscreen();
-      }
-
-      // Inline playback uses a lightweight rendition for fast startup. Once
-      // fullscreen is open, switch to the full-resolution export so enlarging
-      // the reel does not make it look softer than the downloaded file.
-      if (clip.signedUrl && video.currentSrc !== clip.signedUrl && video.src !== clip.signedUrl) {
-        const currentTime = video.currentTime;
-        const wasPaused = video.paused;
-        const volume = video.volume;
-        stableMediaUrlsRef.current.set(clip.exportId, clip.signedUrl);
-        video.addEventListener('loadedmetadata', () => {
-          video.currentTime = Math.min(currentTime, video.duration || currentTime);
-          video.volume = volume;
-          if (!wasPaused) void video.play().catch(() => undefined);
-        }, { once: true });
-        video.src = clip.signedUrl;
-        video.load();
-      }
-    } catch (error) {
-      console.warn('[clips] fullscreen request failed', error);
+    // Inline playback uses a lightweight rendition for fast startup. The
+    // expanded player uses the full-resolution export while preserving state.
+    if (clip.signedUrl && video.currentSrc !== clip.signedUrl && video.src !== clip.signedUrl) {
+      const currentTime = video.currentTime;
+      const wasPaused = video.paused;
+      const volume = video.volume;
+      stableMediaUrlsRef.current.set(clip.exportId, clip.signedUrl);
+      video.addEventListener('loadedmetadata', () => {
+        video.currentTime = Math.min(currentTime, video.duration || currentTime);
+        video.volume = volume;
+        if (!wasPaused) void video.play().catch(() => undefined);
+      }, { once: true });
+      video.src = clip.signedUrl;
+      video.load();
     }
   }
+
+  useEffect(() => {
+    if (!expandedClipId) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpandedClipId(null);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [expandedClipId]);
 
   function pauseOtherVideos(activeId: string) {
     for (const [id, video] of Object.entries(videoRefs.current)) {
@@ -1276,12 +1281,22 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
                   {mediaUrl ? (
                     <div className="flex justify-center bg-transparent px-1.5">
+                      {expandedClipId === clip.exportId ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedClipId(null)}
+                          className="fixed inset-0 z-[100] cursor-zoom-out bg-black/80 backdrop-blur-sm"
+                          aria-label="Close expanded reel"
+                        />
+                      ) : null}
                       <div
                         data-clip-frame="true"
                         onPointerEnter={() => primeVideo(clip.exportId, 'auto')}
                         onPointerDown={() => primeVideo(clip.exportId, 'auto')}
                         onFocus={() => primeVideo(clip.exportId, 'auto')}
-                        className="relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22"
+                        className={expandedClipId === clip.exportId
+                          ? 'fixed left-1/2 top-1/2 z-[101] aspect-[9/16] h-[92vh] max-h-[calc(92vw*16/9)] w-auto -translate-x-1/2 -translate-y-1/2 cursor-pointer overflow-hidden rounded-[12px] bg-[#15171c] shadow-2xl ring-1 ring-white/20'
+                          : 'relative aspect-[9/16] w-full max-w-[230px] cursor-pointer overflow-hidden rounded-[8px] bg-[#15171c] ring-1 ring-white/10 transition group-hover:ring-white/22'}
                       >
                         {/* Avoid opening ten metadata range requests at once. The
                             saved duration/poster are enough until interaction. */}
@@ -1551,10 +1566,10 @@ export function TopClipsBoard({ projectId, clips }: Props) {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => void handleFullscreen(clip)}
+                                onClick={() => handleExpandedPlayer(clip)}
                                 className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-black/35 text-white/85 backdrop-blur-sm transition hover:bg-white/15 hover:text-white"
-                                aria-label="View clip fullscreen"
-                                title="Fullscreen"
+                                aria-label={expandedClipId === clip.exportId ? 'Close expanded reel' : 'Expand reel'}
+                                title={expandedClipId === clip.exportId ? 'Close' : 'Expand'}
                               >
                                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                   <path d="M8 3H3v5" />
