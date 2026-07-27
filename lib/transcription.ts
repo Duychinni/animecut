@@ -18,6 +18,121 @@ type TranscriptWord = Record<string, unknown> & {
   word?: string;
 };
 
+function normalizedToken(value: unknown) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9']/g, '');
+}
+
+function distributeWords(
+  tokens: string[],
+  start: number,
+  end: number,
+): TranscriptWord[] {
+  const safeEnd = end > start ? end : start + tokens.length * 0.02;
+  const weights = tokens.map((token) => Math.max(1, normalizedToken(token).length));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || tokens.length;
+  let cursor = start;
+  return tokens.map((token, index) => {
+    const wordStart = cursor;
+    cursor = index === tokens.length - 1
+      ? safeEnd
+      : cursor + ((safeEnd - start) * weights[index]) / totalWeight;
+    return {
+      word: token,
+      start: wordStart,
+      end: cursor,
+      timing_source: 'interpolated',
+    };
+  });
+}
+
+export function reconcileSegmentWords(segment: TranscriptSegment, timedWords: TranscriptWord[]) {
+  const textTokens = String(segment.text ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!textTokens.length || !timedWords.length) return timedWords;
+
+  const textNormalized = textTokens.map(normalizedToken);
+  const timedNormalized = timedWords.map((word) => normalizedToken(word.word));
+  const rows = textTokens.length + 1;
+  const columns = timedWords.length + 1;
+  const lcs = Array.from({ length: rows }, () => new Uint16Array(columns));
+
+  for (let textIndex = textTokens.length - 1; textIndex >= 0; textIndex -= 1) {
+    for (let timedIndex = timedWords.length - 1; timedIndex >= 0; timedIndex -= 1) {
+      lcs[textIndex][timedIndex] = textNormalized[textIndex] && textNormalized[textIndex] === timedNormalized[timedIndex]
+        ? lcs[textIndex + 1][timedIndex + 1] + 1
+        : Math.max(lcs[textIndex + 1][timedIndex], lcs[textIndex][timedIndex + 1]);
+    }
+  }
+
+  const matchedTimedIndex = new Array<number | null>(textTokens.length).fill(null);
+  let textIndex = 0;
+  let timedIndex = 0;
+  while (textIndex < textTokens.length && timedIndex < timedWords.length) {
+    if (textNormalized[textIndex] && textNormalized[textIndex] === timedNormalized[timedIndex]) {
+      matchedTimedIndex[textIndex] = timedIndex;
+      textIndex += 1;
+      timedIndex += 1;
+    } else if (lcs[textIndex + 1][timedIndex] >= lcs[textIndex][timedIndex + 1]) {
+      textIndex += 1;
+    } else {
+      timedIndex += 1;
+    }
+  }
+
+  const output = new Array<TranscriptWord | null>(textTokens.length).fill(null);
+  for (let index = 0; index < textTokens.length; index += 1) {
+    const matched = matchedTimedIndex[index];
+    if (matched === null) continue;
+    output[index] = { ...timedWords[matched], word: textTokens[index] };
+  }
+
+  let cursor = 0;
+  while (cursor < textTokens.length) {
+    if (output[cursor]) {
+      cursor += 1;
+      continue;
+    }
+    const runStart = cursor;
+    while (cursor < textTokens.length && !output[cursor]) cursor += 1;
+    const runEnd = cursor;
+    const previous = runStart > 0 ? output[runStart - 1] : null;
+    const next = runEnd < output.length ? output[runEnd] : null;
+    const segmentStart = Number(segment.start);
+    const segmentEnd = Number(segment.end);
+    const leftBoundary = Number.isFinite(Number(previous?.end))
+      ? Number(previous?.end)
+      : Number.isFinite(segmentStart) ? segmentStart : Number(next?.start) || 0;
+    const rightBoundary = Number.isFinite(Number(next?.start))
+      ? Number(next?.start)
+      : Number.isFinite(segmentEnd) ? segmentEnd : leftBoundary + (runEnd - runStart) * 0.12;
+    const missingTokens = textTokens.slice(runStart, runEnd);
+    const availableGap = rightBoundary - leftBoundary;
+
+    if (availableGap >= missingTokens.length * 0.04) {
+      const inferred = distributeWords(missingTokens, leftBoundary, rightBoundary);
+      inferred.forEach((word, offset) => { output[runStart + offset] = word; });
+      continue;
+    }
+
+    // Whisper sometimes folds an omitted word into the following word's
+    // interval (for example “gonna cost” receives only a timestamp for
+    // “cost”). Split that real acoustic interval across both words.
+    if (next && Number.isFinite(Number(next.end))) {
+      const combined = distributeWords(
+        [...missingTokens, String(next.word ?? textTokens[runEnd])],
+        Math.max(leftBoundary, Number(next.start)),
+        Number(next.end),
+      );
+      combined.forEach((word, offset) => { output[runStart + offset] = word; });
+      continue;
+    }
+
+    const inferred = distributeWords(missingTokens, leftBoundary, rightBoundary);
+    inferred.forEach((word, offset) => { output[runStart + offset] = word; });
+  }
+
+  return output.filter((word): word is TranscriptWord => Boolean(word));
+}
+
 export type TranscriptResult = {
   language: string;
   fullText: string;
@@ -159,7 +274,7 @@ export function attachWordsToSegments(segments: TranscriptSegment[], words: Tran
   }
 
   return segments.map((segment, index) => assigned[index].length
-    ? { ...segment, words: assigned[index] }
+    ? { ...segment, words: reconcileSegmentWords(segment, assigned[index]) }
     : segment);
 }
 
@@ -359,7 +474,9 @@ function requireWordTimingCoverage(transcript: TranscriptResult) {
     0,
   );
   const timedWordCount = transcript.segments.reduce(
-    (total, segment) => total + (Array.isArray(segment.words) ? segment.words.length : 0),
+    (total, segment) => total + (Array.isArray(segment.words)
+      ? segment.words.filter((word) => word.timing_source !== 'interpolated').length
+      : 0),
     0,
   );
   if (spokenWordCount > 0 && timedWordCount / spokenWordCount < 0.75) {

@@ -337,9 +337,11 @@ export function segmentsToCapcutAss(segments: Segment[], startSec: number, endSe
           Math.min(localEnd, Number.isFinite(nextWordStart) ? Number(nextWordStart) : Math.max(rawE, localEnd)),
         );
 
-        // Keep within segment bounds and avoid ultra-short flashes.
+        // Keep within segment bounds. Rapid function words can legitimately be
+        // shorter than 50ms; dropping them makes the caption text incomplete.
+        // ASS has centisecond precision, so retain any interval of at least 20ms.
         if (e > localEnd) e = localEnd;
-        if (e - s < 0.05) continue;
+        if (e - s < 0.02) continue;
 
         const activeInLine = i - windowStart;
         const text = buildHighlightedLine(lineWords, activeInLine, {

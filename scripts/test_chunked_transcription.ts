@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { attachWordsToSegments, mergeChunkTranscripts } from '../lib/transcription';
+import { attachWordsToSegments, mergeChunkTranscripts, reconcileSegmentWords } from '../lib/transcription';
 
 const merged = mergeChunkTranscripts([
   {
@@ -103,5 +103,19 @@ assert.deepEqual(attached.map((segment) => segment.words?.map((word) => word.wor
   ['one', 'two'],
   ['three', 'four'],
 ]);
+
+const reconciled = reconcileSegmentWords(
+  { start: 10, end: 11, text: "it's gonna cost them" },
+  [
+    { start: 10, end: 10.2, word: "it's" },
+    { start: 10.2, end: 10.65, word: 'cost' },
+    { start: 10.65, end: 11, word: 'them' },
+  ],
+);
+assert.deepEqual(reconciled.map((word) => word.word), ["it's", 'gonna', 'cost', 'them']);
+assert.equal(reconciled.length, 4, 'caption reconciliation must never drop segment-text words');
+for (let index = 1; index < reconciled.length; index += 1) {
+  assert(Number(reconciled[index].start) >= Number(reconciled[index - 1].end));
+}
 
 console.log('Chunked transcription timestamp merging and boundary deduplication passed.');
