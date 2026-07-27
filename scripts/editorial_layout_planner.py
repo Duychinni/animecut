@@ -161,6 +161,90 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
         segment['editorialReason'] = reason
         planned.append(segment)
 
+    # A detector can briefly emit a second face from a hand, microphone, or
+    # compression artifact while the same close-up speaker remains on screen.
+    # If that brief blip is surrounded by the same verified
+    # single speaker, treating it as a separate composition produces a
+    # distracting crop-out/crop-back flicker. Collapse the three segments and
+    # use one robust crop for the uninterrupted speaker shot.
+    index = 1
+    while index + 1 < len(planned):
+        previous = planned[index - 1]
+        current = planned[index]
+        following = planned[index + 1]
+        current_duration = max(
+            0.0,
+            float(current.get('end', 0.0)) - float(current.get('start', 0.0)),
+        )
+        primary_track = current.get('primaryTrackId')
+        same_single_speaker = bool(
+            primary_track is not None
+            and previous.get('mode') == following.get('mode') == 'single'
+            and current.get('mode') in ('single', 'stacked')
+            and previous.get('primaryTrackId') == primary_track
+            and following.get('primaryTrackId') == primary_track
+        )
+        transient_multi_evidence = bool(
+            current.get('topTrackId') is not None
+            or current.get('bottomTrackId') is not None
+            or current.get('editorialSceneType') == 'TWO_PERSON'
+            or int(current.get('visibleCountMax') or 0) > max(
+                int(previous.get('visibleCountMax') or 0),
+                int(following.get('visibleCountMax') or 0),
+                1,
+            )
+        )
+        if not (
+            current_duration <= 3.0
+            and same_single_speaker
+            and transient_multi_evidence
+            # A real visual edit stays authoritative. A hard-cut flag without
+            # a scene cut can be produced by noisy audio/face confidence and
+            # is exactly the false reframe this guard is intended to remove.
+            and not current.get('sceneCutStart')
+        ):
+            index += 1
+            continue
+
+        combined_points = (
+            list(previous.get('points') or [])
+            + list(current.get('points') or [])
+            + list(following.get('points') or [])
+        )
+        verified_points = [
+            point for point in combined_points
+            if not bool(point.get('predicted'))
+            and point.get('subjectKind') == 'face'
+        ] or combined_points
+        if verified_points:
+            for key in ('cropX', 'cropY', 'cropW', 'cropH', 'cropCenterX', 'cropCenterY', 'zoom'):
+                values = [
+                    float(point[key])
+                    for point in verified_points
+                    if point.get(key) is not None
+                ]
+                if not values:
+                    continue
+                values.sort()
+                middle = len(values) // 2
+                anchor = (
+                    values[middle]
+                    if len(values) % 2
+                    else (values[middle - 1] + values[middle]) / 2.0
+                )
+                for point in combined_points:
+                    point[key] = round(anchor, 3)
+
+        merged = dict(following)
+        merged['start'] = previous['start']
+        merged['points'] = combined_points
+        merged['sceneCutStart'] = bool(previous.get('sceneCutStart'))
+        merged['moderateCutStart'] = bool(previous.get('moderateCutStart'))
+        merged['inferredCutStart'] = bool(previous.get('inferredCutStart'))
+        merged['hardCutStart'] = bool(previous.get('hardCutStart'))
+        planned[index - 1:index + 2] = [merged]
+        index = max(1, index - 1)
+
     scene_counts = Counter(segment['editorialSceneType'] for segment in planned)
     layout_counts = Counter(segment['editorialLayout'] for segment in planned)
     durations = Counter()

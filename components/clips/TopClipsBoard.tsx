@@ -566,16 +566,29 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   function primeVideo(id: string, preload: 'metadata' | 'auto' = 'metadata') {
     const video = videoRefs.current[id];
     if (!video) return;
+    const upgradingToPlaybackData = preload === 'auto' && video.preload !== 'auto';
     if (video.preload !== preload) {
       video.preload = preload;
     }
     // Pointer-down deliberately primes a reel before the click handler runs.
     // Calling load() again while that first request is still opening aborts the
     // subsequent play() promise and leaves only some cards stuck on pause.
+    // Metadata-only videos are commonly left in NETWORK_IDLE. Merely changing
+    // the preload property does not reliably make Safari/Chrome request media
+    // bytes, so explicitly resume loading once when promoting a warm preview.
     if (
-      video.readyState === HTMLMediaElement.HAVE_NOTHING &&
-      video.networkState === HTMLMediaElement.NETWORK_EMPTY &&
       !primedVideoIdsRef.current.has(id)
+      && (
+        (
+          video.readyState === HTMLMediaElement.HAVE_NOTHING
+          && video.networkState === HTMLMediaElement.NETWORK_EMPTY
+        )
+        || (
+          upgradingToPlaybackData
+          && video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+          && video.networkState === HTMLMediaElement.NETWORK_IDLE
+        )
+      )
     ) {
       primedVideoIdsRef.current.add(id);
       video.load();
@@ -584,10 +597,17 @@ export function TopClipsBoard({ projectId, clips }: Props) {
 
   function drainPreviewWarmQueue() {
     if (shareClip) return;
-    // Do not let a grid of visible cards compete with the reel the user
-    // actually presses. Two small preview range requests keep nearby cards
-    // warm without saturating the connection.
-    const maxConcurrentPreviewLoads = 2;
+    // Warm the visible desktop row in parallel so any reel starts immediately.
+    // Mobile/data-saving connections stay conservative and use the smaller
+    // 360p rendition selected above.
+    const connection = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string; downlink?: number };
+    }).connection;
+    const constrained = Boolean(connection?.saveData)
+      || /(^|-)2g|3g/i.test(connection?.effectiveType ?? '')
+      || (typeof connection?.downlink === 'number' && connection.downlink < 2)
+      || window.matchMedia('(max-width: 520px)').matches;
+    const maxConcurrentPreviewLoads = constrained ? 2 : 5;
     while (
       previewWarmActiveRef.current.size < maxConcurrentPreviewLoads &&
       previewWarmQueueRef.current.length > 0

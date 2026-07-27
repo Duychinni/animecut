@@ -2229,9 +2229,18 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             int(subject['trackId']) for subject in decision.get('subjects', [])
             if subject.get('trackId') is not None
         )
+        generic_single = bool(
+            decision['mode'] == 'single'
+            and not decision.get('source_layout')
+        )
         identity_key = (
             decision['mode'],
-            decision.get('render_branch'),
+            # Confidence can alternate between "single_subject" and
+            # "single_subject_uncertain" while the same seated person keeps
+            # talking. That is not a new camera composition. Fixed-panel
+            # branches remain meaningful because they identify which physical
+            # panel the renderer must use.
+            None if generic_single else decision.get('render_branch'),
             decision.get('primary_panel'),
             decision.get('primary_track_id') if decision.get('source_layout') else None,
             # A detector may assign a new track id to the same face mid-shot.
@@ -2256,7 +2265,23 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             and float(decision.get('speaker_confidence', 0.0)) >= 0.18
             and bool(decision.get('hard_cut'))
         )
-        force_boundary = bool(decision.get('scene_cut') or decision.get('hard_cut') or identity_switch)
+        same_primary_continuity = bool(
+            segments
+            and generic_single
+            and segments[-1].get('mode') == 'single'
+            and decision.get('primary_track_id') is not None
+            and segments[-1].get('primaryTrackId') is not None
+            and int(decision['primary_track_id']) == int(segments[-1]['primaryTrackId'])
+            and not decision.get('scene_cut')
+        )
+        # Audio confidence and mouth-motion noise can set a hard-cut flag even
+        # though visual tracking still identifies the exact same person. Keep
+        # that shot planted. A real visual scene cut remains authoritative.
+        effective_hard_cut = bool(
+            decision.get('hard_cut')
+            and not same_primary_continuity
+        )
+        force_boundary = bool(decision.get('scene_cut') or effective_hard_cut or identity_switch)
         if not segments or identity_key != segments[-1]['_key'] or force_boundary:
             segments.append({
                 '_key': identity_key,
@@ -2283,7 +2308,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
                 'renderBranch': decision.get('render_branch'),
                 'speakerScoreMargin': decision.get('speaker_score_margin'),
                 'trackRegionMap': decision.get('track_region_map'),
-                'hardCutStart': bool(decision.get('hard_cut') or identity_switch),
+                'hardCutStart': bool(effective_hard_cut or identity_switch),
                 'silenceState': decision.get('silence_state'),
                 'sceneCutStart': bool(decision.get('scene_cut')),
                 'moderateCutStart': bool(decision.get('moderate_shot_change')),

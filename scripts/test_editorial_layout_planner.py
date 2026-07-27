@@ -90,6 +90,46 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
         self.assertEqual(summary['segments'], 2)
         self.assertTrue(planned[1]['sceneCutStart'])
 
+    def test_short_false_second_face_does_not_reframe_stable_speaker(self):
+        def speaker_point(timestamp, crop_x):
+            return {
+                **crop_point(timestamp),
+                'cropX': crop_x,
+                'cropCenterX': crop_x + 303.75,
+                'audioActivity': 0.8,
+                'subjectKind': 'face',
+                'predicted': False,
+            }
+
+        planned, summary = plan_editorial_timeline([
+            {
+                'start': 10.0, 'end': 22.0, 'mode': 'single',
+                'primaryTrackId': 2, 'subjectKind': 'face',
+                'visibleCount': 1, 'visibleCountMax': 1,
+                'points': [speaker_point(10.0, 776.0), speaker_point(21.9, 776.0)],
+            },
+            {
+                'start': 22.0, 'end': 24.0, 'mode': 'stacked',
+                'primaryTrackId': 2, 'subjectKind': 'face',
+                'topTrackId': 10, 'bottomTrackId': 2,
+                'topBox': {'x': 100.0, 'y': 100.0, 'w': 300.0, 'h': 500.0},
+                'bottomBox': {'x': 850.0, 'y': 100.0, 'w': 300.0, 'h': 500.0},
+                'visibleCount': 2, 'visibleCountMax': 2,
+                'points': [speaker_point(22.0, 882.0), speaker_point(23.9, 882.0)],
+            },
+            {
+                'start': 24.0, 'end': 36.0, 'mode': 'single',
+                'primaryTrackId': 2, 'subjectKind': 'face',
+                'visibleCount': 1, 'visibleCountMax': 1,
+                'points': [speaker_point(24.0, 792.0), speaker_point(35.9, 792.0)],
+            },
+        ])
+
+        self.assertEqual(summary['segments'], 1)
+        self.assertEqual(planned[0]['start'], 10.0)
+        self.assertEqual(planned[0]['end'], 36.0)
+        self.assertEqual(len({point['cropX'] for point in planned[0]['points']}), 1)
+
     def test_fixed_two_region_active_speaker_cannot_be_overridden(self):
         planned, _ = plan_editorial_timeline([{
             'start': 0.0, 'end': 4.0, 'mode': 'single',
