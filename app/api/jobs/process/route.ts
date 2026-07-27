@@ -1229,7 +1229,21 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
 
   const bytes = await readFile(outPath);
   const objectPath = makeExportObjectPath(bundle.project.user_id, bundle.project_id, bundle.id);
-  await uploadExportObject(objectPath, bytes);
+  const requiredPreview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
+  await renderPlaybackPreview(outPath, requiredPreview360Path, '360p');
+  const requiredPreview360Bytes = await readFile(requiredPreview360Path);
+  const requiredPreviewVersion = `r${Date.now()}`;
+  const requiredPreview360ObjectPath = makeAdaptiveExportPreviewObjectPath(
+    bundle.project.user_id,
+    bundle.project_id,
+    bundle.id,
+    '360p',
+    requiredPreviewVersion,
+  );
+  const [, requiredPreview360Upload] = await Promise.all([
+    uploadExportObject(objectPath, bytes),
+    uploadExportPreviewObject(requiredPreview360ObjectPath, requiredPreview360Bytes),
+  ]);
 
   try {
     const posterPath = path.join(exportDir, `${bundle.id}.jpg`);
@@ -1254,6 +1268,9 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     .update({
       status: 'done',
       output_storage_path: objectPath,
+      preview_storage_provider: requiredPreview360Upload.provider,
+      preview_360_storage_path: requiredPreview360Upload.path,
+      preview_360_size_bytes: requiredPreview360Bytes.byteLength,
       hook_text: hookText,
       render_source_width: renderSourceQuality.width,
       render_source_height: renderSourceQuality.height,

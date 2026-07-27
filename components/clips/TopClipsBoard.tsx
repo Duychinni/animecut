@@ -377,7 +377,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   const [downloadedShareClipId, setDownloadedShareClipId] = useState<string | null>(null);
   const [shareDownloadError, setShareDownloadError] = useState<string | null>(null);
   const [playback, setPlayback] = useState<Record<string, PlaybackState>>({});
-  const [previewQuality, setPreviewQuality] = useState<'360p' | '540p'>('540p');
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
   const [editingClip, setEditingClip] = useState<ClipItem | null>(null);
   const [captionSettings, setCaptionSettings] = useState<ClipEditSettings | null>(null);
@@ -418,7 +417,7 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     if (event === 'failed') metric.failed = true;
     if (event === 'request') return;
     const connection = (navigator as Navigator & { connection?: { type?: string; effectiveType?: string; downlink?: number } }).connection;
-    const quality = clip.preview360Url || clip.preview540Url ? previewQuality : clip.previewUrl ? '540p' : 'master';
+    const quality = clip.preview360Url ? '360p' : clip.preview540Url ? '540p' : clip.previewUrl ? '540p' : 'master';
     const size = quality === '360p' ? clip.preview360SizeBytes : quality === '540p' ? clip.preview540SizeBytes : null;
     void fetch('/api/playback', {
       method: 'POST',
@@ -439,17 +438,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
       }),
     }).catch(() => undefined);
   }
-
-  useEffect(() => {
-    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; downlink?: number } }).connection;
-    const constrained = Boolean(connection?.saveData)
-      || /(^|-)2g|3g/i.test(connection?.effectiveType ?? '')
-      || (typeof connection?.downlink === 'number' && connection.downlink < 2)
-      || window.matchMedia('(max-width: 520px)').matches;
-    const nextQuality = constrained ? '360p' : '540p';
-    stableMediaUrlsRef.current.clear();
-    setPreviewQuality(nextQuality);
-  }, []);
 
   function updatePlayback(id: string, patch: Partial<PlaybackState>) {
     setPlayback((prev) => ({
@@ -930,16 +918,23 @@ export function TopClipsBoard({ projectId, clips }: Props) {
   }, []);
 
   function stableMediaUrl(clip: ClipItem) {
-    const adaptiveUrl = previewQuality === '360p'
-      ? clip.preview360Url ?? clip.preview540Url
-      : clip.preview540Url ?? clip.preview360Url;
+    // The 360p rendition is intentionally preferred for the 230px dashboard
+    // cards. It remains sharp at card size and is far less likely to stall than
+    // a 540p or full-master stream on ordinary customer connections.
+    const adaptiveUrl = clip.preview360Url ?? clip.preview540Url;
     const nextUrl = adaptiveUrl ?? clip.previewUrl ?? clip.signedUrl ?? null;
     const currentUrl = stableMediaUrlsRef.current.get(clip.exportId) ?? null;
     const previousEditStatus = previousEditStatusesRef.current.get(clip.exportId);
     const editFinished = previousEditStatus === 'rendering' && clip.editStatus !== 'rendering';
     const waitingForEditedMedia = refreshMediaOnNextUrlRef.current.has(clip.exportId);
+    const adaptivePreviewBecameAvailable = Boolean(
+      adaptiveUrl
+      && currentUrl
+      && currentUrl !== adaptiveUrl
+      && (currentUrl === clip.signedUrl || currentUrl === clip.previewUrl),
+    );
 
-    if (nextUrl && (!currentUrl || (nextUrl !== currentUrl && (editFinished || waitingForEditedMedia)))) {
+    if (nextUrl && (!currentUrl || (nextUrl !== currentUrl && (editFinished || waitingForEditedMedia || adaptivePreviewBecameAvailable)))) {
       stableMediaUrlsRef.current.set(clip.exportId, nextUrl);
       if (waitingForEditedMedia && nextUrl !== currentUrl) {
         refreshMediaOnNextUrlRef.current.delete(clip.exportId);
