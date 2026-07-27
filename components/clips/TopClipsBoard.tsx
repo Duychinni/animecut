@@ -493,22 +493,6 @@ export function TopClipsBoard({ projectId, clips }: Props) {
     const video = videoRefs.current[clip.exportId];
     if (!video) return;
     setExpandedClipId(clip.exportId);
-
-    // Inline playback uses a lightweight rendition for fast startup. The
-    // expanded player uses the full-resolution export while preserving state.
-    if (clip.signedUrl && video.currentSrc !== clip.signedUrl && video.src !== clip.signedUrl) {
-      const currentTime = video.currentTime;
-      const wasPaused = video.paused;
-      const volume = video.volume;
-      stableMediaUrlsRef.current.set(clip.exportId, clip.signedUrl);
-      video.addEventListener('loadedmetadata', () => {
-        video.currentTime = Math.min(currentTime, video.duration || currentTime);
-        video.volume = volume;
-        if (!wasPaused) void video.play().catch(() => undefined);
-      }, { once: true });
-      video.src = clip.signedUrl;
-      video.load();
-    }
   }
 
   useEffect(() => {
