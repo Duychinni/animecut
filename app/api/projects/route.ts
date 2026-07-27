@@ -157,9 +157,9 @@ export async function GET() {
       const normalizedPipelineStageLabel = isCompleted
         ? 'Completed'
         : processingExports > 0
-          ? `Rendering reels (${readyExports}/${targetExports} ready)`
+          ? 'Rendering reels'
           : queuedExports > 0
-            ? `Waiting for render worker (${readyExports}/${targetExports} ready)`
+            ? 'Waiting for render worker'
             : project.pipeline_stage_label;
       const etaSeconds = estimateDashboardEtaSeconds({
         status: normalizedStatus,

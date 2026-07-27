@@ -28,6 +28,8 @@ type ProjectListItem = {
   thumbnail_url?: string | null;
   progress_percent?: number;
   eta_seconds?: number | null;
+  done_exports?: number;
+  target_exports?: number;
   pipeline_status?: string | null;
   pipeline_stage?: string | null;
   pipeline_stage_label?: string | null;
@@ -78,6 +80,8 @@ async function fetchProjectProgress(projectId: string) {
       thumbnail_url: prData?.project?.thumbnail_url ?? null,
       progress_percent: Number(prData?.progress?.percent ?? 0),
       eta_seconds: typeof prData?.progress?.eta_seconds === 'number' ? prData.progress.eta_seconds : null,
+      done_exports: Number(prData?.progress?.done_exports ?? 0),
+      target_exports: Number(prData?.progress?.target_exports ?? 0),
       pipeline_status: typeof prData?.project?.pipeline_status === 'string' ? prData.project.pipeline_status : null,
       pipeline_stage: typeof prData?.project?.pipeline_stage === 'string' ? prData.project.pipeline_stage : null,
       pipeline_stage_label: typeof prData?.project?.pipeline_stage_label === 'string' ? prData.project.pipeline_stage_label : null,
@@ -233,12 +237,25 @@ export default function DashboardPage() {
             const previousProgress = previous ? getFlooredProgress(previous) : 0;
             const incomingProgress = Number(update.progress_percent ?? 0);
             const activeIncoming = isActiveProject({ ...project, ...previous, ...update } as ProjectListItem);
+            const doneExports = Math.max(
+              Number(previous?.done_exports ?? 0),
+              Number(project.done_exports ?? 0),
+              Number(update.done_exports ?? 0),
+            );
+            const targetExports = Math.max(
+              doneExports,
+              Number(previous?.target_exports ?? 0),
+              Number(project.target_exports ?? 0),
+              Number(update.target_exports ?? 0),
+            );
             return {
               ...project,
               ...previous,
               ...update,
               thumbnail_url: update.thumbnail_url ?? previous?.thumbnail_url ?? project.thumbnail_url ?? project.source_thumbnail_url ?? null,
               progress_percent: activeIncoming ? Math.max(previousProgress, incomingProgress) : update.progress_percent,
+              done_exports: doneExports,
+              target_exports: targetExports,
               optimistic: false,
             } as ProjectListItem;
           }
@@ -246,6 +263,13 @@ export default function DashboardPage() {
           return {
             ...previous,
             ...project,
+            done_exports: Math.max(Number(previous?.done_exports ?? 0), Number(project.done_exports ?? 0)),
+            target_exports: Math.max(
+              Number(previous?.done_exports ?? 0),
+              Number(project.done_exports ?? 0),
+              Number(previous?.target_exports ?? 0),
+              Number(project.target_exports ?? 0),
+            ),
             optimistic: false,
           } as ProjectListItem;
         });
@@ -605,6 +629,11 @@ export default function DashboardPage() {
           const debugLine = diagnostics
             ? `${diagnostics.message || 'Waiting for backend update'} Last worker ${fmtDebugDuration(diagnostics.seconds_since_worker_heartbeat)} ago. Job ${pipelineJob?.status || 'none'}${pipelineJob?.attempts ? ` a${pipelineJob.attempts}` : ''}.`
             : null;
+          const doneExports = Math.max(0, Number(p.done_exports ?? diagnostics?.done_exports ?? 0));
+          const targetExports = Math.max(doneExports, Number(p.target_exports ?? diagnostics?.target_exports ?? 0));
+          const reelProgressLabel = showProcessing && targetExports > 0
+            ? `(${doneExports}/${targetExports} READY)`
+            : null;
 
           const thumb = (
             <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black transition duration-300 group-hover:scale-[1.015] group-hover:border-[#9b6bff]/35 group-hover:shadow-[0_0_0_1px_rgba(155,107,255,0.18),0_18px_55px_rgba(102,51,153,0.24)]">
@@ -623,7 +652,14 @@ export default function DashboardPage() {
 
               {showProcessing ? (
                 <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/18">
-                  <LiveProgressPill percent={percent} active stage={p.pipeline_stage} stageLabel={processingStage} etaLabel={etaLabel} />
+                  <LiveProgressPill
+                    percent={percent}
+                    active
+                    stage={p.pipeline_stage}
+                    stageLabel={processingStage}
+                    etaLabel={etaLabel}
+                    detailLabel={reelProgressLabel}
+                  />
                 </div>
               ) : canOpenProject ? (
                 <div className="pointer-events-none absolute inset-0 flex items-start justify-start opacity-0 transition duration-300 group-hover:opacity-100">
@@ -658,7 +694,7 @@ export default function DashboardPage() {
                       className="w-full rounded-md border border-white/20 bg-white/[0.04] px-2 py-1 text-sm font-medium text-white outline-none"
                     />
                   ) : (
-                    <p className="line-clamp-2 font-medium text-white">{p.source_title || p.title}</p>
+                    <p className="line-clamp-3 min-h-[4.5rem] font-medium leading-6 text-white">{p.source_title || p.title}</p>
                   )}
                   {p.optimistic ? <p className="mt-1 text-xs text-emerald-300/80">Starting project…</p> : null}
                   {isNotEnoughContent ? <p className="mt-1 text-xs text-amber-300/85">No valid clips found · open project for details</p> : null}

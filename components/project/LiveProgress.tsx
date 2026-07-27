@@ -82,17 +82,19 @@ export function LiveProgressPill({
   stage,
   stageLabel,
   etaLabel,
+  detailLabel,
 }: {
   percent: number;
   active: boolean;
   stage?: string | null;
   stageLabel: string;
   etaLabel?: string | null;
+  detailLabel?: string | null;
 }) {
   const livePercent = useLiveProgress(percent, active, stage);
   const stageParts = stageLabel.match(/^(.+?)\s*(\([^()]+\))$/);
   const stageSummary = stageParts?.[1] ?? stageLabel;
-  const stageDetail = stageParts?.[2] ?? null;
+  const stageDetail = detailLabel ?? stageParts?.[2] ?? null;
 
   return (
     <div className="relative isolate flex min-w-[164px] max-w-[210px] flex-col items-center justify-center gap-0.5 overflow-hidden rounded-2xl border border-emerald-300/25 bg-black/76 px-3 py-2 text-center text-emerald-100 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-sm">
