@@ -181,7 +181,7 @@ def test_solo_to_split_detector_gap_never_renders_searching_frame():
     ), result
 
 
-def test_moderate_cut_forces_new_segment_even_when_detector_reuses_track_ids():
+def test_moderate_frame_spike_does_not_break_unchanged_pair_lock():
     left = box(150, 140, 420, 760, 1, 0.9)
     right = box(1350, 140, 420, 760, 2, 0.9)
     samples = [
@@ -200,14 +200,65 @@ def test_moderate_cut_forces_new_segment_even_when_detector_reuses_track_ids():
         for index in range(4, 8)
     )
     result = timeline(samples, duration=2.0)
-    incoming = [segment for segment in result if segment.get('sceneCutStart')]
-    assert incoming, result
-    assert incoming[0]['start'] >= 0.75, result
-    assert all(
-        segment['end'] <= incoming[0]['start']
-        for segment in result
-        if segment is not incoming[0] and segment['start'] < incoming[0]['start']
-    ), result
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'stacked', result
+    assert not result[0].get('sceneCutStart'), result
+
+
+def test_stationary_solo_face_ignores_moderate_motion_spike():
+    speaker = box(680, 90, 620, 900, 1, 0.95)
+    samples = [
+        sample(
+            index * 0.25, subject('face', speaker, 'face:1', 0.95),
+            [speaker], 1, 0.95, 0.62, audio_activity=0.8,
+            scene_change=0.46 if index == 4 else 0.0,
+        )
+        for index in range(10)
+    ]
+    result = timeline(samples, duration=2.5)
+    face_segments = [segment for segment in result if segment.get('subjectKind') == 'face']
+    assert len(face_segments) == 1, result
+    crop_positions = {
+        (point['cropX'], point['cropY'], point['cropW'], point['cropH'])
+        for point in face_segments[0].get('points', [])
+    }
+    assert len(crop_positions) == 1, result
+    assert not any(segment.get('sceneCutStart') for segment in result), result
+
+
+def test_soft_solo_to_solo_cut_reacquires_incoming_face_atomically():
+    outgoing = box(1300, 80, 520, 920, 1, 0.94)
+    # Some cuts reuse the detector's track id. Geometry must still be enough
+    # to recognize that this is a different shot and release the stale crop.
+    incoming = box(190, 85, 560, 910, 1, 0.96)
+    samples = [
+        sample(
+            index * 0.25, subject('face', outgoing, 'face:1', 0.94),
+            [outgoing], 1, 0.94, 0.6, audio_activity=0.8,
+        )
+        for index in range(4)
+    ]
+    samples.extend(
+        sample(
+            index * 0.25, subject('face', incoming, 'face:1', 0.96),
+            [incoming], 1, 0.96, 0.64, audio_activity=0.8,
+            scene_change=0.18 if index == 4 else 0.0,
+        )
+        for index in range(4, 9)
+    )
+    result = timeline(samples, duration=2.25)
+    incoming_segments = [
+        segment for segment in result
+        if segment.get('sceneCutStart') and segment['end'] > 1.0
+    ]
+    assert incoming_segments, result
+    incoming_points = [
+        point for segment in result for point in segment.get('points', [])
+        if point['t'] >= 1.0
+    ]
+    assert incoming_points, result
+    assert all(point.get('primaryTrackId') == 1 for point in incoming_points), result
+    assert all(point.get('cropCenterX') < W / 2 for point in incoming_points), result
 
 
 def test_silent_far_left():

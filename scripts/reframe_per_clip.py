@@ -964,15 +964,61 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
         pair = strongest_face_pair(confirmed_faces, source_w)
         previous_faces = complete_faces(prepared_frames[cut_index - 1])
         previous_pair = strongest_face_pair(previous_faces, source_w)
+        confirmed_primary = max(
+            list(pair) if pair is not None else confirmed_faces,
+            key=lambda face: (
+                float(face.get('active_speaker_confidence', 0.0)),
+                float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
+            ),
+        )
+        previous_primary_match = max(
+            (
+                box_match_score(
+                    (
+                        float(confirmed_primary.get('x', 0.0)), float(confirmed_primary.get('y', 0.0)),
+                        float(confirmed_primary.get('w', 0.0)), float(confirmed_primary.get('h', 0.0)),
+                    ),
+                    (
+                        float(previous.get('x', 0.0)), float(previous.get('y', 0.0)),
+                        float(previous.get('w', 0.0)), float(previous.get('h', 0.0)),
+                    ),
+                    source_w,
+                    source_h,
+                )
+                for previous in previous_faces
+            ),
+            default=0.0,
+        )
         inferred_layout_change = bool(
             previous_faces
             and bool(previous_pair is not None) != bool(pair is not None)
         )
+        inferred_solo_subject_change = bool(
+            previous_faces
+            and previous_pair is None
+            and pair is None
+            and previous_primary_match < 0.40
+        )
+        # Gestures, exposure changes, and microphone movement can produce a
+        # moderate frame-difference spike while the same face remains in the
+        # same place. Treating each spike as a new shot creates a visible crop
+        # jump even when the person barely moves. Only a hard cut or genuinely
+        # different face geometry may break the established tripod lock.
+        if (
+            explicit_cut
+            and scene_change < 0.72
+            and not inferred_layout_change
+            and not inferred_solo_subject_change
+            and previous_primary_match >= 0.48
+        ):
+            explicit_cut = False
+            prepared_points[cut_index]['scene_change'] = 0.0
+            prepared_frames[cut_index]['scene_cut'] = False
         # A detector gap alone is not a shot boundary. It becomes an atomic
         # layout transition only when the confirmed geometry changes between
         # one person and two people. This catches visually subtle talk-show
         # cuts that the histogram scene detector can miss.
-        if not explicit_cut and not inferred_layout_change:
+        if not explicit_cut and not inferred_layout_change and not inferred_solo_subject_change:
             continue
         lookahead_faces = list(pair) if pair is not None else [
             max(
@@ -1008,7 +1054,7 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
         )
 
         entry_start_index = cut_index
-        if inferred_layout_change and not explicit_cut:
+        if (inferred_layout_change or inferred_solo_subject_change) and not explicit_cut:
             # The face/layout change can be confirmed one or two samples after
             # the actual edit. Look backward for the first visual discontinuity
             # in that short detector-latency window and replace from there.
@@ -1062,13 +1108,13 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
             )
             entry_point['speaker_confidence'] = confidence
             entry_point['fallback_used'] = False
-            if inferred_layout_change and not explicit_cut:
+            if (inferred_layout_change or inferred_solo_subject_change) and not explicit_cut:
                 # Create a hard timeline boundary at the first uncertain
                 # sample without pretending the source detector found a hard
                 # cut. The incoming confirmed composition is rendered from
                 # this exact point, never through a safe-wide/searching frame.
                 entry_point['scene_change'] = max(
-                    0.38, float(entry_point.get('scene_change', 0.0))
+                    0.72, float(entry_point.get('scene_change', 0.0))
                 )
 
     return prepared_points, prepared_frames
