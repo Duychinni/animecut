@@ -15,6 +15,13 @@ type AnalysisResponse = {
   output_text: string;
 };
 
+export type FinalHookCandidate = {
+  id: string;
+  title: string;
+  transcript: string;
+  genre?: string | null;
+};
+
 function stripCodeFences(text: string) {
   const trimmed = text.trim();
   if (!trimmed.startsWith('```')) return trimmed;
@@ -105,6 +112,78 @@ async function createAnalysisResponse(params: Parameters<typeof openai.responses
 
 function hasOpenAiKey() {
   return Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+/**
+ * Give the final, selected reels one focused copywriting pass. Candidate
+ * discovery asks the model to solve boundaries, scoring, titles, layouts, and
+ * hooks at once; on long sources the hook can consequently degrade into an
+ * extracted transcript fragment. This small batch request sees only the final
+ * reel transcript and has one job: write intentional opening copy.
+ */
+export async function writeFinalViralHooks(candidates: FinalHookCandidate[]) {
+  if (!hasOpenAiKey() || analysisProvider() === 'local' || candidates.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const compactCandidates = candidates.map((candidate) => ({
+    id: candidate.id,
+    title: candidate.title,
+    genre: candidate.genre || 'UNKNOWN',
+    transcript: candidate.transcript.slice(0, 12_000),
+  }));
+
+  try {
+    const response = await createAnalysisResponse({
+      model: process.env.OPENAI_HOOK_MODEL?.trim() || 'gpt-4.1-mini',
+      input: [
+        {
+          role: 'system',
+          content: `You are an elite short-form video hook writer.
+
+Read the COMPLETE transcript for each reel and write one powerful opening text hook that makes sense before playback.
+
+Rules:
+- Write an original editorial hook based on the reel's strongest tension, surprise, disagreement, consequence, confession, result, or unanswered question.
+- The hook may creatively rephrase the idea; it does NOT need to copy the transcript.
+- Every factual claim, person, number, and outcome must still be supported by that reel's transcript.
+- Never return a chopped sentence, dangling clause, raw transcript fragment, vague hype, or generic filler.
+- Use natural, conversational English. Reject slogan-like word piles, motivational platitudes, and abstract claims that could fit any video.
+- Prefer a specific person, action, conflict, number, or consequence from this reel over generic words such as "champions", "success", "mindset", "everything", or "always".
+- Never copy or closely paraphrase the supplied title.
+- Make it immediately understandable to someone who has not seen the source video.
+- Aim for 4-9 words and no more than 48 characters.
+- For COMEDY, prefer a concise setup or curiosity gap that preserves the punchline. Use an exact spoken line only when that line is already an exceptionally strong, self-contained hook.
+- For debates/interviews/sports, surface the actual conflict or stakes.
+- For stories/education/advice, surface the reveal, surprising premise, or practical payoff without inventing it.
+- Silently reject and rewrite anything that ends with a connector such as "and", "but", "because", "with", "of", "to", or "when".
+
+Return strict JSON only:
+{"hooks":[{"id":"candidate id","hook":"final hook"}]}`,
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({ reels: compactCandidates }),
+        },
+      ],
+    });
+    const parsed = await parseJsonWithRepair(response.output_text) as {
+      hooks?: Array<{ id?: unknown; hook?: unknown }>;
+    };
+    const requestedIds = new Set(candidates.map((candidate) => candidate.id));
+    const hooks = new Map<string, string>();
+    for (const item of parsed.hooks ?? []) {
+      const id = typeof item.id === 'string' ? item.id : '';
+      const hook = typeof item.hook === 'string' ? item.hook.replace(/\s+/g, ' ').trim() : '';
+      if (requestedIds.has(id) && hook) hooks.set(id, hook);
+    }
+    return hooks;
+  } catch (error) {
+    console.warn('[analysis] final hook writing unavailable; preserving candidate hooks.', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return new Map<string, string>();
+  }
 }
 
 function isOpenAiTransientError(error: unknown) {

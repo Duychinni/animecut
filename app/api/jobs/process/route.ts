@@ -1121,7 +1121,17 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
   await Promise.all([
     renderAdaptivePlaybackPreviews(outPath, preview360Path, preview540Path),
     (async () => {
-      await renderVerticalClip({ ...renderOptions, outputPath: captionFreeMasterPath, captionsEnabled: false, fastRender: true });
+      // This master is disposable input for a 360p editor preview, so use the
+      // Mac's hardware encoder. It preserves the exact reframe while avoiding
+      // a second CPU-heavy 1080p x264 pass for every customer reel.
+      await renderVerticalClip({
+        ...renderOptions,
+        outputPath: captionFreeMasterPath,
+        captionsEnabled: false,
+        hookTextEnabled: false,
+        videoEncoder: process.env.FFMPEG_PREVIEW_VIDEO_ENCODER || 'h264_videotoolbox',
+        fastRender: true,
+      });
       await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '360p');
     })(),
   ]);

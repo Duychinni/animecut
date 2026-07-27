@@ -39,6 +39,7 @@ type RenderOpts = {
   inputPath: string;
   inputFingerprint?: string;
   outputPath: string;
+  videoEncoder?: string;
   startSec: number;
   endSec: number;
   fastRender?: boolean;
@@ -2530,7 +2531,7 @@ export async function renderVerticalClip(opts: RenderOpts) {
   // VideoToolbox's bitrate-driven encode. Prefer x264 everywhere for stable
   // CRF quality; hardware encoding remains available as an explicit override.
   const defaultEncoder = 'libx264';
-  const configuredEncoder = (process.env.FFMPEG_VIDEO_ENCODER || defaultEncoder).trim();
+  const configuredEncoder = (opts.videoEncoder || process.env.FFMPEG_VIDEO_ENCODER || defaultEncoder).trim();
   const configuredPreset = (opts.fastRender ? process.env.FFMPEG_EDIT_X264_PRESET || 'veryfast' : process.env.FFMPEG_X264_PRESET || 'medium').trim();
   const allowOversizedExports = process.env.FFMPEG_ALLOW_OVERSIZED_EXPORTS === 'true';
   const configuredCrf = (allowOversizedExports ? process.env.FFMPEG_X264_CRF || DEFAULT_X264_CRF : DEFAULT_X264_CRF).trim();
