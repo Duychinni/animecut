@@ -2912,11 +2912,33 @@ def main():
     last_semantic_center_x = None
     semantic_hold_samples = 0
 
+    # Decode the analysis window sequentially. Seeking the source independently
+    # for every 83 ms observation forces the decoder back through nearby
+    # keyframes hundreds of times and made short reels several times slower
+    # than real time. We still evaluate the exact same 12 observations per
+    # second; only the way those frames are retrieved changes.
+    first_target_frame = max(0, int(round(sample_times[0] * fps)))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, first_target_frame)
+    next_decode_frame = max(0, int(round(cap.get(cv2.CAP_PROP_POS_FRAMES))))
+    last_decoded_frame = None
+    supplemental_scan_interval = max(1, int(round(analysis_fps)))
+
     for sample_index, sample_t in enumerate(sample_times):
-        cap.set(cv2.CAP_PROP_POS_MSEC, sample_t * 1000.0)
-        ok, frame = cap.read()
-        if not ok:
+        target_frame = max(first_target_frame, int(round(sample_t * fps)))
+        grabbed_target = False
+        while next_decode_frame <= target_frame:
+            ok = cap.grab()
+            if not ok:
+                last_decoded_frame = None
+                break
+            next_decode_frame += 1
+            grabbed_target = True
+        if grabbed_target:
+            ok, decoded_frame = cap.retrieve()
+            last_decoded_frame = decoded_frame if ok else None
+        if last_decoded_frame is None:
             continue
+        frame = last_decoded_frame
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -2948,7 +2970,7 @@ def main():
         # profile directions from OpenCV, then merge duplicate detections.
         # One supplemental scan per second is enough to prove a sustained
         # conversation layout without tripling analysis time on single speakers.
-        if len(faces) < 2 and sample_index % 4 == 0:
+        if len(faces) < 2 and sample_index % supplemental_scan_interval == 0:
             multi_person_checked = True
             haar_faces = []
             haar_scale = min(1.0, 720.0 / max(source_w, 1.0))
