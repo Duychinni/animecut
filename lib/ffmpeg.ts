@@ -13,7 +13,7 @@ type ReframeMode = 'off' | 'basic' | 'smart';
 const VERTICAL_EXPORT_SIZE = getVerticalExportSize();
 const VERTICAL_EXPORT_WIDTH = VERTICAL_EXPORT_SIZE.width;
 const VERTICAL_EXPORT_HEIGHT = VERTICAL_EXPORT_SIZE.height;
-const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v16-semibold-hooks';
+const RENDER_ALIGNMENT_VERSION = 'smart-speaker-follow-v17-isolated-split-panes';
 // Preserve detail through crop/scale, caption compositing, and the additional
 // recompression applied by social platforms. The separate playback preview
 // keeps dashboard playback responsive.
@@ -656,6 +656,7 @@ type ReframePoint = {
   speakerConfidence?: number;
 };
 type SubjectBox = { x: number; y: number; w: number; h: number; cx?: number; cy?: number };
+type HorizontalCropBounds = { minX: number; maxX: number };
 type SplitStackLayout = {
   mode: 'split_stack';
   sourceW: number;
@@ -1582,6 +1583,29 @@ function floorEven(value: number) {
   return Math.max(2, Math.floor(value / 2) * 2);
 }
 
+function splitPaneHorizontalBounds(
+  topBox: SubjectBox,
+  bottomBox: SubjectBox,
+  sourceW: number,
+): { top: HorizontalCropBounds; bottom: HorizontalCropBounds } | null {
+  const topCenterX = topBox.cx ?? (topBox.x + topBox.w / 2);
+  const bottomCenterX = bottomBox.cx ?? (bottomBox.x + bottomBox.w / 2);
+  const separation = Math.abs(bottomCenterX - topCenterX);
+
+  // Only divide the source when the two people occupy clearly separate
+  // horizontal tiles. This is the common remote-interview composition. Without
+  // these bounds, a face-centered crop can cross the tile seam and duplicate
+  // the other speaker's shoulder/background into the opposite stacked pane.
+  if (separation < sourceW * 0.28) return null;
+
+  const boundary = floorEven(clamp((topCenterX + bottomCenterX) / 2, sourceW * 0.2, sourceW * 0.8));
+  const left = { minX: 0, maxX: boundary };
+  const right = { minX: boundary, maxX: sourceW };
+  return topCenterX <= bottomCenterX
+    ? { top: left, bottom: right }
+    : { top: right, bottom: left };
+}
+
 function buildSplitStackFilter(
   opts: RenderOpts,
   layout: SplitStackLayout,
@@ -1592,12 +1616,22 @@ function buildSplitStackFilter(
   const seamHeight = 16;
   const paneHeight = Math.floor((layout.outputHeight - seamHeight) / 2);
   const paneAspect = layout.outputWidth / paneHeight;
-  const cropWidth = floorEven(Math.min(layout.sourceW, layout.sourceH * paneAspect));
+  const horizontalBounds = splitPaneHorizontalBounds(layout.topBox, layout.bottomBox, layout.sourceW);
+  let cropWidth = floorEven(Math.min(layout.sourceW, layout.sourceH * paneAspect));
+  if (horizontalBounds) {
+    cropWidth = floorEven(Math.min(
+      cropWidth,
+      horizontalBounds.top.maxX - horizontalBounds.top.minX,
+      horizontalBounds.bottom.maxX - horizontalBounds.bottom.minX,
+    ));
+  }
   const paneSourceHeight = floorEven(Math.min(layout.sourceH, cropWidth / paneAspect));
   const topCenterX = layout.topBox.cx ?? (layout.topBox.x + layout.topBox.w / 2);
   const bottomCenterX = layout.bottomBox.cx ?? (layout.bottomBox.x + layout.bottomBox.w / 2);
-  const topCropX = clamp(topCenterX - cropWidth / 2, 0, layout.sourceW - cropWidth);
-  const bottomCropX = clamp(bottomCenterX - cropWidth / 2, 0, layout.sourceW - cropWidth);
+  const topBounds = horizontalBounds?.top ?? { minX: 0, maxX: layout.sourceW };
+  const bottomBounds = horizontalBounds?.bottom ?? { minX: 0, maxX: layout.sourceW };
+  const topCropX = clamp(topCenterX - cropWidth / 2, topBounds.minX, topBounds.maxX - cropWidth);
+  const bottomCropX = clamp(bottomCenterX - cropWidth / 2, bottomBounds.minX, bottomBounds.maxX - cropWidth);
 
   const topCropY = clamp((layout.topBox.y + layout.topBox.h * 0.18) - paneSourceHeight * 0.42, 0, layout.sourceH - paneSourceHeight);
   const bottomCropY = clamp((layout.bottomBox.y + layout.bottomBox.h * 0.18) - paneSourceHeight * 0.42, 0, layout.sourceH - paneSourceHeight);
@@ -2157,14 +2191,24 @@ function buildTimelineStackPane(
   sourceW: number,
   sourceH: number,
   paneHeight: number,
+  horizontalBounds?: HorizontalCropBounds,
 ) {
   const paneAspect = VERTICAL_EXPORT_WIDTH / paneHeight;
+  const availableWidth = horizontalBounds
+    ? Math.max(2, horizontalBounds.maxX - horizontalBounds.minX)
+    : sourceW;
   const desiredCropHeight = clamp(box.h * 3.2, sourceH * 0.72, sourceH);
-  const cropHeight = floorEven(Math.min(sourceH, desiredCropHeight));
-  const cropWidth = floorEven(Math.min(sourceW, cropHeight * paneAspect));
+  let cropHeight = floorEven(Math.min(sourceH, desiredCropHeight));
+  let cropWidth = floorEven(Math.min(availableWidth, cropHeight * paneAspect));
+  if (cropWidth / cropHeight < paneAspect - 0.001) {
+    cropHeight = floorEven(cropWidth / paneAspect);
+    cropWidth = floorEven(cropHeight * paneAspect);
+  }
   const faceCx = box.cx ?? (box.x + box.w / 2);
   const faceCy = box.cy ?? (box.y + box.h / 2);
-  const cropX = floorEven(clamp(faceCx - cropWidth / 2, 0, Math.max(0, sourceW - cropWidth)));
+  const minCropX = horizontalBounds?.minX ?? 0;
+  const maxCropX = (horizontalBounds?.maxX ?? sourceW) - cropWidth;
+  const cropX = floorEven(clamp(faceCx - cropWidth / 2, minCropX, Math.max(minCropX, maxCropX)));
   const cropY = floorEven(clamp(faceCy - cropHeight * 0.40, 0, Math.max(0, sourceH - cropHeight)));
   return `${inputLabel}crop=${cropWidth}:${cropHeight}:${cropX}:${cropY},scale=${VERTICAL_EXPORT_WIDTH}:${paneHeight}:flags=${HIGH_QUALITY_SCALE_FLAGS},setsar=1${outputLabel}`;
 }
@@ -2313,9 +2357,10 @@ function buildTimedReframeFilter(
     } else if ((segment.mode === 'stacked' || (segment.mode === 'wide_context' && segment.wideKind === 'two_person')) && segment.topBox && segment.bottomBox && sourceW > 0 && sourceH > 0) {
       const dividerHeight = 16;
       const paneHeight = Math.floor((VERTICAL_EXPORT_HEIGHT - dividerHeight) / 2);
+      const horizontalBounds = splitPaneHorizontalBounds(segment.topBox, segment.bottomBox, sourceW);
       graph.push(`${base},split=2[stacktop${index}][stackbottom${index}]`);
-      graph.push(buildTimelineStackPane(`[stacktop${index}]`, `[stacktopready${index}]`, segment.topBox, sourceW, sourceH, paneHeight));
-      graph.push(buildTimelineStackPane(`[stackbottom${index}]`, `[stackbottomready${index}]`, segment.bottomBox, sourceW, sourceH, paneHeight));
+      graph.push(buildTimelineStackPane(`[stacktop${index}]`, `[stacktopready${index}]`, segment.topBox, sourceW, sourceH, paneHeight, horizontalBounds?.top));
+      graph.push(buildTimelineStackPane(`[stackbottom${index}]`, `[stackbottomready${index}]`, segment.bottomBox, sourceW, sourceH, paneHeight, horizontalBounds?.bottom));
       graph.push(`color=c=white@0.82:s=${VERTICAL_EXPORT_WIDTH}x${dividerHeight}:d=${(segment.end - segment.start).toFixed(3)}[divider${index}]`);
       graph.push(`[stacktopready${index}][divider${index}][stackbottomready${index}]vstack=inputs=3,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
     } else if (segment.mode === 'wide_context' && segment.wideKind === 'broll' && sourceW > 0 && sourceH > 0) {
