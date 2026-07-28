@@ -20,6 +20,7 @@ export type FinalHookCandidate = {
   id: string;
   title: string;
   transcript: string;
+  language?: string | null;
   genre?: string | null;
   sourceContext?: string | null;
 };
@@ -144,6 +145,7 @@ export async function writeFinalViralHooks(candidates: FinalHookCandidate[]) {
             id: candidate.id,
             source_context: candidate.sourceContext || '',
             working_title: candidate.title,
+            source_language: candidate.language || 'auto-detect from transcript',
             genre: candidate.genre || 'UNKNOWN',
             transcript: candidate.transcript.slice(0, 12_000),
           }));
@@ -161,7 +163,9 @@ Rules:
 - The hook may creatively rephrase the idea; it does NOT need to copy the transcript.
 - Every factual claim, person, number, and outcome must still be supported by that reel's transcript.
 - Never return a chopped sentence, dangling clause, raw transcript fragment, vague hype, or generic filler.
-- Use natural, conversational English. Reject slogan-like word piles, motivational platitudes, and abstract claims that could fit any video.
+- Write in the same language as the reel transcript. Never translate the hook into English unless the reel itself is English.
+- If a reel genuinely mixes languages, use the dominant language of that reel and preserve familiar names and phrases from the other language.
+- Use natural, conversational phrasing for that language. Reject slogan-like word piles, motivational platitudes, and abstract claims that could fit any video.
 - Prefer a specific person, action, conflict, number, or consequence from this reel over generic words such as "champions", "success", "mindset", "everything", or "always".
 - Never copy or closely paraphrase the supplied title.
 - Make it immediately understandable to someone who has not seen the source video.
@@ -225,10 +229,18 @@ function shouldUseLocalFallback(error: unknown) {
   return process.env.LOCAL_ANALYSIS_FALLBACK !== 'false' && (analysisProvider() !== 'openai' || isOpenAiTransientError(error) || error instanceof Error);
 }
 
-function buildPrompt(targetCandidates: number, totalSeconds: number) {
+function buildPrompt(targetCandidates: number, totalSeconds: number, language = '') {
   const policy = getClipPolicy(totalSeconds);
 
   return `You are an expert short-form content editor for TikTok, Instagram Reels, Facebook Reels, and YouTube Shorts.
+
+SOURCE LANGUAGE:
+- Detected language: ${language || 'auto-detect from the transcript'}.
+- Analyze transcripts in any language.
+- Write every viewer-facing field in the transcript's language, especially title, hook_text, hook_options.text, topic, opening_line, and closing_line.
+- Do not translate Spanish or other non-English content into English.
+- For genuinely multilingual clips, use the dominant spoken language while preserving proper names and natural code-switching.
+- Internal categorical enum values and JSON property names must remain exactly as specified in English.
 
 GOAL:
 Do NOT generate random transcript snippets.
@@ -358,7 +370,7 @@ TITLE / HOOK PAIR EXAMPLES:
 
 EDITORIAL PLAN (ANALYSIS ONLY IN THIS PHASE):
 - Treat every candidate as a story, not merely a timestamp window.
-- State the story and central conflict in plain English.
+- State the story and central conflict clearly in the transcript's language.
 - Identify the primary speaker only when the transcript supports the identity; otherwise use null.
 - List supporting speakers only when their identities are transcript-proven.
 - Treat recognizable names verified by source metadata as identity evidence, not claim evidence. When a verified interview host asks the question, reacts, challenges the guest, or materially drives the exchange, use the host's name in some (not all) relevant titles or hooks. Do not omit a notable host from the entire reel set when several selected moments clearly depend on that host's participation.
@@ -555,6 +567,7 @@ export async function analyzeClipCandidates(
   transcript: string,
   segments: Array<{ start?: number; end?: number; text?: string }> = [],
   sourceContext = '',
+  language = '',
 ) {
   if (isMockClipAnalysisEnabled()) {
     return {
@@ -580,7 +593,7 @@ export async function analyzeClipCandidates(
     const totalSeconds = segments.reduce((acc, s) => Math.max(acc, Number(s.end ?? s.start ?? 0)), 0);
     const policy = getClipPolicy(totalSeconds);
     const targetCandidates = minCandidatePoolForDuration(totalSeconds);
-    const prompt = buildPrompt(targetCandidates, totalSeconds);
+    const prompt = buildPrompt(targetCandidates, totalSeconds, language);
 
     return await withTimeout((async () => {
       const chunked = segments.length ? chunkSegments(segments) : [];
@@ -596,7 +609,7 @@ export async function analyzeClipCandidates(
           const res = await createAnalysisResponse({
             model: 'gpt-4.1-mini',
             input: [
-              { role: 'system', content: buildPrompt(candidatesForWindow, totalSeconds) },
+              { role: 'system', content: buildPrompt(candidatesForWindow, totalSeconds, language) },
               { role: 'user', content: `${sourceContext ? `SOURCE METADATA:\n${sourceContext}\n\n` : ''}TIMESTAMPED TRANSCRIPT WINDOW:\n${timeline}` },
             ],
           });

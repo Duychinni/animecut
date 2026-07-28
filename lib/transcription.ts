@@ -178,7 +178,13 @@ async function runProcess(command: string, args: string[], name: string) {
     });
     proc.on('close', (code) => {
       if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${name} failed with code ${code}: ${stderr.trim().split('\n').slice(-8).join(' | ')}`));
+      else {
+        const details = (stderr.trim() || stdout.trim())
+          .split('\n')
+          .slice(-8)
+          .join(' | ');
+        reject(new Error(`${name} failed with code ${code}: ${details}`));
+      }
     });
     proc.on('error', reject);
   });

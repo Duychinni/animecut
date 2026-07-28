@@ -127,7 +127,21 @@ function repairKnownEntityFragments(value: string, globalContext: string) {
 }
 
 function normalized(text: string) {
-  return clean(text).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return clean(text)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function editorialTokenCount(text: string) {
+  const cleaned = clean(text);
+  const whitespaceTokens = cleaned.split(/\s+/u).filter(Boolean).length;
+  if (whitespaceTokens > 1) return whitespaceTokens;
+  // Languages such as Chinese, Japanese, and Thai do not consistently place
+  // spaces between words. Count Unicode letters/numbers so valid copy is not
+  // rejected solely because it is written in a non-Latin script.
+  return cleaned.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
 }
 
 function sourceTitleFromContext(globalContext: string) {
@@ -204,7 +218,7 @@ export function isNaturalEditorialTitle(value: unknown) {
   if (/^(top|viral|best|standout)\s+(clip|reel|short|moment)/i.test(text)) return false;
   if (/\bleaves?\s+another\s+message\b/i.test(text)) return false;
   if (/:\s*(?:i|you|he|she|we|they)\b.+(?:\bthis\b|\bthat\b|\bthere\b|\bjust\b)/i.test(text)) return false;
-  return /[a-z]{2}/i.test(text);
+  return /[\p{L}\p{N}]{2}/u.test(text);
 }
 
 export function isNaturalEditorialHook(value: unknown) {
@@ -221,8 +235,8 @@ export function isNaturalEditorialHook(value: unknown) {
   if (/^(could|would|should|might|may)\s+(go|be|have|do)\s*,?\s*(but|and)\b/i.test(text)) return false;
   if (/\b(detail most people miss|matters more than you think|explains what actually matters|what this changes about|changes how you see)\b/i.test(text)) return false;
   if (/\b(and|but|because|if|when|where|which|who|to|for|with|about|from|into|of|or|as|the|a|an|is|are|was|were|not|your|my|his|her|their|our)\??$/i.test(text)) return false;
-  const words = text.split(/\s+/);
-  return words.length >= 3 && words.length <= 10;
+  const tokenCount = editorialTokenCount(text);
+  return tokenCount >= 3 && tokenCount <= 24;
 }
 
 function sentenceCandidates(text: string) {

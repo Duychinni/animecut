@@ -44,7 +44,11 @@ def main():
         if not alignable_segments:
             raise RuntimeError("transcript contains no alignable segments")
 
-        language = str(transcript.get("language") or "en")
+        raw_language = str(transcript.get("language") or "en").strip().lower()
+        # OpenAI verbose transcripts can return a language name ("english"),
+        # while WhisperX alignment models are keyed by ISO codes ("en").
+        from whisperx.utils import TO_LANGUAGE_CODE
+        language = TO_LANGUAGE_CODE.get(raw_language, raw_language)
         align_model, metadata = whisperx.load_align_model(
             language_code=language,
             device=device,

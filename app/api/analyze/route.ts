@@ -166,7 +166,7 @@ function startsLikeNaturalBoundary(text: string): boolean {
   if (!cleaned) return false;
   const weakOpen = /^(and|but|so|because|then)\b/i.test(cleaned);
   if (weakOpen) return false;
-  return /^[A-Z0-9]/.test(cleaned) || /^(I|We|You|He|She|They|Now|Look|Here|Let me|The|This)\b/.test(cleaned);
+  return /^[\p{Lu}\p{Lt}\p{Lo}\p{N}]/u.test(cleaned);
 }
 
 function endsSentence(text: string): boolean {
@@ -1011,7 +1011,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const { data: transcriptRow, error: tErr } = await supabase
       .from('transcripts')
-      .select('full_text, segments_json')
+      .select('language, full_text, segments_json')
       .eq('project_id', project_id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -1058,7 +1058,12 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
 
     const parsed = options.forceLocal
       ? analyzeTranscriptLocally(transcriptRow.full_text as string, segments, sourceContext)
-      : await analyzeClipCandidates(transcriptRow.full_text as string, segments, sourceContext);
+      : await analyzeClipCandidates(
+          transcriptRow.full_text as string,
+          segments,
+          sourceContext,
+          String(transcriptRow.language || ''),
+        );
     const analysisDiagnostics = options.forceLocal
       ? { provider: 'local', openai_timed_out: false, fallback_used: true, fallback_reason: 'force_local_requested' }
       : ((parsed as { diagnostics?: Record<string, unknown> }).diagnostics ?? {
@@ -1326,6 +1331,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
     const finalHookTargets = diversified.map((item, index) => ({
       id: String(index),
       title: item.title,
+      language: String(transcriptRow.language || ''),
       genre: item.editorial_plan?.content_genre ?? 'UNKNOWN',
       transcript: transcriptTextForWindow(item.start_sec, item.end_sec, segments),
       sourceContext,
