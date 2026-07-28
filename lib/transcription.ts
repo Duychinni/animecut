@@ -1,5 +1,5 @@
 import { createReadStream, existsSync } from 'node:fs';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { openai } from '@/lib/openai';
@@ -158,6 +158,12 @@ function getTranscriptionProvider() {
   return (process.env.TRANSCRIPTION_PROVIDER || 'openai').trim().toLowerCase();
 }
 
+function forcedAlignmentEnabled() {
+  return !['0', 'false', 'no', 'off'].includes(
+    (process.env.CAPTION_ALIGNMENT_ENABLED || 'true').trim().toLowerCase(),
+  );
+}
+
 async function runProcess(command: string, args: string[], name: string) {
   return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     const proc = spawn(command, args);
@@ -232,6 +238,27 @@ async function transcribeWithOpenAI(filePath: string): Promise<TranscriptResult>
     fullText: transcript.text ?? '',
     segments: attachWordsToSegments(verbose.segments ?? [], verbose.words ?? []),
   };
+}
+
+async function alignTranscriptWords(filePath: string, transcript: TranscriptResult) {
+  if (!forcedAlignmentEnabled()) return transcript;
+
+  const pythonBin = process.env.WHISPERX_PYTHON || process.env.SMART_REFRAME_PYTHON || 'python3';
+  const scriptPath = process.env.CAPTION_ALIGNMENT_SCRIPT
+    || `${process.cwd()}/scripts/align_transcript_whisperx.py`;
+  const device = process.env.WHISPERX_DEVICE || 'cpu';
+  const transcriptPath = `${filePath}.caption-alignment-${process.pid}-${Date.now()}.json`;
+
+  await writeFile(transcriptPath, JSON.stringify(transcript), 'utf8');
+  try {
+    const aligned = await runPythonTranscriber(
+      [pythonBin, scriptPath, filePath, transcriptPath, device],
+      'whisperx forced alignment',
+    );
+    return aligned;
+  } finally {
+    await unlink(transcriptPath).catch(() => undefined);
+  }
 }
 
 export function attachWordsToSegments(segments: TranscriptSegment[], words: TranscriptWord[]) {
@@ -492,9 +519,18 @@ export async function transcribeAudioFile(filePath: string, options: Transcripti
 
   const provider = getTranscriptionProvider();
   const fileSize = (await stat(filePath)).size;
+  let transcript: TranscriptResult;
   if (provider !== 'openai' || fileSize < OPENAI_SAFE_FILE_BYTES) {
-    return requireWordTimingCoverage(await transcribeOneFile(filePath, provider));
+    transcript = await transcribeOneFile(filePath, provider);
+  } else {
+    transcript = await transcribeChunked(filePath, provider, options);
   }
 
-  return requireWordTimingCoverage(await transcribeChunked(filePath, provider, options));
+  // Align once against the complete waveform after chunk merging. This avoids
+  // repeatedly loading the acoustic model for every 12-minute chunk while
+  // correcting both native and interpolated Whisper word boundaries.
+  const aligned = provider === 'whisperx'
+    ? transcript
+    : await alignTranscriptWords(filePath, transcript);
+  return requireWordTimingCoverage(aligned);
 }

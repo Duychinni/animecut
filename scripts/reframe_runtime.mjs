@@ -9,6 +9,7 @@ const isWindows = process.platform === 'win32';
 const venvPython = path.join(root, '.venv', isWindows ? 'Scripts/python.exe' : 'bin/python');
 const healthScript = path.join(root, 'scripts', 'reframe_per_clip.py');
 const diarizationHealthScript = path.join(root, 'scripts', 'diarize_source.py');
+const captionAlignmentHealthScript = path.join(root, 'scripts', 'align_transcript_whisperx.py');
 
 function envTrue(name) {
   return ['1', 'true', 'yes', 'on'].includes((process.env[name] ?? '').trim().toLowerCase());
@@ -83,8 +84,20 @@ function diarizationHealth() {
   return true;
 }
 
+function captionAlignmentHealth() {
+  if (process.env.CAPTION_ALIGNMENT_ENABLED?.trim().toLowerCase() === 'false') return true;
+  if (!existsSync(venvPython)) return false;
+  const result = run(venvPython, [captionAlignmentHealthScript, '--health']);
+  if (result.status !== 0) {
+    process.stderr.write(result.stderr || result.stdout || 'Caption alignment health check failed.\n');
+    return false;
+  }
+  process.stdout.write(`${result.stdout.trim()}\n`);
+  return true;
+}
+
 if (mode === 'check') {
-  if (!health() || !mediaHealth() || !diarizationHealth()) {
+  if (!health() || !mediaHealth() || !diarizationHealth() || !captionAlignmentHealth()) {
     console.error('Subject-aware reframing is not ready. Run: npm run reframe:setup');
     process.exit(1);
   }
@@ -118,5 +131,5 @@ if (mode === 'worker' && envTrue('DIARIZATION_ENABLED')) {
   if (diarizationDependencies.status !== 0) process.exit(diarizationDependencies.status ?? 1);
 }
 
-if (!health() || !mediaHealth() || !diarizationHealth()) process.exit(1);
+if (!health() || !mediaHealth() || !diarizationHealth() || !captionAlignmentHealth()) process.exit(1);
 console.log(`Subject-aware reframing is ready: ${venvPython}`);
