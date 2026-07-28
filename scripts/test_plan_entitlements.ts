@@ -53,14 +53,27 @@ assert.match(exportRoute, /entitlements\.maxGeneratedClips/);
 assert.match(workerRoute, /sortProjectWorkByPlan/);
 
 const orderedRenderJobs = prioritizeMainRenderJobs([
-  { projectId: 'pro-a', payload: { export_id: 'short', render_duration_seconds: 30 } },
+  { projectId: 'pro-a', payload: { export_id: 'short', editorial_priority: 1, render_duration_seconds: 30 } },
   { projectId: 'pro-a', payload: { export_id: 'preview', preview_only: true, render_duration_seconds: 120 } },
-  { projectId: 'pro-a', payload: { export_id: 'long', render_duration_seconds: 90 } },
+  { projectId: 'pro-a', payload: { export_id: 'long', editorial_priority: 0, render_duration_seconds: 90 } },
   { projectId: 'pro-b', payload: { export_id: 'other-project', render_duration_seconds: 180 } },
 ]);
 assert.deepEqual(
   orderedRenderJobs.map((job) => job.payload.export_id),
   ['long', 'short', 'other-project', 'preview'],
+);
+
+const progressiveRenderJobs = prioritizeMainRenderJobs([
+  { projectId: 'one', payload: { export_id: 'rank-7-long', editorial_priority: 6, render_duration_seconds: 120 } },
+  { projectId: 'one', payload: { export_id: 'rank-2-short', editorial_priority: 1, render_duration_seconds: 30 } },
+  { projectId: 'one', payload: { export_id: 'rank-5-long', editorial_priority: 4, render_duration_seconds: 80 } },
+  { projectId: 'one', payload: { export_id: 'rank-1-medium', editorial_priority: 0, render_duration_seconds: 60 } },
+  { projectId: 'one', payload: { export_id: 'rank-4-short', editorial_priority: 3, render_duration_seconds: 25 } },
+]);
+assert.deepEqual(
+  progressiveRenderJobs.map((job) => job.payload.export_id),
+  ['rank-1-medium', 'rank-2-short', 'rank-5-long', 'rank-4-short', 'rank-7-long'],
+  'the strongest reels must finish their priority wave before lower-ranked reels',
 );
 
 console.log('Plan entitlements are configured and enforced.');

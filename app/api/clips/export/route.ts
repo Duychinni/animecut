@@ -328,11 +328,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    const editorialPriorityByCandidate = new Map(
+      selectedIds.map((candidateId, index) => [candidateId, index]),
+    );
     const jobs = (exportsRows ?? []).map((row) => ({
       project_id,
       type: 'export',
       payload: {
         export_id: row.id,
+        editorial_priority: editorialPriorityByCandidate.get(String(row.clip_candidate_id))
+          ?? Number.MAX_SAFE_INTEGER,
         captions_enabled: captionsEnabled,
         caption_preset_id: captionPreset.id,
         caption_template: captionTemplate,
