@@ -110,6 +110,22 @@ def visual_usability(points, timeline):
             None,
         )
 
+    speaking_points = [point for point in points if point_is_speaking(point)]
+    non_face_context_points = [
+        point for point in speaking_points
+        if str(point.get('subject_kind', '')).lower()
+        in ('screen', 'body', 'person', 'action', 'saliency')
+        and float(point.get('subject_confidence', 0.0)) >= 0.40
+    ]
+    # In gameplay, demonstrations, workouts, and cooking footage, a detector
+    # may briefly promote a tiny or partial face even though the clip is
+    # overwhelmingly driven by screen/action context. Do not reject the whole
+    # reel because of those short face-classification islands.
+    non_face_context_dominant = bool(
+        speaking_points
+        and len(non_face_context_points) / len(speaking_points) >= 0.55
+    )
+
     unsafe_speech_times = []
     unsafe_opening_times = []
     undersized_speech_times = []
@@ -135,13 +151,31 @@ def visual_usability(points, timeline):
                 and segment.get('bottomBox')
             )
         )
-        unsafe_context = bool(
-            not verified_person
+        subject_kind = str(point.get('subject_kind', '')).lower()
+        subject_confidence = float(point.get('subject_confidence', 0.0))
+        verified_non_face_context = bool(
+            (
+                subject_kind == 'screen'
+                and subject_confidence >= 0.58
+                and segment
+                and segment.get('mode') == 'wide_context'
+            )
+            or (
+                subject_kind in ('body', 'person', 'action', 'saliency')
+                and subject_confidence >= 0.40
+                and segment
+                and segment.get('mode') == 'single'
+            )
             or (
                 segment
                 and segment.get('mode') == 'wide_context'
-                and segment.get('wideKind') != 'broll'
+                and segment.get('wideKind') == 'broll'
             )
+        )
+        unsafe_context = not (
+            verified_person
+            or verified_non_face_context
+            or non_face_context_dominant
         )
         if not unsafe_context or not point_is_speaking(point):
             face_box = point.get('face_box') or {}
@@ -583,10 +617,34 @@ def screen_context_score(cv2, np, gray):
 
 def semantic_subject_choice(face_box=None, body_box=None, motion_box=None, saliency_box=None,
                             speaker_confidence=0.0, saliency_confidence=0.0,
-                            screen_score=0.0, prior=None, scene_cut=False):
+                            screen_score=0.0, face_area_ratio=1.0,
+                            body_area_ratio=0.0,
+                            prior=None, scene_cut=False):
     """Choose the ROI using the production semantic priority hierarchy."""
-    if screen_score >= 0.58 and face_box is None and body_box is None:
-        return {'kind': 'context', 'box': None, 'confidence': screen_score, 'reason': 'screen_or_text_context', 'predicted': False}
+    # Gameplay, reaction, tutorial, and webinar sources commonly contain a
+    # small facecam over a visually essential screen. A face detector alone
+    # must not turn that overlay into a full-frame crop and discard the actual
+    # content. Preserve the composite when the screen evidence is strong and
+    # the detected face occupies only a small overlay-sized region.
+    tiny_face_over_screen = (
+        face_box is not None
+        and float(face_area_ratio) <= 0.035
+        and screen_score >= 0.58
+    )
+    if screen_score >= 0.58 and (face_box is None or tiny_face_over_screen) and body_box is None:
+        return {'kind': 'screen', 'box': None, 'confidence': screen_score, 'reason': 'screen_or_text_context', 'predicted': False}
+    # Fitness, stage demonstrations, cooking, and product tutorials may include
+    # a detectable face while the meaningful visual is the person's body and
+    # hands. When the face is small but a substantial body region is present,
+    # frame the action instead of producing a talking-head crop.
+    full_body_context = (
+        face_box is not None
+        and body_box is not None
+        and float(face_area_ratio) <= 0.030
+        and float(body_area_ratio) >= 0.14
+    )
+    if full_body_context:
+        return {'kind': 'body', 'box': body_box, 'confidence': 0.64, 'reason': 'full_body_action_context', 'predicted': False}
     if face_box is not None:
         confidence = max(0.62, float(speaker_confidence))
         reason = 'confident_active_speaker' if speaker_confidence >= 0.42 else 'main_visible_face'
@@ -3197,6 +3255,18 @@ def main():
             speaker_confidence=selected_speaker_confidence,
             saliency_confidence=saliency_confidence,
             screen_score=screen_score,
+            face_area_ratio=(
+                1.0
+                if selected_box is None
+                else (float(selected_box[2]) * float(selected_box[3]))
+                / max(1.0, float(source_w) * float(source_h))
+            ),
+            body_area_ratio=(
+                0.0
+                if body_box is None
+                else (float(body_box[2]) * float(body_box[3]))
+                / max(1.0, float(source_w) * float(source_h))
+            ),
             prior=prior_semantic_subject,
             scene_cut=scene_cut,
         )

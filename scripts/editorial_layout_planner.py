@@ -10,13 +10,15 @@ from collections import Counter
 
 SCENE_TYPES = {
     'SINGLE_SPEAKER', 'TWO_PERSON', 'THREE_PERSON', 'FOUR_PERSON',
+    'SCREEN_CONTENT', 'FULL_BODY_ACTION', 'OBJECT_DEMO',
     'BROLL', 'PICTURE_IN_PICTURE', 'UNKNOWN',
 }
 
 LAYOUTS = {
     'SINGLE_SPEAKER_CROP', 'ACTIVE_SPEAKER_CROP', 'TWO_PERSON_CONVERSATION',
     'THREE_PERSON_COMPOSITION', 'PRESERVE_GRID', 'BROLL_FILL',
-    'PICTURE_IN_PICTURE', 'SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL',
+    'PICTURE_IN_PICTURE', 'SPEAKER_WITH_CONTEXT', 'PRESERVE_SCREEN',
+    'TRACK_ACTION', 'TRACK_OBJECT', 'SAFE_ORIGINAL',
 }
 
 FIXED_TWO_REGION_LAYOUTS = {
@@ -34,12 +36,21 @@ def _classify_visual_scene(segment):
     mode = str(segment.get('mode', ''))
     wide_kind = str(segment.get('wideKind', ''))
     grid_template = str(segment.get('gridTemplate', ''))
+    subject_kind = str(segment.get('subjectKind', '')).lower()
     # Median visibility prevents one-frame logos, audience faces, or inserted
     # photos from turning an entire scene into a three/four-person discussion.
     visible_count = int(segment.get('visibleCount') or segment.get('visibleCountMax') or 0)
 
     if wide_kind == 'broll':
         return 'BROLL', 'BROLL_FILL', 'Visual evidence indicates inserted footage or a context shot.'
+    if subject_kind == 'screen':
+        return 'SCREEN_CONTENT', 'PRESERVE_SCREEN', 'Text, slides, gameplay, or UI are the primary visual context.'
+    if subject_kind in ('body', 'person'):
+        return 'FULL_BODY_ACTION', 'TRACK_ACTION', 'A visible body or demonstration requires action-aware framing.'
+    if subject_kind == 'action':
+        return 'FULL_BODY_ACTION', 'TRACK_ACTION', 'The primary moving subject requires action-aware framing.'
+    if subject_kind == 'saliency':
+        return 'OBJECT_DEMO', 'TRACK_OBJECT', 'A non-face focal object is the primary visual subject.'
     if mode == 'source_vertical' and visible_count <= 1:
         return 'SINGLE_SPEAKER', 'SINGLE_SPEAKER_CROP', 'Portrait source already contains one dominant subject.'
     if mode == 'stacked' and segment.get('topBox') and segment.get('bottomBox'):
@@ -102,6 +113,7 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
             segment['wideKind'] = None
             segment['editorialSceneType'] = scene_type
             segment['editorialLayout'] = layout
+            segment['visualIntent'] = 'speaker_led'
             segment['editorialReason'] = reason
             planned.append(segment)
             continue
@@ -125,6 +137,7 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
             segment['wideKind'] = None
             segment['editorialSceneType'] = scene_type
             segment['editorialLayout'] = layout
+            segment['visualIntent'] = 'speaker_led'
             segment['editorialReason'] = reason
             planned.append(segment)
             continue
@@ -149,15 +162,31 @@ def plan_editorial_timeline(timeline, candidate_plan=None):
         elif layout in ('THREE_PERSON_COMPOSITION', 'PRESERVE_GRID') and segment.get('subjects'):
             segment['mode'] = 'grid'
             segment['wideKind'] = None
-        elif layout in ('SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL'):
+        elif layout in ('PRESERVE_SCREEN', 'SPEAKER_WITH_CONTEXT', 'SAFE_ORIGINAL'):
             segment['mode'] = 'wide_context'
-            segment['wideKind'] = 'safe_wide'
+            segment['wideKind'] = 'screen' if layout == 'PRESERVE_SCREEN' else 'safe_wide'
+        elif layout in ('TRACK_ACTION', 'TRACK_OBJECT') and segment.get('points'):
+            # The detector has already built body/action/object-aware portrait
+            # crops. Keep those coordinates, but do not relabel the subject as
+            # a speaker simply because the renderer branch is `single`.
+            segment['mode'] = 'single'
+            segment['wideKind'] = None
         elif layout in ('SINGLE_SPEAKER_CROP', 'ACTIVE_SPEAKER_CROP') and segment.get('points') and segment.get('mode') != 'source_vertical':
             segment['mode'] = 'single'
             segment['wideKind'] = None
 
         segment['editorialSceneType'] = scene_type
         segment['editorialLayout'] = layout
+        segment['visualIntent'] = {
+            'SCREEN_CONTENT': 'screen_led',
+            'FULL_BODY_ACTION': 'action_led',
+            'OBJECT_DEMO': 'object_led',
+            'BROLL': 'scene_led',
+            'TWO_PERSON': 'conversation_led',
+            'THREE_PERSON': 'conversation_led',
+            'FOUR_PERSON': 'conversation_led',
+            'SINGLE_SPEAKER': 'speaker_led',
+        }.get(scene_type, 'scene_led')
         segment['editorialReason'] = reason
         planned.append(segment)
 

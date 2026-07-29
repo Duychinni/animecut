@@ -81,6 +81,47 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
         self.assertEqual(planned[0]['wideKind'], 'broll')
         self.assertEqual(planned[0]['editorialSceneType'], 'BROLL')
 
+    def test_screen_content_preserves_source_context(self):
+        planned, _ = plan_editorial_timeline([{
+            'start': 0.0, 'end': 8.0, 'mode': 'wide_context',
+            'wideKind': 'safe_wide', 'subjectKind': 'screen',
+            'visibleCount': 0, 'points': [crop_point()],
+        }])
+        self.assertEqual(planned[0]['mode'], 'wide_context')
+        self.assertEqual(planned[0]['wideKind'], 'screen')
+        self.assertEqual(planned[0]['editorialSceneType'], 'SCREEN_CONTENT')
+        self.assertEqual(planned[0]['editorialLayout'], 'PRESERVE_SCREEN')
+        self.assertEqual(planned[0]['visualIntent'], 'screen_led')
+
+    def test_body_subject_uses_action_policy_not_speaker_policy(self):
+        planned, _ = plan_editorial_timeline([{
+            'start': 0.0, 'end': 6.0, 'mode': 'single',
+            'subjectKind': 'body', 'visibleCount': 0,
+            'points': [crop_point()],
+        }])
+        self.assertEqual(planned[0]['mode'], 'single')
+        self.assertEqual(planned[0]['editorialSceneType'], 'FULL_BODY_ACTION')
+        self.assertEqual(planned[0]['editorialLayout'], 'TRACK_ACTION')
+        self.assertEqual(planned[0]['visualIntent'], 'action_led')
+
+    def test_motion_subject_uses_action_policy(self):
+        planned, _ = plan_editorial_timeline([{
+            'start': 0.0, 'end': 5.0, 'mode': 'single',
+            'subjectKind': 'action', 'visibleCount': 0,
+            'points': [crop_point()],
+        }])
+        self.assertEqual(planned[0]['editorialLayout'], 'TRACK_ACTION')
+
+    def test_salient_object_is_not_mislabeled_as_speaker(self):
+        planned, _ = plan_editorial_timeline([{
+            'start': 0.0, 'end': 5.0, 'mode': 'single',
+            'subjectKind': 'saliency', 'visibleCount': 0,
+            'points': [crop_point()],
+        }])
+        self.assertEqual(planned[0]['editorialSceneType'], 'OBJECT_DEMO')
+        self.assertEqual(planned[0]['editorialLayout'], 'TRACK_OBJECT')
+        self.assertEqual(planned[0]['visualIntent'], 'object_led')
+
     def test_scene_cut_boundary_is_not_merged_away(self):
         planned, summary = plan_editorial_timeline([
             {'start': 0.0, 'end': 2.0, 'mode': 'single', 'visibleCount': 1, 'points': [crop_point()]},

@@ -1299,6 +1299,116 @@ def test_screen_text_preserves_context():
     assert result[0]['points'][0]['cropW'] == W and result[0]['points'][0]['cropH'] == H
 
 
+def test_screen_led_speech_is_publishable_without_a_face():
+    samples = [
+        sample(
+            i * 0.25,
+            subject('screen', None, 'screen', 0.85),
+            audio_activity=0.8,
+        )
+        for i in range(12)
+    ]
+    points, _ = zip(*samples)
+    result = timeline(samples)
+    usable, reason = visual_usability(list(points), result)
+    assert usable, (reason, result)
+
+
+def test_action_led_speech_is_publishable_without_a_face():
+    action = box(900, 160, 600, 760)
+    samples = [
+        sample(
+            i * 0.25,
+            subject('action', action, 'action:primary', 0.70),
+            audio_activity=0.8,
+        )
+        for i in range(12)
+    ]
+    points, _ = zip(*samples)
+    result = timeline(samples)
+    usable, reason = visual_usability(list(points), result)
+    assert usable, (reason, result)
+
+
+def test_dominant_screen_context_survives_brief_facecam_misclassification():
+    screen_samples = [
+        sample(
+            i * 0.25,
+            subject('screen', None, 'screen', 0.85),
+            audio_activity=0.8,
+        )
+        for i in range(9)
+    ]
+    tiny_face = box(1700, 20, 120, 120, 1)
+    face_samples = [
+        sample(
+            (9 + i) * 0.25,
+            subject('face', tiny_face, 'face:1', 0.70),
+            [tiny_face], 1, 0.70, audio_activity=0.8,
+        )
+        for i in range(3)
+    ]
+    samples = screen_samples + face_samples
+    points, _ = zip(*samples)
+    result = timeline(samples)
+    usable, reason = visual_usability(list(points), result)
+    assert usable, (reason, result)
+
+
+def test_tiny_facecam_does_not_replace_gameplay_or_screen_context():
+    facecam = box(1680, 30, 180, 180)
+    selected = semantic_subject_choice(
+        face_box=facecam,
+        speaker_confidence=0.85,
+        screen_score=0.82,
+        face_area_ratio=(180 * 180) / (W * H),
+    )
+    assert selected['kind'] == 'screen', selected
+    assert selected['box'] is None, selected
+    assert selected['reason'] == 'screen_or_text_context', selected
+
+
+def test_large_presenter_remains_primary_over_screen_detail():
+    presenter = box(120, 100, 620, 900)
+    selected = semantic_subject_choice(
+        face_box=presenter,
+        speaker_confidence=0.85,
+        screen_score=0.82,
+        face_area_ratio=(620 * 900) / (W * H),
+    )
+    assert selected['kind'] == 'face', selected
+    assert selected['box'] == presenter, selected
+
+
+def test_full_body_fitness_or_demo_is_not_reduced_to_tiny_face():
+    face = box(900, 100, 150, 150)
+    body = box(600, 80, 720, 920)
+    selected = semantic_subject_choice(
+        face_box=face,
+        body_box=body,
+        speaker_confidence=0.75,
+        face_area_ratio=(150 * 150) / (W * H),
+        body_area_ratio=(720 * 920) / (W * H),
+    )
+    assert selected['kind'] == 'body', selected
+    assert selected['box'] == body, selected
+    assert selected['reason'] == 'full_body_action_context', selected
+
+
+def test_close_talking_head_stays_face_led_when_body_is_detected():
+    face = box(650, 80, 620, 720)
+    body = box(420, 60, 1080, 1000)
+    selected = semantic_subject_choice(
+        face_box=face,
+        body_box=body,
+        speaker_confidence=0.88,
+        face_area_ratio=(620 * 720) / (W * H),
+        body_area_ratio=(1080 * 1000) / (W * H),
+    )
+    assert selected['kind'] == 'face', selected
+    assert selected['box'] == face, selected
+
+
 def test_no_subject_uses_safe_full_frame():
     result = timeline([sample(i * 0.25) for i in range(8)])
     assert result[0]['mode'] == 'wide_context', result
