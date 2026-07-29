@@ -10,6 +10,7 @@ from reframe_per_clip import (
     portrait_crop_for_face_in_panel,
     portrait_crop_for_subject,
     semantic_subject_choice,
+    stabilize_continuous_conversation_layout,
     strongest_face_pair,
     visual_usability,
 )
@@ -96,6 +97,59 @@ def test_repeated_panel_wide_closeup_switching_locks_one_composition():
     assert len(result) == 1, result
     assert result[0]['mode'] == 'wide_context', result
     assert result[0]['renderBranch'] == 'stable_panel_composition', result
+
+
+def test_continuous_conversation_never_opens_wide_then_pulses_close_before_split():
+    left = box(120, 130, 520, 760, 1, 0.9)
+    right = box(1260, 140, 520, 750, 2, 0.9)
+    segments = [
+        {
+            'start': 0.0, 'end': 6.0, 'mode': 'wide_context',
+            'wideKind': 'safe_wide', 'visibleCountMax': 2,
+            'points': [{'t': 0.0}],
+        },
+        {
+            'start': 6.0, 'end': 7.5, 'mode': 'single',
+            'visibleCountMax': 2, 'points': [{'t': 6.0}],
+        },
+        {
+            'start': 7.5, 'end': 17.5, 'mode': 'stacked',
+            'topTrackId': 1, 'bottomTrackId': 2,
+            'topBox': left, 'bottomBox': right,
+            'visibleCountMax': 2, 'points': [{'t': 7.5}],
+        },
+        {
+            'start': 17.5, 'end': 29.4, 'mode': 'stacked',
+            'topTrackId': 1, 'bottomTrackId': 2,
+            'topBox': left, 'bottomBox': right,
+            'visibleCountMax': 2, 'points': [{'t': 17.5}],
+        },
+    ]
+    result = stabilize_continuous_conversation_layout(
+        segments,
+        {'recommended_layout': 'TWO_PERSON_CONVERSATION'},
+    )
+    assert len(result) == 1, result
+    assert result[0]['start'] == 0.0 and result[0]['end'] == 29.4, result
+    assert result[0]['mode'] == 'stacked', result
+    assert result[0].get('topBox') and result[0].get('bottomBox'), result
+
+
+def test_brief_pair_does_not_force_entire_solo_clip_into_split_screen():
+    left = box(120, 130, 520, 760, 1, 0.9)
+    right = box(1260, 140, 520, 750, 2, 0.9)
+    segments = [
+        {'start': 0.0, 'end': 8.0, 'mode': 'single', 'points': [{'t': 0.0}]},
+        {
+            'start': 8.0, 'end': 10.0, 'mode': 'stacked',
+            'topBox': left, 'bottomBox': right, 'points': [{'t': 8.0}],
+        },
+    ]
+    result = stabilize_continuous_conversation_layout(
+        segments,
+        {'recommended_layout': 'TWO_PERSON_CONVERSATION'},
+    )
+    assert [segment['mode'] for segment in result] == ['single', 'stacked'], result
 
 
 def speaker_centering_error(result, expected_centers):

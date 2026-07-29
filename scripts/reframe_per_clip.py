@@ -1310,6 +1310,113 @@ def lock_unstable_panel_composition(segments):
     return [locked]
 
 
+def stabilize_continuous_conversation_layout(segments, editorial_plan=None):
+    """Keep an established two-person conversation in the split-screen family."""
+    if len(segments) < 2:
+        return segments
+    if any(segment.get('mode') in ('grid', 'source_vertical') for segment in segments):
+        return segments
+
+    stacked_segments = [
+        segment for segment in segments
+        if (
+            segment.get('mode') == 'stacked'
+            and segment.get('topBox')
+            and segment.get('bottomBox')
+        )
+    ]
+    if not stacked_segments or len(stacked_segments) == len(segments):
+        return segments
+
+    clip_start = float(segments[0].get('start', 0.0))
+    clip_end = float(segments[-1].get('end', clip_start))
+    clip_duration = max(0.001, clip_end - clip_start)
+    stacked_duration = sum(
+        max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+        for segment in stacked_segments
+    )
+    stacked_ratio = stacked_duration / clip_duration
+    recommended_layout = str(
+        (editorial_plan or {}).get('recommended_layout', '')
+    ).strip().upper()
+    conversation_evidence = bool(
+        recommended_layout == 'TWO_PERSON_CONVERSATION'
+        or any(
+            str(segment.get('editorialLayout', '')).upper() == 'TWO_PERSON_CONVERSATION'
+            or str(segment.get('visualIntent', '')).lower() == 'conversation_led'
+            for segment in segments
+        )
+    )
+    # A brief valid pair must not turn a solo or montage reel into a permanent
+    # split. Once a verified pair owns most of a continuous conversation,
+    # however, full-frame and close-up detours are layout noise.
+    if not conversation_evidence or stacked_ratio < 0.45 or stacked_duration < 4.0:
+        return segments
+
+    def nearest_stacked_template(segment):
+        midpoint = (
+            float(segment.get('start', 0.0))
+            + float(segment.get('end', segment.get('start', 0.0)))
+        ) / 2.0
+        return min(
+            stacked_segments,
+            key=lambda candidate: abs(
+                (
+                    float(candidate.get('start', 0.0))
+                    + float(candidate.get('end', candidate.get('start', 0.0)))
+                ) / 2.0 - midpoint
+            ),
+        )
+
+    stabilized = []
+    for raw_segment in segments:
+        segment = dict(raw_segment)
+        if not (
+            segment.get('mode') == 'stacked'
+            and segment.get('topBox')
+            and segment.get('bottomBox')
+        ):
+            template = nearest_stacked_template(segment)
+            segment.update({
+                'mode': 'stacked',
+                'wideKind': None,
+                'topTrackId': template.get('topTrackId'),
+                'bottomTrackId': template.get('bottomTrackId'),
+                'topBox': template.get('topBox'),
+                'bottomBox': template.get('bottomBox'),
+                'renderBranch': 'stable_conversation_split',
+                'editorialSceneType': 'TWO_PERSON',
+                'editorialLayout': 'TWO_PERSON_CONVERSATION',
+                'visualIntent': 'conversation_led',
+                'editorialReason': (
+                    'Continuous two-person conversation keeps one split-screen '
+                    'layout instead of pulsing through full-frame and close-up views.'
+                ),
+            })
+        stabilized.append(segment)
+
+    # Merge adjacent sections that now use the exact same split geometry. Keep
+    # real source-cut geometry changes, but remove renderer-only boundaries.
+    merged = []
+    for segment in stabilized:
+        previous = merged[-1] if merged else None
+        same_geometry = bool(
+            previous
+            and previous.get('mode') == segment.get('mode') == 'stacked'
+            and previous.get('topBox') == segment.get('topBox')
+            and previous.get('bottomBox') == segment.get('bottomBox')
+        )
+        if same_geometry:
+            previous['end'] = segment.get('end')
+            previous['points'] = (
+                list(previous.get('points') or [])
+                + list(segment.get('points') or [])
+            )
+            continue
+        merged.append(segment)
+    return merged
+
+
 def build_reframe_timeline(points, frames, source_w: float, source_h: float, duration: float):
     """Convert 4 Hz observations into a hysteretic, timed layout state machine."""
     if not points or not frames:
@@ -3705,6 +3812,9 @@ def main():
     # Editorial and QA passes can legitimately introduce split-screen repairs,
     # but they must not recreate a repeated wide/close/split pulse. Apply the
     # composition lock once more to the final renderer-facing timeline.
+    reframe_timeline = stabilize_continuous_conversation_layout(
+        reframe_timeline, editorial_plan
+    )
     reframe_timeline = lock_unstable_panel_composition(reframe_timeline)
     debug_overlay_path = None
     if debug_enabled:

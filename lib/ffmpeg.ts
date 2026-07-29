@@ -2316,14 +2316,18 @@ function buildLargeSafeWideContext(
   base: string,
   normalizedOutput: string,
   index: number,
+  durationSeconds?: number,
 ) {
   // Preserve the entire incoming shot during a detector handoff. Cropping a
   // horizontal source to the center can show only the empty set while the
   // person is near an edge, which defeats the purpose of this safe fallback.
   const foregroundHeight = floorEven(VERTICAL_EXPORT_HEIGHT * 0.85);
+  const backgroundFilter = durationSeconds && durationSeconds > 0
+    ? `select=eq(n\\,0),loop=loop=-1:size=1:start=0,trim=duration=${durationSeconds.toFixed(3)},setpts=PTS-STARTPTS,scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2`
+    : `scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2`;
   return [
     `${base},split=2[safewidebg${index}][safewidefg${index}]`,
-    `[safewidebg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT}:force_original_aspect_ratio=increase:flags=${HIGH_QUALITY_SCALE_FLAGS},crop=${VERTICAL_EXPORT_WIDTH}:${VERTICAL_EXPORT_HEIGHT},boxblur=24:2[safewidebgready${index}]`,
+    `[safewidebg${index}]${backgroundFilter}[safewidebgready${index}]`,
     `[safewidefg${index}]scale=${VERTICAL_EXPORT_WIDTH}:${foregroundHeight}:force_original_aspect_ratio=decrease:flags=${HIGH_QUALITY_SCALE_FLAGS}[safewidefgready${index}]`,
     `[safewidebgready${index}][safewidefgready${index}]overlay=(W-w)/2:(H-h)/2:format=auto,setsar=1,fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`,
   ];
@@ -2366,11 +2370,11 @@ function buildTimedReframeFilter(
     } else if (segment.mode === 'wide_context' && segment.wideKind === 'broll' && sourceW > 0 && sourceH > 0) {
       graph.push(`${buildCropToFillContext(`${base},`, '', sourceW, sourceH)},fps=30,format=yuv420p,settb=AVTB${normalizedOutput}`);
     } else if (segment.mode === 'wide_context') {
-      graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index));
+      graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index, segment.end - segment.start));
     } else {
       const firstPoint = segment.points[0];
       if (!firstPoint) {
-        graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index));
+        graph.push(...buildLargeSafeWideContext(base, normalizedOutput, index, segment.end - segment.start));
         outputs.push(normalizedOutput);
         return;
       }
