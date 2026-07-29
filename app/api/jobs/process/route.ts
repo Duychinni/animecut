@@ -471,6 +471,10 @@ function normalizeRenderErrorMessage(message: string) {
     return 'Upload source file could not be read yet. The render was retried automatically.';
   }
 
+  if (/object exceeded the maximum allowed size|payload too large|entity too large|status(?:Code)?[=: ]+413/i.test(message)) {
+    return 'The finished reel was too large for its storage destination. The upload was retried automatically.';
+  }
+
   if (/Invalid NAL unit|missing picture|Error splitting the input into NAL units|Missing reference picture|mmco:|Rendered export is corrupted/i.test(message)) {
     return 'The source video stream was unreadable in this segment.';
   }
@@ -495,7 +499,7 @@ function renderFailureDiagnostics(message: string) {
     /python|mediapipe|detector|reframe_per_clip/i.test(message) ? 'python_detector' :
     /timeout|timed out|SIGTERM/i.test(message) ? 'timeout' :
     /out of memory|ENOMEM|Cannot allocate memory|killed/i.test(message) ? 'memory_or_resource_failure' :
-    /upload|storage|R2|Supabase/i.test(message) ? 'upload_or_storage_failure' :
+    /upload|storage|R2|Supabase|object exceeded the maximum allowed size|payload too large|entity too large|status(?:Code)?[=: ]+413/i.test(message) ? 'upload_or_storage_failure' :
     /encoder|ffmpeg|Invalid NAL|missing picture/i.test(message) ? 'ffmpeg_render' :
     'unknown';
   const stderrTail = message.split(/\r?\n/).slice(-80).join('\n').slice(-8000);

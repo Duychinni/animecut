@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createR2PublicUrl, createSignedR2GetUrl, deleteR2Object, deleteR2PreviewObject, getR2Config, getUploadProvider, isR2Configured, r2ObjectExists, r2PreviewObjectExists, uploadR2PreviewObject } from '@/lib/r2';
+import { createR2PublicUrl, createSignedR2GetUrl, deleteR2Object, deleteR2PreviewObject, getR2Config, getUploadProvider, isR2Configured, r2ObjectExists, r2PreviewObjectExists, uploadR2Object, uploadR2PreviewObject } from '@/lib/r2';
 
 const RAW_BUCKET = 'raw-media';
 const EXPORT_BUCKET = 'exports';
@@ -56,6 +56,15 @@ export async function uploadRawMediaObject(objectPath: string, bytes: Buffer, co
 }
 
 export async function uploadExportObject(objectPath: string, bytes: Buffer) {
+  // Supabase's project-wide upload ceiling can be lower than a high-quality
+  // 1080p reel. R2 is already our large-media store, so keep full-resolution
+  // exports there when configured while retaining Supabase as a fallback for
+  // existing installations.
+  if (isR2Configured()) {
+    await uploadR2Object(objectPath, bytes, 'video/mp4', 'private, max-age=3600');
+    return;
+  }
+
   const admin = createAdminClient();
   const { error } = await admin.storage.from(EXPORT_BUCKET).upload(objectPath, bytes, {
     upsert: true,
@@ -189,6 +198,10 @@ export async function projectThumbnailObjectExists(objectPath: string) {
 }
 
 export async function createExportSignedUrl(objectPath: string, expiresIn = 60 * 60) {
+  if (isR2Configured() && await r2ObjectExists(objectPath)) {
+    return createSignedR2GetUrl(objectPath, expiresIn);
+  }
+
   const admin = createAdminClient();
   const { data, error } = await admin.storage.from(EXPORT_BUCKET).createSignedUrl(objectPath, expiresIn);
   if (error) throw error;
@@ -196,6 +209,10 @@ export async function createExportSignedUrl(objectPath: string, expiresIn = 60 *
 }
 
 export async function createExportDownloadUrl(objectPath: string, fileName: string, expiresIn = 5 * 60) {
+  if (isR2Configured() && await r2ObjectExists(objectPath)) {
+    return createSignedR2GetUrl(objectPath, expiresIn);
+  }
+
   const admin = createAdminClient();
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'animacut-reel.mp4';
   const { data, error } = await admin.storage
@@ -209,6 +226,16 @@ export async function findExistingExportObjectPaths(objectPaths: string[]) {
   const paths = [...new Set(objectPaths.filter(Boolean))];
   const existing = new Set<string>();
   if (paths.length === 0) return existing;
+
+  if (isR2Configured()) {
+    const r2Results = await Promise.all(paths.map(async (objectPath) => ({
+      objectPath,
+      exists: await r2ObjectExists(objectPath),
+    })));
+    for (const result of r2Results) {
+      if (result.exists) existing.add(result.objectPath);
+    }
+  }
 
   const pathsByDirectory = new Map<string, string[]>();
   for (const objectPath of paths) {
@@ -241,8 +268,23 @@ export async function createExportSignedUrls(objectPaths: string[], expiresIn = 
   const signedUrls = new Map<string, string>();
   if (paths.length === 0) return signedUrls;
 
+  const r2Paths = new Set<string>();
+  if (isR2Configured()) {
+    const r2Results = await Promise.all(paths.map(async (objectPath) => ({
+      objectPath,
+      exists: await r2ObjectExists(objectPath),
+    })));
+    await Promise.all(r2Results.filter((result) => result.exists).map(async ({ objectPath }) => {
+      r2Paths.add(objectPath);
+      signedUrls.set(objectPath, await createSignedR2GetUrl(objectPath, expiresIn));
+    }));
+  }
+
+  const supabasePaths = paths.filter((objectPath) => !r2Paths.has(objectPath));
+  if (supabasePaths.length === 0) return signedUrls;
+
   const admin = createAdminClient();
-  const { data, error } = await admin.storage.from(EXPORT_BUCKET).createSignedUrls(paths, expiresIn);
+  const { data, error } = await admin.storage.from(EXPORT_BUCKET).createSignedUrls(supabasePaths, expiresIn);
   if (error) throw error;
 
   for (const item of data ?? []) {
@@ -276,6 +318,9 @@ export async function deleteRawMediaObjects(objectPaths: string[]) {
 
 export async function deleteExportObjects(objectPaths: string[]) {
   await removeSupabaseObjects(EXPORT_BUCKET, objectPaths);
+  if (isR2Configured()) {
+    await Promise.all([...new Set(objectPaths.filter(Boolean))].map((objectPath) => deleteR2Object(objectPath)));
+  }
 }
 
 export async function deleteR2PreviewObjects(objectPaths: string[]) {
