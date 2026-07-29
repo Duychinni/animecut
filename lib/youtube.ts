@@ -466,9 +466,17 @@ async function acquireProjectVideoDownloadLock(lockPath: string) {
 export async function downloadYouTubeVideo(url: string, projectId: string) {
   const dir = path.join(process.cwd(), 'tmp', 'ingest', projectId);
   await mkdir(dir, { recursive: true });
-  const lockPath = path.join(dir, '.video-download.lock');
+  // Keep the lock outside the project ingest directory. Completed-project
+  // cleanup removes that whole directory; placing the lock inside it allowed
+  // cleanup on another worker to erase the lock during an active download and
+  // start a second yt-dlp process against the same output paths.
+  const lockRoot = path.join(process.cwd(), 'tmp', 'source-download-locks');
+  await mkdir(lockRoot, { recursive: true });
+  const lockPath = path.join(lockRoot, `${projectId}.lock`);
   await acquireProjectVideoDownloadLock(lockPath);
   try {
+    // Cleanup may have removed the ingest directory while this caller waited.
+    await mkdir(dir, { recursive: true });
     return await downloadYouTubeVideoUnlocked(url, projectId);
   } finally {
     await rm(lockPath, { recursive: true, force: true });

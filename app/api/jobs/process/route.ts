@@ -618,7 +618,7 @@ async function enqueuePreviewJob(projectId: string, exportId: string) {
 
 async function cleanupCompletedProjectWhenPreviewsSettle(projectId: string) {
   const supabase = createAdminClient();
-  const [{ data: project }, { count: activePreviewJobs }] = await Promise.all([
+  const [{ data: project }, { count: activeExportJobs }] = await Promise.all([
     supabase
       .from('projects')
       .select('pipeline_status')
@@ -629,10 +629,13 @@ async function cleanupCompletedProjectWhenPreviewsSettle(projectId: string) {
       .select('*', { count: 'exact', head: true })
       .eq('project_id', projectId)
       .eq('type', 'export')
-      .in('status', ['queued', 'processing'])
-      .contains('payload', { preview_only: true }),
+      .in('status', ['queued', 'processing']),
   ]);
-  if (project?.pipeline_status !== 'completed' || Number(activePreviewJobs ?? 0) > 0) return false;
+  // Caption edits can queue several re-renders for one completed project. Do
+  // not remove the shared ingest source when the first reel finishes while
+  // another worker is still reading or downloading it. Preview jobs are only
+  // one kind of active export work; every queued/processing export must settle.
+  if (project?.pipeline_status !== 'completed' || Number(activeExportJobs ?? 0) > 0) return false;
 
   const cleanupLog = await cleanupProjectTempFiles(projectId);
   console.log('[cleanup] project-temp-files', {
