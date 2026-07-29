@@ -8,15 +8,15 @@ export const maxDuration = 300;
 
 const STEP_PROGRESS: Record<string, number> = {
   queued: 0,
-  downloading: 5,
-  extracting_audio: 10,
-  transcribing: 25,
-  diarizing: 32,
-  finding_hooks: 40,
-  creating_clips: 55,
-  face_tracking_crop: 70,
-  rendering: 85,
-  uploading_outputs: 95,
+  downloading: 1,
+  extracting_audio: 4,
+  transcribing: 6,
+  diarizing: 24,
+  finding_hooks: 28,
+  creating_clips: 44,
+  face_tracking_crop: 48,
+  rendering: 52,
+  uploading_outputs: 97,
   completed: 100,
 };
 

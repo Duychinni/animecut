@@ -96,7 +96,10 @@ export async function POST(req: Request) {
 
     const transcript = await transcribeAudioFile(transcriptionPath, {
       onProgress: async ({ completedChunks, totalChunks }) => {
-        const progress = 25 + Math.floor((completedChunks / Math.max(1, totalChunks)) * 6);
+        // Transcription is one part of the full project, not the first quarter
+        // of it. Keep its contribution within 6–24% so starting the worker
+        // does not imply that 25% of the total job has already finished.
+        const progress = 6 + Math.floor((completedChunks / Math.max(1, totalChunks)) * 18);
         await supabase.from('projects').update({
           pipeline_stage: 'transcribing',
           // Chunks are an internal resilience detail, not separate user-facing

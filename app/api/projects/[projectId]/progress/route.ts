@@ -51,15 +51,16 @@ function computeProgress(params: {
   if (pipelineStatus === 'error') return Math.max(5, Math.min(95, doneExports > 0 ? 70 : 12));
 
   const stageWindows: Record<string, [number, number, number]> = {
-    queued: [3, 8, 35],
-    downloading: [8, 14, 35],
-    extracting_audio: [14, 24, 45],
-    transcribing: [24, 44, 150],
-    finding_hooks: [44, 60, 90],
-    creating_clips: [60, 70, 45],
-    face_tracking_crop: [70, 78, 45],
-    rendering: [72, 96, 240],
-    uploading_outputs: [96, 98, 35],
+    queued: [0, 1, 35],
+    downloading: [1, 4, 35],
+    extracting_audio: [4, 6, 45],
+    transcribing: [6, 24, 240],
+    diarizing: [24, 28, 90],
+    finding_hooks: [28, 44, 180],
+    creating_clips: [44, 48, 45],
+    face_tracking_crop: [48, 52, 45],
+    rendering: [52, 97, 360],
+    uploading_outputs: [97, 98, 35],
   };
 
   if (pipelineStage && stageWindows[pipelineStage]) {
@@ -77,18 +78,18 @@ function computeProgress(params: {
   }
 
   if (!hasTranscript) {
-    if (pipelineStatus === 'queued') return 8;
-    if (pipelineStatus === 'processing') return Math.min(44, 10 + Math.floor(elapsedSeconds / 4));
-    return Math.min(24, 6 + Math.floor(elapsedSeconds / 4));
+    if (pipelineStatus === 'queued') return 1;
+    if (pipelineStatus === 'processing') return Math.min(24, 2 + Math.floor(elapsedSeconds / 20));
+    return Math.min(6, 1 + Math.floor(elapsedSeconds / 20));
   }
 
   if (hasTranscript && analyzedCandidates === 0) {
-    return Math.min(64, 38 + Math.floor(elapsedSeconds / 8));
+    return Math.min(44, 24 + Math.floor(elapsedSeconds / 12));
   }
 
   const exportProgress = doneExports / safeTarget;
   const activeBoost = activeExports > 0 ? 4 : 0;
-  return Math.min(98, Math.round(68 + exportProgress * 28 + activeBoost));
+  return Math.min(98, Math.round(52 + exportProgress * 45 + activeBoost));
 }
 
 function isRecoverablePipelineError(error: unknown, stage: string | null) {

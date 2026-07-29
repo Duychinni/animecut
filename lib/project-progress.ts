@@ -1,13 +1,13 @@
 const STAGE_PROGRESS_CEILINGS: Record<string, number> = {
-  queued: 8,
-  downloading: 14,
-  extracting_audio: 24,
-  transcribing: 44,
-  diarizing: 50,
-  finding_hooks: 60,
-  creating_clips: 70,
-  face_tracking_crop: 78,
-  rendering: 96,
+  queued: 1,
+  downloading: 4,
+  extracting_audio: 6,
+  transcribing: 24,
+  diarizing: 28,
+  finding_hooks: 44,
+  creating_clips: 48,
+  face_tracking_crop: 52,
+  rendering: 97,
   uploading_outputs: 98,
 };
 

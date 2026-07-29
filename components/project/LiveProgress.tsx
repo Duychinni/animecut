@@ -4,26 +4,28 @@ import { useEffect, useState } from 'react';
 import { getPublicPipelineStageLabel } from '@/lib/project-progress';
 
 const STAGE_CEILINGS: Record<string, number> = {
-  queued: 7.8,
-  downloading: 13.8,
-  extracting_audio: 23.8,
-  transcribing: 43.8,
-  finding_hooks: 59.8,
-  creating_clips: 69.8,
-  face_tracking_crop: 77.8,
-  rendering: 95.8,
+  queued: 0.9,
+  downloading: 3.9,
+  extracting_audio: 5.9,
+  transcribing: 23.9,
+  diarizing: 27.9,
+  finding_hooks: 43.9,
+  creating_clips: 47.9,
+  face_tracking_crop: 51.9,
+  rendering: 96.9,
   uploading_outputs: 98,
 };
 
 const STAGE_RATES: Record<string, number> = {
-  queued: 0.12,
-  downloading: 0.12,
-  extracting_audio: 0.14,
-  transcribing: 0.08,
-  finding_hooks: 0.1,
-  creating_clips: 0.16,
-  face_tracking_crop: 0.12,
-  rendering: 0.1,
+  queued: 0.03,
+  downloading: 0.08,
+  extracting_audio: 0.06,
+  transcribing: 0.075,
+  diarizing: 0.05,
+  finding_hooks: 0.09,
+  creating_clips: 0.08,
+  face_tracking_crop: 0.08,
+  rendering: 0.12,
   uploading_outputs: 0.05,
 };
 
