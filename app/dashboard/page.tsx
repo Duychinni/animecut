@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
 import { BrowserNotifications } from '@/components/project/BrowserNotifications';
-import { clampProgressToStage } from '@/lib/project-progress';
+import { clampProgressToStage, getPublicPipelineStageLabel } from '@/lib/project-progress';
 import { PROJECT_RETENTION_DAYS } from '@/lib/project-retention';
 
 function fmtDuration(totalSec: number | null | undefined) {
@@ -641,13 +641,14 @@ export default function DashboardPage() {
                 : p.pipeline_stage === 'uploading_outputs' ? 'Finalizing reels'
                 : 'Processing')
               : 'Processing');
-          const processingStage = /uploading (final clips|outputs)/i.test(rawProcessingStage)
+          const normalizedProcessingStage = getPublicPipelineStageLabel(p.pipeline_stage, rawProcessingStage) ?? rawProcessingStage;
+          const processingStage = /uploading (final clips|outputs)/i.test(normalizedProcessingStage)
             ? 'Finalizing reels'
             : p.pipeline_stage === 'finding_hooks'
               ? 'Finding hooks'
               : p.pipeline_stage === 'creating_clips'
                 ? 'Creating top clip candidates'
-                : rawProcessingStage;
+                : normalizedProcessingStage;
           const diagnostics = p.diagnostics;
           const pipelineJob = diagnostics?.latest_pipeline_job ?? null;
           const showDebug = false;

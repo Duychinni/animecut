@@ -10,7 +10,7 @@ import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { estimateObservedRenderEtaSeconds } from '@/lib/project-eta';
-import { clampProgressToStage } from '@/lib/project-progress';
+import { clampProgressToStage, getPublicPipelineStageLabel } from '@/lib/project-progress';
 import { ensurePipelineJob } from '@/lib/pipeline';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
@@ -102,13 +102,13 @@ export async function GET() {
       const normalizedStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'analyzed' : project.status;
       const normalizedPipelineStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'processing' : project.pipeline_status;
       const normalizedPipelineStage = isCompleted ? 'completed' : activeExports > 0 ? 'rendering' : project.pipeline_stage;
-      const normalizedPipelineStageLabel = isCompleted
+      const normalizedPipelineStageLabel = getPublicPipelineStageLabel(normalizedPipelineStage, isCompleted
         ? 'Completed'
         : processingExports > 0
           ? 'Rendering reels'
           : queuedExports > 0
             ? 'Waiting for render worker'
-            : project.pipeline_stage_label;
+            : project.pipeline_stage_label);
       const etaSeconds = isCompleted ? 0 : estimateObservedRenderEtaSeconds({
         pipelineStatus: normalizedPipelineStatus,
         pipelineStage: normalizedPipelineStage,

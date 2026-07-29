@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getPublicPipelineStageLabel } from '@/lib/project-progress';
 
 const STAGE_CEILINGS: Record<string, number> = {
   queued: 7.8,
@@ -92,8 +93,9 @@ export function LiveProgressPill({
   detailLabel?: string | null;
 }) {
   const livePercent = useLiveProgress(percent, active, stage);
-  const stageParts = stageLabel.match(/^(.+?)\s*(\([^()]+\))$/);
-  const stageSummary = stageParts?.[1] ?? stageLabel;
+  const publicStageLabel = getPublicPipelineStageLabel(stage, stageLabel) ?? stageLabel;
+  const stageParts = publicStageLabel.match(/^(.+?)\s*(\([^()]+\))$/);
+  const stageSummary = stageParts?.[1] ?? publicStageLabel;
   const stageDetail = detailLabel ?? stageParts?.[2] ?? null;
 
   return (

@@ -7,7 +7,7 @@ import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { hasSettledPlayableExports } from '@/lib/project-completion';
 import { estimateObservedRenderEtaSeconds } from '@/lib/project-eta';
-import { clampProgressToStage } from '@/lib/project-progress';
+import { clampProgressToStage, getPublicPipelineStageLabel } from '@/lib/project-progress';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -551,7 +551,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
     });
 
     const storedPipelineStageLabel = (project as { pipeline_stage_label?: string | null }).pipeline_stage_label ?? null;
-    const displayPipelineStageLabel = isReallyCompleted
+    const displayPipelineStageLabel = getPublicPipelineStageLabel(pipelineStage, isReallyCompleted
       ? 'Completed'
       : recoveryQueued
         ? 'Reconnecting worker'
@@ -565,7 +565,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
           ? 'Finalizing reels'
           : storedPipelineStage === 'uploading_outputs'
             ? 'Finalizing reels'
-            : storedPipelineStageLabel;
+            : storedPipelineStageLabel);
     const latestPipelinePayload = latestPipelineJob?.payload && typeof latestPipelineJob.payload === 'object'
       ? latestPipelineJob.payload as Record<string, unknown>
       : null;

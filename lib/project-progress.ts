@@ -21,3 +21,11 @@ export function clampProgressToStage(
   const ceiling = pipelineStage ? STAGE_PROGRESS_CEILINGS[pipelineStage] : undefined;
   return Math.min(ceiling ?? 98, normalized);
 }
+
+export function getPublicPipelineStageLabel(
+  pipelineStage: string | null | undefined,
+  label: string | null | undefined,
+) {
+  if (pipelineStage === 'transcribing') return 'Transcribing audio';
+  return label || null;
+}
