@@ -1274,15 +1274,45 @@ def lock_unstable_panel_composition(segments):
         for segment in contextual_segments
     )
     wide_ratio = wide_duration / clip_duration
-    panel_evidence = any(
-        int(segment.get('visibleCountMax', segment.get('visibleCount', 0)) or 0) >= 2
-        or str(segment.get('editorialLayout', '')).upper() in {
-            'TWO_PERSON_CONVERSATION',
-            'THREE_PERSON_COMPOSITION',
-            'PANEL_GRID',
+    panel_layouts = {
+        'TWO_PERSON_CONVERSATION',
+        'THREE_PERSON_COMPOSITION',
+        'PANEL_GRID',
+    }
+    panel_segments = [
+        segment for segment in segments
+        if str(segment.get('editorialLayout', '')).upper() in panel_layouts
+    ]
+    panel_duration = sum(
+        max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+        for segment in panel_segments
+    )
+    panel_ratio = panel_duration / clip_duration
+    action_duration = sum(
+        max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+        for segment in segments
+        if str(segment.get('editorialSceneType', '')).upper() in {
+            'FULL_BODY_ACTION',
+            'OBJECT_DEMO',
+            'SCREEN_CONTENT',
         }
+    )
+    action_ratio = action_duration / clip_duration
+    # Seeing two people for a moment is not panel evidence. Handheld vlogs,
+    # store walk-throughs, sports, and demonstrations frequently include a
+    # second person while the camera and primary subject keep moving. Locking
+    # those clips into one panel composition destroys real shot boundaries and
+    # turns the detector samples into a violently jumping virtual camera.
+    panel_evidence = (
+        len(panel_segments) >= 2
+        and panel_ratio >= 0.30
+        and action_ratio < 0.35
+    ) or all(
+        int(segment.get('visibleCountMax', segment.get('visibleCount', 0)) or 0) >= 2
         for segment in segments
     )
+    if action_ratio >= 0.50:
+        panel_evidence = False
     if not panel_evidence or wide_ratio < 0.08 or wide_ratio > 0.60:
         return segments
 
@@ -1306,6 +1336,67 @@ def lock_unstable_panel_composition(segments):
         'inferredCutStart': False,
         'renderBranch': 'stable_panel_composition',
         'editorialReason': 'Repeated panel-wide/close-up switching was locked to one readable composition.',
+    })
+    return [locked]
+
+
+def lock_handheld_source_composition(segments):
+    """Let an already-operated handheld camera follow the action naturally."""
+    if len(segments) < 12:
+        return segments
+    if any(segment.get('mode') in ('grid', 'source_vertical') for segment in segments):
+        return segments
+
+    clip_start = float(segments[0].get('start', 0.0))
+    clip_end = float(segments[-1].get('end', clip_start))
+    clip_duration = max(0.001, clip_end - clip_start)
+    source_led_layouts = {
+        'TRACK_ACTION',
+        'BROLL_FILL',
+        'PRESERVE_SCREEN',
+    }
+    source_led_duration = sum(
+        max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+        for segment in segments
+        if str(segment.get('editorialLayout', '')).upper() in source_led_layouts
+    )
+    conversation_duration = sum(
+        max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+        for segment in segments
+        if str(segment.get('editorialLayout', '')).upper() in {
+            'TWO_PERSON_CONVERSATION',
+            'THREE_PERSON_COMPOSITION',
+            'PANEL_GRID',
+        }
+    )
+    source_led_ratio = source_led_duration / clip_duration
+    conversation_ratio = conversation_duration / clip_duration
+    if source_led_ratio < 0.45 or conversation_ratio >= 0.35:
+        return segments
+
+    # In vlogs, store walk-throughs, sports, demonstrations, and edited B-roll,
+    # the source camera is already following the important subject. Replacing
+    # its decisions with dozens of detector-driven portrait crops creates
+    # artificial snap-pans whenever faces enter, leave, overlap, or blur.
+    locked = dict(segments[0])
+    locked.update({
+        'start': round(clip_start, 3),
+        'end': round(clip_end, 3),
+        'mode': 'wide_context',
+        'wideKind': 'safe_wide',
+        'primaryTrackId': None,
+        'topTrackId': None,
+        'bottomTrackId': None,
+        'topBox': None,
+        'bottomBox': None,
+        'subjects': [],
+        'points': [],
+        'sceneCutStart': False,
+        'moderateCutStart': False,
+        'hardCutStart': False,
+        'inferredCutStart': False,
+        'renderBranch': 'handheld_source_composition',
+        'editorialReason': 'The operated source camera already follows the action; synthetic reframing was disabled.',
     })
     return [locked]
 
@@ -3816,6 +3907,7 @@ def main():
         reframe_timeline, editorial_plan
     )
     reframe_timeline = lock_unstable_panel_composition(reframe_timeline)
+    reframe_timeline = lock_handheld_source_composition(reframe_timeline)
     debug_overlay_path = None
     if debug_enabled:
         debug_overlay_path = save_debug_video(

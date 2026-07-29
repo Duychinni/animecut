@@ -6,6 +6,7 @@ from reframe_per_clip import (
     detect_fixed_two_panel_layout,
     distinct_face_detections,
     face_is_complete_in_source,
+    lock_handheld_source_composition,
     lock_unstable_panel_composition,
     portrait_crop_for_face_in_panel,
     portrait_crop_for_subject,
@@ -97,6 +98,51 @@ def test_repeated_panel_wide_closeup_switching_locks_one_composition():
     assert len(result) == 1, result
     assert result[0]['mode'] == 'wide_context', result
     assert result[0]['renderBranch'] == 'stable_panel_composition', result
+
+
+def test_handheld_action_with_bystanders_does_not_lock_as_panel():
+    modes = ['single', 'wide_context', 'single', 'wide_context', 'single', 'wide_context', 'single', 'single']
+    segments = []
+    for index, mode in enumerate(modes):
+        segments.append({
+            'start': float(index),
+            'end': float(index + 1),
+            'mode': mode,
+            'wideKind': 'safe_wide' if mode == 'wide_context' else None,
+            'visibleCountMax': 2 if index in {1, 3, 5} else 1,
+            'editorialSceneType': 'FULL_BODY_ACTION',
+            'editorialLayout': 'TRACK_ACTION',
+            'points': [{'t': float(index)}],
+        })
+    result = lock_unstable_panel_composition(segments)
+    assert len(result) == len(segments), result
+    assert all(
+        segment.get('renderBranch') != 'stable_panel_composition'
+        for segment in result
+    ), result
+
+
+def test_busy_handheld_action_preserves_operated_source_camera():
+    layouts = (
+        ['TRACK_ACTION'] * 5
+        + ['BROLL_FILL'] * 4
+        + ['PRESERVE_SCREEN'] * 3
+        + ['ACTIVE_SPEAKER_CROP'] * 3
+    )
+    segments = []
+    for index, layout in enumerate(layouts):
+        segments.append({
+            'start': float(index),
+            'end': float(index + 1),
+            'mode': 'single' if index % 3 else 'wide_context',
+            'editorialLayout': layout,
+            'points': [{'t': float(index), 'cropX': float(index * 80)}],
+        })
+    result = lock_handheld_source_composition(segments)
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'wide_context', result
+    assert result[0]['renderBranch'] == 'handheld_source_composition', result
+    assert result[0]['points'] == [], result
 
 
 def test_continuous_conversation_never_opens_wide_then_pulses_close_before_split():
