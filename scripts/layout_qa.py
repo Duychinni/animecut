@@ -86,6 +86,244 @@ def _apply_locked_crop(points, crop):
         point.update(crop)
 
 
+def _duration(segment):
+    return max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+
+
+def _layout_family(segment):
+    if segment.get('mode') == 'single' and segment.get('points'):
+        return 'single'
+    if (
+        segment.get('mode') == 'wide_context'
+        and segment.get('wideKind') == 'safe_wide'
+        and segment.get('visualIntent') not in ('screen_led', 'action_led', 'object_led')
+    ):
+        return 'uncertain_wide'
+    if segment.get('mode') == 'wide_context':
+        return 'wide'
+    return str(segment.get('mode') or 'other')
+
+
+def _crop_from_segment(segment):
+    crops = []
+    for point in segment.get('points') or []:
+        if all(point.get(key) is not None for key in ('cropX', 'cropY', 'cropW', 'cropH')):
+            crops.append({
+                'cropX': float(point['cropX']),
+                'cropY': float(point['cropY']),
+                'cropW': float(point['cropW']),
+                'cropH': float(point['cropH']),
+                'cropCenterX': float(point.get('cropCenterX', float(point['cropX']) + float(point['cropW']) / 2.0)),
+                'cropCenterY': float(point.get('cropCenterY', float(point['cropY']) + float(point['cropH']) / 2.0)),
+                'zoom': float(point.get('zoom', 1.0)),
+            })
+    return _median_crop(crops)
+
+
+def _inherit_single_layout(segment, anchor):
+    crop = _crop_from_segment(anchor)
+    if not crop:
+        return segment
+    converted = dict(segment)
+    points = [dict(point) for point in (segment.get('points') or [])]
+    if not points:
+        points = [
+            {'t': float(segment.get('start', 0.0))},
+            {'t': float(segment.get('end', segment.get('start', 0.0)))},
+        ]
+    _apply_locked_crop(points, crop)
+    converted['points'] = points
+    converted['mode'] = 'single'
+    converted['wideKind'] = None
+    converted['primaryTrackId'] = anchor.get('primaryTrackId')
+    converted['subjectKind'] = anchor.get('subjectKind') or 'face'
+    converted['editorialSceneType'] = anchor.get('editorialSceneType') or 'SINGLE_SPEAKER'
+    converted['editorialLayout'] = anchor.get('editorialLayout') or 'ACTIVE_SPEAKER_CROP'
+    converted['visualIntent'] = anchor.get('visualIntent') or 'speaker_led'
+    converted['editorialReason'] = (
+        f"{converted.get('editorialReason', '')} "
+        "Layout QA held the established portrait composition through a brief detector gap."
+    ).strip()
+    converted['qaFallbackApplied'] = 'held_portrait_through_detector_gap'
+    converted['qaStatus'] = 'fallback'
+    return converted
+
+
+def _inherit_wide_layout(segment, anchor):
+    converted = dict(segment)
+    converted['mode'] = 'wide_context'
+    converted['wideKind'] = anchor.get('wideKind') or 'safe_wide'
+    converted['editorialSceneType'] = anchor.get('editorialSceneType') or 'UNKNOWN'
+    converted['editorialLayout'] = anchor.get('editorialLayout') or 'SAFE_ORIGINAL'
+    converted['visualIntent'] = anchor.get('visualIntent') or 'scene_led'
+    converted['editorialReason'] = (
+        f"{converted.get('editorialReason', '')} "
+        "Layout QA held the established contextual composition until the next source edit."
+    ).strip()
+    converted['qaFallbackApplied'] = 'held_context_until_source_edit'
+    converted['qaStatus'] = 'fallback'
+    return converted
+
+
+def _inherit_layout(segment, anchor):
+    family = _layout_family(anchor)
+    if family == 'single':
+        return _inherit_single_layout(segment, anchor)
+    if family == 'wide':
+        return _inherit_wide_layout(segment, anchor)
+    return segment
+
+
+def _same_render_layout(left, right):
+    if (
+        right.get('sceneCutStart')
+        and not right.get('inferredCutStart')
+        and left.get('mode') != 'wide_context'
+    ):
+        return False
+    if left.get('mode') != right.get('mode'):
+        return False
+    if left.get('mode') == 'single':
+        return (
+            left.get('primaryTrackId') == right.get('primaryTrackId')
+            and left.get('editorialLayout') == right.get('editorialLayout')
+        )
+    if left.get('mode') == 'wide_context':
+        return left.get('wideKind') == right.get('wideKind')
+    return False
+
+
+def _merge_compatible_segments(segments):
+    merged = []
+    for segment in segments:
+        current = dict(segment)
+        current['points'] = [dict(point) for point in (segment.get('points') or [])]
+        if not merged or not _same_render_layout(merged[-1], current):
+            merged.append(current)
+            continue
+        previous = merged[-1]
+        previous['end'] = current.get('end', previous.get('end'))
+        previous['points'].extend(current.get('points') or [])
+        previous['qaIssues'] = dict(Counter(previous.get('qaIssues') or {}) + Counter(current.get('qaIssues') or {}))
+        previous['qaCheckedSamples'] = int(previous.get('qaCheckedSamples') or 0) + int(current.get('qaCheckedSamples') or 0)
+        if current.get('qaFallbackApplied'):
+            previous['qaFallbackApplied'] = current['qaFallbackApplied']
+            previous['qaStatus'] = 'fallback'
+    return merged
+
+
+def _stabilize_layout_timeline(segments):
+    """Keep one virtual-camera decision between genuine source-scene cuts."""
+    if len(segments) < 2:
+        return segments
+
+    stabilized = []
+    shot = []
+
+    def flush_shot():
+        if not shot:
+            return
+        local = [dict(segment) for segment in shot]
+
+        # Within one confirmed source shot, require a composition to survive
+        # long enough to read as an editorial decision. One-to-ten-frame
+        # screen/body/face classifications are detector noise, not TikTok
+        # cuts. Absorb them into the longer neighboring layout; a true edit is
+        # already represented by the sceneCutStart boundary that split this
+        # shot from the next one.
+        changed = True
+        while changed and len(local) > 1:
+            changed = False
+            runs = []
+            for index, segment in enumerate(local):
+                family = _layout_family(segment)
+                if runs and runs[-1]['family'] == family:
+                    runs[-1]['end_index'] = index
+                    runs[-1]['duration'] += _duration(segment)
+                else:
+                    runs.append({
+                        'family': family,
+                        'start_index': index,
+                        'end_index': index,
+                        'duration': _duration(segment),
+                    })
+            for run_index, run in enumerate(runs):
+                if run['duration'] >= 1.5:
+                    continue
+                previous_run = runs[run_index - 1] if run_index > 0 else None
+                following_run = runs[run_index + 1] if run_index + 1 < len(runs) else None
+                candidates = [
+                    candidate for candidate in (previous_run, following_run)
+                    if candidate and candidate['family'] in ('single', 'wide')
+                ]
+                if not candidates:
+                    continue
+                replacement = max(candidates, key=lambda candidate: candidate['duration'])
+                if replacement['family'] == run['family']:
+                    continue
+                anchor_index = (
+                    replacement['end_index']
+                    if replacement is previous_run
+                    else replacement['start_index']
+                )
+                anchor = local[anchor_index]
+                for index in range(run['start_index'], run['end_index'] + 1):
+                    local[index] = _inherit_layout(local[index], anchor)
+                changed = True
+                break
+
+        runs = []
+        for index, segment in enumerate(local):
+            family = _layout_family(segment)
+            if runs and runs[-1]['family'] == family:
+                runs[-1]['end_index'] = index
+                runs[-1]['duration'] += _duration(segment)
+            else:
+                runs.append({
+                    'family': family,
+                    'start_index': index,
+                    'end_index': index,
+                    'duration': _duration(segment),
+                })
+
+        for run_index, run in enumerate(runs):
+            if run['family'] != 'uncertain_wide':
+                continue
+            previous_run = runs[run_index - 1] if run_index > 0 else None
+            following_run = runs[run_index + 1] if run_index + 1 < len(runs) else None
+            previous_single = previous_run and previous_run['family'] == 'single'
+            following_single = following_run and following_run['family'] == 'single'
+            bridge_gap = previous_single and following_single and run['duration'] <= 4.0
+            edge_gap = (previous_single or following_single) and run['duration'] <= 1.25
+            if not (bridge_gap or edge_gap):
+                continue
+            anchor_index = (
+                previous_run['end_index']
+                if previous_single
+                else following_run['start_index']
+            )
+            anchor = local[anchor_index]
+            for index in range(run['start_index'], run['end_index'] + 1):
+                local[index] = _inherit_single_layout(local[index], anchor)
+
+        stabilized.extend(_merge_compatible_segments(local))
+
+    for segment in segments:
+        if (
+            shot
+            and segment.get('sceneCutStart')
+            and not segment.get('inferredCutStart')
+        ):
+            flush_shot()
+            shot = []
+        shot.append(segment)
+    flush_shot()
+    return [
+        segment for segment in stabilized
+        if _duration(segment) >= 0.05
+    ]
+
+
 def _distinct_face_pair_for_boxes(faces, top_box, bottom_box):
     top_matches = [face for face in faces if _intersection_ratio(top_box, face) >= 0.35]
     bottom_matches = [face for face in faces if _intersection_ratio(bottom_box, face) >= 0.35]
@@ -396,10 +634,16 @@ def validate_layout_timeline(timeline, frames, source_w, source_h):
         validated.append(segment)
         issue_counts.update(issues)
 
-    return validated, {
+    stabilized = _stabilize_layout_timeline(validated)
+    remaining_unsafe_segments = sum(
+        1 for segment in stabilized if segment.get('qaStatus') == 'fail'
+    )
+
+    return stabilized, {
         'segments_checked': len(timeline),
         'segments_rejected_before_fallback': rejected_segments,
-        'segments_safe_after_fallback': len(validated),
+        'segments_safe_after_fallback': len(stabilized),
         'issue_counts_before_fallback': dict(issue_counts),
         'remaining_unsafe_segments': remaining_unsafe_segments,
+        'segments_after_temporal_stabilization': len(stabilized),
     }

@@ -295,6 +295,84 @@ class EditorialLayoutPlannerTests(unittest.TestCase):
         self.assertEqual(len({point['cropX'] for point in corrected}), 1)
         self.assertEqual(len({point['cropW'] for point in corrected}), 1)
 
+    def test_qa_holds_portrait_through_brief_safe_wide_flash(self):
+        face = {
+            'track_id': 1, 'x': 620.0, 'y': 100.0, 'w': 360.0, 'h': 500.0,
+            'cx': 800.0, 'cy': 350.0, 'predicted': False,
+        }
+        frames = [
+            {'timestamp': timestamp, 'faces': [dict(face)]}
+            for timestamp in (0.0, 0.5, 3.5, 4.0)
+        ]
+        single = {
+            'mode': 'single', 'primaryTrackId': 1, 'subjectKind': 'face',
+            'editorialLayout': 'ACTIVE_SPEAKER_CROP', 'visualIntent': 'speaker_led',
+        }
+        validated, report = validate_layout_timeline([
+            {
+                **single, 'start': 0.0, 'end': 1.0,
+                'points': [{**crop_point(0.0), 'subjectKind': 'face'}],
+            },
+            {
+                'start': 1.0, 'end': 3.0, 'mode': 'wide_context',
+                'wideKind': 'safe_wide', 'editorialLayout': 'SAFE_ORIGINAL',
+                'visualIntent': 'scene_led', 'points': [crop_point(2.0)],
+            },
+            {
+                **single, 'start': 3.0, 'end': 4.5,
+                'points': [{**crop_point(3.5), 'subjectKind': 'face'}],
+            },
+        ], frames, 1920.0, 1080.0)
+        self.assertEqual(len(validated), 1)
+        self.assertEqual(validated[0]['mode'], 'single')
+        self.assertEqual(validated[0]['start'], 0.0)
+        self.assertEqual(validated[0]['end'], 4.5)
+        self.assertEqual(report['segments_after_temporal_stabilization'], 1)
+
+    def test_qa_does_not_replace_real_screen_context(self):
+        validated, _ = validate_layout_timeline([
+            {
+                'start': 0.0, 'end': 1.0, 'mode': 'single',
+                'primaryTrackId': 1, 'subjectKind': 'face',
+                'points': [crop_point(0.0)],
+            },
+            {
+                'start': 1.0, 'end': 3.0, 'mode': 'wide_context',
+                'wideKind': 'screen', 'subjectKind': 'screen',
+                'editorialLayout': 'PRESERVE_SCREEN', 'visualIntent': 'screen_led',
+            },
+            {
+                'start': 3.0, 'end': 4.0, 'mode': 'single',
+                'primaryTrackId': 1, 'subjectKind': 'face',
+                'points': [crop_point(3.0)],
+            },
+        ], [], 1920.0, 1080.0)
+        self.assertEqual([segment['mode'] for segment in validated], ['wide_context'])
+        self.assertEqual(validated[0]['wideKind'], 'screen')
+
+    def test_qa_respects_source_scene_cut_when_stabilizing(self):
+        validated, _ = validate_layout_timeline([
+            {
+                'start': 0.0, 'end': 1.0, 'mode': 'single',
+                'primaryTrackId': 1, 'subjectKind': 'face',
+                'points': [crop_point(0.0)],
+            },
+            {
+                'start': 1.0, 'end': 2.0, 'mode': 'wide_context',
+                'wideKind': 'safe_wide', 'editorialLayout': 'SAFE_ORIGINAL',
+                'sceneCutStart': True,
+            },
+            {
+                'start': 2.0, 'end': 3.0, 'mode': 'single',
+                'primaryTrackId': 1, 'subjectKind': 'face',
+                'points': [crop_point(2.0)],
+            },
+        ], [], 1920.0, 1080.0)
+        self.assertEqual(len(validated), 2)
+        self.assertEqual(validated[1]['start'], 1.0)
+        self.assertTrue(validated[1]['sceneCutStart'])
+        self.assertEqual(validated[1]['mode'], 'wide_context')
+
 
 if __name__ == '__main__':
     unittest.main()

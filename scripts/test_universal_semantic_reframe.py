@@ -1368,6 +1368,16 @@ def test_tiny_facecam_does_not_replace_gameplay_or_screen_context():
     assert selected['reason'] == 'screen_or_text_context', selected
 
 
+def test_handheld_motion_is_not_misclassified_as_a_screen():
+    selected = semantic_subject_choice(
+        motion_box=box(0, 160, 1920, 920),
+        screen_score=0.90,
+        motion_area_ratio=(1920 * 920) / (W * H),
+    )
+    assert selected['kind'] == 'action', selected
+    assert selected['reason'] == 'primary_motion_or_action', selected
+
+
 def test_large_presenter_remains_primary_over_screen_detail():
     presenter = box(120, 100, 620, 900)
     selected = semantic_subject_choice(

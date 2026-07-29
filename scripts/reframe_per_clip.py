@@ -618,7 +618,7 @@ def screen_context_score(cv2, np, gray):
 def semantic_subject_choice(face_box=None, body_box=None, motion_box=None, saliency_box=None,
                             speaker_confidence=0.0, saliency_confidence=0.0,
                             screen_score=0.0, face_area_ratio=1.0,
-                            body_area_ratio=0.0,
+                            body_area_ratio=0.0, motion_area_ratio=0.0,
                             prior=None, scene_cut=False):
     """Choose the ROI using the production semantic priority hierarchy."""
     # Gameplay, reaction, tutorial, and webinar sources commonly contain a
@@ -631,7 +631,13 @@ def semantic_subject_choice(face_box=None, body_box=None, motion_box=None, salie
         and float(face_area_ratio) <= 0.035
         and screen_score >= 0.58
     )
-    if screen_score >= 0.58 and (face_box is None or tiny_face_over_screen) and body_box is None:
+    stable_screen_context = float(motion_area_ratio) <= 0.08
+    if (
+        screen_score >= 0.58
+        and (face_box is None or tiny_face_over_screen)
+        and body_box is None
+        and (stable_screen_context or tiny_face_over_screen)
+    ):
         return {'kind': 'screen', 'box': None, 'confidence': screen_score, 'reason': 'screen_or_text_context', 'predicted': False}
     # Fitness, stage demonstrations, cooking, and product tutorials may include
     # a detectable face while the meaningful visual is the person's body and
@@ -2249,7 +2255,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             'speaker_confidence': round(speaker_confidence, 4),
             'speaker_score_margin': round(speaker_score_margin, 4),
             'audio_activity': round(audio_activity, 4),
-            'scene_cut': shot_change,
+            # Only a confirmed source edit may force an instantaneous renderer
+            # boundary. Moderate histogram/motion changes are useful evidence
+            # for reacquiring subjects, but treating each one as a cut made
+            # energetic streamer footage alternate layouts every 1–3 frames.
+            'scene_cut': bool(scene_cut or point.get('inferred_shot_boundary')),
             'moderate_shot_change': moderate_shot_change,
             'inferred_shot_boundary': bool(point.get('inferred_shot_boundary')),
             'single_score': round(single_score, 4),
@@ -3006,6 +3016,7 @@ def main():
     last_semantic_subject = None
     last_semantic_center_x = None
     semantic_hold_samples = 0
+    last_confirmed_scene_cut_t = -1e9
 
     # Decode the analysis window sequentially. Seeking the source independently
     # for every 83 ms observation forces the decoder back through nearby
@@ -3236,7 +3247,16 @@ def main():
 
         saliency_box, saliency_confidence = saliency_region(cv2, np, gray, source_w, source_h)
         screen_score = screen_context_score(cv2, np, gray)
-        scene_cut = scene_change >= 0.72
+        raw_scene_cut = scene_change >= 0.72
+        # Shaky handheld footage can exceed the histogram threshold for
+        # several adjacent samples during one whip-pan. Debounce that burst
+        # into one edit boundary instead of generating a flash every frame.
+        scene_cut = bool(
+            raw_scene_cut
+            and sample_t - last_confirmed_scene_cut_t >= 0.75
+        )
+        if scene_cut:
+            last_confirmed_scene_cut_t = sample_t
         # Hold a confirmed face long enough to bridge ordinary occlusion from
         # laughter, hands, microphones, and head turns. Scene cuts bypass this
         # immediately, so the longer grace period cannot carry a face crop into
@@ -3265,6 +3285,12 @@ def main():
                 0.0
                 if body_box is None
                 else (float(body_box[2]) * float(body_box[3]))
+                / max(1.0, float(source_w) * float(source_h))
+            ),
+            motion_area_ratio=(
+                0.0
+                if motion_box is None
+                else (float(motion_box[2]) * float(motion_box[3]))
                 / max(1.0, float(source_w) * float(source_h))
             ),
             prior=prior_semantic_subject,
@@ -3443,7 +3469,7 @@ def main():
             'chosen_center_y': chosen_center_y,
             'layout_mode': framing,
             'fallback_used': fallback_used,
-            'scene_cut': scene_change >= 0.72,
+            'scene_cut': scene_cut,
             'audio_activity': round(current_audio, 4),
             'speaker_confidence': round(max(selected_mouth_score * current_audio, selected_speaker_confidence), 4),
             'speaker_score_margin': round(speaker_score_margin, 4),

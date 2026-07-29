@@ -76,8 +76,8 @@ assert.deepEqual(resolveStorageSafeVideoRates(30), {
   bufsize: '20000k',
 });
 const longClipRates = resolveStorageSafeVideoRates(90);
-assert(Number.parseInt(longClipRates.bitrate, 10) < 4_000, 'long reels must stay below the object-storage upload ceiling');
-assert(Number.parseInt(longClipRates.bitrate, 10) >= 1_800, 'long reels must retain a usable video bitrate');
+assert(Number.parseInt(longClipRates.bitrate, 10) >= 8_000, '90-second 1080p reels should retain upload-master detail');
+assert(Number.parseInt(longClipRates.bitrate, 10) <= 10_000, 'master bitrate must remain bounded');
 
 const layoutPrefixes = [
   ['-filter_complex', '[0:v]crop=608:1080:176:0,scale=1080:1920:flags=lanczos+accurate_rnd+full_chroma_int[outv]', '-map', '[outv]', '-map', '0:a?'],

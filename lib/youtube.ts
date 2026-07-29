@@ -85,7 +85,7 @@ const YOUTUBE_CLIENT_ATTEMPTS = [
   ['--extractor-args', 'youtube:player_client=android,web'],
 ];
 
-const SOURCE_QUALITY_CACHE_VERSION = 'yt-best-available-source-v7';
+const SOURCE_QUALITY_CACHE_VERSION = 'yt-hd-required-when-advertised-v8';
 
 export async function fetchYouTubeDurationSeconds(url: string) {
   const command = await resolveYtDlpBinary();
@@ -142,12 +142,12 @@ function getYouTubeVideoFormatAttempts() {
   const override = process.env.YOUTUBE_VIDEO_FORMAT?.trim();
   if (override) return [override];
 
-  // A minimum-height selector fails for perfectly valid sources whose highest
-  // rendition is 1080p or 720p. The general selector already asks yt-dlp for
-  // the highest available rendition up to our ceiling and carries its own
-  // merged/single-file fallbacks, so use it immediately instead of spending
-  // extra network attempts on resolutions the source may not provide.
-  return [getYouTubeVideoFormat()];
+  const maxHeight = getYouTubeMaxSourceHeight();
+  return [
+    `bestvideo[height>=1080][height<=${maxHeight}]+bestaudio`,
+    `bestvideo[height>=720][height<=${maxHeight}]+bestaudio`,
+    getYouTubeVideoFormat(),
+  ];
 }
 
 type DownloadedVideoInfo = {
@@ -189,6 +189,34 @@ async function probeDownloadedVideoInfo(filePath: string): Promise<DownloadedVid
     duration: info.format?.duration ?? null,
     size: info.format?.size ?? null,
   };
+}
+
+async function fetchAdvertisedMaxVideoHeight(command: string, url: string) {
+  let lastError: unknown = null;
+  for (const clientArgs of YOUTUBE_CLIENT_ATTEMPTS) {
+    try {
+      const metadata = await runJson(command, [
+        ...COMMON_YT_DLP_ARGS,
+        ...clientArgs,
+        '--skip-download',
+        '--dump-single-json',
+        url,
+      ]) as {
+        formats?: Array<{ vcodec?: string | null; height?: number | null }>;
+      };
+      const heights = (metadata.formats ?? [])
+        .filter((format) => format.vcodec && format.vcodec !== 'none')
+        .map((format) => Number(format.height ?? 0))
+        .filter((height) => Number.isFinite(height) && height > 0);
+      if (heights.length) return Math.max(...heights);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.warn('[youtube] format inventory unavailable', {
+    error: lastError instanceof Error ? lastError.message : String(lastError ?? 'unknown error'),
+  });
+  return null;
 }
 
 async function logDownloadedVideoInfo(filePath: string, projectId: string, formatSelector: string) {
@@ -264,6 +292,7 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
   const outPath = path.join(dir, 'source.mp4');
   const qualityMarkerPath = `${outPath}.quality.json`;
   const ytDlp = await resolveYtDlpBinary();
+  const advertisedMaxHeight = await fetchAdvertisedMaxVideoHeight(ytDlp, url);
   try {
     const cached = await stat(outPath);
     if (cached.size > 0) {
@@ -374,6 +403,19 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
   if (!downloadSucceeded) {
     await unlink(outPath).catch(() => undefined);
     throw lastDownloadError instanceof Error ? lastDownloadError : new Error('YouTube video download did not produce a playable source file');
+  }
+
+  if (
+    advertisedMaxHeight
+    && advertisedMaxHeight >= 720
+    && downloadedInfo?.height
+    && downloadedInfo.height < 720
+  ) {
+    await unlink(outPath).catch(() => undefined);
+    throw new Error(
+      `YouTube advertised ${advertisedMaxHeight}p video, but the worker could only retrieve `
+      + `${downloadedInfo.height}p. Refusing to upscale an SD source into a misleading 1080p reel.`,
+    );
   }
 
   const stillBelowMin = Boolean(downloadedInfo?.height && downloadedInfo.height < getYouTubeMinCacheHeight());
