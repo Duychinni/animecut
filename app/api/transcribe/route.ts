@@ -136,6 +136,10 @@ export async function POST(req: Request) {
           ? e
           : JSON.stringify(e);
 
+    console.error('[transcribe] failed', {
+      error: message || 'Transcription failed',
+      stack: e instanceof Error ? e.stack : null,
+    });
     return NextResponse.json({ error: getPublicPipelineError(message || 'Transcription failed') }, { status: 400 });
   }
 }

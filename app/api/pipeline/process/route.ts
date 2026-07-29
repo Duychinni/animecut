@@ -27,8 +27,10 @@ const PIPELINE_MAX_ATTEMPTS = 3;
 // maximum lifetime; genuinely abandoned jobs are recovered on the next pass.
 const STALE_PIPELINE_JOB_MS = 6 * 60 * 1000;
 
+class InternalStepError extends Error {}
+
 function getInternalBaseUrls() {
-  return [
+  return [...new Set([
     // This route only performs media work on a persistent worker host. Keep
     // its heavy internal steps on that same host instead of bouncing through
     // the public Vercel deployment, which intentionally delegates media work.
@@ -37,7 +39,9 @@ function getInternalBaseUrls() {
     'http://localhost:3000',
     process.env.APP_URL,
     process.env.NEXT_PUBLIC_APP_URL,
-  ].filter((v, i, arr): v is string => Boolean(v) && arr.indexOf(v) === i);
+  ]
+    .filter((v): v is string => Boolean(v))
+    .map((value) => value.replace(/\/+$/, '')))];
 }
 
 async function callInternalJson(path: string, body: Record<string, unknown>) {
@@ -62,11 +66,18 @@ async function callInternalJson(path: string, body: Record<string, unknown>) {
               ? JSON.stringify(data)
               : `Pipeline step failed: ${path}`;
         console.error('[pipeline] internal-call-failed', { path, baseUrl, status: res.status, data, lastError });
+        // A 4xx response means the worker reached the authoritative route and
+        // the media step itself failed. Repeating it through localhost aliases
+        // or the public deployment only duplicates expensive transcription.
+        if (res.status >= 400 && res.status < 500) {
+          throw new InternalStepError(lastError || `Pipeline step failed: ${path}`);
+        }
         continue;
       }
 
       return data;
     } catch (error: unknown) {
+      if (error instanceof InternalStepError) throw error;
       lastError = error instanceof Error ? error.message : `Request failed for ${path}`;
     }
   }
@@ -322,6 +333,37 @@ export async function POST() {
 
   await updateProjectProgress(projectId, 'downloading', 'Preparing source video');
 
+  let heartbeatInFlight: Promise<void> = Promise.resolve();
+  const heartbeat = () => {
+    const now = new Date().toISOString();
+    heartbeatInFlight = heartbeatInFlight
+      .catch(() => undefined)
+      .then(async () => {
+        const [jobHeartbeat, projectHeartbeat] = await Promise.all([
+          supabase
+            .from('jobs')
+            .update({ updated_at: now })
+            .eq('id', job.id)
+            .eq('status', 'processing'),
+          supabase
+            .from('projects')
+            .update({ worker_last_seen_at: now })
+            .eq('id', projectId)
+            .eq('pipeline_status', 'processing'),
+        ]);
+        if (jobHeartbeat.error) throw jobHeartbeat.error;
+        if (projectHeartbeat.error) throw projectHeartbeat.error;
+      })
+      .catch((error) => {
+        console.warn('[pipeline] heartbeat failed', {
+          projectId,
+          jobId: job.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  };
+  const heartbeatTimer = setInterval(heartbeat, 30_000);
+
   try {
     let transcriptStats = await getTranscriptStats(projectId);
     if (transcriptStats.exists) {
@@ -547,5 +589,8 @@ export async function POST() {
       .eq('id', job.id);
 
     return NextResponse.json({ error: message }, { status: 400 });
+  } finally {
+    clearInterval(heartbeatTimer);
+    await heartbeatInFlight;
   }
 }

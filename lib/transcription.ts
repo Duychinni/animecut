@@ -525,8 +525,13 @@ export async function transcribeAudioFile(filePath: string, options: Transcripti
 
   const provider = getTranscriptionProvider();
   const fileSize = (await stat(filePath)).size;
+  const duration = provider === 'openai' ? await probeDurationSeconds(filePath) : 0;
   let transcript: TranscriptResult;
-  if (provider !== 'openai' || fileSize < OPENAI_SAFE_FILE_BYTES) {
+  // A compressed long recording can be well below OpenAI's upload-size limit
+  // while still leaving one request running for several minutes. Split long
+  // sources too, so each request is bounded and successful chunks survive a
+  // retry instead of restarting the complete transcription.
+  if (provider !== 'openai' || (fileSize < OPENAI_SAFE_FILE_BYTES && duration <= CHUNK_CORE_SECONDS)) {
     transcript = await transcribeOneFile(filePath, provider);
   } else {
     transcript = await transcribeChunked(filePath, provider, options);
