@@ -37,14 +37,20 @@ const BREAK_SIGNALS = [
   /\b(intermission|commercial break|ad break|music break)\b/i,
 ];
 
+// Source-edge packaging is often visual or musical and therefore absent from
+// the transcript. Keep a small hard guard around both ends so a branded intro
+// slate or outro cannot become part of a reel merely because dialogue overlaps
+// it.
+const SOURCE_EDGE_PACKAGING_GUARD_SECONDS = 12;
+
 function signalCount(text: string, signals: RegExp[]) {
   return signals.reduce((count, signal) => count + (signal.test(text) ? 1 : 0), 0);
 }
 
 /**
- * Reject packaging around the editorial content, while preserving genuine cold
- * opens and closing payoffs. Position alone is never enough: a transcript must
- * also contain recognizable show-intro or sign-off language.
+ * Reject packaging around the editorial content. A short hard guard protects
+ * against non-transcribed visual/music slates; outside that guard, transcript
+ * signals preserve genuine cold opens and closing payoffs.
  */
 export function editorialExclusionReason(params: {
   text: string;
@@ -64,6 +70,9 @@ export function editorialExclusionReason(params: {
   const outroSignals = signalCount(text, OUTRO_SIGNALS);
   const sponsorSignals = signalCount(text, SPONSOR_SIGNALS);
   const breakSignals = signalCount(text, BREAK_SIGNALS);
+
+  if (start < SOURCE_EDGE_PACKAGING_GUARD_SECONDS) return 'intro_or_cold_open';
+  if (end > total - SOURCE_EDGE_PACKAGING_GUARD_SECONDS) return 'outro_or_end_card';
 
   // Sponsor reads and structural breaks can occur anywhere in a source. Never
   // turn them into reels, even when a model gives the window a high score.

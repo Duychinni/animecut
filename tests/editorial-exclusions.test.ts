@@ -11,13 +11,13 @@ test('rejects a podcast introduction near the beginning', () => {
   }), 'intro_or_cold_open');
 });
 
-test('does not reject substantive content merely because it starts early', () => {
+test('keeps the source opening guard even when early dialogue is substantive', () => {
   assert.equal(editorialExclusionReason({
     text: 'The hardest part of becoming a champion was learning how to lose without making excuses.',
     startSec: 5,
     endSec: 48,
     totalSeconds: 3600,
-  }), null);
+  }), 'intro_or_cold_open');
 });
 
 test('rejects calls to subscribe and sign-offs near the end', () => {
@@ -29,13 +29,29 @@ test('rejects calls to subscribe and sign-offs near the end', () => {
   }), 'outro_or_end_card');
 });
 
-test('does not reject a meaningful payoff near the end', () => {
+test('rejects source-edge packaging even when the transcript contains normal dialogue', () => {
+  assert.equal(editorialExclusionReason({
+    text: 'Are your first episodes available from when you were eleven years old?',
+    startSec: 1,
+    endSec: 38,
+    totalSeconds: 897,
+  }), 'intro_or_cold_open');
+
+  assert.equal(editorialExclusionReason({
+    text: 'That was the moment everything changed for the channel.',
+    startSec: 850,
+    endSec: 891,
+    totalSeconds: 897,
+  }), 'outro_or_end_card');
+});
+
+test('keeps the source closing guard even when late dialogue is substantive', () => {
   assert.equal(editorialExclusionReason({
     text: 'That is why the experiment failed, and the lesson changed how we built every version afterward.',
     startSec: 3520,
     endSec: 3595,
     totalSeconds: 3600,
-  }), null);
+  }), 'outro_or_end_card');
 });
 
 test('rejects sponsor reads anywhere in the source', () => {
