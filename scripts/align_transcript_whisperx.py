@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -24,8 +25,6 @@ def main():
     device = sys.argv[3] if len(sys.argv) > 3 else "cpu"
 
     try:
-        import whisperx
-
         transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
         source_segments = transcript.get("segments") or []
         alignable_segments = []
@@ -47,20 +46,26 @@ def main():
         raw_language = str(transcript.get("language") or "en").strip().lower()
         # OpenAI verbose transcripts can return a language name ("english"),
         # while WhisperX alignment models are keyed by ISO codes ("en").
-        from whisperx.utils import TO_LANGUAGE_CODE
-        language = TO_LANGUAGE_CODE.get(raw_language, raw_language)
-        align_model, metadata = whisperx.load_align_model(
-            language_code=language,
-            device=device,
-        )
-        aligned = whisperx.align(
-            alignable_segments,
-            align_model,
-            metadata,
-            str(audio_path),
-            device,
-            return_char_alignments=False,
-        )
+        # WhisperX, PyTorch, and model loaders occasionally print diagnostics to
+        # stdout. Keep stdout as a strict machine-readable JSON channel; the
+        # Node caller already captures stderr for diagnostics.
+        with redirect_stdout(sys.stderr):
+            import whisperx
+            from whisperx.utils import TO_LANGUAGE_CODE
+
+            language = TO_LANGUAGE_CODE.get(raw_language, raw_language)
+            align_model, metadata = whisperx.load_align_model(
+                language_code=language,
+                device=device,
+            )
+            aligned = whisperx.align(
+                alignable_segments,
+                align_model,
+                metadata,
+                str(audio_path),
+                device,
+                return_char_alignments=False,
+            )
 
         segments = []
         for segment in aligned.get("segments", []):

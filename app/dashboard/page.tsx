@@ -610,7 +610,9 @@ export default function DashboardPage() {
 
       <BrowserNotifications hasProcessingProjects={recentProjects.some(isActiveProject)} />
 
-      {loadingProjects && !recentProjects.length ? <p className="text-sm text-white/60">Loading projects...</p> : null}
+      {loadingProjects && !recentProjects.length && !searchParams.get('created') ? (
+        <p className="text-sm text-white/60">Loading projects...</p>
+      ) : null}
       {!loadingProjects && !recentProjects.length && <p className="text-sm text-white/60">No projects yet.</p>}
 
       <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
