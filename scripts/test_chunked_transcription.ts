@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { attachWordsToSegments, mergeChunkTranscripts, reconcileSegmentWords } from '../lib/transcription';
+import {
+  attachWordsToSegments,
+  mergeChunkTranscripts,
+  parsePythonTranscriberOutput,
+  reconcileSegmentWords,
+} from '../lib/transcription';
 
 const merged = mergeChunkTranscripts([
   {
@@ -119,3 +124,9 @@ for (let index = 1; index < reconciled.length; index += 1) {
 }
 
 console.log('Chunked transcription timestamp merging and boundary deduplication passed.');
+
+assert.deepEqual(
+  parsePythonTranscriberOutput('2026-07-29 loading alignment model\n{\"language\":\"en\",\"segments\":[]}'),
+  { language: 'en', segments: [] },
+  'WhisperX stdout diagnostics must not invalidate the final JSON result',
+);

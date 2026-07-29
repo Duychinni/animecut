@@ -190,10 +190,30 @@ async function runProcess(command: string, args: string[], name: string) {
   });
 }
 
+export function parsePythonTranscriberOutput(stdout: string) {
+  const trimmed = stdout.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // WhisperX and its ML dependencies can print model/loading diagnostics to
+    // stdout even when the wrapper's final line is valid JSON. Prefer the last
+    // parseable line so those diagnostics cannot discard a completed alignment.
+    const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      try {
+        return JSON.parse(lines[index]);
+      } catch {
+        // Continue looking for the wrapper's JSON result.
+      }
+    }
+    throw new Error('Python transcriber output did not contain valid JSON');
+  }
+}
+
 async function runPythonTranscriber(args: string[], providerName: string) {
   const { stdout, stderr } = await runProcess(args[0], args.slice(1), providerName);
   try {
-    const parsed = JSON.parse(stdout || '{}');
+    const parsed = parsePythonTranscriberOutput(stdout || '{}');
     if (parsed?.error) throw new Error(parsed.error);
     return {
       language: parsed?.language || 'en',

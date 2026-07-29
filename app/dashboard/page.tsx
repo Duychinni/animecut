@@ -113,6 +113,7 @@ function isFailedProject(project: ProjectListItem) {
 
 function getExpiryLabel(project: ProjectListItem) {
   if (!isCompletedProject(project)) return null;
+  if (project.days_until_expiring === null || project.days_until_expiring === undefined) return null;
   const days = Number(project.days_until_expiring);
   if (!Number.isFinite(days)) return null;
   return `${Math.max(0, days)} ${days === 1 ? 'day' : 'days'} before expiring`;
@@ -590,7 +591,7 @@ export default function DashboardPage() {
 
       <BrowserNotifications hasProcessingProjects={recentProjects.some(isActiveProject)} />
 
-      {loadingProjects && <p className="text-sm text-white/60">Loading projects...</p>}
+      {loadingProjects && !recentProjects.length ? <p className="text-sm text-white/60">Loading projects...</p> : null}
       {!loadingProjects && !recentProjects.length && <p className="text-sm text-white/60">No projects yet.</p>}
 
       <div ref={menuRootRef} className="grid gap-8 md:grid-cols-2 xl:grid-cols-3">
