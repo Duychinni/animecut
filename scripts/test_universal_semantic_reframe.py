@@ -6,6 +6,7 @@ from reframe_per_clip import (
     detect_fixed_two_panel_layout,
     distinct_face_detections,
     face_is_complete_in_source,
+    lock_unstable_panel_composition,
     portrait_crop_for_face_in_panel,
     portrait_crop_for_subject,
     semantic_subject_choice,
@@ -77,6 +78,24 @@ def timeline(samples, duration=None):
         list(points), list(frames), W, H,
         duration if duration is not None else float(points[-1]['t']) + 0.25,
     )
+
+
+def test_repeated_panel_wide_closeup_switching_locks_one_composition():
+    modes = ['single', 'wide_context', 'single', 'stacked', 'wide_context', 'single', 'wide_context', 'single']
+    segments = []
+    for index, mode in enumerate(modes):
+        segments.append({
+            'start': float(index),
+            'end': float(index + 1),
+            'mode': mode,
+            'wideKind': 'safe_wide' if mode == 'wide_context' else None,
+            'visibleCountMax': 2,
+            'points': [{'t': float(index)}],
+        })
+    result = lock_unstable_panel_composition(segments)
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'wide_context', result
+    assert result[0]['renderBranch'] == 'stable_panel_composition', result
 
 
 def speaker_centering_error(result, expected_centers):

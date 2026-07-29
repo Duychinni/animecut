@@ -1245,6 +1245,71 @@ def apply_shot_entry_lookahead(points, frames, source_w: float, source_h: float,
     return prepared_points, prepared_frames
 
 
+def lock_unstable_panel_composition(segments):
+    """Keep repeatedly alternating panel/group footage in one composition."""
+    if len(segments) < 7:
+        return segments
+    if any(segment.get('mode') in ('grid', 'source_vertical') for segment in segments):
+        return segments
+
+    contextual_segments = [
+        segment for segment in segments
+        if segment.get('mode') == 'wide_context'
+    ]
+    if len(contextual_segments) < 3:
+        return segments
+
+    transitions = sum(
+        1 for index in range(1, len(segments))
+        if segments[index].get('mode') != segments[index - 1].get('mode')
+    )
+    if transitions < 4:
+        return segments
+
+    clip_start = float(segments[0].get('start', 0.0))
+    clip_end = float(segments[-1].get('end', clip_start))
+    clip_duration = max(0.001, clip_end - clip_start)
+    wide_duration = sum(
+        max(0.0, float(segment.get('end', 0.0)) - float(segment.get('start', 0.0)))
+        for segment in contextual_segments
+    )
+    wide_ratio = wide_duration / clip_duration
+    panel_evidence = any(
+        int(segment.get('visibleCountMax', segment.get('visibleCount', 0)) or 0) >= 2
+        or str(segment.get('editorialLayout', '')).upper() in {
+            'TWO_PERSON_CONVERSATION',
+            'THREE_PERSON_COMPOSITION',
+            'PANEL_GRID',
+        }
+        for segment in segments
+    )
+    if not panel_evidence or wide_ratio < 0.08 or wide_ratio > 0.60:
+        return segments
+
+    points = [point for segment in segments for point in segment.get('points', [])]
+    locked = dict(segments[0])
+    locked.update({
+        'start': round(clip_start, 3),
+        'end': round(clip_end, 3),
+        'mode': 'wide_context',
+        'wideKind': 'safe_wide',
+        'primaryTrackId': None,
+        'topTrackId': None,
+        'bottomTrackId': None,
+        'topBox': None,
+        'bottomBox': None,
+        'subjects': [],
+        'points': points,
+        'sceneCutStart': False,
+        'moderateCutStart': False,
+        'hardCutStart': False,
+        'inferredCutStart': False,
+        'renderBranch': 'stable_panel_composition',
+        'editorialReason': 'Repeated panel-wide/close-up switching was locked to one readable composition.',
+    })
+    return [locked]
+
+
 def build_reframe_timeline(points, frames, source_w: float, source_h: float, duration: float):
     """Convert 4 Hz observations into a hysteretic, timed layout state machine."""
     if not points or not frames:
@@ -2583,6 +2648,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         else:
             index += 1
 
+    # A source can contain frequent editorial cuts while the conversational
+    # composition remains unchanged. Do not translate those cuts into repeated
+    # full-panel/close-up pulses in the vertical reel.
+    clean_segments = lock_unstable_panel_composition(clean_segments)
+
     # Scene analysis is sampled every 250 ms. Pull hard-cut boundaries forward
     # by one sample so the incoming composition appears on the first visible
     # frame instead of holding the outgoing B-roll layout for another sample.
@@ -3632,6 +3702,10 @@ def main():
     reframe_timeline, layout_qa_summary = validate_layout_timeline(
         reframe_timeline, detected_faces, source_w, source_h
     )
+    # Editorial and QA passes can legitimately introduce split-screen repairs,
+    # but they must not recreate a repeated wide/close/split pulse. Apply the
+    # composition lock once more to the final renderer-facing timeline.
+    reframe_timeline = lock_unstable_panel_composition(reframe_timeline)
     debug_overlay_path = None
     if debug_enabled:
         debug_overlay_path = save_debug_video(
