@@ -227,6 +227,55 @@ def test_handheld_conversation_holds_one_split_through_detector_dropouts():
     assert result[0]['bottomBox'] == right, result
 
 
+def test_split_geometry_never_crosses_source_cut_into_solo_or_broll():
+    left = box(170, 150, 390, 600, 1, 0.9)
+    right = box(1260, 145, 410, 610, 2, 0.9)
+    segments = [
+        {
+            'start': 0.0, 'end': 8.0, 'mode': 'stacked',
+            'topBox': left, 'bottomBox': right,
+            'editorialLayout': 'TWO_PERSON_CONVERSATION',
+            'points': [{'t': 0.0}],
+        },
+        {
+            'start': 8.0, 'end': 14.0, 'mode': 'single',
+            'hardCutStart': True,
+            'editorialLayout': 'SINGLE_SPEAKER_CROP',
+            'points': [{'t': 8.0}],
+        },
+        {
+            'start': 14.0, 'end': 20.0, 'mode': 'wide_context',
+            'sceneCutStart': True, 'wideKind': 'broll',
+            'editorialLayout': 'SOURCE_COMPOSITION',
+            'points': [{'t': 14.0}],
+        },
+    ]
+    result = stabilize_continuous_conversation_layout(
+        segments,
+        {'recommended_layout': 'TWO_PERSON_CONVERSATION'},
+    )
+    assert [segment['mode'] for segment in result] == [
+        'stacked', 'single', 'wide_context',
+    ], result
+    assert result[1].get('hardCutStart') is True, result
+    assert result[2].get('sceneCutStart') is True, result
+    assert result[2].get('wideKind') == 'broll', result
+
+
+def test_two_people_that_fit_one_portrait_crop_do_not_force_split():
+    left = box(650, 170, 250, 500, 1, 0.9)
+    right = box(930, 170, 250, 500, 2, 0.9)
+    result = timeline([
+        sample(
+            index * 0.25,
+            subject('face', left, 'face:1', 0.9),
+            [left, right], 1, 0.9, 0.5,
+        )
+        for index in range(12)
+    ])
+    assert all(segment['mode'] != 'stacked' for segment in result), result
+
+
 def speaker_centering_error(result, expected_centers):
     """Mean normalized distance between the crop center and expected speaker."""
     observed = [point['cropCenterX'] for segment in result for point in segment.get('points', [])]

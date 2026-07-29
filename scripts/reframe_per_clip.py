@@ -1402,11 +1402,58 @@ def lock_handheld_source_composition(segments):
 
 
 def stabilize_continuous_conversation_layout(segments, editorial_plan=None):
-    """Keep an established two-person conversation in the split-screen family."""
+    """Keep a two-person layout stable inside a source shot, never across cuts.
+
+    A conversation can contain wide two-person shots, solo close-ups, and
+    unrelated B-roll.  Split geometry belongs to the shot where both people
+    were actually visible.  Carrying one pair of boxes across a camera edit
+    duplicates a solo close-up or turns ordinary B-roll into two copies.
+    """
     if len(segments) < 2:
         return segments
     if any(segment.get('mode') in ('grid', 'source_vertical') for segment in segments):
         return segments
+
+    def starts_new_source_shot(segment):
+        return any(bool(segment.get(key)) for key in (
+            'sceneCutStart',
+            'moderateCutStart',
+            'hardCutStart',
+            'inferredCutStart',
+        ))
+
+    shot_runs = []
+    for index, segment in enumerate(segments):
+        if index > 0 and starts_new_source_shot(segment):
+            shot_runs.append([])
+        if not shot_runs:
+            shot_runs.append([])
+        shot_runs[-1].append(segment)
+
+    # Apply the continuity repair independently to each actual source shot.
+    # The recursive call is safe because a single shot has no internal cut
+    # boundary.  Preserve the incoming cut marker on its first result so later
+    # QA/debug passes can still explain the edit.
+    if len(shot_runs) > 1:
+        stabilized_shots = []
+        for shot in shot_runs:
+            shot_result = stabilize_continuous_conversation_layout(
+                shot,
+                editorial_plan,
+            )
+            if shot_result:
+                first = dict(shot_result[0])
+                for key in (
+                    'sceneCutStart',
+                    'moderateCutStart',
+                    'hardCutStart',
+                    'inferredCutStart',
+                ):
+                    if shot[0].get(key):
+                        first[key] = shot[0].get(key)
+                shot_result = [first, *shot_result[1:]]
+            stabilized_shots.extend(shot_result)
+        return stabilized_shots
 
     stacked_segments = [
         segment for segment in segments
@@ -1727,7 +1774,23 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             horizontal_separation = abs(
                 float(dominant_faces[1].get('cx', 0.0)) - float(dominant_faces[0].get('cx', 0.0))
             )
-            if horizontal_separation >= source_w * 0.24:
+            portrait_crop_width = source_h * 9.0 / 16.0
+            pair_left = min(float(face.get('x', 0.0)) for face in dominant_faces)
+            pair_right = max(
+                float(face.get('x', 0.0)) + float(face.get('w', 0.0))
+                for face in dominant_faces
+            )
+            face_margin = max(
+                float(face.get('w', 0.0)) for face in dominant_faces
+            ) * 0.16
+            pair_fits_one_portrait = (
+                pair_right - pair_left + face_margin * 2.0
+                <= portrait_crop_width * 0.96
+            )
+            if (
+                horizontal_separation >= source_w * 0.24
+                and not pair_fits_one_portrait
+            ):
                 visual_pair = tuple(dominant_faces)
         visual_pair_ids = (
             tuple(int(face.get('track_id')) for face in visual_pair)
