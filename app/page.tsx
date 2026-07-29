@@ -476,7 +476,6 @@ export default function Home() {
         source_url: sourceUrl.trim(),
       });
 
-      await startProjectProcessing(projectId);
       await clearPendingIngest();
       router.push(`/dashboard?created=${projectId}`);
     } catch (error: unknown) {
@@ -615,7 +614,6 @@ export default function Home() {
             source_type: 'youtube',
             source_url: pending.sourceUrl,
           });
-          await startProjectProcessing(projectId);
           await clearPendingIngest();
           router.push(`/dashboard?created=${projectId}`);
         } catch (error) {

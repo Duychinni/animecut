@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
+import { PROJECT_RETENTION_DAYS } from '@/lib/project-retention';
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
@@ -39,7 +40,13 @@ function isActiveProject(project: ProjectListItem) {
 }
 
 function getExpiryLabel(project: ProjectListItem) {
+  if (isActiveProject(project)) {
+    return `${PROJECT_RETENTION_DAYS} days before expiring`;
+  }
   if (!isCompletedProject(project)) return null;
+  if (project.days_until_expiring === null || project.days_until_expiring === undefined) {
+    return `${PROJECT_RETENTION_DAYS} days before expiring`;
+  }
   const days = Number(project.days_until_expiring);
   if (!Number.isFinite(days)) return null;
   return `${Math.max(0, days)} ${days === 1 ? 'day' : 'days'} before expiring`;

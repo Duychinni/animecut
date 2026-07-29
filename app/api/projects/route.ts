@@ -11,6 +11,7 @@ import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { estimateObservedRenderEtaSeconds } from '@/lib/project-eta';
 import { clampProgressToStage } from '@/lib/project-progress';
+import { ensurePipelineJob } from '@/lib/pipeline';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -262,6 +263,10 @@ export async function POST(req: Request) {
         source_duration_seconds: sourceMeta.sourceDurationSeconds,
         content_rights_confirmed_at: new Date().toISOString(),
         status: 'created',
+        pipeline_status: 'queued',
+        pipeline_stage: 'queued',
+        pipeline_stage_label: 'Starting processing',
+        pipeline_progress_percent: 1,
       })
       .select('*')
       .single();
@@ -300,7 +305,24 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ project: data, devBypass: BILLING_DEV_BYPASS });
+    // YouTube sources are ready as soon as the project exists. Queue the job
+    // here so the browser can navigate straight to a durable processing card
+    // without a second request creating a visible "created" gap.
+    if (parsed.source_type === 'youtube') {
+      await ensurePipelineJob(data.id);
+    }
+
+    return NextResponse.json({
+      project: {
+        ...data,
+        pipeline_status: parsed.source_type === 'youtube' ? 'queued' : data.pipeline_status,
+        pipeline_stage: parsed.source_type === 'youtube' ? 'queued' : data.pipeline_stage,
+        pipeline_stage_label: parsed.source_type === 'youtube' ? 'Starting processing' : data.pipeline_stage_label,
+        pipeline_progress_percent: parsed.source_type === 'youtube' ? 1 : data.pipeline_progress_percent,
+      },
+      pipelineStarted: parsed.source_type === 'youtube',
+      devBypass: BILLING_DEV_BYPASS,
+    });
   } catch (error: unknown) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 });
   }
