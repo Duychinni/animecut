@@ -37,6 +37,8 @@ STACK_LAYOUT_ENABLED = True
 SCENE_CUT_LOOKAHEAD_SEC = 0.125
 WIDE_FACE_HEIGHT_RATIO = 0.22
 WIDE_FACE_WIDTH_RATIO = 0.105
+FIXED_PANEL_FACE_HEIGHT_RATIO = 0.13
+STREAMER_PANEL_FACE_HEIGHT_RATIO = 0.075
 FIXED_LAYOUT_MODE = 'FIXED_TWO_REGION_CONVERSATION'
 LEGACY_FIXED_LAYOUT_MODE = 'FIXED_TWO_PANEL_INTERVIEW'
 FIXED_SPEAKER_CONFIDENCE = float(os.getenv('FIXED_SPEAKER_CONFIDENCE', '0.42'))
@@ -671,7 +673,14 @@ def vertical_divider_candidate(cv2, np, gray):
 
 
 def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
-    """Detect a persistent split interview without treating any two faces as panels."""
+    """Detect a persistent interview/streamer split without chasing its speakers.
+
+    Side-by-side streamer sources commonly devote only a small part of each
+    panel to a webcam. Those faces are materially smaller than studio interview
+    faces, but a stable visual divider plus persistent people on both sides is
+    stronger layout evidence than face size alone. Once classified, rendering
+    keeps both regions locked instead of cutting on every speaker estimate.
+    """
     divider_samples = [
         (float(frame.get('divider_x')), float(frame.get('divider_confidence', 0.0)))
         for frame in frames
@@ -686,6 +695,7 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
         if source_w * 0.30 <= candidate <= source_w * 0.70 and candidate_mad <= source_w * 0.018:
             divider_x = candidate
             divider_mad = candidate_mad
+    has_stable_divider = divider_x is not None
 
     # Some interview sources have no visible gutter. Persistent, well-separated
     # tracks still define two stable source regions; this is classification,
@@ -696,7 +706,7 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
             for face in frame.get('faces', []):
                 if face.get('track_id') is None or bool(face.get('predicted')):
                     continue
-                if float(face.get('h', 0.0)) < source_h * 0.13:
+                if float(face.get('h', 0.0)) < source_h * FIXED_PANEL_FACE_HEIGHT_RATIO:
                     continue
                 track_samples.setdefault(int(face['track_id']), []).append(float(face.get('cx', 0.0)))
         persistent = [
@@ -719,10 +729,18 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
     eligible = 0
     left_ids = set()
     right_ids = set()
+    panel_face_height_ratio = (
+        STREAMER_PANEL_FACE_HEIGHT_RATIO
+        if has_stable_divider
+        else FIXED_PANEL_FACE_HEIGHT_RATIO
+    )
     for frame in frames:
         faces = [
             face for face in frame.get('faces', [])
-            if not face.get('predicted') and float(face.get('h', 0.0)) >= source_h * 0.13
+            if (
+                not face.get('predicted')
+                and float(face.get('h', 0.0)) >= source_h * panel_face_height_ratio
+            )
         ]
         if not faces:
             continue
@@ -752,6 +770,7 @@ def detect_fixed_two_panel_layout(frames, source_w: float, source_h: float):
             **{str(track_id): 'right' for track_id in sorted(right_ids)},
         },
         'detection_method': detection_method,
+        'panel_face_height_ratio': round(panel_face_height_ratio, 4),
     }
 
 
@@ -1326,10 +1345,15 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             face for face in complete_faces
             if not bool(face.get('predicted')) and face.get('track_id') is not None
         ])
+        layout_face_height_ratio = (
+            float(fixed_two_panel.get('panel_face_height_ratio', FIXED_PANEL_FACE_HEIGHT_RATIO))
+            if fixed_two_panel
+            else 0.085
+        )
         layout_faces = sorted(
             (
                 face for face in visible_faces
-                if float(face.get('h', 0.0)) >= source_h * 0.085
+                if float(face.get('h', 0.0)) >= source_h * layout_face_height_ratio
             ),
             key=lambda face: (
                 1 if active_id is not None and int(face.get('track_id')) == int(active_id) else 0,
@@ -1345,7 +1369,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             # both faces were stable and cleanly separated. The earlier 8.5%
             # visibility gate plus the exact-two-person check below still
             # excludes tiny audience/logo detections.
-            (face for face in layout_faces if float(face.get('h', 0.0)) >= source_h * 0.10),
+            (
+                face for face in layout_faces
+                if float(face.get('h', 0.0)) >= source_h * (
+                    layout_face_height_ratio if fixed_two_panel else 0.10
+                )
+            ),
             key=lambda face: float(face.get('w', 0.0)) * float(face.get('h', 0.0)),
             reverse=True,
         )[:2]
@@ -1859,7 +1888,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
 
         # Returning from a deliberate group composition to a trustworthy
         # speaker is an editorial cut, not a camera pan across the room.
-        if (speech_resumed_after_long_pause or conversation_speaker_changed) and active_speaker_mapped:
+        if (
+            desired_mode == 'single'
+            and (speech_resumed_after_long_pause or conversation_speaker_changed)
+            and active_speaker_mapped
+        ):
             fixed_hard_cut = True
 
         # A complete, verified one-person/two-person composition is safe to
@@ -2255,8 +2288,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             # branches remain meaningful because they identify which physical
             # panel the renderer must use.
             None if generic_single else decision.get('render_branch'),
-            decision.get('primary_panel'),
-            decision.get('primary_track_id') if decision.get('source_layout') else None,
+            decision.get('primary_panel') if decision['mode'] == 'single' else None,
+            (
+                decision.get('primary_track_id')
+                if decision['mode'] == 'single' and decision.get('source_layout')
+                else None
+            ),
             # A detector may assign a new track id to the same face mid-shot.
             # Meaningful face changes are handled by the spatially-validated
             # hard-cut logic above; keying segments by raw detector identity

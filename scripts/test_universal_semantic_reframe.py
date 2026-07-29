@@ -487,8 +487,12 @@ def test_alternating_speakers_cut_identity():
             [left, right], active, 0.9,
         ))
     result = timeline(samples)
-    assert {segment['subjectStableId'] for segment in result} >= {'face:1', 'face:2'}, result
-    assert any(segment['mode'] == 'stacked' for segment in result), result
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'stacked', result
+    assert {
+        point['primaryTrackId']
+        for point in result[0]['points']
+    } >= {1, 2}, result
     expected = [left['cx']] * 8 + [right['cx']] * 8
     assert speaker_centering_error(result, expected) < 0.12, result
 
@@ -716,6 +720,46 @@ def fixed_two_region_fixture():
     assert fixed and fixed['mode'] == 'FIXED_TWO_REGION_CONVERSATION', fixed
     assert fixed['track_region_map'] == {'1': 'left', '2': 'right'}, fixed
     return left, right, fixed
+
+
+def test_small_webcams_with_stable_divider_are_locked_as_streamer_layout():
+    left = box(250, 120, 210, 92, 1, 0.88)
+    right = box(1450, 118, 210, 94, 2, 0.88)
+    detector_frames = [
+        {
+            'timestamp': index * 0.25,
+            'faces': [left, right] if index not in (5, 6) else [],
+            'divider_x': W / 2,
+            'divider_confidence': 3.2,
+        }
+        for index in range(24)
+    ]
+    fixed = detect_fixed_two_panel_layout(detector_frames, W, H)
+    assert fixed and fixed['mode'] == 'FIXED_TWO_REGION_CONVERSATION', fixed
+    assert fixed['detection_method'] == 'divider', fixed
+    assert fixed['panel_face_height_ratio'] == 0.075, fixed
+    assert fixed['track_region_map'] == {'1': 'left', '2': 'right'}, fixed
+
+    samples = []
+    for index in range(24):
+        active_id = 1 if (index // 3) % 2 == 0 else 2
+        active_box = left if active_id == 1 else right
+        faces = [] if index in (5, 6) else [left, right]
+        samples.append(sample(
+            index * 0.25,
+            subject('face', active_box, f'face:{active_id}', 0.90),
+            faces,
+            active_id if faces else None,
+            0.90 if faces else 0.0,
+            0.55 if faces else 0.0,
+            fixed_layout=fixed,
+            audio_activity=0.75,
+        ))
+    result = timeline(samples, duration=6.0)
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'stacked', result
+    assert result[0]['renderBranch'] == 'fixed_two_panel_stacked', result
+    assert result[0].get('topBox') and result[0].get('bottomBox'), result
 
 
 def test_fixed_two_region_right_speaker_never_uses_midpoint():
@@ -1203,13 +1247,10 @@ def test_long_silence_resume_keeps_stack_and_marks_speaker_change():
         samples.append(sample(index * 0.25, subject('face', left, 'face:1', 0.18), [left, right], 1, 0.18, 0.01, fixed_layout=fixed, audio_activity=0.0))
     samples.append(sample(4.0, subject('face', right, 'face:2', 0.95), [left, right], 2, 0.95, 0.65, fixed_layout=fixed, audio_activity=0.8))
     result = timeline(samples, duration=4.25)
-    resumed = [
-        segment for segment in result
-        if segment.get('renderBranch') == 'fixed_two_panel_stacked'
-        and segment.get('primaryTrackId') == 2
-    ]
-    assert resumed and resumed[-1]['hardCutStart'], result
-    assert resumed[-1]['mode'] == 'stacked', resumed[-1]
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'stacked', result
+    assert result[0]['renderBranch'] == 'fixed_two_panel_stacked', result
+    assert result[0]['points'][-1]['primaryTrackId'] == 2, result
 
 
 def test_general_stacked_conversation_resumes_without_layout_jump():
