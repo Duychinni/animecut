@@ -7,6 +7,7 @@ import { ensureProjectUploadThumbnail } from '@/lib/upload-thumbnail';
 import { stableYouTubeThumbnail } from '@/lib/source-metadata';
 import { hasSettledPlayableExports } from '@/lib/project-completion';
 import { estimateObservedRenderEtaSeconds } from '@/lib/project-eta';
+import { clampProgressToStage } from '@/lib/project-progress';
 
 type ProjectStatus = 'created' | 'transcribed' | 'analyzed' | 'completed' | string;
 type PipelineStatus = 'idle' | 'queued' | 'processing' | 'completed' | 'error' | string;
@@ -360,7 +361,9 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       && storedPipelineStatus === 'processing'
       && lastSeenMs > 0
       && (Date.now() - lastSeenMs) > PIPELINE_RECOVERY_STALE_MS;
-    const hasTargetCoverage = doneExports >= targetCount;
+    // Before analysis creates export rows, both values are zero. That is not
+    // completion: `0 >= 0` previously made a brand-new project look finished.
+    const hasTargetCoverage = targetCount > 0 && doneExports >= targetCount;
     // Preserve genuinely completed projects, but reopen a false completion
     // where nearly every expected export failed and only one reel survived.
     const frozenCompletedProject = projectMarkedCompleted && doneExports >= requiredPlayableCount;
@@ -482,7 +485,7 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
       ? 100
       : Math.max(Number.isFinite(explicitPercent) ? explicitPercent : 0, liveProgress);
     if (!isReallyCompleted) {
-      progressPercent = Math.min(98, progressPercent);
+      progressPercent = clampProgressToStage(progressPercent, pipelineStage);
     }
 
     const etaSeconds = isReallyCompleted

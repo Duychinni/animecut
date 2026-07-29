@@ -10,6 +10,7 @@ import { getProjectExpiryInfo } from '@/lib/project-retention';
 import { fetchYouTubeDurationSeconds } from '@/lib/youtube';
 import { isSupportedYouTubeVideoUrl, YOUTUBE_LINK_ERROR } from '@/lib/youtube-url';
 import { estimateObservedRenderEtaSeconds } from '@/lib/project-eta';
+import { clampProgressToStage } from '@/lib/project-progress';
 
 const BILLING_DEV_BYPASS = (process.env.NODE_ENV !== 'production' && process.env.BILLING_DEV_BYPASS === 'true') || isMockAiEnabled();
 
@@ -92,7 +93,11 @@ export async function GET() {
         ? stableYouTubeThumbnail(project.source_thumbnail_url, parseYouTubeId(project.source_url))
         : uploadThumbnailUrl || project.source_thumbnail_url;
       const expiryInfo = getProjectExpiryInfo(isCompleted ? (project.pipeline_completed_at || project.created_at) : null);
-      const progressPercent = isCompleted ? 100 : Number(project.pipeline_progress_percent ?? 0);
+      const progressPercent = clampProgressToStage(
+        Number(project.pipeline_progress_percent ?? 0),
+        project.pipeline_stage,
+        isCompleted,
+      );
       const normalizedStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'analyzed' : project.status;
       const normalizedPipelineStatus = isCompleted ? 'completed' : needsExportCompletion || activeExports > 0 ? 'processing' : project.pipeline_status;
       const normalizedPipelineStage = isCompleted ? 'completed' : activeExports > 0 ? 'rendering' : project.pipeline_stage;

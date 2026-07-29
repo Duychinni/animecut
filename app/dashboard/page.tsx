@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LiveProgressPill } from '@/components/project/LiveProgress';
 import { DeleteProjectModal } from '@/components/project/DeleteProjectModal';
 import { BrowserNotifications } from '@/components/project/BrowserNotifications';
+import { clampProgressToStage } from '@/lib/project-progress';
 
 function fmtDuration(totalSec: number | null | undefined) {
   if (typeof totalSec !== 'number' || !Number.isFinite(totalSec)) return '—';
@@ -157,11 +158,17 @@ export default function DashboardPage() {
 
   function getFlooredProgress(project: ProjectListItem) {
     const direct = Number(project.progress_percent ?? (isCompletedProject(project) ? 100 : 0));
-    const previous = Math.min(98, progressFloorRef.current.get(project.id) ?? 0);
     const active = isActiveProject(project);
     if (isCompletedProject(project)) return 100;
+    const previous = clampProgressToStage(
+      progressFloorRef.current.get(project.id) ?? 0,
+      project.pipeline_stage,
+    );
     if (active && previous > 0 && (!Number.isFinite(direct) || direct <= 0)) return previous;
-    return Math.min(98, Math.max(previous, Math.max(0, Math.min(100, Number.isFinite(direct) ? direct : 0))));
+    return clampProgressToStage(
+      Math.max(previous, Number.isFinite(direct) ? direct : 0),
+      project.pipeline_stage,
+    );
   }
 
   useEffect(() => {
@@ -210,7 +217,10 @@ export default function DashboardPage() {
         ? (projects.map((p) => {
             const progressPercent = isCompletedProject(p)
               ? 100
-              : Math.min(98, Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0)));
+              : clampProgressToStage(
+                  Math.max(progressFloorRef.current.get(p.id) ?? 0, Number(p.progress_percent ?? 0)),
+                  p.pipeline_stage,
+                );
             progressFloorRef.current.set(p.id, progressPercent);
             return {
               ...p,
