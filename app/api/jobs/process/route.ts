@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveProjectVideoSource } from '@/lib/source';
-import { extractVideoThumbnail, probeVideoQuality, renderAdaptivePlaybackPreviews, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
+import { extractVideoThumbnail, probeVideoQuality, renderCutVideo, renderPlaybackPreview, renderVerticalClip, validateRenderedVideo } from '@/lib/ffmpeg';
 import { segmentsToCapcutAss } from '@/lib/srt';
 import { createExportSignedUrl, makeAdaptiveExportPreviewObjectPath, makeCaptionEditPreviewObjectPath, makeExportObjectPath, makeExportThumbnailObjectPath, uploadExportObject, uploadExportPreviewObject, uploadExportThumbnailObject } from '@/lib/storage';
 import { cleanupExportTempFiles, cleanupProjectTempFiles, summarizeCleanup } from '@/lib/cleanup';
@@ -257,6 +257,7 @@ type ExportRenderOptions = {
   safe_layout_fallback?: boolean;
   compatibility_fallback?: boolean;
   preview_only?: boolean;
+  editor_preview_only?: boolean;
 };
 
 type ExportLookupRow = {
@@ -915,6 +916,50 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
       : null,
   };
 
+  // The 360p dashboard rendition is already produced with the master. Build
+  // only the missing 540p rendition here, directly from that master, before
+  // resolving/downloading the original source. This keeps background preview
+  // work small and avoids a duplicate 360p encode.
+  if (options?.preview_only === true && options?.editor_preview_only !== true) {
+    const masterObjectPath = typeof ex.output_storage_path === 'string' ? ex.output_storage_path : '';
+    if (!masterObjectPath) throw new Error('Preview job cannot find the completed master');
+
+    const masterUrl = await createExportSignedUrl(masterObjectPath, 60 * 60);
+    const masterResponse = await fetch(masterUrl);
+    if (!masterResponse.ok) {
+      throw new Error(`Preview job could not download master (${masterResponse.status})`);
+    }
+
+    const previewDir = path.join(process.cwd(), 'tmp', 'exports', bundle.project_id);
+    await mkdir(previewDir, { recursive: true });
+    const masterPath = path.join(previewDir, `${bundle.id}.preview-source.mp4`);
+    const preview540Path = path.join(previewDir, `${bundle.id}.540p.preview.mp4`);
+    await writeFile(masterPath, Buffer.from(await masterResponse.arrayBuffer()));
+    await renderPlaybackPreview(masterPath, preview540Path, '540p');
+
+    const preview540Bytes = await readFile(preview540Path);
+    const previewVersion = `r${Date.now()}`;
+    const preview540ObjectPath = makeAdaptiveExportPreviewObjectPath(
+      bundle.project.user_id,
+      bundle.project_id,
+      bundle.id,
+      '540p',
+      previewVersion,
+    );
+    const preview540Upload = await uploadExportPreviewObject(preview540ObjectPath, preview540Bytes);
+    const { error: previewUpdateError } = await supabase
+      .from('exports')
+      .update({
+        preview_storage_provider: preview540Upload.provider,
+        preview_540_storage_path: preview540Upload.path,
+        preview_540_size_bytes: preview540Bytes.byteLength,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', bundle.id);
+    if (previewUpdateError) throw previewUpdateError;
+    return;
+  }
+
   const inputPath = await resolveProjectVideoSource(bundle.project);
   const renderSourceQuality = await probeVideoQuality(inputPath);
   const previousSourceWidth = Number(ex.render_source_width ?? 0);
@@ -1122,25 +1167,10 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     fastRender: false,
   } satisfies Parameters<typeof renderVerticalClip>[0];
 
-  if (options?.preview_only === true) {
-    const masterObjectPath = typeof ex.output_storage_path === 'string' ? ex.output_storage_path : '';
-    if (!masterObjectPath) throw new Error('Preview job cannot find the completed master');
-
-    const masterUrl = await createExportSignedUrl(masterObjectPath, 60 * 60);
-    const masterResponse = await fetch(masterUrl);
-    if (!masterResponse.ok) {
-      throw new Error(`Preview job could not download master (${masterResponse.status})`);
-    }
-    await writeFile(outPath, Buffer.from(await masterResponse.arrayBuffer()));
-
-    const preview360Path = path.join(exportDir, `${bundle.id}.360p.preview.mp4`);
-    const preview540Path = path.join(exportDir, `${bundle.id}.540p.preview.mp4`);
+  if (options?.preview_only === true && options?.editor_preview_only === true) {
     const captionFreeMasterPath = path.join(exportDir, `${bundle.id}.caption-free.mp4`);
     const captionEditPreviewPath = path.join(exportDir, `${bundle.id}.caption-free.360p.preview.mp4`);
 
-    // These encodes are deliberately handled by low-priority queue jobs. Main
-    // 1080p reels are always claimed first across all render workers.
-    await renderAdaptivePlaybackPreviews(outPath, preview360Path, preview540Path);
     await renderVerticalClip({
       ...renderOptions,
       outputPath: captionFreeMasterPath,
@@ -1151,29 +1181,14 @@ async function processExportJob(exportId: string, options?: ExportRenderOptions)
     });
     await renderPlaybackPreview(captionFreeMasterPath, captionEditPreviewPath, '360p');
 
-    const [preview360Bytes, preview540Bytes, captionEditPreviewBytes] = await Promise.all([
-      readFile(preview360Path),
-      readFile(preview540Path),
-      readFile(captionEditPreviewPath),
-    ]);
+    const captionEditPreviewBytes = await readFile(captionEditPreviewPath);
     const previewVersion = `r${Date.now()}`;
-    const preview360ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '360p', previewVersion);
-    const preview540ObjectPath = makeAdaptiveExportPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, '540p', previewVersion);
     const captionEditPreviewObjectPath = makeCaptionEditPreviewObjectPath(bundle.project.user_id, bundle.project_id, bundle.id, previewVersion);
-    const [preview360Upload, preview540Upload, captionEditPreviewUpload] = await Promise.all([
-      uploadExportPreviewObject(preview360ObjectPath, preview360Bytes),
-      uploadExportPreviewObject(preview540ObjectPath, preview540Bytes),
-      uploadExportPreviewObject(captionEditPreviewObjectPath, captionEditPreviewBytes),
-    ]);
+    const captionEditPreviewUpload = await uploadExportPreviewObject(captionEditPreviewObjectPath, captionEditPreviewBytes);
 
     const { error: previewUpdateError } = await supabase
       .from('exports')
       .update({
-        preview_storage_provider: preview540Upload.provider,
-        preview_360_storage_path: preview360Upload.path,
-        preview_540_storage_path: preview540Upload.path,
-        preview_360_size_bytes: preview360Bytes.byteLength,
-        preview_540_size_bytes: preview540Bytes.byteLength,
         caption_edit_preview_provider: captionEditPreviewUpload.provider,
         caption_edit_preview_storage_path: captionEditPreviewUpload.path,
         updated_at: new Date().toISOString(),

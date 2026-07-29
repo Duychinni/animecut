@@ -11,12 +11,49 @@ async function getAuthorizedClip(clipId: string) {
   return { user, data };
 }
 
+async function enqueueEditorPreview(clipId: string, projectId: string) {
+  const admin = createAdminClient();
+  const { data: existing, error: lookupError } = await admin
+    .from('jobs')
+    .select('id')
+    .eq('type', 'export')
+    .in('status', ['queued', 'processing'])
+    .contains('payload', { export_id: clipId, editor_preview_only: true })
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (existing?.id) return;
+
+  const { error } = await admin.from('jobs').insert({
+    project_id: projectId,
+    type: 'export',
+    payload: {
+      export_id: clipId,
+      project_id: projectId,
+      preview_only: true,
+      editor_preview_only: true,
+      priority: 'background',
+    },
+    status: 'queued',
+  });
+  if (error) throw error;
+}
+
 export async function GET(_req: Request, context: { params: Promise<{ clipId: string }> }) {
   try {
     const { clipId } = await context.params;
     const { user, data } = await getAuthorizedClip(clipId);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!data) return NextResponse.json({ error: 'Clip not found' }, { status: 404 });
+    if (data.source.previewKind !== 'caption-free-reel') {
+      // The source remains immediately usable while a caption-free, reframed
+      // editor rendition is prepared on demand for the next refresh/open.
+      await enqueueEditorPreview(clipId, data.clip.projectId).catch((error) => {
+        console.warn('[clip-editor] could not queue editor preview', {
+          clip_id: clipId,
+          error: clipEditorErrorMessage(error),
+        });
+      });
+    }
     return NextResponse.json(data);
   } catch (error) {
     const detail = clipEditorErrorMessage(error);

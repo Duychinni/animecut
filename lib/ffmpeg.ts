@@ -343,7 +343,7 @@ export async function renderPlaybackPreview(inputPath: string, outputPath: strin
     '-map', '0:a:0?',
     '-vf', `scale=${constrained ? '360:640' : '540:960'}:flags=lanczos+accurate_rnd+full_chroma_int,fps=${constrained ? 24 : 30}`,
     '-c:v', 'libx264',
-    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || (constrained ? 'veryfast' : 'medium'),
+    '-preset', process.env.FFMPEG_PREVIEW_X264_PRESET || 'veryfast',
     '-crf', constrained ? '20' : '16',
     '-maxrate', constrained ? '1600k' : '4000k',
     '-bufsize', constrained ? '3200k' : '8000k',
