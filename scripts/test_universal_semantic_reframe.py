@@ -198,6 +198,35 @@ def test_brief_pair_does_not_force_entire_solo_clip_into_split_screen():
     assert [segment['mode'] for segment in result] == ['single', 'stacked'], result
 
 
+def test_handheld_conversation_holds_one_split_through_detector_dropouts():
+    left = box(170, 150, 390, 600, 1, 0.9)
+    right = box(1260, 145, 410, 610, 2, 0.9)
+    segments = [
+        {'start': 0.0, 'end': 2.5, 'mode': 'single', 'points': [{'t': 0.0}]},
+        {
+            'start': 2.5, 'end': 5.5, 'mode': 'stacked',
+            'topBox': left, 'bottomBox': right,
+            'editorialLayout': 'TWO_PERSON_CONVERSATION',
+            'points': [{'t': 2.5}],
+        },
+        {'start': 5.5, 'end': 7.0, 'mode': 'wide_context', 'points': [{'t': 5.5}]},
+        {
+            'start': 7.0, 'end': 10.0, 'mode': 'stacked',
+            'topBox': box(190, 160, 380, 590, 1, 0.9),
+            'bottomBox': box(1240, 155, 420, 600, 2, 0.9),
+            'editorialLayout': 'TWO_PERSON_CONVERSATION',
+            'points': [{'t': 7.0}],
+        },
+        {'start': 10.0, 'end': 24.0, 'mode': 'single', 'points': [{'t': 10.0}]},
+    ]
+    result = stabilize_continuous_conversation_layout(segments)
+    assert len(result) == 1, result
+    assert result[0]['mode'] == 'stacked', result
+    assert result[0]['start'] == 0.0 and result[0]['end'] == 24.0, result
+    assert result[0]['topBox'] == left, result
+    assert result[0]['bottomBox'] == right, result
+
+
 def speaker_centering_error(result, expected_centers):
     """Mean normalized distance between the crop center and expected speaker."""
     observed = [point['cropCenterX'] for segment in result for point in segment.get('points', [])]

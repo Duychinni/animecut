@@ -1438,52 +1438,65 @@ def stabilize_continuous_conversation_layout(segments, editorial_plan=None):
             for segment in segments
         )
     )
-    # A brief valid pair must not turn a solo or montage reel into a permanent
-    # split. Once a verified pair owns most of a continuous conversation,
-    # however, full-frame and close-up detours are layout noise.
-    if not conversation_evidence or stacked_ratio < 0.45 or stacked_duration < 4.0:
+    stacked_runs = []
+    for segment in stacked_segments:
+        if (
+            stacked_runs
+            and float(segment.get('start', 0.0))
+            - float(stacked_runs[-1][-1].get('end', 0.0)) <= 0.35
+        ):
+            stacked_runs[-1].append(segment)
+        else:
+            stacked_runs.append([segment])
+    longest_stacked_run = max(
+        (
+            float(run[-1].get('end', 0.0))
+            - float(run[0].get('start', 0.0))
+            for run in stacked_runs
+        ),
+        default=0.0,
+    )
+    recurring_pair = len(stacked_runs) >= 2 or longest_stacked_run >= 4.5
+    # Side profiles and motion blur make handheld face detection intermittent.
+    # Once a recurring/continuous pair is established, later face misses are
+    # not editorial permission to flash between split-screen and close-ups.
+    if (
+        not conversation_evidence
+        or stacked_ratio < 0.10
+        or stacked_duration < 4.0
+        or not recurring_pair
+    ):
         return segments
 
-    def nearest_stacked_template(segment):
-        midpoint = (
-            float(segment.get('start', 0.0))
-            + float(segment.get('end', segment.get('start', 0.0)))
-        ) / 2.0
-        return min(
-            stacked_segments,
-            key=lambda candidate: abs(
-                (
-                    float(candidate.get('start', 0.0))
-                    + float(candidate.get('end', candidate.get('start', 0.0)))
-                ) / 2.0 - midpoint
-            ),
-        )
+    # Use one proven geometry throughout the scene. Selecting a new pair box
+    # after every detector dropout still creates visible pane jumps.
+    template = max(
+        stacked_segments,
+        key=lambda candidate: (
+            float(candidate.get('end', 0.0))
+            - float(candidate.get('start', 0.0))
+        ),
+    )
 
     stabilized = []
     for raw_segment in segments:
         segment = dict(raw_segment)
-        if not (
-            segment.get('mode') == 'stacked'
-            and segment.get('topBox')
-            and segment.get('bottomBox')
-        ):
-            template = nearest_stacked_template(segment)
-            segment.update({
-                'mode': 'stacked',
-                'wideKind': None,
-                'topTrackId': template.get('topTrackId'),
-                'bottomTrackId': template.get('bottomTrackId'),
-                'topBox': template.get('topBox'),
-                'bottomBox': template.get('bottomBox'),
-                'renderBranch': 'stable_conversation_split',
-                'editorialSceneType': 'TWO_PERSON',
-                'editorialLayout': 'TWO_PERSON_CONVERSATION',
-                'visualIntent': 'conversation_led',
-                'editorialReason': (
-                    'Continuous two-person conversation keeps one split-screen '
-                    'layout instead of pulsing through full-frame and close-up views.'
-                ),
-            })
+        segment.update({
+            'mode': 'stacked',
+            'wideKind': None,
+            'topTrackId': template.get('topTrackId'),
+            'bottomTrackId': template.get('bottomTrackId'),
+            'topBox': template.get('topBox'),
+            'bottomBox': template.get('bottomBox'),
+            'renderBranch': 'stable_conversation_split',
+            'editorialSceneType': 'TWO_PERSON',
+            'editorialLayout': 'TWO_PERSON_CONVERSATION',
+            'visualIntent': 'conversation_led',
+            'editorialReason': (
+                'Continuous two-person conversation keeps one split-screen '
+                'layout instead of pulsing through full-frame and close-up views.'
+            ),
+        })
         stabilized.append(segment)
 
     # Merge adjacent sections that now use the exact same split geometry. Keep
@@ -2845,11 +2858,6 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             index = max(0, index - 1)
         else:
             index += 1
-
-    # A source can contain frequent editorial cuts while the conversational
-    # composition remains unchanged. Do not translate those cuts into repeated
-    # full-panel/close-up pulses in the vertical reel.
-    clean_segments = lock_unstable_panel_composition(clean_segments)
 
     # Scene analysis is sampled every 250 ms. Pull hard-cut boundaries forward
     # by one sample so the incoming composition appears on the first visible
