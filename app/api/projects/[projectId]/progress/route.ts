@@ -497,6 +497,8 @@ export async function GET(_: Request, context: { params: Promise<{ projectId: st
           readyExports: doneExports,
           exportCount: targetCount,
           exportRows: rows,
+          sourceDurationSeconds: Number(project.source_duration_seconds ?? totalSeconds ?? 0),
+          elapsedSeconds,
           nowMs: now,
         });
 

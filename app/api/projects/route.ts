@@ -115,6 +115,8 @@ export async function GET() {
         readyExports,
         exportCount: targetExports,
         exportRows: rows,
+        sourceDurationSeconds: Number(project.source_duration_seconds ?? 0),
+        elapsedSeconds: Math.max(0, (Date.now() - Date.parse(String(project.created_at))) / 1000),
       });
       const hasActivePipeline = normalizedPipelineStatus === 'queued' || normalizedPipelineStatus === 'processing';
 
