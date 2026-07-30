@@ -1263,8 +1263,6 @@ def lock_unstable_panel_composition(segments):
         1 for index in range(1, len(segments))
         if segments[index].get('mode') != segments[index - 1].get('mode')
     )
-    if transitions < 4:
-        return segments
 
     clip_start = float(segments[0].get('start', 0.0))
     clip_end = float(segments[-1].get('end', clip_start))
@@ -1274,6 +1272,11 @@ def lock_unstable_panel_composition(segments):
         for segment in contextual_segments
     )
     wide_ratio = wide_duration / clip_duration
+    # Three transitions are already a visible wide -> close -> wide pulse.
+    # Keep the stricter four-transition threshold for mixed timelines, but
+    # catch this pattern when contextual framing clearly dominates the reel.
+    if transitions < 3 or (transitions < 4 and wide_ratio < 0.60):
+        return segments
     panel_layouts = {
         'TWO_PERSON_CONVERSATION',
         'THREE_PERSON_COMPOSITION',
@@ -1313,7 +1316,12 @@ def lock_unstable_panel_composition(segments):
     )
     if action_ratio >= 0.50:
         panel_evidence = False
-    if not panel_evidence or wide_ratio < 0.08 or wide_ratio > 0.60:
+    # A wide-dominant clip is the strongest reason to hold the established
+    # contextual composition. The old upper bound returned the alternating
+    # timeline unchanged once safe-wide occupied more than 60% of the reel,
+    # allowing brief portrait crops to pulse in and out of an otherwise stable
+    # full-panel shot.
+    if not panel_evidence or wide_ratio < 0.08:
         return segments
 
     points = [point for segment in segments for point in segment.get('points', [])]

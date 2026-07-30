@@ -100,6 +100,41 @@ def test_repeated_panel_wide_closeup_switching_locks_one_composition():
     assert result[0]['renderBranch'] == 'stable_panel_composition', result
 
 
+def test_wide_dominant_panel_never_pulses_back_to_closeup():
+    # Production regression: safe-wide covered roughly 78% of the reel, but
+    # the former 60% upper bound let two brief close-up runs survive.
+    spans = [
+        (0.0, 1.983, 'single'),
+        (1.983, 3.983, 'single'),
+        (3.983, 5.567, 'single'),
+        (5.567, 8.150, 'wide_context'),
+        (8.150, 18.692, 'wide_context'),
+        (18.692, 25.483, 'wide_context'),
+        (25.483, 27.400, 'single'),
+        (27.400, 28.150, 'single'),
+        (28.150, 37.426, 'wide_context'),
+    ]
+    segments = [
+        {
+            'start': start,
+            'end': end,
+            'mode': mode,
+            'wideKind': 'safe_wide' if mode == 'wide_context' else None,
+            'visibleCountMax': 2,
+            'points': [{'t': start}],
+        }
+        for start, end, mode in spans
+    ]
+
+    result = lock_unstable_panel_composition(segments)
+
+    assert len(result) == 1, result
+    assert result[0]['start'] == 0.0, result
+    assert result[0]['end'] == 37.426, result
+    assert result[0]['mode'] == 'wide_context', result
+    assert result[0]['renderBranch'] == 'stable_panel_composition', result
+
+
 def test_handheld_action_with_bystanders_does_not_lock_as_panel():
     modes = ['single', 'wide_context', 'single', 'wide_context', 'single', 'wide_context', 'single', 'single']
     segments = []
