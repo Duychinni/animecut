@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { captureServerEvent } from '@/lib/server-analytics';
 
 export async function POST(req: Request) {
   try {
@@ -9,13 +10,21 @@ export async function POST(req: Request) {
     };
 
     const supabase = await createClient();
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: String(email || ''),
       password: String(password || ''),
     });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (data.user?.id) {
+      await captureServerEvent({
+        distinctId: data.user.id,
+        event: 'email_signup_created',
+        eventId: `signup:${data.user.id}`,
+      });
     }
 
     return NextResponse.json({

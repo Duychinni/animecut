@@ -17,6 +17,7 @@ import { sortProjectWorkByPlan } from '@/lib/plan-entitlements';
 import { prioritizeMainRenderJobs } from '@/lib/render-job-order';
 import { analyzeRenderedClipTechnicalQuality } from '@/lib/ffmpeg-technical-analysis';
 import { calculateAiClipScore, type ClipTechnicalMetrics } from '@/lib/clip-score';
+import { captureServerEvent } from '@/lib/server-analytics';
 import {
   buildDefaultClipEditSettings,
   hasClipEditSettings,
@@ -144,6 +145,34 @@ async function getProjectIdForExport(exportId: string) {
   const supabase = createAdminClient();
   const { data } = await supabase.from('exports').select('project_id').eq('id', exportId).maybeSingle();
   return String(data?.project_id ?? '');
+}
+
+async function captureRenderEvent(params: {
+  projectId: string;
+  exportId: string;
+  event: 'video_render_started' | 'video_render_completed' | 'video_render_failed';
+  editRerender: boolean;
+  properties?: Record<string, string | number | boolean | null>;
+}) {
+  const supabase = createAdminClient();
+  const { data: project } = await supabase
+    .from('projects')
+    .select('user_id, source_type')
+    .eq('id', params.projectId)
+    .maybeSingle();
+  if (!project?.user_id) return;
+  await captureServerEvent({
+    distinctId: project.user_id,
+    event: params.event,
+    eventId: `${params.event}:${params.exportId}:${params.editRerender ? 'edit' : 'initial'}`,
+    properties: {
+      project_id: params.projectId,
+      export_id: params.exportId,
+      source_type: project.source_type ?? 'unknown',
+      edit_rerender: params.editRerender,
+      ...params.properties,
+    },
+  });
 }
 
 function hasPlayableOutput(row: { status?: string | null; output_storage_path?: string | null }) {
@@ -1465,6 +1494,7 @@ export async function POST(req: Request) {
 
   let processed = 0;
   for (const item of workItems) {
+    const renderStartedAt = Date.now();
     try {
       let attemptNumber = 1;
 
@@ -1587,6 +1617,14 @@ export async function POST(req: Request) {
       }
 
       const renderProjectId = String(currentExport?.project_id ?? '');
+      if (!isPreviewOnly) {
+        await captureRenderEvent({
+          projectId: renderProjectId,
+          exportId,
+          event: 'video_render_started',
+          editRerender: isEditRerender,
+        });
+      }
       const stopHeartbeat = startExportHeartbeat({
         supabase,
         projectId: renderProjectId,
@@ -1636,6 +1674,15 @@ export async function POST(req: Request) {
         await supabase.from('jobs').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', item.jobId);
       }
       const projectId = await getProjectIdForExport(exportId);
+      if (!isPreviewOnly) {
+        await captureRenderEvent({
+          projectId,
+          exportId,
+          event: 'video_render_completed',
+          editRerender: isEditRerender,
+          properties: { duration_seconds: Math.max(0, Math.round((Date.now() - renderStartedAt) / 1000)) },
+        });
+      }
       try {
         const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
         console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'completed', ...summarizeCleanup(exportCleanupLog) });
@@ -1889,6 +1936,16 @@ export async function POST(req: Request) {
             : { status: 'error', error_message: message, updated_at: new Date().toISOString() })
           .eq('id', exportId);
         const projectId = await getProjectIdForExport(exportId);
+        await captureRenderEvent({
+          projectId,
+          exportId,
+          event: 'video_render_failed',
+          editRerender: isEditRerender,
+          properties: {
+            duration_seconds: Math.max(0, Math.round((Date.now() - renderStartedAt) / 1000)),
+            failure_category: failureDiagnostics.category,
+          },
+        });
         const exportCleanupLog = await cleanupExportTempFiles(projectId, exportId);
         console.log('[cleanup] export-temp-files', { project_id: projectId, export_id: exportId, status: 'failed', ...summarizeCleanup(exportCleanupLog) });
 

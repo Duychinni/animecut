@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { captureServerEvent } from '@/lib/server-analytics';
 
 function safeNext(value: unknown) {
   return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/';
@@ -26,6 +27,14 @@ export async function POST(request: Request) {
         ? 'That code is invalid or expired. Request a new code and use the newest email.'
         : 'We could not verify that code. Check all six digits and try again.';
       return NextResponse.json({ error: publicError }, { status: 400 });
+    }
+
+    if (data.user?.id) {
+      await captureServerEvent({
+        distinctId: data.user.id,
+        event: 'email_verified',
+        eventId: `email-verified:${data.user.id}`,
+      });
     }
 
     return NextResponse.json({ ok: true, next: safeNext(body.next) });

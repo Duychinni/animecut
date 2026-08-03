@@ -1,6 +1,30 @@
 import Stripe from 'stripe';
 import { headers } from 'next/headers';
 import { getStripe, markProfileCanceled, recordBillingEvent, syncProfileFromSubscription } from '@/lib/billing';
+import { captureServerEvent } from '@/lib/server-analytics';
+
+function subscriptionUserId(subscription: Stripe.Subscription) {
+  return subscription.metadata.userId || '';
+}
+
+async function captureSubscriptionEvent(
+  event: Stripe.Event,
+  subscription: Stripe.Subscription,
+  name: 'subscription_started' | 'subscription_upgraded' | 'subscription_canceled',
+) {
+  const userId = subscriptionUserId(subscription);
+  if (!userId) return;
+  await captureServerEvent({
+    distinctId: userId,
+    event: name,
+    eventId: `stripe:${event.id}:${name}`,
+    properties: {
+      plan: subscription.metadata.planId || 'unknown',
+      interval: subscription.metadata.interval || subscription.items.data[0]?.price.recurring?.interval || 'unknown',
+      subscription_status: subscription.status,
+    },
+  });
+}
 
 export async function POST(req: Request) {
   const signature = (await headers()).get('stripe-signature');
@@ -47,6 +71,7 @@ export async function POST(req: Request) {
       case 'customer.subscription.created': {
         const subscription = event.data.object as Stripe.Subscription;
         await syncProfileFromSubscription(subscription, { resetAllowance: true });
+        await captureSubscriptionEvent(event, subscription, 'subscription_started');
         break;
       }
       case 'customer.subscription.updated': {
@@ -54,11 +79,15 @@ export async function POST(req: Request) {
         // Cancellation scheduling and metadata updates must not refill the
         // monthly allowance. Renewals are reset only after a paid invoice.
         await syncProfileFromSubscription(subscription, { resetAllowance: false });
+        if (event.data.previous_attributes && 'items' in event.data.previous_attributes) {
+          await captureSubscriptionEvent(event, subscription, 'subscription_upgraded');
+        }
         break;
       }
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription;
         await markProfileCanceled(subscription);
+        await captureSubscriptionEvent(event, subscription, 'subscription_canceled');
         break;
       }
       case 'invoice.paid':
