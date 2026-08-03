@@ -2,6 +2,16 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['192.168.1.56', '192.168.1.232', 'localhost', '127.0.0.1'],
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'animacut.com' }],
+        destination: 'https://www.animacut.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
   // Worker virtual environments and render artifacts are runtime-only. Keeping
   // them out of Next's server traces prevents Turbopack from treating a dynamic
   // media path as a request to package the entire repository on Vercel.
