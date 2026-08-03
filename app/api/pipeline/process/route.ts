@@ -429,20 +429,18 @@ export async function POST() {
       }
       candidateCount = Number(analyzeData?.count ?? 0);
 
-      if (!usedLocalAnalysis && candidateCount < expectedCandidateMinimum && analyzeData?.reason !== 'not_enough_content') {
-        usedLocalAnalysis = true;
-        console.warn('[pipeline] analyze-underproduced-using-local', {
+      if (!usedLocalAnalysis && candidateCount > 0 && candidateCount < expectedCandidateMinimum && analyzeData?.reason !== 'not_enough_content') {
+        // The analysis route already supplements a short OpenAI result with
+        // local candidates before final ranking. Re-running the entire route
+        // with force_local here deletes the stronger AI-ranked set and
+        // replaces it with fallback-only candidates. Keep the honest result
+        // when it is merely below the policy target; a target is not a reason
+        // to flatten or downgrade every selected clip.
+        console.warn('[pipeline] analyze-underproduced-preserving-ranked-results', {
           projectId,
           candidateCount,
           expectedCandidateMinimum,
         });
-        await updateProjectProgress(projectId, 'finding_hooks', `Expanding reel coverage (${candidateCount}/${expectedCandidateMinimum})`);
-        analyzeData = await withTimeout(
-          callInternalJson('/api/analyze', { project_id: projectId, force_local: true }),
-          30000,
-          'local reel coverage retry timeout',
-        ) as Record<string, unknown>;
-        candidateCount = Number(analyzeData?.count ?? 0);
       }
 
       console.log('[pipeline] after analyze', { projectId, candidateCount });

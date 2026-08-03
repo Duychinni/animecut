@@ -198,18 +198,22 @@ function labelForText(text: string) {
 
 function scoreWindow(text: string, duration: number, startsWithFiller: boolean) {
   const words = wordCount(text);
-  let score = 70;
+  let score = 58;
 
-  if (hasTension(text)) score += 9;
-  if (hasPayoff(text)) score += 8;
-  if (duration >= 24 && duration <= 65) score += 6;
-  if (words >= 45 && words <= 180) score += 5;
-  if (/[!?]/.test(text)) score += 4;
+  if (hasTension(text)) score += 7;
+  if (hasPayoff(text)) score += 7;
+  if (duration >= 24 && duration <= 55) score += 4;
+  else if (duration > 70) score -= 4;
+  if (words >= 45 && words <= 145) score += 5;
+  else if (words > 190) score -= 3;
+  if (/[!?]/.test(text)) score += 3;
   if (/\b(I|me|my|you|your|we|us)\b/i.test(text)) score += 3;
+  if (/\b\d+(?:[.,]\d+)?\b|[$%]/.test(text)) score += 4;
+  if (/\b(secret|truth|mistake|failed|risk|cost|million|thousand|never|only|first|last|changed|learned|realized)\b/i.test(text)) score += 3;
   if (startsWithFiller) score -= 5;
   if (words < 20) score -= 8;
 
-  return Math.max(70, Math.min(96, Math.round(score)));
+  return Math.max(55, Math.min(92, Math.round(score)));
 }
 
 function segmentsInWindow(segments: TranscriptSegment[], start: number, end: number) {
