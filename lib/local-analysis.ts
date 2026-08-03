@@ -210,10 +210,15 @@ function scoreWindow(text: string, duration: number, startsWithFiller: boolean) 
   if (/\b(I|me|my|you|your|we|us)\b/i.test(text)) score += 3;
   if (/\b\d+(?:[.,]\d+)?\b|[$%]/.test(text)) score += 4;
   if (/\b(secret|truth|mistake|failed|risk|cost|million|thousand|never|only|first|last|changed|learned|realized)\b/i.test(text)) score += 3;
+  // Leave 95-100 reachable, but require multiple independent exceptional
+  // signals rather than allowing ordinary complete windows to saturate.
+  const specificDetails = text.match(/\b\d+(?:[.,]\d+)?\b|[$%]/g)?.length ?? 0;
+  if (specificDetails >= 2) score += 3;
+  if (hasTension(text) && hasPayoff(text) && /[!?]/.test(text)) score += 3;
   if (startsWithFiller) score -= 5;
   if (words < 20) score -= 8;
 
-  return Math.max(55, Math.min(92, Math.round(score)));
+  return Math.max(55, Math.min(100, Math.round(score)));
 }
 
 function segmentsInWindow(segments: TranscriptSegment[], start: number, end: number) {
