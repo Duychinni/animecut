@@ -34,6 +34,26 @@ if [[ "$LOCAL_SHA" != "$REMOTE_SHA" ]]; then
   UPDATED=1
 fi
 
+# A commit can land in this working tree outside this script (for example via
+# an interactive deploy). In that case HEAD already matches origin/main, but
+# PM2 may still be serving an older .next build. Treat the commit recorded in
+# the running web process as the deployment source of truth.
+DEPLOYED_SHA="$(pm2 jlist 2>/dev/null | node -e '
+let input = "";
+process.stdin.on("data", (chunk) => { input += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const web = JSON.parse(input).find((entry) => entry.name === "animacut-web");
+    process.stdout.write(web?.pm2_env?.GIT_COMMIT_SHA ?? "");
+  } catch {}
+});
+' || true)"
+if [[ "$UPDATED" == "0" && "$DEPLOYED_SHA" != "$REMOTE_SHA" ]]; then
+  npm ci
+  npm run build
+  UPDATED=1
+fi
+
 SERVICES_RECOVERED=0
 if ! pm2 describe animacut-web >/dev/null 2>&1; then
   GIT_COMMIT_SHA="$REMOTE_SHA" pm2 start npm --name animacut-web -- start

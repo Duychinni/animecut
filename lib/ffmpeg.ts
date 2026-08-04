@@ -502,7 +502,14 @@ async function runFfmpeg(args: string[], debug?: { clipId?: string | null; outpu
 
       p.on('close', (code) => {
         clearTimeout(timeout);
-        const tail = stderr.trim().split('\n').slice(-12).join('\n');
+        const stderrLines = stderr.trim().split('\n');
+        const diagnosticPattern = /error|failed|invalid|unable|denied|no space|broken pipe|cannot|could not|non-monoton|mux|write/i;
+        const diagnosticLines = stderrLines.filter((line) => diagnosticPattern.test(line)).slice(-8);
+        const tailLines = stderrLines.slice(-12);
+        // FFmpeg prints encoder statistics after the useful failure line. Keep
+        // both the actionable diagnostics and the final process context so a
+        // mux/disk/filter failure is not reduced to "Conversion failed".
+        const tail = [...new Set([...diagnosticLines, ...tailLines])].join('\n');
         if (timedOut) {
           reject(new Error(`ffmpeg timed out after ${timeoutSeconds}s${tail ? `\n${tail}` : ''}`));
           return;
