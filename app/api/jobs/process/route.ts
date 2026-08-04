@@ -1776,6 +1776,10 @@ export async function POST(req: Request) {
         'memory_or_resource_failure',
         'missing_or_unreadable_input',
         'upload_or_storage_failure',
+        // Encoder/filter failures are often worker-specific (hardware encoder,
+        // temporary disk pressure, or a one-off FFmpeg process exit). An edit
+        // must get the same automatic retry protection as an initial render.
+        ...(isEditRerender ? ['ffmpeg_render', 'ffmpeg_filter_graph'] : []),
       ].includes(failureDiagnostics.category);
       const shouldRetry = Boolean(
         item.jobId
@@ -1828,7 +1832,6 @@ export async function POST(req: Request) {
       const safeFallbackEligible = Boolean(
         item.jobId
         && exportId
-        && !isEditRerender
         && item.payload?.safe_layout_fallback !== true
         && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection'].includes(failureDiagnostics.category),
       );
@@ -1852,11 +1855,17 @@ export async function POST(req: Request) {
 
         await supabase
           .from('exports')
-          .update({
-            status: 'queued',
-            error_message: 'Finishing this reel with a safe alternate layout.',
-            updated_at: new Date().toISOString(),
-          })
+          .update(isEditRerender
+            ? {
+                edit_status: 'rendering',
+                error_message: 'Retrying your clip update with a safe alternate layout.',
+                updated_at: new Date().toISOString(),
+              }
+            : {
+                status: 'queued',
+                error_message: 'Finishing this reel with a safe alternate layout.',
+                updated_at: new Date().toISOString(),
+              })
           .eq('id', exportId);
 
         console.warn('[jobs/process] safe-layout-fallback-queued', {
@@ -1870,7 +1879,6 @@ export async function POST(req: Request) {
       const compatibilityFallbackEligible = Boolean(
         item.jobId
         && exportId
-        && !isEditRerender
         && item.payload?.safe_layout_fallback === true
         && item.payload?.compatibility_fallback !== true
         && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection'].includes(failureDiagnostics.category),
@@ -1897,11 +1905,17 @@ export async function POST(req: Request) {
 
         await supabase
           .from('exports')
-          .update({
-            status: 'queued',
-            error_message: 'Finishing this reel with a compatible render.',
-            updated_at: new Date().toISOString(),
-          })
+          .update(isEditRerender
+            ? {
+                edit_status: 'rendering',
+                error_message: 'Retrying your clip update with a compatible renderer.',
+                updated_at: new Date().toISOString(),
+              }
+            : {
+                status: 'queued',
+                error_message: 'Finishing this reel with a compatible render.',
+                updated_at: new Date().toISOString(),
+              })
           .eq('id', exportId);
 
         console.warn('[jobs/process] compatibility-fallback-queued', {

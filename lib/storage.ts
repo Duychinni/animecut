@@ -209,12 +209,12 @@ export async function createExportSignedUrl(objectPath: string, expiresIn = 60 *
 }
 
 export async function createExportDownloadUrl(objectPath: string, fileName: string, expiresIn = 5 * 60) {
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'animacut-reel.mp4';
   if (isR2Configured() && await r2ObjectExists(objectPath)) {
-    return createSignedR2GetUrl(objectPath, expiresIn);
+    return createSignedR2GetUrl(objectPath, expiresIn, safeName);
   }
 
   const admin = createAdminClient();
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'animacut-reel.mp4';
   const { data, error } = await admin.storage
     .from(EXPORT_BUCKET)
     .createSignedUrl(objectPath, expiresIn, { download: safeName });

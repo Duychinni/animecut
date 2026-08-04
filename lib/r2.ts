@@ -169,11 +169,23 @@ export async function completeR2MultipartUpload(params: {
   }
 }
 
-export async function createSignedR2GetUrl(key: string, expiresIn = 60 * 60 * 24 * 7) {
+export async function createSignedR2GetUrl(
+  key: string,
+  expiresIn = 60 * 60 * 24 * 7,
+  downloadFileName?: string,
+) {
   const cfg = getR2Config();
   if (!cfg) throw new Error('R2 is not configured');
   const client = getR2Client();
-  return getSignedUrl(client, new GetObjectCommand({ Bucket: cfg.bucket, Key: key }), { expiresIn });
+  const safeFileName = downloadFileName
+    ?.replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return getSignedUrl(client, new GetObjectCommand({
+    Bucket: cfg.bucket,
+    Key: key,
+    ResponseContentType: safeFileName ? 'video/mp4' : undefined,
+    ResponseContentDisposition: safeFileName ? `attachment; filename="${safeFileName}"` : undefined,
+  }), { expiresIn });
 }
 
 export async function createSignedR2PutUrl(key: string, contentType: string, expiresIn = 60 * 60) {
