@@ -148,9 +148,13 @@ export function buildDefaultClipEditSettings(params: {
 }): ClipEditSettings {
   const preset = getCaptionPresetById(params.captionPresetId ?? DEFAULT_CAPTION_PRESET_ID);
   const maxEnd = Math.max(params.aiEnd, params.sourceDuration || params.aiEnd);
+  const minimumDuration = Math.min(3, Math.max(0.2, params.aiEnd - params.aiStart));
   return {
-    clip_start_seconds: clamp(params.aiStart, 0, Math.max(0, maxEnd - 10)),
-    clip_end_seconds: clamp(params.aiEnd, Math.min(maxEnd, params.aiStart + 10), maxEnd),
+    clip_start_seconds: clamp(params.aiStart, 0, Math.max(0, maxEnd - minimumDuration)),
+    // Preserve deliberately short, complete moments. The old ten-second
+    // floor silently appended the next question during renders even after the
+    // analysis boundary had correctly ended the story.
+    clip_end_seconds: clamp(params.aiEnd, Math.min(maxEnd, params.aiStart + minimumDuration), maxEnd),
     edited_transcript: params.transcriptPhrases,
     captions_enabled: true,
     volume: 1,

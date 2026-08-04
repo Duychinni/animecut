@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { addSpeechEndSafetyTail, isTranscriptEndingFragment, preserveSemanticEndWhenExtendingShortClip } from '../lib/clip-boundary-safety';
+import { buildDefaultClipEditSettings } from '../lib/clip-edit';
 
 assert.equal(
   addSpeechEndSafetyTail({
@@ -57,3 +58,12 @@ assert.deepEqual(
   { start: 121.04, end: 146.04 },
   'a short completed answer must gain preceding setup instead of the next unrelated question',
 );
+
+const shortClipDefaults = buildDefaultClipEditSettings({
+  aiStart: 139.541,
+  aiEnd: 145.2,
+  sourceDuration: 1800,
+  transcriptPhrases: [],
+});
+assert.equal(shortClipDefaults.clip_start_seconds, 139.541);
+assert.equal(shortClipDefaults.clip_end_seconds, 145.2, 'render defaults must not pad a complete short clip to ten seconds');
