@@ -3,6 +3,25 @@ export type TimedTranscriptSegment = {
   end?: number;
 };
 
+export function preserveSemanticEndWhenExtendingShortClip(params: {
+  startSec: number;
+  endSec: number;
+  minClipSec: number;
+}) {
+  const endSec = Math.max(0, finiteTime(params.endSec));
+  const startSec = Math.max(0, Math.min(endSec, finiteTime(params.startSec)));
+  const minClipSec = Math.max(0, finiteTime(params.minClipSec));
+  if (endSec - startSec >= minClipSec) return { start: startSec, end: endSec };
+
+  // The end of a completed answer/payoff is semantically stronger than a
+  // duration target. Extend into the preceding setup first; padding forward
+  // can consume the next question or story and produced visibly jumpy reels.
+  return {
+    start: Number(Math.max(0, endSec - minClipSec).toFixed(3)),
+    end: endSec,
+  };
+}
+
 const FINAL_WORD_RELEASE_SEC = 0.14;
 const TARGET_END_SAFETY_TAIL_SEC = 0.32;
 

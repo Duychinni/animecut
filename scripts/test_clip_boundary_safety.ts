@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { addSpeechEndSafetyTail, isTranscriptEndingFragment } from '../lib/clip-boundary-safety';
+import { addSpeechEndSafetyTail, isTranscriptEndingFragment, preserveSemanticEndWhenExtendingShortClip } from '../lib/clip-boundary-safety';
 
 assert.equal(
   addSpeechEndSafetyTail({
@@ -51,3 +51,9 @@ assert.equal(isTranscriptEndingFragment('to watch.'), true, 'ASR punctuation mus
 assert.equal(isTranscriptEndingFragment('because of what happened.'), true, 'dependent fragments must not end a reel');
 assert.equal(isTranscriptEndingFragment('This is going to be amazing to watch.'), false, 'a complete sentence should remain valid');
 assert.equal(isTranscriptEndingFragment('That is the whole story.'), false, 'a clean story ending should remain valid');
+
+assert.deepEqual(
+  preserveSemanticEndWhenExtendingShortClip({ startSec: 139.541, endSec: 146.04, minClipSec: 25 }),
+  { start: 121.04, end: 146.04 },
+  'a short completed answer must gain preceding setup instead of the next unrelated question',
+);

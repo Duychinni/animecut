@@ -82,6 +82,36 @@ def timeline(samples, duration=None):
     )
 
 
+def test_single_speaker_editorial_plan_suppresses_visual_split():
+    left = box(80, 100, 500, 760, 1, 0.15)
+    right = box(1050, 90, 560, 790, 2, 0.92)
+    fixed_layout = {
+        'divider_x': 900.0,
+        'panel_face_height_ratio': 0.08,
+        'track_region_map': {'1': 'left', '2': 'right'},
+    }
+    samples = [
+        sample(
+            index * 0.25,
+            subject('face', right, 'face:2', 0.92),
+            [left, right],
+            active_id=2,
+            speaker_conf=0.92,
+            speaker_margin=0.5,
+            fixed_layout=fixed_layout,
+        )
+        for index in range(12)
+    ]
+    points, frames = zip(*samples)
+    result = build_reframe_timeline(
+        list(points), list(frames), W, H, 3.0,
+        {'scene_type': 'SINGLE_SPEAKER', 'recommended_layout': 'SINGLE_SPEAKER_CROP'},
+    )
+    assert result, result
+    assert all(segment['mode'] != 'stacked' for segment in result), result
+    assert all(segment.get('primaryTrackId') in (None, 2) for segment in result), result
+
+
 def test_repeated_panel_wide_closeup_switching_locks_one_composition():
     modes = ['single', 'wide_context', 'single', 'stacked', 'wide_context', 'single', 'wide_context', 'single']
     segments = []

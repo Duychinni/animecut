@@ -1576,7 +1576,7 @@ def stabilize_continuous_conversation_layout(segments, editorial_plan=None):
     return merged
 
 
-def build_reframe_timeline(points, frames, source_w: float, source_h: float, duration: float):
+def build_reframe_timeline(points, frames, source_w: float, source_h: float, duration: float, editorial_plan=None):
     """Convert 4 Hz observations into a hysteretic, timed layout state machine."""
     if not points or not frames:
         return []
@@ -1616,6 +1616,12 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
     last_single_face = None
     last_single_face_track = None
     single_face_gap_samples = 0
+    requested_layout = str((editorial_plan or {}).get('recommended_layout', '')).strip().upper()
+    requested_scene_type = str((editorial_plan or {}).get('scene_type', '')).strip().upper()
+    single_speaker_requested = bool(
+        requested_layout == 'SINGLE_SPEAKER_CROP'
+        or requested_scene_type == 'SINGLE_SPEAKER'
+    )
 
     for index, (point, frame) in enumerate(zip(points, frames)):
         faces = frame.get('faces', [])
@@ -1668,6 +1674,11 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
             or (f'face:{active_id}' if active_id is not None else subject_kind)
         )
         fixed_two_panel = frame.get('fixed_two_panel')
+        if single_speaker_requested:
+            # Visual detection may find a speaker plus an incidental listener
+            # in a press panel. The transcript-backed editorial plan is the
+            # authority on whether both people belong in the story.
+            fixed_two_panel = None
         complete_face_by_id = {
             int(face.get('track_id')): face
             for face in complete_faces
@@ -2107,6 +2118,7 @@ def build_reframe_timeline(points, frames, source_w: float, source_h: float, dur
         # tools without continuously chasing either face.
         composition_stack_eligible = bool(
             STACK_LAYOUT_ENABLED
+            and not single_speaker_requested
             and visual_pair is not None
             # The visual_pair gate already requires exactly two meaningful,
             # separated, non-predicted faces. Enter immediately so the opening
@@ -3974,7 +3986,7 @@ def main():
                 frame['active_panel'] = 'left' if float(active_face.get('cx', 0.0)) < divider_x else 'right'
     # Produce timed layout decisions after tracking/speaker evidence is known.
     # Never collapse a multi-person reel into one whole-clip layout.
-    reframe_timeline = build_reframe_timeline(points, detected_faces, source_w, source_h, duration)
+    reframe_timeline = build_reframe_timeline(points, detected_faces, source_w, source_h, duration, editorial_plan)
     reframe_timeline, editorial_summary = plan_editorial_timeline(reframe_timeline, editorial_plan)
     reframe_timeline, layout_qa_summary = validate_layout_timeline(
         reframe_timeline, detected_faces, source_w, source_h

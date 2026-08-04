@@ -16,7 +16,7 @@ import {
 } from '@/lib/editorial-plan';
 import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
-import { addSpeechEndSafetyTail, isTranscriptEndingFragment } from '@/lib/clip-boundary-safety';
+import { addSpeechEndSafetyTail, isTranscriptEndingFragment, preserveSemanticEndWhenExtendingShortClip } from '@/lib/clip-boundary-safety';
 import {
   calculateAiClipScore,
   clipScoreLabel,
@@ -246,8 +246,13 @@ function clampDurationWithSegments(startSec: number, endSec: number, segments: T
 
   let duration = end - start;
   if (duration < minClipSec) {
-    const needed = minClipSec - duration;
-    end += needed;
+    const extended = preserveSemanticEndWhenExtendingShortClip({
+      startSec: start,
+      endSec: end,
+      minClipSec,
+    });
+    start = extended.start;
+    end = extended.end;
   }
 
   duration = end - start;
