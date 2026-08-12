@@ -122,6 +122,8 @@ def test_repeated_panel_wide_closeup_switching_locks_one_composition():
             'mode': mode,
             'wideKind': 'safe_wide' if mode == 'wide_context' else None,
             'visibleCountMax': 2,
+            'topBox': box(80, 100, 500, 760, 1) if mode == 'stacked' else None,
+            'bottomBox': box(1050, 90, 560, 790, 2) if mode == 'stacked' else None,
             'points': [{'t': float(index)}],
         })
     result = lock_unstable_panel_composition(segments)
@@ -151,6 +153,7 @@ def test_wide_dominant_panel_never_pulses_back_to_closeup():
             'mode': mode,
             'wideKind': 'safe_wide' if mode == 'wide_context' else None,
             'visibleCountMax': 2,
+            'editorialLayout': 'TWO_PERSON_CONVERSATION',
             'points': [{'t': start}],
         }
         for start, end, mode in spans
@@ -163,6 +166,30 @@ def test_wide_dominant_panel_never_pulses_back_to_closeup():
     assert result[0]['end'] == 37.426, result
     assert result[0]['mode'] == 'wide_context', result
     assert result[0]['renderBranch'] == 'stable_panel_composition', result
+
+
+def test_workout_with_bystander_keeps_islam_portrait_framed():
+    modes = ['single', 'wide_context', 'single', 'wide_context', 'single', 'wide_context', 'single']
+    segments = []
+    for index, mode in enumerate(modes):
+        segments.append({
+            'start': float(index),
+            'end': float(index + 1),
+            'mode': mode,
+            'wideKind': 'safe_wide' if mode == 'wide_context' else None,
+            # Islam plus a bystander/partial body must not masquerade as a panel.
+            'visibleCountMax': 2,
+            'subjectKind': 'body',
+            'editorialSceneType': 'FULL_BODY_ACTION',
+            'editorialLayout': 'TRACK_ACTION',
+            'points': [{'t': float(index)}],
+        })
+
+    result = lock_unstable_panel_composition(segments)
+
+    assert len(result) == len(segments), result
+    assert any(segment['mode'] == 'single' for segment in result), result
+    assert all(segment.get('renderBranch') != 'stable_panel_composition' for segment in result), result
 
 
 def test_handheld_action_with_bystanders_does_not_lock_as_panel():

@@ -1306,13 +1306,29 @@ def lock_unstable_panel_composition(segments):
     # second person while the camera and primary subject keep moving. Locking
     # those clips into one panel composition destroys real shot boundaries and
     # turns the detector samples into a violently jumping virtual camera.
-    panel_evidence = (
+    verified_panel_layout = bool(
         len(panel_segments) >= 2
         and panel_ratio >= 0.30
         and action_ratio < 0.35
-    ) or all(
+    )
+    verified_split_layout = any(
+        segment.get('mode') == 'stacked'
+        and segment.get('topBox')
+        and segment.get('bottomBox')
+        for segment in segments
+    )
+    continuously_multi_person = all(
         int(segment.get('visibleCountMax', segment.get('visibleCount', 0)) or 0) >= 2
         for segment in segments
+    )
+    # A second face/body detection is supporting evidence only. Workout and
+    # demonstration footage commonly contains a bystander, coach, reflection,
+    # or partial body while one primary athlete should remain portrait-framed.
+    # Require either an editorial panel classification or a verified two-pane
+    # composition before locking the entire reel to a tiny safe-wide strip.
+    panel_evidence = bool(
+        verified_panel_layout
+        or (verified_split_layout and continuously_multi_person)
     )
     if action_ratio >= 0.50:
         panel_evidence = False
