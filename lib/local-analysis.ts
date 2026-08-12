@@ -162,6 +162,10 @@ function hasPayoff(text: string) {
   );
 }
 
+function hasPodcastViralTrigger(text: string) {
+  return /\b(trash talk|called? (?:him|her|them) out|callout|challenge[ds]?|fight(?:ing)?|ufc|mma|boxing|knockout|ko\b|opponent|rival|beef|duck(?:ing|ed)?|scared|afraid|disrespect(?:ed|ful)?|controvers(?:y|ial)|argu(?:e|ed|ment)|disagree(?:d)?|wrong|prediction|confess(?:ed|ion)?|secret|behind the scenes|humble|respect(?:ed|ful)?|grateful|gracious|vulnerable|inspir(?:ed|ing|ational)?|wholesome|kindness|apolog(?:y|ized)|proud|love|laugh(?:ed|ing)?|funny|joke|punchline)\b/i.test(text);
+}
+
 function hasFillerStart(text: string) {
   return /^(and|but|so|yeah|well|like|you know)\b/i.test(cleanText(text));
 }
@@ -210,6 +214,11 @@ function scoreWindow(text: string, duration: number, startsWithFiller: boolean) 
   if (/\b(I|me|my|you|your|we|us)\b/i.test(text)) score += 3;
   if (/\b\d+(?:[.,]\d+)?\b|[$%]/.test(text)) score += 4;
   if (/\b(secret|truth|mistake|failed|risk|cost|million|thousand|never|only|first|last|changed|learned|realized)\b/i.test(text)) score += 3;
+  // Offline/local analysis should share the same editorial taste as the AI
+  // pass: memorable conflict, combat-sports callouts, humor, and exceptional
+  // humility/warmth outrank routine but coherent podcast conversation.
+  if (hasPodcastViralTrigger(text)) score += 7;
+  if (hasPodcastViralTrigger(text) && hasPayoff(text)) score += 3;
   // Leave 95-100 reachable, but require multiple independent exceptional
   // signals rather than allowing ordinary complete windows to saturate.
   const specificDetails = text.match(/\b\d+(?:[.,]\d+)?\b|[$%]/g)?.length ?? 0;

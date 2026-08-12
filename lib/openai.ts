@@ -273,6 +273,15 @@ DISCOVER THESE MOMENT TYPES:
 - advice
 - actionable tips
 
+VIRAL-MOMENT PRIORITY FOR PODCASTS AND INTERVIEWS:
+- Do not select ordinary conversation merely because it is coherent. Select the exchange people would quote, debate, repost, laugh at, or send to a friend.
+- For MMA, boxing, and combat-sports podcasts/interviews, aggressively search for transcript-supported callouts, trash talk, rivalries, accusations, disagreements, controversial opinions, fearless predictions, fight challenges, tense exchanges, confessions, and surprising behind-the-scenes stories.
+- Positive emotion can be equally viral: also prioritize unusually humble, respectful, gracious, vulnerable, inspirational, or wholesome moments when the sincerity or contrast makes the exchange memorable.
+- Comedy is first-class viral material. Preserve the complete setup, escalation, punchline, and any reaction/tag that materially improves the payoff.
+- Never manufacture controversy or intensify a claim. The conflict, warmth, humor, or emotion must exist in the transcript.
+- Rank generic analysis, routine answers, and informational filler below moments with a clear emotional or conversational turn.
+- Every selected reel must contain one complete viral unit: the necessary setup or question, the central exchange/story, the payoff, and the natural stopping point. A provocative sentence cut out of half a story is invalid.
+
 GENRE-AWARE EDITORIAL CONSTRUCTION:
 First classify each moment as COMEDY, MOTIVATION, EDUCATION, DEBATE, STORYTELLING, INTERVIEW, NEWS_COMMENTARY, ADVICE, SPORTS, BUSINESS, HEALTH_WELLNESS, TRUE_CRIME_MYSTERY, MIXED, or UNKNOWN. Then preserve the arc that makes that genre work:
 - COMEDY: premise/setup -> necessary context -> escalation or misdirection -> punchline -> reaction/final tag when it strengthens the laugh. A punchline without the premise is not a valid clip.
@@ -284,6 +293,7 @@ First classify each moment as COMEDY, MOTIVATION, EDUCATION, DEBATE, STORYTELLIN
 - NEWS_COMMENTARY: event/claim -> verified context contained in the transcript -> analysis -> implication/conclusion. Do not turn speculation into fact.
 - ADVICE: recognizable problem -> recommendation -> reason/mechanism -> concrete example or action.
 - SPORTS: matchup/situation -> stakes -> analysis/evidence -> prediction/result/conclusion.
+- MMA/COMBAT SPORTS INTERVIEW: necessary question/callout -> fighter's claim or story -> challenge, contrast, escalation, or emotional turn -> decisive response/prediction/reveal -> reaction or clean resolution. Preserve both sides when the exchange creates the payoff; never isolate trash talk from the target/context that gives it meaning.
 - BUSINESS: problem/opportunity -> decision/strategy -> evidence/result -> transferable lesson.
 - HEALTH_WELLNESS: symptom/problem -> transcript-supported explanation -> recommendation/caveat -> practical takeaway. Preserve uncertainty and never strengthen medical claims.
 - TRUE_CRIME_MYSTERY: known setup -> key evidence -> contradiction/reveal -> implication, while preserving uncertainty and avoiding unsupported accusation.
@@ -296,6 +306,7 @@ CONTEXT DEPENDENCY CHECK:
 - Extend forward for the payoff, reaction, final tag, takeaway, or completed answer when it materially strengthens the moment.
 - Set context_dependency_resolved=false and reject the candidate when the required setup/payoff is outside the available window or cannot fit the maximum duration.
 - Prefer fewer complete, strong clips over more contextless fragments.
+- Reject a moment that is only the first half or second half of an anecdote, argument, joke, answer, or emotional exchange. If its complete arc cannot fit, choose a different viral moment.
 
 CANDIDATE GENERATION RULES:
 - Use segment windows, not sentence-level snippets.
@@ -313,6 +324,7 @@ CANDIDATE GENERATION RULES:
 - Build an OpusClip-style diverse set: each candidate must cover a distinct viral idea, not a slightly shifted version of another clip.
 - Avoid transcript overlap between candidates. If two candidates share the same setup, story beat, or payoff, keep only the stronger one.
 - Prefer unique hooks from different parts of the source over multiple clips from the same conversation section.
+- Before accepting each candidate, summarize its setup, turn, payoff, and resolution internally. If any required beat is absent, expand to include it or reject the candidate.
 
 REEL TITLE RULES:
 - The "title" appears above each reel in the project page.
@@ -504,6 +516,7 @@ Genre arcs:
 - NEWS_COMMENTARY: event/claim -> transcript-supported context -> analysis -> implication.
 - ADVICE: problem -> recommendation -> reason -> concrete action/example.
 - SPORTS: situation/matchup -> stakes -> analysis/evidence -> prediction/result.
+- MMA/COMBAT SPORTS INTERVIEW: question/callout -> claim/story -> challenge, escalation, contrast, or emotion -> decisive response/prediction/reveal -> clean reaction/resolution.
 - BUSINESS: problem/opportunity -> decision/strategy -> evidence/result -> lesson.
 - HEALTH_WELLNESS: problem -> transcript-supported explanation -> caveat/recommendation -> practical takeaway.
 - TRUE_CRIME_MYSTERY: known setup -> evidence -> contradiction/reveal -> carefully qualified implication.
@@ -511,6 +524,8 @@ Genre arcs:
 
 Hard rules:
 - Never return a punchline without its premise, an answer without its needed question, a rebuttal without its claim, a motivational lesson without its struggle/reframe, or a callback/pronoun with no understandable referent.
+- For podcasts/interviews, reject routine coherent chatter unless the candidate has a transcript-supported viral trigger: conflict/controversy, trash talk or challenge, a strong prediction/reveal, exceptional humor, or a distinctly humble, gracious, vulnerable, inspirational, or wholesome emotional turn.
+- For MMA/combat-sports exchanges, preserve the opponent/topic being discussed and enough of the question, challenge, or preceding claim for the callout or response to make sense. Never approve only half of the fight story or verbal exchange.
 - Prefer the shortest complete version, but allow a clip to run as long as 90 seconds when that time is genuinely required for the full setup, development, and payoff. For comedy, preserving the premise and escalation is more important than forcing a short duration.
 - Do not cross into sponsor reads, show packaging, unrelated topics, or another story merely to increase duration.
 - End only after the current speaker has audibly completed the final sentence. A transcript timestamp or punctuation mark is not sufficient if the words form a grammatical fragment (for example, a short continuation such as "to watch.").
