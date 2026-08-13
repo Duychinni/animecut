@@ -18,6 +18,7 @@ import { prioritizeMainRenderJobs } from '@/lib/render-job-order';
 import { analyzeRenderedClipTechnicalQuality } from '@/lib/ffmpeg-technical-analysis';
 import { calculateAiClipScore, type ClipTechnicalMetrics } from '@/lib/clip-score';
 import { captureServerEvent } from '@/lib/server-analytics';
+import { runWithRenderJobDeadline } from '@/lib/render-deadline';
 import {
   buildDefaultClipEditSettings,
   hasClipEditSettings,
@@ -1633,7 +1634,7 @@ export async function POST(req: Request) {
         previewOnly: isPreviewOnly,
       });
       try {
-        await processExportJob(exportId, {
+        await runWithRenderJobDeadline(processExportJob(exportId, {
           captions_enabled: item.payload?.captions_enabled as boolean | undefined,
           caption_preset_id: item.payload?.caption_preset_id as string | undefined,
           caption_template: item.payload?.caption_template as
@@ -1665,7 +1666,7 @@ export async function POST(req: Request) {
           safe_layout_fallback: item.payload?.safe_layout_fallback === true,
           compatibility_fallback: item.payload?.compatibility_fallback === true,
           preview_only: isPreviewOnly,
-        });
+        }), { exportId });
       } finally {
         await stopHeartbeat();
       }
