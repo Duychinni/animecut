@@ -610,8 +610,15 @@ def screen_context_score(cv2, np, gray):
     reduced = cv2.resize(gray, (min(640, gray.shape[1]), max(2, int(gray.shape[0] * min(640, gray.shape[1]) / gray.shape[1]))), interpolation=cv2.INTER_AREA)
     edges = cv2.Canny(reduced, 70, 170)
     edge_density = float(np.count_nonzero(edges)) / max(1.0, float(edges.size))
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180.0, threshold=45, minLineLength=max(20, reduced.shape[1] // 12), maxLineGap=8)
-    line_density = min(1.0, (0 if lines is None else len(lines)) / 45.0)
+    # HoughLinesP can take effectively unbounded time on dense, noisy frames;
+    # one production podcast frame remained inside OpenCV for 104 minutes and
+    # kept the final reel falsely alive. UI/text structure can be estimated
+    # deterministically from concentrated horizontal/vertical edge runs in
+    # linear time instead of launching the combinatorial Hough search.
+    edge_mask = edges > 0
+    row_structure = float(np.mean(np.mean(edge_mask, axis=1) >= 0.12))
+    column_structure = float(np.mean(np.mean(edge_mask, axis=0) >= 0.12))
+    line_density = min(1.0, (row_structure + column_structure) * 3.0)
     return clamp(edge_density * 3.6 + line_density * 0.42, 0.0, 1.0)
 
 

@@ -10,6 +10,7 @@ from reframe_per_clip import (
     lock_unstable_panel_composition,
     portrait_crop_for_face_in_panel,
     portrait_crop_for_subject,
+    screen_context_score,
     semantic_subject_choice,
     stabilize_continuous_conversation_layout,
     strongest_face_pair,
@@ -18,6 +19,34 @@ from reframe_per_clip import (
 
 
 W, H = 1920.0, 1080.0
+
+
+def test_screen_context_score_uses_bounded_axis_structure_not_hough_search():
+    import numpy as np
+
+    class FakeCv2:
+        INTER_AREA = 3
+
+        @staticmethod
+        def resize(gray, _size, interpolation=None):
+            return gray
+
+        @staticmethod
+        def Canny(_gray, _low, _high):
+            edges = np.zeros((120, 160), dtype='uint8')
+            edges[20, :] = 255
+            edges[60, :] = 255
+            edges[:, 40] = 255
+            edges[:, 120] = 255
+            return edges
+
+        @staticmethod
+        def HoughLinesP(*_args, **_kwargs):
+            raise AssertionError('unbounded Hough search must not run')
+
+    gray = np.zeros((120, 160), dtype='uint8')
+    score = screen_context_score(FakeCv2, np, gray)
+    assert 0.0 < score <= 1.0, score
 
 
 def box(x, y, w, h, track_id=None, confidence=0.8):
