@@ -17,6 +17,7 @@ import {
 import { editorialSourceContext } from '@/lib/source-identity';
 import { editorialExclusionReason } from '@/lib/editorial-exclusions';
 import { addSpeechEndSafetyTail, isTranscriptEndingFragment, preserveSemanticEndWhenExtendingShortClip } from '@/lib/clip-boundary-safety';
+import { hasClearFirstFiveSecondHook } from '@/lib/opening-hook';
 import {
   calculateAiClipScore,
   clipScoreLabel,
@@ -1094,6 +1095,11 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         const cleaned = adjustBoundaries(modelAdjustedStart, modelAdjustedEnd, segments, analysisMinClipSec, Math.min(policy.maxSec, GLOBAL_MAX_CLIP_SEC));
 
         const openingLine = openingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.opening_line ?? '');
+        const firstFiveSecondText = transcriptTextForWindow(
+          cleaned.start_sec,
+          Math.min(cleaned.end_sec, cleaned.start_sec + 5),
+          segments,
+        );
         const closingLine = closingLineForWindow(cleaned.start_sec, cleaned.end_sec, segments) || String(c.closing_line ?? '');
         const displayTitle = buildDisplayTitle(c.title, openingLine, closingLine, c.reason_selected ?? c.reason, idx);
         const resolvedHook = resolveCandidateHookText({
@@ -1131,13 +1137,14 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
         const completeEnding = cleanEnding && (cleaned.end_complete || !punctuationReliable || localAnalysisCandidate);
         const unresolvedContextDependency = c.context_dependency_resolved === false
           || String(c.reason_rejected ?? '').trim() === 'unresolved_context_dependency';
-        const strictQualityPass = startsLikeNaturalBoundary(openingLine) && completeEnding && (payoffStrong || !punctuationReliable);
+        const hookStrength = clamp100(num(c.hook_strength) || 0);
+        const immediateHookPass = hasClearFirstFiveSecondHook(firstFiveSecondText) && hookStrength >= 65;
+        const strictQualityPass = startsLikeNaturalBoundary(openingLine) && immediateHookPass && completeEnding && (payoffStrong || !punctuationReliable);
         const boundaryQualityPass = localAnalysisCandidate
-          ? Boolean(startsLikeNaturalBoundary(openingLine) && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
+          ? Boolean(startsLikeNaturalBoundary(openingLine) && immediateHookPass && completeEnding && transcriptWordCount >= Math.min(minimumWordCount, 35))
           : strictQualityPass;
         const passesQuality = boundaryQualityPass && editorialCopyPass;
 
-        const hookStrength = clamp100(num(c.hook_strength) || 0);
         const retentionPotential = clamp100(num(c.retention_potential ?? c.rewatch_potential) || 0);
         const storyCompleteness = clamp100(num(c.story_completeness ?? c.payoff_strength) || ((hasStrongPayoff(closingLine) && !endsWithFiller(closingLine)) ? 88 : 50));
         const entertainmentOrEmotion = clamp100(num(c.entertainment_or_emotion ?? c.emotional_or_engagement_value ?? c.emotional_intensity) || 0);
@@ -1181,7 +1188,7 @@ async function runProjectAnalysis(project_id: string, options: { forceLocal?: bo
           duration_seconds: Number(duration.toFixed(2)),
           title: editorialPlan.title,
           hook_text: editorialPlan.selected_hook,
-          reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${cleaned.reason} | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
+          reason: `${String(c.reason_selected ?? c.reason ?? 'High potential short-form segment')} | Boundary pass: ${cleaned.reason} | First-five-second hook: ${immediateHookPass ? 'pass' : 'fail'} (${firstFiveSecondText}) | Self-contained confidence: ${cleaned.confidence.toFixed(2)} | Opening: ${openingLine} | Closing: ${closingLine}`,
           self_contained_confidence: Math.max(0, Math.min(1, num(c.standalone_confidence) || cleaned.confidence)),
           boundary_adjustment_reason: cleaned.reason,
           opening_line: openingLine,

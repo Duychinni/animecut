@@ -247,6 +247,13 @@ Do NOT generate random transcript snippets.
 Every final clip must feel like a complete short-form video with:
 Hook -> Context -> Main Content -> Payoff -> Natural Ending.
 
+FIRST 3-5 SECOND CONTRACT:
+- The spoken opening itself must immediately introduce the idea, subject, conflict, question, surprising claim, emotional stake, or clear promise that makes the reel worth watching.
+- A title card is supplemental; it cannot rescue a slow or contextless spoken opening.
+- By five seconds, a viewer who has never seen the source must understand what this reel is about and why they should stay.
+- Do not spend the first five seconds on greetings, throat-clearing, vague framing, generic agreement, logistical setup, or references such as "he," "that," or "it" whose subject has not been established.
+- If the viral idea begins later, move adjusted_start to the strongest natural entry point immediately before that idea, then include only the minimum context needed. If trimming there makes the story confusing, reject the moment and choose a better one.
+
 FULL-TRANSCRIPT REQUIREMENT:
 Analyze the ENTIRE transcript window.
 Do not stop after finding a few good clips.
@@ -314,6 +321,7 @@ CANDIDATE GENERATION RULES:
 - For comedy, motivation, stories, debates, and interview answers, start up to 20 seconds earlier when that earlier turn is necessary to understand the payoff.
 - End 5-15 seconds after payoff when needed for a clean conclusion.
 - Prefer complete thought boundaries.
+- Treat the first 3-5 seconds as an opening audition. Reject candidates whose subject or compelling reason-to-watch arrives only after that window.
 - End on a completed sentence, punchline, answer, or clear speaker statement. Never end mid-sentence or mid-thought.
 - Avoid openings like "And...", "So...", "But...", "Yeah..." unless absolutely necessary.
 - Reject filler-only dialogue.
@@ -505,6 +513,7 @@ For each candidate:
 6. Set required_context to a concise description of what had to be preserved.
 7. Set context_dependency_resolved=true only when a new viewer can understand the opening, references, and payoff without the source video.
 8. Reject unresolved candidates by setting reason_rejected to "unresolved_context_dependency".
+9. Read the first five seconds after adjustment. Reject the candidate as "weak_or_delayed_opening_hook" unless those seconds clearly establish both the subject/idea and a reason to continue.
 
 Genre arcs:
 - COMEDY: premise/setup -> context -> escalation/misdirection -> punchline -> useful reaction/tag.
@@ -524,6 +533,7 @@ Genre arcs:
 
 Hard rules:
 - Never return a punchline without its premise, an answer without its needed question, a rebuttal without its claim, a motivational lesson without its struggle/reframe, or a callback/pronoun with no understandable referent.
+- A natural grammatical opening is not enough. Reject slow starts where the actual idea, tension, question, promise, or emotional stake appears more than five seconds into the reel.
 - For podcasts/interviews, reject routine coherent chatter unless the candidate has a transcript-supported viral trigger: conflict/controversy, trash talk or challenge, a strong prediction/reveal, exceptional humor, or a distinctly humble, gracious, vulnerable, inspirational, or wholesome emotional turn.
 - For MMA/combat-sports exchanges, preserve the opponent/topic being discussed and enough of the question, challenge, or preceding claim for the callout or response to make sense. Never approve only half of the fight story or verbal exchange.
 - Prefer the shortest complete version, but allow a clip to run as long as 90 seconds when that time is genuinely required for the full setup, development, and payoff. For comedy, preserving the premise and escalation is more important than forcing a short duration.
