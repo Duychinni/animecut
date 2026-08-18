@@ -493,6 +493,10 @@ function buildFallbackExportPayload(exportId: string, extra: Record<string, unkn
 }
 
 function normalizeRenderErrorMessage(message: string) {
+  if (/YouTube advertised .*worker could only retrieve|advertised-hd-unavailable/i.test(message)) {
+    return 'YouTube did not provide a usable HD source for this video.';
+  }
+
   if (/VISUAL_CLIP_UNUSABLE/i.test(message)) {
     return 'This clip was skipped because no complete speaking subject could be framed safely.';
   }
@@ -522,6 +526,7 @@ function normalizeRenderErrorMessage(message: string) {
 
 function renderFailureDiagnostics(message: string) {
   const category =
+    /YouTube advertised .*worker could only retrieve|advertised-hd-unavailable/i.test(message) ? 'source_quality_unavailable' :
     /VISUAL_CLIP_UNUSABLE/i.test(message) ? 'visual_quality_rejection' :
     /crop=.*(?:negative|invalid)|Invalid too big or non positive size|crop area/i.test(message) ? 'invalid_crop_coordinates' :
     /filter|filtergraph|subtitles|drawtext/i.test(message) ? 'ffmpeg_filter_graph' :
@@ -699,7 +704,7 @@ async function recoverTerminalRenderErrors(limit = REPAIR_SCAN_LIMIT) {
     const projectId = String(row.project_id ?? '');
     if (!exportId || !projectId) continue;
     if (payload.edit_rerender === true || payload.compatibility_fallback === true) continue;
-    if (['missing_or_unreadable_input', 'upload_or_storage_failure'].includes(String(payload.render_failure_category ?? ''))) continue;
+    if (['missing_or_unreadable_input', 'upload_or_storage_failure', 'source_quality_unavailable'].includes(String(payload.render_failure_category ?? ''))) continue;
     if (await isFrozenCompletedProject(projectId)) continue;
 
     const { data: exportRow, error: exportError } = await supabase
@@ -1777,6 +1782,7 @@ export async function POST(req: Request) {
         'memory_or_resource_failure',
         'missing_or_unreadable_input',
         'upload_or_storage_failure',
+        'source_quality_unavailable',
         // Encoder/filter failures are often worker-specific (hardware encoder,
         // temporary disk pressure, or a one-off FFmpeg process exit). An edit
         // must get the same automatic retry protection as an initial render.
@@ -1834,7 +1840,7 @@ export async function POST(req: Request) {
         item.jobId
         && exportId
         && item.payload?.safe_layout_fallback !== true
-        && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection'].includes(failureDiagnostics.category),
+        && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection', 'source_quality_unavailable'].includes(failureDiagnostics.category),
       );
 
       if (safeFallbackEligible && item.jobId && exportId) {
@@ -1882,7 +1888,7 @@ export async function POST(req: Request) {
         && exportId
         && item.payload?.safe_layout_fallback === true
         && item.payload?.compatibility_fallback !== true
-        && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection'].includes(failureDiagnostics.category),
+        && !['missing_or_unreadable_input', 'upload_or_storage_failure', 'visual_quality_rejection', 'source_quality_unavailable'].includes(failureDiagnostics.category),
       );
 
       if (compatibilityFallbackEligible && item.jobId && exportId) {

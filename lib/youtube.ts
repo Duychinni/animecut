@@ -411,11 +411,18 @@ async function downloadYouTubeVideoUnlocked(url: string, projectId: string) {
     && downloadedInfo?.height
     && downloadedInfo.height < 720
   ) {
-    await unlink(outPath).catch(() => undefined);
-    throw new Error(
-      `YouTube advertised ${advertisedMaxHeight}p video, but the worker could only retrieve `
-      + `${downloadedInfo.height}p. Refusing to upscale an SD source into a misleading 1080p reel.`,
-    );
+    // YouTube can advertise HD DASH streams and then reject them with a 403
+    // partway through the transfer. A complete lower-resolution rendition is
+    // still a valid source. Keep it and cache the quality decision so every
+    // export for the project reuses one download instead of repeating all
+    // client/format attempts and failing after several recovery renders.
+    console.warn('[youtube] advertised-hd-unavailable-using-best-source', {
+      projectId,
+      advertisedMaxHeight,
+      sourceWidth: downloadedInfo.width,
+      sourceHeight: downloadedInfo.height,
+      formatSelector,
+    });
   }
 
   const stillBelowMin = Boolean(downloadedInfo?.height && downloadedInfo.height < getYouTubeMinCacheHeight());
